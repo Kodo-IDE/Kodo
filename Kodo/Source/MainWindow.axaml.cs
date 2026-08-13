@@ -236,6 +236,9 @@ public record class LoadedExtension : INotifyPropertyChanged
     public IBrush MutedTextBrush { get; set; } = Brush.Parse("#A0A0A0");
     public string SourcePath { get; set; } = string.Empty;
     public bool IsDirectorySource { get; set; }
+    public string? PluginAssemblyFileName { get; set; }
+    public string? PluginFolderPath { get; set; }
+    public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
     public DateTime? InstalledOnUtc { get; set; }
     public ExtensionThemeDefinition? ThemeDefinition { get; set; }
     public string ThemeCardThemeId => ThemeDefinition?.ThemeId ?? string.Empty;
@@ -813,6 +816,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Caches content-sniffed language per file path to avoid re-reading extensionless files on every tab switch.
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
         new(StringComparer.OrdinalIgnoreCase);
+
     private string _findText = string.Empty;
     private int _tutorialStepIndex;
 
@@ -1505,6 +1509,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(HasGroupedThemeExtensions));
         RefreshExtensionTheme();
         SyncMarketplaceInstallStates();
+        SyncActivePlugins();
     }
 
     private async Task LoadMarketplaceExtensionsAsync()
@@ -3097,6 +3102,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt.SourcePath = folderPath;
         baseExt.IsDirectorySource = true;
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(folderPath, isDirectory: true);
+        if (baseExt.PluginAssemblyFileName is not null &&
+            File.Exists(Path.Combine(folderPath, baseExt.PluginAssemblyFileName)))
+            baseExt.PluginFolderPath = folderPath;
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -3183,6 +3191,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SourcePath        = src.SourcePath,
         IsDirectorySource = src.IsDirectorySource,
         InstalledOnUtc    = src.InstalledOnUtc,
+        PluginAssemblyFileName = src.PluginAssemblyFileName,
+        PluginFolderPath  = src.PluginFolderPath,
         IconImage         = src.IconImage,
         IconBytes         = src.IconBytes,
     };
@@ -3228,6 +3238,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         baseExt.SourcePath = koxPath;
         baseExt.IsDirectorySource = false;
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
+        if (baseExt.PluginAssemblyFileName is not null &&
+            archive.GetEntry(baseExt.PluginAssemblyFileName) is not null)
+            baseExt.PluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id, baseExt.Version);
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -3301,7 +3314,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
         Extensions  = manifest.TryGetProperty("extensions",  out var exts)
             ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
-            : []
+            : [],
+        PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
     };
 
     private static void ParseLanguage(JsonElement lang, LoadedExtension ext)
