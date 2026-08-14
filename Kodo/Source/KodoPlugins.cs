@@ -85,7 +85,7 @@ public partial class MainWindow
         foreach (var dir in Directory.EnumerateDirectories(PluginCacheFolderPath, $"{prefix}*"))
         {
             try { Directory.Delete(dir, recursive: true); }
-            catch { /* still locked by a not-yet-collected AssemblyLoadContext; try again next scan */ }
+            catch { /* best effort */ }
         }
     }
 
