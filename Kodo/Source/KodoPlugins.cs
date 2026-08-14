@@ -24,10 +24,19 @@ public sealed class KodoPluginLoadContext : AssemblyLoadContext
         _pluginFolder = pluginFolder;
     }
 
+    public Assembly LoadMainAssembly(string assemblyPath) => LoadShadowCopy(assemblyPath);
+
     protected override Assembly? Load(AssemblyName assemblyName)
     {
         var candidatePath = Path.Combine(_pluginFolder, assemblyName.Name + ".dll");
-        return File.Exists(candidatePath) ? LoadFromAssemblyPath(candidatePath) : null;
+        return File.Exists(candidatePath) ? LoadShadowCopy(candidatePath) : null;
+    }
+
+    private Assembly LoadShadowCopy(string assemblyPath)
+    {
+        var bytes = File.ReadAllBytes(assemblyPath);
+        using var stream = new MemoryStream(bytes);
+        return LoadFromStream(stream);
     }
 }
 
@@ -50,7 +59,10 @@ public partial class MainWindow
     private string ExtractKoxPluginFiles(ZipArchive archive, string id, string version)
     {
         var safeId = string.Join("_", id.Split(Path.GetInvalidFileNameChars()));
-        var pluginFolder = Path.Combine(PluginCacheFolderPath, $"{safeId}_{version}");
+        var prefix = $"{safeId}_{version}_";
+        CleanupStalePluginCacheFolders(prefix);
+
+        var pluginFolder = Path.Combine(PluginCacheFolderPath, $"{prefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(pluginFolder);
 
         foreach (var entry in archive.Entries)
@@ -64,6 +76,17 @@ public partial class MainWindow
         }
 
         return pluginFolder;
+    }
+
+    private void CleanupStalePluginCacheFolders(string prefix)
+    {
+        if (!Directory.Exists(PluginCacheFolderPath)) return;
+
+        foreach (var dir in Directory.EnumerateDirectories(PluginCacheFolderPath, $"{prefix}*"))
+        {
+            try { Directory.Delete(dir, recursive: true); }
+            catch { /* still locked by a not-yet-collected AssemblyLoadContext; try again next scan */ }
+        }
     }
 
     private void SyncActivePlugins()
@@ -95,7 +118,7 @@ public partial class MainWindow
 
         try
         {
-            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            var assembly = loadContext.LoadMainAssembly(assemblyPath);
             foreach (var type in assembly.GetTypes())
             {
                 if (type.IsAbstract || !typeof(IKodoPlugin).IsAssignableFrom(type)) continue;
@@ -135,5 +158,7 @@ public partial class MainWindow
         }
 
         plugin.LoadContext.Unload();
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
     }
 }
