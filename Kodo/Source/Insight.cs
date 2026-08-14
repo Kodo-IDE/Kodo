@@ -66,12 +66,12 @@ public sealed class InsightSuggestion : ICompletionData
     // Icon glyph + accent color per kind.
     private static (string Glyph, string Color) GlyphAndColorFor(InsightKind kind) => kind switch
     {
-        InsightKind.Variable  => ("V", "#3B82F6"),
-        InsightKind.Function  => ("F", "#A855F7"),
-        InsightKind.Property  => ("P", "#14B8A6"),
-        InsightKind.Type      => ("T", "#F97316"),
-        InsightKind.Namespace => ("N", "#0db37b"),
-        InsightKind.Keyword   => ("K", "#6366F1"),
+        InsightKind.Variable  => ("V", "#3a79df"),
+        InsightKind.Function  => ("F", "#9c51e2"),
+        InsightKind.Property  => ("P", "#1bc0ad"),
+        InsightKind.Type      => ("T", "#e76e17"),
+        InsightKind.Namespace => ("N", "#0db373"),
+        InsightKind.Keyword   => ("K", "#5b5dda"),
         _ => ("•", "#6B7280"),
     };
 
