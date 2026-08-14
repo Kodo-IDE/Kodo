@@ -10,7 +10,7 @@
                 <ColorPaletteResources x:Key="Dark"
                                        Accent="#8C00FF" />
                 <ColorPaletteResources x:Key="Light"
-                                       Accent="#8C00FF" />
+                                       Accent="#7B00FF" />
             </FluentTheme.Palettes>
         </FluentTheme>
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />

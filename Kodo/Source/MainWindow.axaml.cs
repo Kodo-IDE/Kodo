@@ -816,6 +816,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Caches content-sniffed language per file path to avoid re-reading extensionless files on every tab switch.
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
 
     private string _findText = string.Empty;
     private int _tutorialStepIndex;
@@ -1096,6 +1097,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (defaultLinkGen is not null)
             EditorTextBox.TextArea.TextView.ElementGenerators.Remove(defaultLinkGen);
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
+        EditorTextBox.TextArea.TextView.ElementGenerators.Add(_colorSwatchGenerator);
         // Shows a Ctrl+click tooltip over URLs, using the same regex as StrictLinkElementGenerator.
         EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
