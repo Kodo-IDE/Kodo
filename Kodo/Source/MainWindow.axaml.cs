@@ -746,6 +746,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const double ImageZoomStep = 0.25;
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
+
+    // Watches the currently open project folder so the explorer tree stays in
+    // sync with changes made outside Kodo (git checkout/pull, other editors, etc.).
+    private FileSystemWatcher? _projectFolderWatcher;
+    // Coalesces bursts of filesystem events (e.g. a git checkout touching hundreds
+    // of files) into a single tree rebuild instead of one per event.
+    private readonly DispatcherTimer _fileTreeRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     // Periodic background check for extension updates; only runs when auto-update extensions is enabled.
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
@@ -1109,6 +1116,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // OSC 0/2 title (which for PowerShell is just its own exe path, e.g. "...\v1.0\powershell.exe").
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
+        _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
@@ -7732,12 +7740,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _currentFolderPath = path;
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
+        SetupProjectFolderWatcher(path);
         IsFileExplorerVisible = true;
         RefreshState(fullRefresh: true);
     }
 
     private void CloseFolder()
     {
+        DisposeProjectFolderWatcher();
         _currentFolderPath = null;
         FileTreeItems.Clear();
         IsFileExplorerVisible = false;
@@ -7838,6 +7848,105 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
         ReplaceFileTreeItems(items);
+    }
+
+    // Starts (or restarts, if the folder changed) watching the open project
+    // folder for external changes so the tree can refresh itself automatically.
+    private void SetupProjectFolderWatcher(string folderPath)
+    {
+        DisposeProjectFolderWatcher();
+
+        try
+        {
+            var watcher = new FileSystemWatcher(folderPath)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+            };
+
+            watcher.Created += ProjectFolderWatcher_OnChanged;
+            watcher.Deleted += ProjectFolderWatcher_OnChanged;
+            watcher.Renamed += ProjectFolderWatcher_OnChanged;
+            watcher.Error   += ProjectFolderWatcher_OnError;
+            watcher.EnableRaisingEvents = true;
+
+            _projectFolderWatcher = watcher;
+        }
+        catch
+        {
+            // Some folders (network shares, permission-restricted directories, huge
+            // trees) can't be watched - the explorer just won't auto-refresh for them.
+        }
+    }
+
+    private void DisposeProjectFolderWatcher()
+    {
+        _fileTreeRefreshTimer.Stop();
+
+        if (_projectFolderWatcher is null) return;
+
+        _projectFolderWatcher.Created -= ProjectFolderWatcher_OnChanged;
+        _projectFolderWatcher.Deleted -= ProjectFolderWatcher_OnChanged;
+        _projectFolderWatcher.Renamed -= ProjectFolderWatcher_OnChanged;
+        _projectFolderWatcher.Error   -= ProjectFolderWatcher_OnError;
+        _projectFolderWatcher.Dispose();
+        _projectFolderWatcher = null;
+    }
+
+    // Raised on the watcher's background thread - hop to the UI thread before
+    // touching the DispatcherTimer or anything else.
+    private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e) =>
+        Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+
+    private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
+        // Internal buffer overflow or the watched folder became inaccessible -
+        // fall back to a full refresh rather than trying to recover the watcher.
+        Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+
+    private void RestartFileTreeRefreshTimer()
+    {
+        _fileTreeRefreshTimer.Stop();
+        _fileTreeRefreshTimer.Start();
+    }
+
+    private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _fileTreeRefreshTimer.Stop();
+        await RefreshFileTreePreservingExpansionAsync();
+    }
+
+    // Rebuilds the tree from disk, re-expanding whichever directories were
+    // expanded beforehand so an external change doesn't collapse the user's view.
+    private async Task RefreshFileTreePreservingExpansionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
+            return;
+
+        var expandedPaths = FileTreeItems
+            .Where(i => i.IsDirectory && i.IsExpanded)
+            .Select(i => i.FullPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var items = await BuildFileTreeItemsAsync(_currentFolderPath, depth: 0, expandedPaths);
+        ReplaceFileTreeItems(items);
+    }
+
+    // Like CreateFileTreeItemsAsync, but recurses into any directory whose path is
+    // in expandedPaths so previously-expanded subtrees come back expanded.
+    private static async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
+        string dirPath, int depth, HashSet<string> expandedPaths)
+    {
+        var result = new List<FileTreeItem>();
+        foreach (var item in await CreateFileTreeItemsAsync(dirPath, depth))
+        {
+            result.Add(item);
+            if (item.IsDirectory && expandedPaths.Contains(item.FullPath))
+            {
+                item.IsExpanded = true;
+                result.AddRange(await BuildFileTreeItemsAsync(item.FullPath, depth + 1, expandedPaths));
+            }
+        }
+        return result;
     }
 
     private async Task AppendDirectoryContentsAsync(string dirPath, int depth, int insertAfterIndex = -1)
@@ -9172,6 +9281,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentFolderPath = item.Path;
             AddRecentFolder(item.Path);
             await PopulateFileTreeAsync(item.Path);
+            SetupProjectFolderWatcher(item.Path);
             IsFileExplorerVisible = true;
             RefreshState(fullRefresh: true);
         }
@@ -11247,6 +11357,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
         CloseAllTerminalSessions();
         DisposeExtensionFolderWatchers();
+        DisposeProjectFolderWatcher();
         DisposeDiscordPresence();
         CurrentImagePreview = null;
     }
