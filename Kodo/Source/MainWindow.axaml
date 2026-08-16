@@ -38,6 +38,11 @@
             <Setter Property="Opacity" Value="0.6" />
         </Style>
 
+        <Style Selector="Border#ExplorerPanelSplitter:pointerover">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="0.6" />
+        </Style>
+
         <Style Selector="Button.chrome:disabled">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
@@ -615,7 +620,7 @@
     </Window.Styles>
 
     <!-- Root: activity bar | file explorer panel | editor/content area -->
-    <Grid ColumnDefinitions="60,Auto,*">
+    <Grid ColumnDefinitions="60,Auto,Auto,*">
 
         <!-- Activity bar (leftmost icon strip) -->
         <Border Grid.Column="0"
@@ -720,6 +725,8 @@
         <!-- Collapsible file explorer panel -->
         <Border Grid.Column="1"
                 Width="{Binding ExplorerPanelWidth}"
+                MinWidth="180"
+                MaxWidth="600"
                 IsVisible="{Binding IsFileExplorerVisible}"
                 VerticalAlignment="Stretch"
                 Background="{Binding SidebarBrush}"
@@ -1059,8 +1066,14 @@
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       MaxWidth="148" />
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.MaxWidth>
+                                                    <MultiBinding Converter="{x:Static kodo:ExplorerItemNameMaxWidthConverter.Instance}">
+                                                        <Binding ElementName="RootWindow" Path="ExplorerPanelWidth" />
+                                                        <Binding Path="IndentWidth" />
+                                                    </MultiBinding>
+                                                </TextBlock.MaxWidth>
+                                            </TextBlock>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
@@ -1071,8 +1084,21 @@
             </Grid>
         </Border>
 
+        <Border Grid.Column="2"
+                x:Name="ExplorerPanelSplitter"
+                Width="4"
+                Background="Transparent"
+                IsVisible="{Binding IsFileExplorerVisible}"
+                Cursor="SizeWestEast"
+                ToolTip.Tip="Drag to resize the file explorer panel"
+                PointerPressed="ExplorerPanelSplitter_OnPointerPressed"
+                PointerMoved="ExplorerPanelSplitter_OnPointerMoved"
+                PointerReleased="ExplorerPanelSplitter_OnPointerReleased"
+                PointerCaptureLost="ExplorerPanelSplitter_OnPointerCaptureLost"
+                DoubleTapped="ExplorerPanelSplitter_OnDoubleTapped" />
+
         <!-- Main content area (editor + settings) -->
-        <Grid Grid.Column="2" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
+        <Grid Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
 
             <StackPanel Grid.Row="0" Spacing="1">
                 <!-- Update available banner -->

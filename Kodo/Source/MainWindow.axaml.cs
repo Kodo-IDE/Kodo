@@ -20,10 +20,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Globalization;
 using Microsoft.Win32;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Data.Converters;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -191,6 +193,24 @@ public class FileTreeItem : INotifyPropertyChanged
                 ".gitignore" => "IGNR",
 			    _ => "..",
 			};
+    }
+}
+
+// Computes how much room a file-tree row's name TextBlock has to work with, so
+// long names truncate less (or not at all) as the user widens the explorer panel
+// via ExplorerPanelSplitter, instead of being capped at a fixed pixel width.
+internal sealed class ExplorerItemNameMaxWidthConverter : IMultiValueConverter
+{
+    public static readonly ExplorerItemNameMaxWidthConverter Instance = new();
+
+    private const double MinWidth = 40;
+
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2 || values[0] is not double panelWidth || values[1] is not double indentWidth)
+            return MinWidth;
+
+        return Math.Max(MinWidth, panelWidth - indentWidth - MainWindow.FileTreeRowFixedOverhead);
     }
 }
 
@@ -815,6 +835,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _terminalPanelDragStartPointerY;
     private double _terminalPanelDragStartHeight;
 
+    private double _explorerPanelWidth = AppSettings.DefaultExplorerPanelWidth;
+    private bool _isResizingExplorerPanel;
+    private double _explorerPanelDragStartPointerX;
+    private double _explorerPanelDragStartWidth;
+
     // Caches compiled KodoHighlightingDefinition per extension; building one compiles several regexes, expensive per tab switch.
     private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
         new(ReferenceEqualityComparer.Instance);
@@ -1161,6 +1186,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _tabSize = NormalizeTabSize(settings.TabSize);
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
         _terminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
+        _explorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
             ? DetectCountryCode()
             : settings.UserCountry.ToUpperInvariant();
@@ -4142,18 +4168,107 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Base width 240 + extra pixels per character beyond 2 in the longest icon label.
-    // 2-char labels ("Py","JS") → 240px; 3-char ("C++","F#") → 252px; 4-char ("Java") → 264px.
     public double ExplorerPanelWidth
     {
-        get
+        get => _explorerPanelWidth;
+        set
         {
-            var maxLen = FileTreeItems
-                .Select(i => (i.Icon ?? string.Empty).Length)
-                .DefaultIfEmpty(2)
-                .Max();
-            return 240 + Math.Max(0, maxLen - 2) * 12;
+            var normalized = NormalizeExplorerPanelWidth(value);
+            if (_explorerPanelWidth == normalized) return;
+            _explorerPanelWidth = normalized;
+            OnPropertyChanged();
+            SaveSettings();
         }
+    }
+
+    private const double MinExplorerPanelWidth = 180;
+    private const double MaxExplorerPanelWidth = 600;
+
+    private static double NormalizeExplorerPanelWidth(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(value, MinExplorerPanelWidth, MaxExplorerPanelWidth)
+            : AppSettings.DefaultExplorerPanelWidth;
+
+    // Manual drag handling, mirroring TerminalPanelSplitter_OnPointer* - the splitter
+    // sits on the panel's right edge, so dragging right grows it.
+    private void ExplorerPanelSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not InputElement element) return;
+        if (!e.GetCurrentPoint(element).Properties.IsLeftButtonPressed) return;
+
+        _isResizingExplorerPanel = true;
+        _explorerPanelDragStartPointerX = e.GetPosition(this).X;
+        _explorerPanelDragStartWidth = ExplorerPanelWidth;
+        e.Pointer.Capture(element);
+        e.Handled = true;
+    }
+
+    private void ExplorerPanelSplitter_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizingExplorerPanel) return;
+
+        var deltaX = e.GetPosition(this).X - _explorerPanelDragStartPointerX;
+        ExplorerPanelWidth = _explorerPanelDragStartWidth + deltaX;
+        e.Handled = true;
+    }
+
+    private void ExplorerPanelSplitter_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isResizingExplorerPanel) return;
+
+        _isResizingExplorerPanel = false;
+        e.Pointer.Capture(null);
+        // Flushes the final width immediately instead of waiting on the debounce timer, in case of a quick resize-then-close.
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    // Guards against a stray PointerCaptureLost leaving the panel stuck in resize mode.
+    private void ExplorerPanelSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_isResizingExplorerPanel) return;
+
+        _isResizingExplorerPanel = false;
+        SaveSettings(immediate: true);
+    }
+
+    // Chevron (16) + its margin (2) + icon viewbox (32) + icon/name spacing (6) +
+    // ItemsControl margin (8) + a little breathing room so text never touches the
+    // scrollbar. Shared with ExplorerItemNameMaxWidthConverter so the live column
+    // width and the auto-fit width agree on the same chrome.
+    internal const double FileTreeRowFixedOverhead = 16 + 2 + 32 + 6 + 8 + 10;
+
+    // Double-click the splitter to snap the panel to fit the widest currently-visible
+    // entry, the way VS Code's sidebar splitter does.
+    private void ExplorerPanelSplitter_OnDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        ExplorerPanelWidth = ComputeAutoFitExplorerPanelWidth();
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    private double ComputeAutoFitExplorerPanelWidth()
+    {
+        if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
+
+        var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Monospace");
+        var widest = 0.0;
+
+        foreach (var item in FileTreeItems)
+        {
+            var formatted = new FormattedText(
+                item.Name,
+                CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                typeface,
+                13,
+                Brushes.Black);
+
+            var total = item.IndentWidth + formatted.Width;
+            if (total > widest) widest = total;
+        }
+
+        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead);
     }
 
     public bool IsFileExplorerVisible
@@ -6597,6 +6712,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .ToList() ?? [];
             settings.TabSize = NormalizeTabSize(settings.TabSize);
             settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
+            settings.ExplorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
             return settings;
         }
         catch (Exception ex)
@@ -6657,6 +6773,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
             TerminalVisible                         = IsTerminalVisible,
             TerminalPanelHeight                     = TerminalPanelHeight,
+            ExplorerPanelWidth                      = ExplorerPanelWidth,
             HasCompletedTutorial                    = _hasCompletedTutorial,
             AccentColorMode                         = _accentColorMode,
             CustomAccentHex                         = _customAccentHex,
@@ -12693,6 +12810,8 @@ internal sealed class AppSettings
 {
     // Single source of truth for the default terminal panel height.
     public const double DefaultTerminalPanelHeight = 300;
+    // Single source of truth for the default file explorer panel width.
+    public const double DefaultExplorerPanelWidth = 260;
 
     public string ThemeName { get; set; } = "Dark";
     public bool AutoSaveEnabled { get; set; }
@@ -12729,6 +12848,7 @@ internal sealed class AppSettings
     public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
+    public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }
     public List<RecentFileEntry> RecentFiles { get; set; } = [];
