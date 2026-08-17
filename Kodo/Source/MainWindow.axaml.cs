@@ -502,6 +502,18 @@ public class MarketplaceExtension : INotifyPropertyChanged
         set { if (_fileName == value) return; _fileName = value; OnPropertyChanged(); }
     }
 
+    // Compiler-only metadata used by the editor's Run/Build buttons. Extensions never set these.
+    // FileExtensions maps open files onto this compiler; LanguageExtensionIds lists the language
+    // extensions it provides tooling for (so installing a compiler can also install its language
+    // counterpart). RunCommandTemplate/BuildCommandTemplate are command lines with {file}/{name}/
+    // {folder}/{args} placeholders; FileCommands override them per file extension where a compiler
+    // needs different tools for different file types (e.g. gcc for .c vs g++ for .cpp).
+    public string[] FileExtensions { get; init; } = [];
+    public string[] LanguageExtensionIds { get; init; } = [];
+    public string? RunCommandTemplate { get; init; }
+    public string? BuildCommandTemplate { get; init; }
+    public IReadOnlyDictionary<string, (string? Run, string? Build)>? FileCommands { get; init; }
+
     private Bitmap? _iconImage;
     public Bitmap? IconImage
     {
@@ -848,6 +860,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string CompilerIndexETagPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json.etag");
     private string? _compilerIndexETag;
+    // Parsed CompilerIndex.json entries from the last compiler load - lets a failed install
+    // re-resolve a single compiler's download on demand (see RefreshSingleCompilerResolutionAsync).
+    private List<CompilerIndexEntry> _compilerIndexEntries = [];
     // Compilers install to a folder of their own (they're standalone toolchains, not Kodo
     // extensions) - this JSON file is the source of truth for "is compiler X installed".
     private string CompilerInstallRegistryPath =>
@@ -1280,6 +1295,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : null;
         LoadRecentFiles(settings.RecentFiles);
         _isPSReadLinePredictionEnabled = settings.PSReadLinePredictionEnabled;
+        foreach (var pair in settings.CustomRunCommands)
+            _customRunCommands[pair.Key] = pair.Value;
+        foreach (var pair in settings.CustomBuildCommands)
+            _customBuildCommands[pair.Key] = pair.Value;
+        foreach (var pair in settings.CompilerOverrides)
+            _compilerOverrides[pair.Key] = pair.Value;
         RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
@@ -2400,6 +2421,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(HasVisibleCompilerExtensions));
         OnPropertyChanged(nameof(HasVisibleInstalledCompilerExtensions));
         OnPropertyChanged(nameof(HasVisibleInstalledExtensionsOrCompilers));
+        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsAndCompilers));
         OnPropertyChanged(nameof(IsInstalledCompilersEmptyStateVisible));
     }
 
@@ -3848,6 +3870,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (EditorTextBox is null)
             return;
 
+        RefreshRunBuildState();
+
         if (string.IsNullOrWhiteSpace(_currentFilePath))
         {
             CurrentLanguageExtension = null;
@@ -4469,6 +4493,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // installed extensions and installed compilers as one continuous list.
     public bool HasVisibleInstalledExtensionsOrCompilers =>
         HasVisibleInstalledExtensions || HasVisibleInstalledCompilerExtensions;
+    public bool HasVisibleInstalledExtensionsAndCompilers =>
+        HasVisibleInstalledExtensions && HasVisibleInstalledCompilerExtensions;
     public string InstalledTabLabel => $"Installed ({InstalledExtensionsCount})";
     public string MarketplaceTabLabel => $"Marketplace ({MarketplaceExtensions.Count})";
     public string CompilersTabLabel => "Compilers";
@@ -7067,7 +7093,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LastOpenedFolderPath = _currentFolderPath,
             RecentFiles = RecentFiles
                 .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened, IsPinned = f.IsPinned })
-                .ToList()
+                .ToList(),
+            CustomRunCommands = new Dictionary<string, string>(_customRunCommands, StringComparer.OrdinalIgnoreCase),
+            CustomBuildCommands = new Dictionary<string, string>(_customBuildCommands, StringComparer.OrdinalIgnoreCase),
+            CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase)
         };
     }
 
@@ -8148,6 +8177,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetupProjectFolderWatcher(path);
         IsFileExplorerVisible = true;
         RefreshState(fullRefresh: true);
+        RefreshRunBuildState();
     }
 
     private void CloseFolder()
@@ -8157,6 +8187,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FileTreeItems.Clear();
         IsFileExplorerVisible = false;
         RefreshState(fullRefresh: true);
+        RefreshRunBuildState();
     }
 
     private async Task<bool> SaveAsync(bool allowPromptForPath, bool forcePromptForPath)
@@ -13109,7 +13140,7 @@ internal sealed class AppSettings
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;
     public bool WordWrapEnabled { get; set; }
-    // Predictive completion (Insight). Defaults to true - on unless the user disables it.
+    // Predictive completion (Insight). Defaults to true; on unless the user disables it.
     public bool InsightEnabled { get; set; } = true;
 
     [System.Text.Json.Serialization.JsonIgnore]
@@ -13166,6 +13197,15 @@ internal sealed class AppSettings
     // opt-in above. There's no decline path; this only tracks whether the user has scrolled
     // through and accepted the terms at least once.
     public bool HasAcceptedPrivacyPolicy { get; set; }
+
+    // Custom Run/Build commands set from the editor header dropdowns, keyed by compiler id.
+    // They override whatever the compiler index provides (useful when a compiler has no
+    // command template, or when the user wants to change how a tool is invoked).
+    public Dictionary<string, string> CustomRunCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, string> CustomBuildCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    // File extension (lowercased) -> compiler id. An explicit user choice made from the
+    // compiler icon button; wins over automatic detection for that file type.
+    public Dictionary<string, string> CompilerOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// One entry in AppSettings.RecentFiles - a recently opened file or folder.

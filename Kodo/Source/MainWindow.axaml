@@ -49,6 +49,71 @@
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
         </Style>
 
+        <!-- Run / Build split buttons in the editor header -->
+        <Style Selector="Border.runbuildgroup">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+
+        <Style Selector="Button.runbuildprimary">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8,0,0,8" />
+            <Setter Property="Padding" Value="14,7" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style Selector="Button.runbuildprimary:pointerover">
+            <Setter Property="Opacity" Value="0.85" />
+        </Style>
+
+        <Style Selector="Button.runbuildprimary:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.runbuildarrow">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="0,8,8,0" />
+            <Setter Property="Padding" Value="8,7" />
+        </Style>
+
+        <Style Selector="Button.runbuildarrow:pointerover">
+            <Setter Property="Opacity" Value="0.85" />
+        </Style>
+
+        <Style Selector="Button.runbuildarrow:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <!-- Compiler / language icon switch button in the editor header -->
+        <Style Selector="Button.compilericon">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="Width" Value="38" />
+            <Setter Property="Height" Value="30" />
+        </Style>
+
+        <Style Selector="Button.compilericon:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
+        <Style Selector="Button.compilericon:disabled">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+
         <!-- Group header variant: full-row hit-testable via Border-backed template.
              Avalonia's Fluent theme paints :pointerover directly on
              ContentPresenter#PART_ContentPresenter, bypassing any wrapper border.
@@ -1219,7 +1284,60 @@
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     Spacing="12"
-                                    VerticalAlignment="Center" />
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsEditorTabsVisible}">
+                            <!-- Run -->
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            Content="Run"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="RunButton_OnClick" />
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            Content="&#x25BE;"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="RunMenuButton_OnClick" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Build -->
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            Content="Build"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildButton_OnClick" />
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            Content="&#x25BE;"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildMenuButton_OnClick" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Compiler / language switcher -->
+                            <Button Classes="compilericon"
+                                    IsVisible="{Binding IsCompilerIconVisible}"
+                                    ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                    Click="CompilerIconButton_OnClick">
+                                <Panel>
+                                    <Image Source="{Binding ActiveCompilerExtension.IconImage}"
+                                           Width="22"
+                                           Height="22"
+                                           Stretch="Uniform"
+                                           IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                    <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
+                                             Width="22"
+                                             Height="22"
+                                             IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </Panel>
+                            </Button>
+                        </StackPanel>
                     </Grid>
                 </Border>
 
@@ -3669,6 +3787,11 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <Border IsVisible="{Binding HasVisibleInstalledExtensionsAndCompilers}"
+                                    Height="2"
+                                    Margin="0,4"
+                                    Background="{Binding SurfaceBorderBrush}" />
 
                             <!-- Installed compilers - same flat "extensionrow" template as installed
                                  extensions above, so both render as one continuous list. Compilers come

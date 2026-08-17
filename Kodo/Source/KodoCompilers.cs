@@ -5,13 +5,17 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Input;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Microsoft.Win32;
 using Kodo.Models;
@@ -20,7 +24,6 @@ using System.Threading;
 
 namespace Kodo;
 
-// Persisted record of a locally-installed compiler, keyed by compiler id in installed-compilers.json.
 public sealed class InstalledCompilerRecord
 {
     public string Version { get; set; } = string.Empty;
@@ -28,9 +31,6 @@ public sealed class InstalledCompilerRecord
     public string InstalledExePath { get; set; } = string.Empty;
 }
 
-// A compiler the user pointed Kodo at directly (or that Kodo found on this machine by itself),
-// as opposed to one installed through CompilerIndex.json. These have no installer/updater of
-// their own - Kodo is just remembering where they are.
 public sealed class ManualCompilerRecord
 {
     public string Name { get; set; } = string.Empty;
@@ -41,16 +41,9 @@ public sealed class ManualCompilerRecord
     public DateTime AddedOnUtc { get; set; }
     public bool AutoDetected { get; set; }
 
-    // Matches this record back to an entry in CompilerIndex.json (e.g. "dotnet-sdk", "python")
-    // so the Installed tab can show the same icon as the Marketplace/Compilers tab instead of
-    // falling back to a text abbreviation. Null when there's no known match (e.g. MSVC's cl.exe,
-    // or a manually browsed-to executable Kodo doesn't recognize).
     public string? CanonicalCompilerId { get; set; }
 }
 
-// Root object for manual-compilers.json. DismissedAutoDetectIds remembers auto-detected
-// compilers the user explicitly removed, so the next auto-detect pass doesn't just add them
-// straight back.
 public sealed class ManualCompilerRegistryFile
 {
     public Dictionary<string, ManualCompilerRecord> Entries { get; set; } = new();
@@ -63,13 +56,8 @@ public sealed record CompilerResolution(string Version, string DownloadUrl, stri
 
 public partial class MainWindow
 {
-    // Compilers tab data source: same GitHub-index/disk-cache/ETag pattern as the marketplace,
-    // pointed at CompilerIndex.json's "compilers" array instead of ExtensionsIndex.json's "extensions".
     private async Task LoadCompilerExtensionsAsync(bool forceResolve = false)
     {
-        // The very first compiler load of an app session always re-checks live versions
-        // regardless of the caller's forceResolve, so "reopen the app" behaves like a refresh
-        // even though the on-disk cache from the previous run is otherwise fully populated.
         var effectiveForceResolve = forceResolve || !_hasResolvedCompilersThisSession;
         _hasResolvedCompilersThisSession = true;
 
@@ -147,15 +135,11 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            // Compilers are a secondary, best-effort tab - swallow errors instead of
-            // propagating (unlike the marketplace, a stale/missing compiler list shouldn't
-            // block the rest of the Extensions page from loading).
             loadErrors.Add($"Compiler index fetch failed: {DescribeFetchFailure(ex)}");
             KodoDiagnostics.LogDebug("Compiler index fetch failed.", ex);
         }
 
-        // Instant, network-free paint using cached/fallback versions - the live lookup
-        // (GitHub releases, nodejs.org, go.dev, npm, ...) happens after, in the background.
+        _compilerIndexEntries = compilerEntries;
         var resolutionCache = LoadCompilerResolutionCache();
         var compilerExtensions = BuildCompilerExtensionsFromCacheOrFallback(compilerEntries, resolutionCache);
 
@@ -176,15 +160,9 @@ public partial class MainWindow
                 .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
                 .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
 
-            // CompilerExtensions has real icon URLs now (it didn't yet when
-            // RefreshManualCompilerExtensions first ran above) - rebuild the manual/auto-detected
-            // entries so they pick up matching icons via CanonicalCompilerId.
             RefreshManualCompilerExtensions();
         });
         _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
-        // SyncMarketplaceExtensionCollection assigns these exact object instances into
-        // CompilerExtensions (see its ReferenceEquals check), so mutating compilerExtensions[i]
-        // in place from the background resolver is enough to update the live, bound collection.
         _ = RefreshCompilerResolutionsAsync(compilerEntries, compilerExtensions, effectiveForceResolve);
     }
 
@@ -243,11 +221,19 @@ public partial class MainWindow
             {
                 var isUpdateAvailable = CompareExtensionVersions(entry.Version, record.Version) > 0;
                 entry.SetCompilerInstalledState(record.Version, record.InstalledOnUtc, isUpdateAvailable);
+                continue;
             }
-            else
+
+            var manualMatch = _manualCompilers.Values.FirstOrDefault(r =>
+                string.Equals(r.CanonicalCompilerId, entry.Id, StringComparison.OrdinalIgnoreCase));
+            if (manualMatch is not null)
             {
-                entry.SetCompilerInstalledState(null, null, isUpdateAvailable: false);
+                var version = string.IsNullOrWhiteSpace(manualMatch.Version) ? "Local" : manualMatch.Version;
+                entry.SetCompilerInstalledState(version, manualMatch.AddedOnUtc, isUpdateAvailable: false);
+                continue;
             }
+
+            entry.SetCompilerInstalledState(null, null, isUpdateAvailable: false);
         }
         NotifyExtensionFiltersChanged();
     }
@@ -292,14 +278,8 @@ public partial class MainWindow
         }
     }
 
-    // Rebuilds ManualCompilerExtensions from _manualCompilers. These entries are always
-    // "installed" the moment they're tracked - there's no install/update step for them, Kodo is
-    // just remembering where an already-installed compiler lives.
     private void RefreshManualCompilerExtensions()
     {
-        // Borrow icons from the official CompilerIndex.json entries where a record has a
-        // CanonicalCompilerId match, so e.g. an auto-detected "Python" shows the same icon as
-        // the Python entry in the Compilers tab instead of a text abbreviation.
         var canonicalIconMap = CompilerExtensions
             .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
             .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
@@ -313,6 +293,7 @@ public partial class MainWindow
             .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
         if (manualIconMap.Count > 0)
             _ = FetchMarketplaceIconsAsync(manualIconMap, ManualCompilerExtensions);
+        RefreshRunBuildState();
     }
 
     private static MarketplaceExtension BuildManualCompilerExtension(
@@ -371,15 +352,11 @@ public partial class MainWindow
         SaveManualCompilerRegistry();
     }
 
-    // Clears Kodo's tracking of a manually-added or auto-detected compiler. Unlike
-    // ForgetLocalCompilerRecord, this never touches disk beyond our own registry - Kodo never
-    // installed these, it was just pointed at (or found) them.
     private void ForgetManualCompilerRecord(MarketplaceExtension compilerExtension)
     {
         if (_manualCompilers.Remove(compilerExtension.Id) &&
             compilerExtension.Id.StartsWith("auto:", StringComparison.Ordinal))
         {
-            // Remember it was dismissed so the next auto-detect pass doesn't just re-add it.
             _autoDetectDismissedIds.Add(compilerExtension.Id);
         }
 
@@ -408,12 +385,6 @@ public partial class MainWindow
         }
     }
 
-    // Compilers Kodo will silently look for on this machine - PATH scans only, plus a vswhere
-    // lookup for MSVC's cl.exe (which normally isn't on PATH outside a Developer Command
-    // Prompt). Every candidate that isn't found is just skipped - see AutoDetectDefaultCompilersAsync.
-    // CanonicalCompilerId maps each candidate to its matching entry in CompilerIndex.json (null
-    // when there isn't a clean one-to-one match) so the auto-detected entry can borrow that
-    // entry's icon instead of falling back to a text abbreviation.
     private static readonly (string Id, string DisplayName, string Author, string[] ExeNames, string? CanonicalCompilerId)[] AutoDetectCompilerCandidates =
     [
         ("dotnet-cli", ".NET SDK (dotnet)", "Microsoft", new[] { "dotnet.exe" }, "dotnet-sdk"),
@@ -432,10 +403,6 @@ public partial class MainWindow
         ("julia-auto", "Julia", "JuliaLang", new[] { "julia.exe" }, "julia")
     ];
 
-    // Silently scans PATH (plus MSVC via vswhere) for compilers already on this machine, so the
-    // user doesn't have to hunt down filepaths for tools they already have installed. This must
-    // never surface a warning/error dialog - not finding a given compiler is the overwhelmingly
-    // common case, so every step here is wrapped and failures are just skipped.
     private async Task AutoDetectDefaultCompilersAsync()
     {
         try
@@ -452,7 +419,6 @@ public partial class MainWindow
                 }
                 catch
                 {
-                    // Never let detection surface an error.
                 }
 
                 foreach (var candidate in AutoDetectCompilerCandidates)
@@ -471,7 +437,6 @@ public partial class MainWindow
                     }
                     catch
                     {
-                        // Never let detection surface an error.
                     }
                 }
 
@@ -492,12 +457,12 @@ public partial class MainWindow
             if (addedAny)
             {
                 RefreshManualCompilerExtensions();
-                NotifyExtensionFiltersChanged();
-            }
+NotifyExtensionFiltersChanged();
+        RefreshRunBuildState();
+    }
         }
         catch
         {
-            // Best-effort background scan - swallow anything unexpected rather than showing a dialog.
         }
     }
 
@@ -516,13 +481,11 @@ public partial class MainWindow
                 }
                 catch
                 {
-                    // Malformed PATH entry - skip it.
                 }
             }
         }
         catch
         {
-            // No PATH, or otherwise inaccessible - nothing to find.
         }
 
         return null;
@@ -571,19 +534,52 @@ public partial class MainWindow
         }
     }
 
-    // A parsed CompilerIndex.json entry. Unlike MarketplaceExtension (which every compiler is
-    // eventually turned into), this has no Version/DownloadUrl/FileName of its own - only a
-    // Resolver describing how to look those up live, plus a Fallback triple to fall back on for
-    // entries with no automated resolver at all (see CompilerResolvers.cs).
     private sealed record CompilerIndexEntry(
         string Id, string Name, string Type, string Author, string Description, string IconUrl,
         CompilerResolverSpec? Resolver,
-        string FallbackVersion, string FallbackDownloadUrl, string FallbackFileName);
+        string FallbackVersion, string FallbackDownloadUrl, string FallbackFileName,
+        string[] FileExtensions, string[] LanguageExtensionIds,
+        string? RunCommandTemplate, string? BuildCommandTemplate,
+        IReadOnlyDictionary<string, CompilerFileCommands>? FileCommands);
 
-    // Parses CompilerIndex.json's new schema. Deliberately separate from
-    // ParseAndApplyMarketplaceIndex - the Marketplace (ExtensionsIndex.json) schema is untouched
-    // and still carries hardcoded version/downloadUrl/fileName; only CompilerIndex.json moved to
-    // the resolver-based schema.
+    private sealed record CompilerFileCommands(string? Run, string? Build);
+
+    private sealed record BuiltinCompilerFallback(
+        string[] FileExtensions, string[] LanguageExtensionIds,
+        string? Run, string? Build,
+        IReadOnlyDictionary<string, (string? Run, string? Build)>? FileCommands);
+
+    private static readonly Dictionary<string, BuiltinCompilerFallback> BuiltinCompilerFallbacks =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["dotnet-sdk"] = new([".cs", ".fs", ".vb"], ["csharp-kodo-extension"], "dotnet run", "dotnet build", null),
+            ["go"] = new([".go"], [], "go run {file}", "go build -o {name}.exe", null),
+            ["temurin-jdk"] = new([".java"], ["java-kodo-extension"], "java {name}", "javac {file}", null),
+            ["llvm-clang"] = new([".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"], ["cpp-kodo-extension"], null, "clang {file} -o {name}.exe", null),
+            ["msys2-mingw"] = new([".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"], ["cpp-kodo-extension"], null, "gcc {file} -o {name}.exe", null),
+            ["gcc"] = new([".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"], ["c-kodo-extension", "cpp-kodo-extension"], null, null,
+                new Dictionary<string, (string?, string?)>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [".c"] = (null, "gcc {file} -o {name}.exe"),
+                    [".cpp"] = (null, "g++ {file} -o {name}.exe"),
+                }),
+            ["nodejs"] = new([".js", ".jsx", ".mjs", ".cjs"], ["javascript-kodo-extension"], "node {file}", null, null),
+            ["strawberry-perl"] = new([".pl", ".pm"], [], "perl {file}", null, null),
+            ["python"] = new([".py", ".pyw"], ["python-kodo-extension"], "python {file}", null, null),
+            ["rubyinstaller"] = new([".rb"], ["ruby-kodo-extension"], "ruby {file}", null, null),
+            ["rust-rustup"] = new([".rs"], ["rust-kodo-extension"], "cargo run", "cargo build", null),
+            ["shine-compiler"] = new([".shine"], ["shine-kodo-extension"], "shine {file}", "shinec {file} -o {name}.exe", null),
+            ["swift"] = new([".swift"], ["swift-kodo-extension"], "swift {file}", "swiftc {file} -o {name}.exe", null),
+            ["zig"] = new([".zig"], ["zig-kodo-extension"], "zig run {file}", "zig build-exe {file} -femit-bin={name}.exe", null),
+            ["php"] = new([".php"], ["php-kodo-extension"], "php {file}", null, null),
+            ["kotlin"] = new([".kt", ".kts"], ["kotlin-kodo-extension"], "kotlin {name}.jar", "kotlinc {file} -include-runtime -d {name}.jar", null),
+            ["typescript"] = new([".ts", ".tsx", ".mts", ".cts"], ["typescript-kodo-extension"], "ts-node {file}", "tsc {file}", null),
+            ["lua"] = new([".lua"], ["lua-kodo-extension"], "lua {file}", null, null),
+            ["coffeescript"] = new([".coffee"], ["coffeescript-kodo-extension"], "coffee {file}", "coffee -c {file}", null),
+            ["nasm"] = new([".asm", ".nasm", ".s"], [], null, "nasm -f win64 {file} -o {name}.obj", null),
+            ["holyc"] = new([".hc"], [], null, "holyc {file}", null),
+        };
+
     private static List<CompilerIndexEntry> ParseCompilerIndexEntries(string json, List<string> loadErrors)
     {
         var result = new List<CompilerIndexEntry>();
@@ -628,6 +624,48 @@ public partial class MainWindow
                     }
                 }
 
+                string? GetOptStr(string prop) =>
+                    item.TryGetProperty(prop, out var el) && el.ValueKind == JsonValueKind.String
+                        ? el.GetString()
+                        : null;
+
+                string[] ParseStringArray(string prop)
+                {
+                    var list = new List<string>();
+                    if (item.TryGetProperty(prop, out var el) && el.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var sub in el.EnumerateArray())
+                        {
+                            if (sub.ValueKind != JsonValueKind.String) continue;
+                            var value = sub.GetString();
+                            if (!string.IsNullOrWhiteSpace(value))
+                                list.Add(value);
+                        }
+                    }
+                    return list.ToArray();
+                }
+
+                Dictionary<string, CompilerFileCommands>? fileCommands = null;
+                if (item.TryGetProperty("fileCommands", out var fcEl) && fcEl.ValueKind == JsonValueKind.Object)
+                {
+                    fileCommands = new(StringComparer.OrdinalIgnoreCase);
+                    foreach (var prop in fcEl.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind != JsonValueKind.Object) continue;
+                        var runCmd = prop.Value.TryGetProperty("run", out var runEl) && runEl.ValueKind == JsonValueKind.String
+                            ? runEl.GetString() : null;
+                        var buildCmd = prop.Value.TryGetProperty("build", out var buildEl) && buildEl.ValueKind == JsonValueKind.String
+                            ? buildEl.GetString() : null;
+                        if (string.IsNullOrWhiteSpace(runCmd) && string.IsNullOrWhiteSpace(buildCmd))
+                            continue;
+                        fileCommands[prop.Name] = new CompilerFileCommands(
+                            string.IsNullOrWhiteSpace(runCmd) ? null : runCmd,
+                            string.IsNullOrWhiteSpace(buildCmd) ? null : buildCmd);
+                    }
+                    if (fileCommands.Count == 0)
+                        fileCommands = null;
+                }
+
                 var fallbackVersion = string.Empty;
                 var fallbackDownloadUrl = string.Empty;
                 var fallbackFileName = string.Empty;
@@ -638,10 +676,33 @@ public partial class MainWindow
                     fallbackFileName = fallbackEl.TryGetProperty("fileName", out var ffEl) ? ffEl.GetString() ?? string.Empty : string.Empty;
                 }
 
+                var fileExtensions = ParseStringArray("fileExtensions");
+                var languageExtensionIds = ParseStringArray("languageExtensions");
+                var runTemplate = GetOptStr("run");
+                var buildTemplate = GetOptStr("build");
+
+                if (fileExtensions.Length == 0 && BuiltinCompilerFallbacks.TryGetValue(id, out var builtin))
+                {
+                    fileExtensions = builtin.FileExtensions;
+                    if (languageExtensionIds.Length == 0)
+                        languageExtensionIds = builtin.LanguageExtensionIds;
+                    runTemplate ??= builtin.Run;
+                    buildTemplate ??= builtin.Build;
+                    if (fileCommands is null && builtin.FileCommands is not null)
+                    {
+                        fileCommands = builtin.FileCommands
+                            .ToDictionary(kv => kv.Key, kv => new CompilerFileCommands(kv.Value.Run, kv.Value.Build),
+                                StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+
                 result.Add(new CompilerIndexEntry(
                     id, GetStr("name"), GetStr("type"), GetStr("author"), GetStr("description"),
                     NormalizeGitHubUrl(GetStr("iconUrl")), resolver,
-                    fallbackVersion, fallbackDownloadUrl, fallbackFileName));
+                    fallbackVersion, fallbackDownloadUrl, fallbackFileName,
+                    fileExtensions, languageExtensionIds,
+                    runTemplate, buildTemplate,
+                    fileCommands));
             }
             catch (Exception itemEx)
             {
@@ -661,16 +722,9 @@ public partial class MainWindow
         public DateTime ResolvedUtc { get; set; }
     }
 
-    // Disk cache for resolved compiler versions, separate from CompilerIndexCachePath (which
-    // only caches the raw index JSON). Avoids re-hitting ~35 different vendor endpoints
-    // (GitHub, npm, nodejs.org, go.dev, ...) on every single launch/tab-open.
     private string CompilerResolvedCachePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "resolved-compiler-versions.json");
 
-    // Once a compiler has a cache entry (real resolution or fallback), it's only re-checked when
-    // explicitly asked to be: the Refresh button (forceResolve: true) or the first compiler load
-    // of this app session (see _hasResolvedCompilersThisSession below). Everything in between
-    // reads straight from disk - no re-hitting ~35 vendor endpoints on every tab open.
     private bool _hasResolvedCompilersThisSession;
 
     private Dictionary<string, ResolvedCompilerCacheEntry> LoadCompilerResolutionCache()
@@ -706,10 +760,20 @@ public partial class MainWindow
         }
     }
 
-    // Fast, network-free pass: builds the visible MarketplaceExtension list from whatever's
-    // already known (disk cache, however stale, or the CompilerIndex.json "fallback" block for
-    // entries with no automated resolver) so the Compilers tab paints instantly. Live values
-    // are then patched in by RefreshCompilerResolutionsAsync once resolution completes.
+    private void InvalidateCompilerResolution(string compilerId)
+    {
+        try
+        {
+            var cache = LoadCompilerResolutionCache();
+            if (cache.Remove(compilerId))
+                SaveCompilerResolutionCache(cache);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Failed to invalidate resolution cache entry for '{compilerId}'.", ex);
+        }
+    }
+
     private static List<MarketplaceExtension> BuildCompilerExtensionsFromCacheOrFallback(
         List<CompilerIndexEntry> entries,
         Dictionary<string, ResolvedCompilerCacheEntry> cache)
@@ -758,20 +822,22 @@ public partial class MainWindow
                 Description = description,
                 DownloadUrl = downloadUrl,
                 FileName = fileName,
-                IconUrl = entry.IconUrl
+                IconUrl = entry.IconUrl,
+                FileExtensions = entry.FileExtensions,
+                LanguageExtensionIds = entry.LanguageExtensionIds,
+                RunCommandTemplate = entry.RunCommandTemplate,
+                BuildCommandTemplate = entry.BuildCommandTemplate,
+                FileCommands = entry.FileCommands is null
+                    ? null
+                    : entry.FileCommands.ToDictionary(
+                        kv => kv.Key,
+                        kv => (kv.Value.Run, kv.Value.Build),
+                        StringComparer.OrdinalIgnoreCase)
             });
         }
         return result;
     }
 
-    // Background pass: resolves the live version/installer for every non-manual compiler that
-    // either has no cache entry yet, or is being force-refreshed (Refresh button, or the first
-    // compiler load of this app session), then patches the results into the already-visible
-    // MarketplaceExtension objects in place (Version/DownloadUrl/FileName are mutable precisely
-    // for this). A single vendor being down/slow/rate-limited only leaves that one entry showing
-    // its last-known-good (or fallback) version - it never blocks the rest of the tab. Whatever
-    // comes out of this pass - success or fallback - gets written to disk so it sticks until the
-    // next forced refresh instead of being re-fetched on every ordinary tab open.
     private async Task RefreshCompilerResolutionsAsync(List<CompilerIndexEntry> entries, List<MarketplaceExtension> liveExtensions, bool forceResolve)
     {
         var cache = LoadCompilerResolutionCache();
@@ -830,7 +896,48 @@ public partial class MainWindow
         });
     }
 
-    // Switches to the Compilers tab and refreshes the compiler listing (respecting the normal refresh cooldown).
+    private async Task RefreshSingleCompilerResolutionAsync(string compilerId)
+    {
+        var entry = _compilerIndexEntries.FirstOrDefault(e =>
+            string.Equals(e.Id, compilerId, StringComparison.OrdinalIgnoreCase));
+        if (entry?.Resolver is null ||
+            string.Equals(entry.Resolver.Kind, "manual", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        var resolution = await ResolveCompilerAsync(entry.Id, entry.Resolver).ConfigureAwait(false);
+        if (resolution is null)
+            return;
+
+        try
+        {
+            var cache = LoadCompilerResolutionCache();
+            cache[entry.Id] = new ResolvedCompilerCacheEntry
+            {
+                Version = resolution.Version,
+                DownloadUrl = resolution.DownloadUrl,
+                FileName = resolution.FileName,
+                ResolvedUtc = DateTime.UtcNow
+            };
+            SaveCompilerResolutionCache(cache);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Failed to update resolution cache for '{compilerId}'.", ex);
+        }
+
+        var live = CompilerExtensions.FirstOrDefault(e =>
+            string.Equals(e.Id, compilerId, StringComparison.OrdinalIgnoreCase));
+        if (live is null)
+            return;
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            live.Version = resolution.Version;
+            live.DownloadUrl = resolution.DownloadUrl;
+            live.FileName = resolution.FileName;
+        });
+    }
+
     private void CompilersTabButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsCompilersTabSelected = true;
@@ -843,14 +950,24 @@ public partial class MainWindow
             await InstallCompilerExtensionAsync(compilerExtension);
     }
 
-    // Compilers are standalone installer executables, not zip'd Kodo extensions - this
-    // downloads the exe, saves it under CompilersFolderPath, and launches the installer
-    // for the user to run. "Installed" is recorded as soon as the installer is launched
-    // (Kodo has no way to know when a third-party installer wizard actually finishes).
     private async Task InstallCompilerExtensionAsync(MarketplaceExtension compilerExtension)
     {
         if (compilerExtension.IsInstalling || (compilerExtension.IsInstalled && !compilerExtension.IsUpdateAvailable))
             return;
+
+        var localInstall = DescribeLocalCompilerInstall(compilerExtension);
+        if (localInstall is not null)
+        {
+            var proceed = await ShowConfirmationDialogAsync(
+                "Existing compiler detected",
+                $"Kodo can see an existing install of {compilerExtension.Name} on this machine:\n\n" +
+                $"{localInstall}\n\n" +
+                "Continuing will download and run the installer again, which may overwrite or " +
+                "conflict with the existing copy. Continue?",
+                confirmLabel: "Continue",
+                cancelLabel: "Cancel");
+            if (!proceed) return;
+        }
 
         RefreshMarketplaceConnectivityState();
         compilerExtension.IsInstalling = true;
@@ -882,14 +999,16 @@ public partial class MainWindow
                     using var downloadResponse = await MarketplaceHttpClient.SendAsync(
                         downloadRequest, HttpCompletionOption.ResponseContentRead, ct);
                     if (!downloadResponse.IsSuccessStatusCode)
+                    {
+                        InvalidateCompilerResolution(compilerExtension.Id);
                         throw new HttpRequestException(
                             $"Unable to download {compilerExtension.Name} installer (HTTP {(int)downloadResponse.StatusCode}).");
+                    }
                     return await downloadResponse.Content.ReadAsByteArrayAsync(ct);
                 });
 
             await File.WriteAllBytesAsync(outputPath, bytes);
 
-            // Hand off to the OS installer - Kodo doesn't drive the wizard itself.
             Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
 
             _installedCompilers[compilerExtension.Id] = new InstalledCompilerRecord
@@ -901,6 +1020,8 @@ public partial class MainWindow
             SaveInstalledCompilerRegistry();
             SyncCompilerInstallStates();
 
+            await InstallPairedLanguageExtensionsAsync(compilerExtension);
+
             ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
         }
         catch (Exception ex)
@@ -909,6 +1030,8 @@ public partial class MainWindow
             RefreshMarketplaceConnectivityState($"Compiler install - {compilerExtension.Name}", ex);
             ExtensionsStatusText = $"Failed to install {compilerExtension.Name}: {ex.Message}";
             await ShowWarningDialogAsync($"Compiler install - {compilerExtension.Name}", ex);
+            if (ex is HttpRequestException)
+                _ = RefreshSingleCompilerResolutionAsync(compilerExtension.Id);
         }
         finally
         {
@@ -916,6 +1039,87 @@ public partial class MainWindow
             NotifyExtensionActionStateChanged();
             SyncCompilerInstallStates();
         }
+    }
+
+    private async Task InstallPairedLanguageExtensionsAsync(MarketplaceExtension compilerExtension)
+    {
+        if (compilerExtension.LanguageExtensionIds.Length == 0)
+            return;
+
+        var names = new List<string>();
+        foreach (var id in compilerExtension.LanguageExtensionIds)
+        {
+            var friendly = id;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var ext = MarketplaceExtensions.FirstOrDefault(e =>
+                    string.Equals(e.Id, id, StringComparison.OrdinalIgnoreCase));
+                if (ext is not null) friendly = ext.Name;
+            });
+            names.Add(friendly);
+        }
+
+        var installExtension = await ShowConfirmationDialogAsync(
+            "Install language extension?",
+            $"{compilerExtension.Name} is paired with the following language extension(s):\n\n" +
+            $"  {string.Join(", ", names)}\n\n" +
+            "Install the language extension(s) as well? The compiler will still install if you skip.",
+            confirmLabel: "Install extensions",
+            cancelLabel: "Compiler only");
+        if (!installExtension) return;
+
+        foreach (var languageExtensionId in compilerExtension.LanguageExtensionIds)
+        {
+            MarketplaceExtension? languageExtension = null;
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                languageExtension = MarketplaceExtensions.FirstOrDefault(ext =>
+                    string.Equals(ext.Id, languageExtensionId, StringComparison.OrdinalIgnoreCase));
+            });
+
+            if (languageExtension is null || (languageExtension.IsInstalled && !languageExtension.IsUpdateAvailable))
+                continue;
+
+            try
+            {
+                await InstallMarketplaceExtensionAsync(languageExtension);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug(
+                    $"Failed to install paired language extension '{languageExtensionId}' for compiler '{compilerExtension.Name}'.", ex);
+            }
+        }
+    }
+
+    private string? DescribeLocalCompilerInstall(MarketplaceExtension compilerExtension)
+    {
+        var id = compilerExtension.Id;
+
+        if (_installedCompilers.TryGetValue(id, out var installed))
+        {
+            var version = string.IsNullOrWhiteSpace(installed.Version) ? "unknown version" : $"v{installed.Version}";
+            var location = string.IsNullOrWhiteSpace(installed.InstalledExePath)
+                ? string.Empty
+                : $"\n  Location: {installed.InstalledExePath}";
+            return $"  Tracked install ({version}){location}\n  Installed: {installed.InstalledOnUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
+        }
+
+        ManualCompilerRecord? match = null;
+        if (_manualCompilers.TryGetValue(id, out var direct))
+            match = direct;
+        else
+            match = _manualCompilers.Values.FirstOrDefault(r =>
+                string.Equals(r.CanonicalCompilerId, id, StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
+        {
+            var version = string.IsNullOrWhiteSpace(match.Version) ? "unknown version" : match.Version;
+            var kind = match.AutoDetected ? "auto-detected" : "manually tracked";
+            return $"  {match.Name} ({version}, {kind})\n  Executable: {match.ExecutablePath}";
+        }
+
+        return null;
     }
 
     private void ManualCompilerPathTextBox_OnKeyDown(object? sender, KeyEventArgs e)
@@ -928,9 +1132,6 @@ public partial class MainWindow
     private void AddManualCompilerButton_OnClick(object? sender, RoutedEventArgs e) =>
         _ = AddManualCompilerFromTextBoxAsync();
 
-    // Adds whatever's in ManualCompilerPathText as a tracked compiler. No error dialogs here -
-    // a bad path just gets a quiet status-text message, same as everywhere else compiler state
-    // is reported.
     private async Task AddManualCompilerFromTextBoxAsync()
     {
         var path = ManualCompilerPathText?.Trim().Trim('"') ?? string.Empty;
@@ -967,18 +1168,10 @@ public partial class MainWindow
         await UninstallCompilerExtensionAsync(compilerExtension);
     }
 
-    // Mirrors UninstallExtensionAsync, but compilers aren't Kodo extensions - they're
-    // full Windows installs (Program Files, real uninstaller) run via a third-party wizard
-    // Kodo doesn't control. Deleting our downloaded copy of the installer under
-    // CompilersFolderPath only removes the .exe we downloaded, not the actual install - so
-    // this finds the compiler's real uninstaller (registry first, then a Program Files scan
-    // for installers that never registered with Windows at all) and runs it silently.
     private async Task UninstallCompilerExtensionAsync(MarketplaceExtension compilerExtension)
     {
         if (IsManuallyTrackedCompilerId(compilerExtension.Id))
         {
-            // Kodo never installed these - it was just pointed at (or found) them - so
-            // "uninstall" just means forget the tracked reference, not run a real uninstaller.
             ForgetManualCompilerRecord(compilerExtension);
             ExtensionsStatusText = $"Removed {compilerExtension.Name} from Kodo's tracked compilers.";
             return;
@@ -990,9 +1183,6 @@ public partial class MainWindow
 
             if (located is null)
             {
-                // Nothing in the registry and nothing under Program Files either - either
-                // it was never a real Windows install, or it's already gone by some other
-                // means. Nothing left to launch, so just forget our own record of it.
                 ExtensionsStatusText = $"Couldn't find an uninstaller for {compilerExtension.Name} " +
                     "in the registry or Program Files; it may already be removed. Forgetting it in Kodo.";
                 ForgetLocalCompilerRecord(compilerExtension);
@@ -1009,26 +1199,36 @@ public partial class MainWindow
             {
                 FileName = exePath,
                 Arguments = arguments,
-                UseShellExecute = true
+                UseShellExecute = true,
+                WorkingDirectory = ResolveValidWorkingDirectory(installFolder)
             });
 
             if (uninstallProcess is not null)
                 await uninstallProcess.WaitForExitAsync();
 
-            // Inno/NSIS-style uninstallers copy themselves to a temp folder and relaunch,
-            // with the original process exiting almost immediately - so the process we
-            // awaited exiting doesn't mean removal actually finished. Poll for the install
-            // folder to actually disappear (more reliable than the registry: a lot of small
-            // installers never register with Windows at all, but they always clean up {app}).
+            var exitSucceeded = uninstallProcess is not null &&
+                (uninstallProcess.ExitCode == 0 || uninstallProcess.ExitCode == 3010);
             var removed = false;
-            for (var attempt = 0; attempt < 30; attempt++)
+
+            if (string.IsNullOrWhiteSpace(installFolder))
             {
-                if (!Directory.Exists(installFolder) || IsDirectoryEffectivelyEmpty(installFolder))
+                removed = exitSucceeded;
+            }
+            else if (!Directory.Exists(installFolder) || IsDirectoryEffectivelyEmpty(installFolder))
+            {
+                removed = exitSucceeded;
+            }
+            else
+            {
+                for (var attempt = 0; attempt < 30 && exitSucceeded; attempt++)
                 {
-                    removed = true;
-                    break;
+                    if (!Directory.Exists(installFolder) || IsDirectoryEffectivelyEmpty(installFolder))
+                    {
+                        removed = true;
+                        break;
+                    }
+                    await Task.Delay(750);
                 }
-                await Task.Delay(750);
             }
 
             if (removed)
@@ -1038,11 +1238,8 @@ public partial class MainWindow
             }
             else
             {
-                // Still there - the user likely closed/cancelled the wizard (shouldn't happen
-                // with the silent flags below, but a non-Inno installer might ignore them), or
-                // it's still running. Leave our record alone so the UI keeps showing it as
-                // installed instead of flipping to "Install" and inviting a reinstall.
-                ExtensionsStatusText = $"{compilerExtension.Name} still appears installed at {installFolder}. " +
+                var at = string.IsNullOrWhiteSpace(installFolder) ? string.Empty : $" at {installFolder}";
+                ExtensionsStatusText = $"{compilerExtension.Name} still appears installed{at}. " +
                     "Try Uninstall again, or remove it manually from Program Files.";
             }
         }
@@ -1058,8 +1255,6 @@ public partial class MainWindow
         }
     }
 
-    // True once only harmless leftovers remain (uninstallers commonly can't delete their own
-    // exe/log while still running, or leave an empty shell folder behind).
     private static bool IsDirectoryEffectivelyEmpty(string folder)
     {
         try
@@ -1073,10 +1268,28 @@ public partial class MainWindow
         }
     }
 
-    // Clears Kodo's own record of a compiler install: the registry entry in
-    // installed-compilers.json and our downloaded copy of the installer under
-    // CompilersFolderPath. Called once the real Windows uninstall is confirmed gone
-    // (or was never a real Windows install to begin with).
+    private static (string ExePath, string Arguments, bool IsMsi) NormalizeUninstallCommand(string exePath, string arguments)
+    {
+        if (!Path.GetFileName(exePath).Equals("msiexec.exe", StringComparison.OrdinalIgnoreCase))
+            return (exePath, arguments, false);
+
+        var fullPath = Path.Combine(Environment.SystemDirectory, "msiexec.exe");
+        var normalizedArgs = Regex.Replace(arguments, @"/[Ii](?<code>\{?[0-9A-Fa-f-]{36}\}?)", "/X${code}");
+        return (fullPath, normalizedArgs, true);
+    }
+
+    private static string ResolveValidWorkingDirectory(string installFolder)
+    {
+        if (!string.IsNullOrWhiteSpace(installFolder) && Directory.Exists(installFolder))
+            return installFolder;
+
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(profile) && Directory.Exists(profile))
+            return profile;
+
+        return Environment.SystemDirectory;
+    }
+
     private void ForgetLocalCompilerRecord(MarketplaceExtension compilerExtension)
     {
         var compilerFolder = Path.Combine(CompilersFolderPath, compilerExtension.Id);
@@ -1089,19 +1302,15 @@ public partial class MainWindow
         NotifyExtensionFiltersChanged();
     }
 
-    // Locates the compiler's real uninstaller and returns (ExePath, Arguments, InstallFolder).
-    // Tries the Windows "Uninstall" registry first (the same place Apps & Features reads
-    // from); if nothing is registered there - which small hobby installers often skip - falls
-    // back to scanning the two Program Files roots for a folder matching the compiler's name
-    // containing an unins###.exe (Inno Setup's standard uninstaller naming).
     private static (string ExePath, string Arguments, string InstallFolder)? FindCompilerUninstaller(string compilerName)
     {
         var registryCommand = FindWindowsUninstallCommand(compilerName);
         if (registryCommand is not null)
         {
             var (exePath, arguments) = ParseUninstallCommand(registryCommand);
-            var folder = Path.GetDirectoryName(exePath) ?? string.Empty;
-            return (exePath, AppendSilentUninstallFlags(exePath, arguments), folder);
+            var (exe, args, isMsi) = NormalizeUninstallCommand(exePath, arguments);
+            var folder = isMsi ? string.Empty : (Path.GetDirectoryName(exe) ?? string.Empty);
+            return (exe, AppendSilentUninstallFlags(exe, args), folder);
         }
 
         foreach (var programFilesRoot in new[]
@@ -1131,9 +1340,6 @@ public partial class MainWindow
         return null;
     }
 
-    // "Shine Compiler" installs to Program Files\Shine, not Program Files\Shine Compiler - so
-    // try the full marketplace name first, then drop a trailing " Compiler"/" compiler" suffix,
-    // then just the first word, to match how these installers actually name their folder.
     private static IEnumerable<string> GetCandidateInstallFolderNames(string compilerName)
     {
         var trimmed = compilerName.Trim();
@@ -1150,11 +1356,6 @@ public partial class MainWindow
             yield return firstWord;
     }
 
-    // Forces a fully unattended uninstall so it can't get stuck waiting on a wizard the user
-    // never sees complete: Inno Setup uninstallers (unins*.exe, the case for every compiler
-    // Kodo currently ships) support /VERYSILENT + /SUPPRESSMSGBOXES + /NORESTART; MSI-based
-    // uninstalls (msiexec /X{GUID}) use /quiet + /norestart instead. Leaves anything already
-    // silent, or any other installer technology, untouched rather than guessing at its flags.
     private static string AppendSilentUninstallFlags(string exePath, string existingArguments)
     {
         var fileName = Path.GetFileName(exePath);
@@ -1179,11 +1380,6 @@ public partial class MainWindow
         return existingArguments;
     }
 
-    // Splits a registry UninstallString into (FileName, Arguments) for ProcessStartInfo,
-    // instead of handing the raw string to "cmd /c" - wrapping an already-quoted path like
-    // `"C:\Program Files\Shine\unins000.exe"` in another layer of quotes for cmd produces
-    // a malformed command line that cmd silently no-ops on, which is why launching it that
-    // way didn't actually run the uninstaller.
     private static (string FileName, string Arguments) ParseUninstallCommand(string uninstallCommand)
     {
         var trimmed = uninstallCommand.Trim();
@@ -1199,15 +1395,17 @@ public partial class MainWindow
             }
         }
 
-        // Unquoted - if it contains a space, we can't reliably tell where the path ends and
-        // arguments begin, so treat the whole thing as the path (the common case has no args).
+        var firstSpace = trimmed.IndexOf(' ');
+        if (firstSpace > 0 &&
+            trimmed[..firstSpace].EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var rest = trimmed[(firstSpace + 1)..].Trim();
+            return (trimmed[..firstSpace], rest);
+        }
+
         return (trimmed, string.Empty);
     }
 
-    // Scans the same "Uninstall" registry keys Windows' Apps & Features reads from, looking
-    // for an entry whose DisplayName matches (or is contained in / contains) the compiler's
-    // marketplace name, and returns its UninstallString. Checks both 64- and 32-bit views plus
-    // per-user installs, since we don't know ahead of time how the third-party installer registered.
     private static string? FindWindowsUninstallCommand(string compilerName)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || string.IsNullOrWhiteSpace(compilerName))
@@ -1477,16 +1675,44 @@ public partial class MainWindow
         var html = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
         var entryPattern = new Regex(entryPatternStr);
-        var best = entryPattern.Matches(html)
+        var candidates = entryPattern.Matches(html)
             .Select(m => m.Groups[1].Value)
             .Distinct()
             .OrderByDescending(v => ParseVersionNumbers(v), VersionNumberSequenceComparer.Instance)
-            .FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(best)) return null;
+            .ToList();
+        if (candidates.Count == 0) return null;
 
-        var fileName = fileNameTemplate.Replace("{version}", best);
-        var downloadUrl = downloadUrlTemplate.Replace("{version}", best);
-        return new CompilerResolution(best, downloadUrl, fileName);
+        foreach (var candidate in candidates)
+        {
+            var fileName = fileNameTemplate.Replace("{version}", candidate);
+            var downloadUrl = downloadUrlTemplate.Replace("{version}", candidate);
+            if (await HttpUrlExistsAsync(downloadUrl, ct).ConfigureAwait(false))
+                return new CompilerResolution(candidate, downloadUrl, fileName);
+        }
+        return null;
+    }
+
+    private static async Task<bool> HttpUrlExistsAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, url);
+            using var headResponse = await MarketplaceHttpClient.SendAsync(headRequest, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (headResponse.IsSuccessStatusCode)
+                return true;
+            if (headResponse.StatusCode is HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented)
+            {
+                using var getRequest = new HttpRequestMessage(HttpMethod.Get, url);
+                using var getResponse = await MarketplaceHttpClient.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+                return getResponse.IsSuccessStatusCode;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Download existence check failed for '{url}'.", ex);
+            return false;
+        }
     }
 
     private static CompilerResolution? ResolveAlwaysLatest(Dictionary<string, string> p)
@@ -1565,4 +1791,735 @@ public partial class MainWindow
         return true;
     }
 
+    private readonly Dictionary<string, string> _customRunCommands = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _customBuildCommands = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _compilerOverrides = new(StringComparer.OrdinalIgnoreCase);
+
+    private string? _activeRunCommandLine;
+    private string? _activeBuildCommandLine;
+    private MarketplaceExtension? _activeCompilerExtension;
+    private CompilerRunWindow? _runWindow;
+    private CompilerRunWindow? _buildWindow;
+
+    public MarketplaceExtension? ActiveCompilerExtension
+    {
+        get => _activeCompilerExtension;
+        private set
+        {
+            if (ReferenceEquals(_activeCompilerExtension, value)) return;
+            _activeCompilerExtension = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsCompilerIconVisible => ActiveCompilerExtension is not null;
+
+    public string ActiveCompilerDisplayName => ActiveCompilerExtension?.Name ?? "No compiler";
+
+    public bool IsRunButtonEnabled => _currentFilePath is not null && _activeRunCommandLine is not null;
+    public bool IsBuildButtonEnabled => _currentFilePath is not null && _activeBuildCommandLine is not null;
+
+    public string? ActiveRunCommandText => _activeRunCommandLine;
+    public string? ActiveBuildCommandText => _activeBuildCommandLine;
+
+    public string RunBuildButtonTooltip
+    {
+        get
+        {
+            if (_currentFilePath is null)
+                return "Open a file to run or build it.";
+
+            if (ActiveCompilerExtension is null)
+                return "No compiler found for this file type. Install one from the Compilers marketplace, or set a command from the dropdown menu.";
+
+            var command = _activeRunCommandLine ?? _activeBuildCommandLine;
+            return string.IsNullOrWhiteSpace(command)
+                ? $"{ActiveCompilerExtension.Name} - no command configured. Use the dropdown menu to set one."
+                : $"{ActiveCompilerExtension.Name} · {command}";
+        }
+    }
+
+    private void RefreshRunBuildState()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(RefreshRunBuildState);
+            return;
+        }
+
+        ActiveCompilerExtension = ResolveActiveCompiler();
+        _activeRunCommandLine = ActiveCompilerExtension is null
+            ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: false);
+        _activeBuildCommandLine = ActiveCompilerExtension is null
+            ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
+
+        OnPropertyChanged(nameof(IsRunButtonEnabled));
+        OnPropertyChanged(nameof(IsBuildButtonEnabled));
+        OnPropertyChanged(nameof(IsCompilerIconVisible));
+        OnPropertyChanged(nameof(ActiveCompilerDisplayName));
+        OnPropertyChanged(nameof(RunBuildButtonTooltip));
+        OnPropertyChanged(nameof(ActiveRunCommandText));
+        OnPropertyChanged(nameof(ActiveBuildCommandText));
+    }
+
+    private MarketplaceExtension? ResolveActiveCompiler()
+    {
+        if (string.IsNullOrWhiteSpace(_currentFilePath))
+            return null;
+
+        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
+        if (string.IsNullOrEmpty(ext))
+            return null;
+
+        if (_compilerOverrides.TryGetValue(ext, out var overrideId))
+        {
+            var overridden = FindCompilerByIdForOverride(overrideId);
+            if (overridden is not null)
+                return overridden;
+        }
+
+        var candidates = CompilerExtensions
+            .Where(c => c.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        if (candidates.Count == 0)
+            return null;
+
+        return candidates
+            .Select(c => (Compiler: c, Score: ScoreCompilerForExtension(c, ext)))
+            .OrderByDescending(x => x.Score)
+            .ThenBy(x => candidates.IndexOf(x.Compiler))
+            .First().Compiler;
+    }
+
+    private MarketplaceExtension? FindCompilerByIdForOverride(string id) =>
+        CompilerExtensions.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
+        ?? CompilerExtensions.Where(e => e.IsInstalled)
+            .Concat(ManualCompilerExtensions)
+            .FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    private int ScoreCompilerForExtension(MarketplaceExtension compiler, string ext)
+    {
+        var template = ResolveCommandTemplate(compiler, isBuild: false, ext)
+                       ?? ResolveCommandTemplate(compiler, isBuild: true, ext);
+        if (string.IsNullOrWhiteSpace(template))
+            return 0;
+
+        var (exe, _) = SplitCommandLine(template);
+        if (string.IsNullOrWhiteSpace(exe))
+            return 0;
+
+        var exeName = NormalizeExeName(Path.GetFileName(exe));
+        foreach (var record in _manualCompilers.Values)
+        {
+            if (Path.GetFileName(record.ExecutablePath).Equals(exeName, StringComparison.OrdinalIgnoreCase))
+                return 2;
+        }
+
+        return ResolveToolExecutable(exe) is not null ? 1 : 0;
+    }
+
+    private string? ResolveCommandTemplate(MarketplaceExtension compiler, bool isBuild, string ext)
+    {
+        var custom = isBuild ? _customBuildCommands : _customRunCommands;
+        if (custom.TryGetValue(compiler.Id, out var customCommand) && !string.IsNullOrWhiteSpace(customCommand))
+            return customCommand;
+
+        if (compiler.FileCommands is not null &&
+            compiler.FileCommands.TryGetValue(ext, out var fileCommand))
+            return isBuild ? fileCommand.Build : fileCommand.Run;
+
+        var template = isBuild ? compiler.BuildCommandTemplate : compiler.RunCommandTemplate;
+        if (!string.IsNullOrWhiteSpace(template))
+            return template;
+
+        if (IsManuallyTrackedCompilerId(compiler.Id) &&
+            _manualCompilers.TryGetValue(compiler.Id, out var record) &&
+            record.CanonicalCompilerId is { } canonicalId)
+        {
+            var canonical = CompilerExtensions.FirstOrDefault(c =>
+                c.Id.Equals(canonicalId, StringComparison.OrdinalIgnoreCase));
+            if (canonical is not null)
+                return ResolveCommandTemplate(canonical, isBuild, ext);
+        }
+
+        return null;
+    }
+
+    private string? BuildCommandLineText(MarketplaceExtension compiler, bool isBuild)
+    {
+        var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+        var template = ResolveCommandTemplate(compiler, isBuild, ext);
+        return template is null ? null : ExpandCommandTemplate(template, extraArgs: null);
+    }
+
+    private string ResolveWorkingDirectory() =>
+        _currentFolderPath ?? Path.GetDirectoryName(_currentFilePath ?? string.Empty) ?? string.Empty;
+
+    private string ExpandCommandTemplate(string template, string? extraArgs)
+    {
+        var filePath = _currentFilePath ?? string.Empty;
+        var fileName = Path.GetFileName(filePath);
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        var folder = ResolveWorkingDirectory();
+
+        var expanded = template
+            .Replace("{fileName}", QuoteArgument(fileName))
+            .Replace("{file}", QuoteArgument(filePath))
+            .Replace("{name}", QuoteArgument(name))
+            .Replace("{folder}", QuoteArgument(folder))
+            .Replace("{args}", (extraArgs ?? string.Empty).Trim());
+
+        if (!string.IsNullOrWhiteSpace(extraArgs) && !template.Contains("{args}", StringComparison.Ordinal))
+            expanded = $"{expanded} {extraArgs.Trim()}";
+
+        return expanded;
+    }
+
+    private string? ResolveToolExecutable(string toolName)
+    {
+        if (string.IsNullOrWhiteSpace(toolName))
+            return null;
+
+        if (Path.IsPathFullyQualified(toolName) && File.Exists(toolName))
+            return toolName;
+
+        var exeName = NormalizeExeName(Path.GetFileName(toolName));
+
+        foreach (var record in _manualCompilers.Values)
+        {
+            if (Path.GetFileName(record.ExecutablePath).Equals(exeName, StringComparison.OrdinalIgnoreCase))
+                return record.ExecutablePath;
+        }
+
+        foreach (var record in _manualCompilers.Values)
+        {
+            var directory = Path.GetDirectoryName(record.ExecutablePath);
+            if (string.IsNullOrWhiteSpace(directory)) continue;
+            var sibling = Path.Combine(directory, exeName);
+            if (File.Exists(sibling))
+                return sibling;
+        }
+
+        return TryFindOnPath(exeName) ?? TryFindOnPath(toolName);
+    }
+
+    private static string NormalizeExeName(string toolName)
+    {
+        if (string.IsNullOrWhiteSpace(toolName)) return toolName;
+        return toolName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? toolName : toolName + ".exe";
+    }
+
+    private static (string Exe, string Arguments) SplitCommandLine(string commandLine)
+    {
+        var trimmed = commandLine.Trim();
+        if (trimmed.StartsWith('"'))
+        {
+            var closingQuote = trimmed.IndexOf('"', 1);
+            if (closingQuote > 0)
+                return (trimmed[1..closingQuote], trimmed[(closingQuote + 1)..].Trim());
+        }
+
+        var firstSpace = trimmed.IndexOf(' ');
+        return firstSpace < 0
+            ? (trimmed, string.Empty)
+            : (trimmed[..firstSpace], trimmed[(firstSpace + 1)..].Trim());
+    }
+
+    private static string QuoteArgument(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return value;
+        if (value.StartsWith('"') && value.EndsWith('"')) return value;
+        return value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
+    }
+
+    private async Task ExecuteCurrentCommandAsync(bool isBuild, string? extraArgs)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            await ShowWarningDialogAsync("Run / Build",
+                new InvalidOperationException("The terminal is only available on Windows."));
+            return;
+        }
+
+        if (_currentFilePath is null || ActiveCompilerExtension is null)
+            return;
+
+        var compiler = ActiveCompilerExtension;
+        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
+        var template = ResolveCommandTemplate(compiler, isBuild, ext);
+        if (template is null)
+            return;
+
+        var commandLine = ExpandCommandTemplate(template, extraArgs);
+        var (exe, args) = SplitCommandLine(commandLine);
+        if (string.IsNullOrWhiteSpace(exe))
+            return;
+
+        var resolvedExe = ResolveToolExecutable(exe) ?? exe;
+        var toolLabel = Path.GetFileName(exe);
+        var workingDirectory = ResolveWorkingDirectory();
+
+        var existing = isBuild ? _buildWindow : _runWindow;
+        if (existing is { IsVisible: true })
+        {
+            existing.Activate();
+            return;
+        }
+
+        var window = new CompilerRunWindow(
+            isBuild ? $"Kodo - Build ({toolLabel})" : $"Kodo - Run ({toolLabel})",
+            commandLine,
+            resolvedExe,
+            args,
+            workingDirectory);
+
+        if (isBuild) _buildWindow = window; else _runWindow = window;
+        window.Closed += (_, _) => { if (isBuild) _buildWindow = null; else _runWindow = null; };
+        window.Show();
+    }
+
+    private async void RunButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await ExecuteCurrentCommandAsync(isBuild: false, extraArgs: null);
+
+    private async void BuildButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await ExecuteCurrentCommandAsync(isBuild: true, extraArgs: null);
+
+    private void RunMenuButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+            BuildRunBuildMenu(isBuild: false).ShowAt(button);
+    }
+
+    private void BuildMenuButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+            BuildRunBuildMenu(isBuild: true).ShowAt(button);
+    }
+
+    private void CompilerIconButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button)
+            BuildCompilerSwitchMenu().ShowAt(button);
+    }
+
+    private MenuFlyout BuildRunBuildMenu(bool isBuild)
+    {
+        var compiler = ActiveCompilerExtension;
+        var action = isBuild ? "Build" : "Run";
+        var enabled = isBuild ? IsBuildButtonEnabled : IsRunButtonEnabled;
+
+        var menu = new MenuFlyout();
+
+        var primary = new MenuItem { Header = action, IsEnabled = enabled };
+        primary.Click += (_, _) => _ = ExecuteCurrentCommandAsync(isBuild, extraArgs: null);
+        menu.Items.Add(primary);
+
+        var withArgs = new MenuItem { Header = $"{action} with arguments...", IsEnabled = enabled };
+        withArgs.Click += async (_, _) =>
+        {
+            var args = await ShowTextInputDialogAsync(
+                $"{action} with arguments",
+                "Extra arguments to append to the command (flags, file paths, etc.):",
+                string.Empty);
+            if (args is not null)
+                await ExecuteCurrentCommandAsync(isBuild, args);
+        };
+        menu.Items.Add(withArgs);
+
+        menu.Items.Add(new Separator());
+
+        if (compiler is not null)
+        {
+            var commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
+            if (!string.IsNullOrWhiteSpace(commandLine))
+            {
+                menu.Items.Add(new MenuItem
+                {
+                    Header = $"{compiler.Name}  ·  {commandLine}",
+                    IsEnabled = false,
+                });
+                menu.Items.Add(new Separator());
+            }
+        }
+
+        var custom = isBuild ? _customBuildCommands : _customRunCommands;
+        var hasCustom = compiler is not null && custom.ContainsKey(compiler.Id);
+
+        if (!hasCustom)
+        {
+            var setCustom = new MenuItem
+            {
+                Header = isBuild ? "Set custom build command..." : "Set custom run command...",
+                IsEnabled = compiler is not null,
+            };
+            setCustom.Click += async (_, _) =>
+            {
+                if (ActiveCompilerExtension is not { } current)
+                    return;
+
+                var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+                var currentTemplate = ResolveCommandTemplate(current, isBuild, ext);
+                var entered = await ShowTextInputDialogAsync(
+                    isBuild ? "Custom build command" : "Custom run command",
+                    "Full command to run. Use {file}, {name}, {folder} and {args} as placeholders.",
+                    currentTemplate ?? string.Empty);
+
+                if (string.IsNullOrWhiteSpace(entered))
+                    return;
+
+                (isBuild ? _customBuildCommands : _customRunCommands)[current.Id] = entered;
+                SaveSettings();
+                RefreshRunBuildState();
+            };
+            menu.Items.Add(setCustom);
+        }
+        else
+        {
+            var clearCustom = new MenuItem
+            {
+                Header = isBuild ? "Clear custom build command" : "Clear custom run command",
+            };
+            clearCustom.Click += (_, _) =>
+            {
+                if (ActiveCompilerExtension is not { } current)
+                    return;
+
+                (isBuild ? _customBuildCommands : _customRunCommands).Remove(current.Id);
+                SaveSettings();
+                RefreshRunBuildState();
+            };
+            menu.Items.Add(clearCustom);
+        }
+
+        return menu;
+    }
+
+    private MenuFlyout BuildCompilerSwitchMenu()
+    {
+        var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+        var menu = new MenuFlyout();
+
+        var automatic = new MenuItem { Header = "Automatic (recommended)" };
+        automatic.Click += (_, _) =>
+        {
+            _compilerOverrides.Remove(ext);
+            SaveSettings();
+            RefreshRunBuildState();
+        };
+        menu.Items.Add(automatic);
+        menu.Items.Add(new Separator());
+
+        var candidates = CompilerExtensions
+            .Where(c => c.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        var installed = FilteredInstalledCompilerExtensions
+            .Where(c => candidates.All(existing => !existing.Id.Equals(c.Id, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        var anyAdded = false;
+        foreach (var compiler in candidates.Concat(installed))
+        {
+            anyAdded = true;
+            var compilerId = compiler.Id;
+            var item = new MenuItem
+            {
+                Header = compiler.Name,
+                Icon = BuildCompilerMenuIcon(compiler),
+                IsChecked = ActiveCompilerExtension is { } active &&
+                            active.Id.Equals(compilerId, StringComparison.OrdinalIgnoreCase),
+            };
+            item.Click += (_, _) =>
+            {
+                _compilerOverrides[ext] = compilerId;
+                SaveSettings();
+                RefreshRunBuildState();
+            };
+            menu.Items.Add(item);
+        }
+
+        if (!anyAdded)
+            menu.Items.Add(new MenuItem { Header = "No compilers available", IsEnabled = false });
+
+        return menu;
+    }
+
+    private static Control BuildCompilerMenuIcon(MarketplaceExtension compiler)
+    {
+        var icon = new StackPanel
+        {
+            Width = 18,
+            Height = 18,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        if (compiler.IconImage is not null)
+            icon.Children.Add(new Image { Source = compiler.IconImage, Width = 18, Height = 18, Stretch = Stretch.Uniform });
+
+        if (icon.Children.Count == 0)
+            icon.Children.Add(new TextBlock
+            {
+                Text = compiler.NameAbbreviation,
+                FontSize = 10,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = Brushes.White,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+
+        return icon;
+    }
+
+    private async Task<string?> ShowTextInputDialogAsync(string title, string prompt, string initialValue)
+    {
+        string? result = null;
+        Window? dialog = null;
+
+        var inputBox = new TextBox
+        {
+            Text = initialValue,
+            Background = ButtonBrush,
+            Foreground = PrimaryTextBrush,
+            BorderBrush = SurfaceBorderBrush,
+            Padding = new Thickness(8, 6),
+            FontSize = 14,
+            CaretBrush = PrimaryTextBrush,
+        };
+
+        var confirmButton = CreateDialogButton("OK", AccentBrush, AccentBrush, AccentForegroundBrush, () =>
+        {
+            result = inputBox.Text;
+            dialog!.Close();
+        });
+
+        inputBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { result = inputBox.Text; dialog!.Close(); }
+            if (e.Key == Key.Escape) { dialog!.Close(); }
+        };
+
+        dialog = new Window
+        {
+            Width = 460,
+            Height = 210,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = title,
+            Background = CardBrush,
+            Content = new Border
+            {
+                Padding = new Thickness(20),
+                Child = new StackPanel
+                {
+                    Spacing = 14,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = prompt,
+                            FontSize = 13,
+                            Foreground = MutedTextBrush,
+                            TextWrapping = TextWrapping.Wrap,
+                        },
+                        inputBox,
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Spacing = 10,
+                            HorizontalAlignment = HorizontalAlignment.Right,
+                            Children =
+                            {
+                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, () => dialog!.Close()),
+                                confirmButton,
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        dialog.Opened += (_, _) =>
+        {
+            inputBox.Focus();
+            inputBox.SelectAll();
+        };
+
+        await dialog.ShowDialog(this);
+        return result;
+    }
+
+}
+
+internal sealed class CompilerRunWindow : Window
+{
+    private readonly ConsoleTerminal _terminal = new();
+    private readonly string _exePath;
+    private readonly string _arguments;
+    private readonly string _workingDirectory;
+    private readonly string _commandDisplay;
+    private readonly Color _accent;
+    private readonly Color _accentForeground;
+    private TextBlock _statusText = null!;
+    private Button _rerunButton = null!;
+
+    public CompilerRunWindow(string title, string commandDisplay, string exePath, string arguments, string workingDirectory)
+    {
+        _commandDisplay = commandDisplay;
+        _exePath = exePath;
+        _arguments = arguments;
+        _workingDirectory = workingDirectory;
+        (_accent, _accentForeground) = AccentResolver.GetCurrentAccent();
+
+        Title = title;
+        Width = 780;
+        Height = 500;
+        MinWidth = 480;
+        MinHeight = 300;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Background = new SolidColorBrush(DialogPalette.Surface);
+        Content = BuildContent();
+
+        Opened += OnOpened;
+        Closed += (_, _) => _terminal.Stop();
+    }
+
+    private Control BuildContent()
+    {
+        _statusText = new TextBlock
+        {
+            Text = "Starting...",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(DialogPalette.TextMuted),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        };
+
+        _rerunButton = new Button
+        {
+            Content = "Re-run",
+            Padding = new Thickness(14, 6),
+            Background = new SolidColorBrush(_accent),
+            Foreground = new SolidColorBrush(_accentForeground),
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(6),
+            Focusable = false,
+        };
+        _rerunButton.Click += (_, _) => RunCommand();
+
+        var exitButton = new Button
+        {
+            Content = "Exit",
+            Padding = new Thickness(14, 6),
+            Background = new SolidColorBrush(DialogPalette.BadgeBg),
+            Foreground = new SolidColorBrush(DialogPalette.TextMuted),
+            BorderBrush = new SolidColorBrush(DialogPalette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Focusable = false,
+        };
+        exitButton.Click += (_, _) => Close();
+
+        var commandText = new TextBlock
+        {
+            Text = _commandDisplay,
+            FontSize = 13,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(commandText, _commandDisplay);
+
+        var commandBlock = new StackPanel
+        {
+            Spacing = 2,
+            Margin = new Thickness(8, 0, 12, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { commandText, _statusText },
+        };
+
+        var header = new Border
+        {
+            Background = new SolidColorBrush(DialogPalette.SurfaceDeep),
+            BorderBrush = new SolidColorBrush(DialogPalette.Border),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(12, 8),
+            Child = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 4,
+                        Height = 28,
+                        CornerRadius = new CornerRadius(2),
+                        Background = new SolidColorBrush(_accent),
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
+                    SetGridColumn(commandBlock, 1),
+                    SetGridColumn(new StackPanel
+                    {
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Children = { _rerunButton, exitButton },
+                    }, 2),
+                },
+            },
+        };
+
+        var layout = new Grid
+        {
+            RowDefinitions = new RowDefinitions("Auto,*"),
+            Children = { header, SetGridRow(_terminal, 1) },
+        };
+
+        return layout;
+    }
+
+    private void OnOpened(object? sender, EventArgs e) => RunCommand();
+
+    private void RunCommand()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            _statusText.Text = "Terminal is only available on Windows.";
+            return;
+        }
+
+        _statusText.Text = "Running...";
+        _rerunButton.IsEnabled = false;
+
+        _terminal.Start(_exePath, _arguments, _workingDirectory);
+
+        var watchedHandle = _terminal.CurrentProcessHandle;
+        _terminal.SessionExited += OnSessionExited;
+
+        void OnSessionExited(object? s, IntPtr exitedHandle)
+        {
+            _terminal.SessionExited -= OnSessionExited;
+            if (exitedHandle != watchedHandle)
+                return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                _statusText.Text = "Finished - the command exited. You can inspect the output below or re-run it.";
+                _rerunButton.IsEnabled = true;
+            });
+        }
+
+        Dispatcher.UIThread.Post(() => _terminal.Focus(), DispatcherPriority.Input);
+    }
+
+    private static Control SetGridColumn(Control control, int column)
+    {
+        Grid.SetColumn(control, column);
+        return control;
+    }
+
+    private static Control SetGridRow(Control control, int row)
+    {
+        Grid.SetRow(control, row);
+        return control;
+    }
 }
