@@ -725,7 +725,7 @@
         <!-- Collapsible file explorer panel -->
         <Border Grid.Column="1"
                 Width="{Binding ExplorerPanelWidth}"
-                MinWidth="180"
+                MinWidth="{Binding ExplorerPanelMinWidth}"
                 MaxWidth="600"
                 IsVisible="{Binding IsFileExplorerVisible}"
                 VerticalAlignment="Stretch"

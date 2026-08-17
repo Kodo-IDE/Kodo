@@ -5973,6 +5973,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar)).ToUpperInvariant()
         : "EXPLORER";
 
+    // Header row chrome that competes with the header text: border padding (12+12),
+    // accent bar (3) + its spacing to the text (6), and the four 28px activity
+    // buttons (new file/new folder/collapse-all/close, all visible together whenever
+    // a folder - and therefore a real folder name - is open).
+    private const double ExplorerHeaderFixedChrome = 12 + 12 + 3 + 6 + 4 * 28;
+
+    private static readonly Typeface ExplorerHeaderTypeface = new("Segoe UI", weight: FontWeight.SemiBold);
+
+    // Keeps the header text from being clipped under the activity buttons when the
+    // panel is dragged narrow: floors MinWidth at however wide ExplorerHeaderText
+    // actually renders, on top of the surrounding chrome.
+    public double ExplorerPanelMinWidth
+    {
+        get
+        {
+            var formatted = new FormattedText(
+                ExplorerHeaderText,
+                CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                ExplorerHeaderTypeface,
+                11,
+                Brushes.Black);
+
+            return Math.Min(MaxExplorerPanelWidth,
+                Math.Max(MinExplorerPanelWidth, formatted.Width + ExplorerHeaderFixedChrome));
+        }
+    }
+
     public string ExplorerHeaderTooltipText => IsFolderOpen
         ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar))
         : "Explorer";
@@ -6597,6 +6625,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(FilePathText));
         OnPropertyChanged(nameof(ExplorerHeaderText));
         OnPropertyChanged(nameof(ExplorerHeaderTooltipText));
+        OnPropertyChanged(nameof(ExplorerPanelMinWidth));
         OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         OnPropertyChanged(nameof(AutoSaveStatusText));
         OnPropertyChanged(nameof(LanguageDisplayText));
