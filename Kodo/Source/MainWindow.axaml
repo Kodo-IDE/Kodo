@@ -4910,7 +4910,7 @@
                                                    Text="Detailed RPC" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
-                                                   Text="Shows language, dirty state, page context, and open tab count." />
+                                                   Text="Shows language, page context, and open tab count." />
                                     </StackPanel>
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"

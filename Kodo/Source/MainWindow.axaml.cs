@@ -786,7 +786,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _pendingFullStateRefresh = true;
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
-    private (string?, string?, int, bool, string?, bool, bool, bool, bool) _lastDiscordPresenceKey;
+    private (string?, string?, int, string?, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
@@ -6277,7 +6277,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
         : IsDiscordImprovedRpcEnabled
-            ? "Rich Presence is on (Improved). Shows language, dirty state, page context, and open tab count."
+            ? "Improved Discord Rich Presence is on when the Discord desktop app is running."
             : "Discord Rich Presence is on when the Discord desktop app is running.";
 
     public string AutoSaveStatusText =>
@@ -6801,10 +6801,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Cheap tuple key built from the primitive fields that drive presence strings.
     // Avoids allocating display strings on every 75 ms refresh tick.
-    private (string? filePath, string? folderPath, int tabCount, bool dirty,
+    private (string? filePath, string? folderPath, int tabCount,
              string? language, bool settings, bool extensions, bool home,
              bool improved) GetDiscordPresenceKey() =>
-        (_currentFilePath, _currentFolderPath, OpenTabs.Count, _isDirty,
+        (_currentFilePath, _currentFolderPath, OpenTabs.Count,
          GetDiscordLanguageLabel(), _isSettingsPageVisible, _isExtensionsPageVisible,
          _isHomePageVisible, _isDiscordImprovedRpcEnabled);
 
@@ -6848,10 +6848,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var fileName = GetDocumentDisplayName();
             var lang     = GetDiscordLanguageLabel();
-            var dirty    = _isDirty ? " \u25cf" : string.Empty;
             return string.IsNullOrWhiteSpace(lang)
-                ? $"Editing {fileName}{dirty}"
-                : $"Editing {fileName}{dirty}  \u00b7  {lang}";
+                ? $"Editing {fileName}"
+                : $"Editing {fileName}  \u00b7  {lang}";
         }
 
         return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
