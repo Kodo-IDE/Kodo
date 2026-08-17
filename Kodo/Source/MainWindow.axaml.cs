@@ -191,6 +191,7 @@ public class FileTreeItem : INotifyPropertyChanged
                 ".exe" => "EXE",
                 ".dll" => "DLL",
                 ".gitignore" => "IGNR",
+                ".shine" => "SHINE",
 			    _ => "..",
 			};
     }
