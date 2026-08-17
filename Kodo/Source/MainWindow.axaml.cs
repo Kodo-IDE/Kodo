@@ -448,6 +448,14 @@ public static class ExtensionTypeFilters
     public const string Languages = "Languages";
 }
 
+// Backing values for the three Extensions-page tabs: Installed, Marketplace, and Compilers.
+public static class ExtensionsTabModes
+{
+    public const string Installed = "Installed";
+    public const string Marketplace = "Marketplace";
+    public const string Compilers = "Compilers";
+}
+
 public enum ExplorerClipboardMode
 {
     Copy,
@@ -463,14 +471,36 @@ public class MarketplaceExtension : INotifyPropertyChanged
     private DateTime? _installedOnUtc;
 
     public string Id { get; init; } = string.Empty;
-    public string Version { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public string Type { get; init; } = string.Empty;
     public string Author { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
-    public string DownloadUrl { get; init; } = string.Empty;
-    public string FileName { get; init; } = string.Empty;
     public string IconUrl { get; init; } = string.Empty;
+
+    // Version/DownloadUrl/FileName are mutable (not init-only) because compiler entries now
+    // resolve these live from the vendor after the initial fast paint - see
+    // MainWindow.RefreshCompilerResolutionsAsync. Extensions still only ever set them once,
+    // at construction, so this is a no-op behavior change for the Marketplace tab.
+    private string _version = string.Empty;
+    public string Version
+    {
+        get => _version;
+        set { if (_version == value) return; _version = value; OnPropertyChanged(); }
+    }
+
+    private string _downloadUrl = string.Empty;
+    public string DownloadUrl
+    {
+        get => _downloadUrl;
+        set { if (_downloadUrl == value) return; _downloadUrl = value; OnPropertyChanged(); }
+    }
+
+    private string _fileName = string.Empty;
+    public string FileName
+    {
+        get => _fileName;
+        set { if (_fileName == value) return; _fileName = value; OnPropertyChanged(); }
+    }
 
     private Bitmap? _iconImage;
     public Bitmap? IconImage
@@ -568,8 +598,18 @@ public class MarketplaceExtension : INotifyPropertyChanged
     public void SetInstalledState(LoadedExtension? installedExtension, bool isUpdateAvailable)
     {
         var isInstalled = installedExtension is not null;
-        InstalledVersion = installedExtension?.Version ?? string.Empty;
-        InstalledOnUtc = installedExtension?.InstalledOnUtc;
+        ApplyInstalledState(isInstalled, installedExtension?.Version ?? string.Empty, installedExtension?.InstalledOnUtc, isUpdateAvailable);
+    }
+
+    // Compilers aren't Kodo extensions (no LoadedExtension record), so their installed state
+    // comes from the local Compilers install registry instead - see SyncCompilerInstallStates.
+    public void SetCompilerInstalledState(string? installedVersion, DateTime? installedOnUtc, bool isUpdateAvailable) =>
+        ApplyInstalledState(installedVersion is not null, installedVersion ?? string.Empty, installedOnUtc, isUpdateAvailable);
+
+    private void ApplyInstalledState(bool isInstalled, string installedVersion, DateTime? installedOnUtc, bool isUpdateAvailable)
+    {
+        InstalledVersion = installedVersion;
+        InstalledOnUtc = installedOnUtc;
         IsUpdateAvailable = isUpdateAvailable;
 
         if (IsInstalled != isInstalled)
@@ -595,6 +635,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }
 
+
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private const int MaxRecentFiles = 6;
@@ -617,6 +658,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string[] MarketplaceIndexUrls =
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/ExtensionsIndex.json",
+    ];
+    // Same repo/format as the extension index, but lists standalone compiler installers instead.
+    private static readonly string[] CompilerIndexUrls =
+    [
+        "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/CompilerIndex.json",
     ];
     private static readonly string[] LatestReleaseApiUrls =
     [
@@ -720,7 +766,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
-    private bool _isMarketplaceTabSelected;
+    private string _selectedExtensionsTab = ExtensionsTabModes.Installed;
     private bool _suppressDirtyTracking;
     // True during startup so incidental SaveSettings() calls can't overwrite just-loaded settings.
     private bool _suppressSettingsSave;
@@ -795,6 +841,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // In-memory ETag kept in sync with every successful 200 response.
     // Null means no cache exists yet; loaded lazily from disk on first fetch.
     private string? _marketplaceIndexETag;
+    // Same disk-cache pattern as the marketplace index, for CompilerIndex.json.
+    private string CompilerIndexCachePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json");
+    private string CompilerIndexETagPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json.etag");
+    private string? _compilerIndexETag;
+    // Compilers install to a folder of their own (they're standalone toolchains, not Kodo
+    // extensions) - this JSON file is the source of truth for "is compiler X installed".
+    private string CompilerInstallRegistryPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "installed-compilers.json");
+    private string CompilersFolderPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "Compilers");
+    // Manually-added/auto-detected compilers (not from CompilerIndex.json) - see ManualCompilerRecord.
+    private string ManualCompilersRegistryPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "manual-compilers.json");
+    private Dictionary<string, ManualCompilerRecord> _manualCompilers = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _autoDetectDismissedIds = new(StringComparer.OrdinalIgnoreCase);
+    private bool _hasRunCompilerAutoDetect;
+    private Dictionary<string, InstalledCompilerRecord> _installedCompilers =
+        new(StringComparer.OrdinalIgnoreCase);
     // Debounces duplicate error dialogs (same context/exception/message) within a short burst.
     private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
 
@@ -992,6 +1058,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<TerminalSession> TerminalSessions { get; } = new();
     public ObservableCollection<LoadedExtension> LoadedExtensions { get; } = new();
     public ObservableCollection<MarketplaceExtension> MarketplaceExtensions { get; } = new();
+    // Compilers (e.g. Shine) are standalone installer downloads, not Kodo extensions -
+    // tracked separately from MarketplaceExtensions and installed via CompilerIndex.json.
+    public ObservableCollection<MarketplaceExtension> CompilerExtensions { get; } = new();
+    // Compilers the user pointed Kodo at by filepath, or that Kodo found on this machine on its
+    // own (see AutoDetectDefaultCompilersAsync) - not part of CompilerIndex.json, so they're kept
+    // out of CompilerExtensions to avoid being wiped out whenever that index refreshes. Merged
+    // into the Installed tab's compiler list in FilteredInstalledCompilerExtensions.
+    public ObservableCollection<MarketplaceExtension> ManualCompilerExtensions { get; } = new();
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
     public ObservableCollection<TerminalShellOption> AvailableTerminalShells { get; } = new();
     public ObservableCollection<NewsItem> NewsItems { get; } = new();
@@ -1235,6 +1309,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateExtensionAutoUpdateLifecycle();
         _appUpdateScheduler.UpdateLifecycle();
         _marketplaceRefreshTimer.Start();
+        _ = RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
         ApplyEditorSettings();
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
@@ -1409,6 +1484,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
+            await LoadCompilerExtensionsAsync(forceResolve: force);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
@@ -1557,7 +1633,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         // Seeds the marketplace list from the disk cache so it appears immediately, before the network round-trip completes.
         var diskJson = TryReadMarketplaceIndexCache();
-        if (diskJson is not null && !MarketplaceExtensions.Any())
+        if (diskJson is not null)
             ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
 
         try
@@ -1695,12 +1771,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         await Task.WhenAll(tasks);
     }
-    private async Task FetchMarketplaceIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
+    private async Task FetchMarketplaceIconsAsync(
+        IReadOnlyDictionary<string, string> marketplaceIconMap,
+        ObservableCollection<MarketplaceExtension>? targetCollection = null)
     {
+        var entries = targetCollection ?? MarketplaceExtensions;
+
         // Applies already-cached icon bytes synchronously, skipping an async round-trip.
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            foreach (var entry in MarketplaceExtensions)
+            foreach (var entry in entries)
             {
                 if (entry.IconImage is not null || entry.SvgData is not null)
                     continue;
@@ -1721,7 +1801,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var iconAttempts = 0;
         Exception? lastIconException = null;
 
-        var tasks = MarketplaceExtensions
+        var tasks = entries
             .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
             .Select(async entry =>
             {
@@ -2174,7 +2254,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static void ParseAndApplyMarketplaceIndex(
         string json,
         List<MarketplaceExtension> marketplaceExtensions,
-        List<string> extensionLoadErrors)
+        List<string> extensionLoadErrors,
+        string rootPropertyName = "extensions")
     {
         var jsonOptions = new JsonDocumentOptions
         {
@@ -2182,7 +2263,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CommentHandling = JsonCommentHandling.Skip
         };
         using var doc = JsonDocument.Parse(json, jsonOptions);
-        if (!doc.RootElement.TryGetProperty("extensions", out var extensionsElement) ||
+        if (!doc.RootElement.TryGetProperty(rootPropertyName, out var extensionsElement) ||
             extensionsElement.ValueKind != JsonValueKind.Array)
             return;
 
@@ -2203,6 +2284,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
     }
+
 
     private string? TryReadMarketplaceIndexCache()
     {
@@ -2251,6 +2333,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
         var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
         var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
+        // ^ declaredVersion is trusted as-is; declaredFileName/urlFileName only contribute if a
+        // v1.2.3-style version can be extracted from them (see GetHighestKnownExtensionVersion).
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
         var canonicalDownloadUrl = NormalizeMarketplaceDownloadUrl(rawDownloadUrl, canonicalFileName);
 
@@ -2295,15 +2379,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         OnPropertyChanged(nameof(FilteredInstalledExtensions));
         OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
+        OnPropertyChanged(nameof(FilteredCompilerExtensions));
+        OnPropertyChanged(nameof(FilteredInstalledCompilerExtensions));
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
         OnPropertyChanged(nameof(IsInstalledSearchEmptyVisible));
         OnPropertyChanged(nameof(IsMarketplaceSearchEmptyVisible));
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         OnPropertyChanged(nameof(InstalledExtensionsCount));
+        OnPropertyChanged(nameof(InstalledCompilersCount));
         OnPropertyChanged(nameof(InstalledTabLabel));
         OnPropertyChanged(nameof(MarketplaceTabLabel));
+        OnPropertyChanged(nameof(CompilersTabLabel));
         OnPropertyChanged(nameof(HasVisibleInstalledExtensions));
         OnPropertyChanged(nameof(HasVisibleMarketplaceExtensions));
+        OnPropertyChanged(nameof(HasVisibleCompilerExtensions));
+        OnPropertyChanged(nameof(HasVisibleInstalledCompilerExtensions));
+        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsOrCompilers));
+        OnPropertyChanged(nameof(IsInstalledCompilersEmptyStateVisible));
     }
 
     private void NotifyExtensionActionStateChanged()
@@ -2822,20 +2914,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private static string GetHighestKnownExtensionVersion(params string[] candidates)
+    // The first candidate is the declared "version" field and is trusted as-is, even if it
+    // doesn't match the v1.2.3 pattern (e.g. "8.0.404"). Every candidate after that is a
+    // fileName/URL - those are only used if a v1.2.3-style version can be *extracted* from
+    // them. Falling back to the raw fileName (as this used to do) meant a whole installer
+    // fileName like "dotnet-sdk-8.0.404-win-x64.exe" could out-compare "8.0.404" (its stray
+    // digits, e.g. the "64" in "x64", made it look like a "higher" version) and get displayed
+    // in place of the real version.
+    private static string GetHighestKnownExtensionVersion(string declaredVersion, params string[] fileNameCandidates)
     {
-        var bestVersion = string.Empty;
-        foreach (var candidate in candidates)
-        {
-            var normalizedCandidate = ExtractVersionFromName(candidate);
-            if (string.IsNullOrWhiteSpace(normalizedCandidate))
-                normalizedCandidate = candidate;
+        var bestVersion = declaredVersion ?? string.Empty;
 
-            if (CompareExtensionVersions(normalizedCandidate, bestVersion) > 0)
-                bestVersion = normalizedCandidate;
+        foreach (var candidate in fileNameCandidates)
+        {
+            var extractedVersion = ExtractVersionFromName(candidate);
+            if (string.IsNullOrWhiteSpace(extractedVersion))
+                continue;
+
+            if (CompareExtensionVersions(extractedVersion, bestVersion) > 0)
+                bestVersion = extractedVersion;
         }
 
-        return string.IsNullOrWhiteSpace(bestVersion) ? string.Empty : bestVersion;
+        return bestVersion;
     }
 
     private static string GetCanonicalMarketplaceFileName(string declaredFileName, string urlFileName, string bestKnownVersion)
@@ -2906,8 +3006,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// Normalises any of GitHub's three URL forms to the Contents API form.
-    /// Third-party URLs are returned unchanged.
+    // Owner/repo Kodo's own marketplace and compiler icons live in (see MarketplaceIndexUrls /
+    // CompilerIndexUrls). Only URLs pointing into this repo get rewritten to the Contents API -
+    // that's what lets Kodo-hosted icons be fetched with the raw+json Accept header. Third-party
+    // extension/compiler authors (e.g. Shine's own website repo) host their own icons and must be
+    // left as plain URLs: raw.githubusercontent.com already serves raw bytes directly, so routing
+    // it through api.github.com instead just trades a working CDN request for one that's subject
+    // to GitHub's unauthenticated API rate limit and can 404 on branch/path mismatches.
+    private const string KodoExtensionsOwner = "Kodo-IDE";
+    private const string KodoExtensionsRepo = "Kodo-Extensions";
+
+    /// Normalises GitHub URLs pointing at Kodo's own extensions repo to the Contents API form.
+    /// URLs for any other owner/repo (third-party icons) are returned unchanged.
     private static string NormalizeGitHubUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -2922,22 +3032,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var segments = uri.AbsolutePath.TrimStart('/').Split('/');
             if (segments.Length >= 5 &&
-                segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase))
+                segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase) &&
+                IsKodoExtensionsRepo(segments[0], segments[1]))
             {
                 var owner = segments[0];
                 var repo  = segments[1];
                 var path  = string.Join("/", segments, 4, segments.Length - 4);
                 return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
             }
-            return url; // non-blob github.com URL (e.g. releases page) - leave alone
+            return url; // non-blob or third-party github.com URL - leave alone
         }
 
         // raw.githubusercontent.com CDN URL
-        // /{owner}/{repo}/{branch}/{...path} -> Contents API
+        // /{owner}/{repo}/{branch}/{...path} -> Contents API, but only for Kodo's own repo.
         if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
         {
             var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-            if (segments.Length >= 4)
+            if (segments.Length >= 4 && IsKodoExtensionsRepo(segments[0], segments[1]))
             {
                 var owner = segments[0];
                 var repo  = segments[1];
@@ -2945,12 +3056,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var path  = string.Join("/", segments, 3, segments.Length - 3);
                 return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
             }
-            return url;
+            return url; // third-party raw.githubusercontent.com URL - already serves raw bytes, leave alone
         }
 
-        // Already a Contents API URL or a third-party URL - leave unchanged.
+        // Already a Contents API URL or a non-GitHub third-party URL - leave unchanged.
         return url;
     }
+
+    private static bool IsKodoExtensionsRepo(string owner, string repo) =>
+        owner.Equals(KodoExtensionsOwner, StringComparison.OrdinalIgnoreCase) &&
+        repo.Equals(KodoExtensionsRepo, StringComparison.OrdinalIgnoreCase);
 
 
     /// True when the URL is a GitHub Contents API endpoint, used to decide whether to add the raw+json Accept header.
@@ -3086,7 +3201,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(name))
             return string.Empty;
 
-        var match = Regex.Match(name, @"(?i)(v\d+(?:\.\d+)+)");
+        // Captures an optional pre-release suffix (-BETA, -rc1, -alpha.2, ...) along with the
+        // numeric version. Without this, extracting from "Shine-v0.8.0-BETA-Installer.exe" would
+        // return just "v0.8.0", dropping "-BETA" - which made this look like a stale/mismatched
+        // filename versus the declared "v0.8.0-BETA" version and triggered a find/replace that
+        // duplicated the suffix ("...v0.8.0-BETA-BETA-Installer.exe"), pointing the download URL
+        // at an asset that doesn't exist and causing an HTTP 404 on install.
+        var match = Regex.Match(name, @"(?i)(v\d+(?:\.\d+)+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)?)");
         return match.Success ? match.Groups[1].Value : string.Empty;
     }
 
@@ -4325,16 +4446,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Only the true "nothing installed" empty state - hidden while a search is
     // active so it can't stomp on the "no matches" state below.
     public bool IsNoExtensionsVisible =>
+        _selectedInstalledContentFilter != InstalledContentFilters.Compilers &&
         !VisibleLoadedExtensions.Any() && string.IsNullOrWhiteSpace(_extensionSearchText);
 
     public int InstalledExtensionsCount => VisibleLoadedExtensions.Count();
+    // Installed compilers use their own registry (installed-compilers.json) rather than
+    // LoadedExtension records - see SyncCompilerInstallStates - so this counts CompilerExtensions
+    // flagged IsInstalled instead of reusing InstalledExtensionsCount.
+    public int InstalledCompilersCount => CompilerExtensions.Count(e => e.IsInstalled) + ManualCompilerExtensions.Count;
     // Drives whether the Installed/Marketplace list cards render at all, so an
     // empty result (no installed extensions yet, or a search with zero matches)
     // doesn't leave a hollow, padded card floating above the empty-state message.
     public bool HasVisibleInstalledExtensions => FilteredInstalledExtensions.Any();
     public bool HasVisibleMarketplaceExtensions => FilteredMarketplaceExtensions.Any();
+    public bool HasVisibleCompilerExtensions => FilteredCompilerExtensions.Any();
+    // Combined visibility for the single Installed-tab list card that now holds both
+    // installed extensions and installed compilers as one continuous list.
+    public bool HasVisibleInstalledExtensionsOrCompilers =>
+        HasVisibleInstalledExtensions || HasVisibleInstalledCompilerExtensions;
     public string InstalledTabLabel => $"Installed ({InstalledExtensionsCount})";
     public string MarketplaceTabLabel => $"Marketplace ({MarketplaceExtensions.Count})";
+    public string CompilersTabLabel => "Compilers";
 
     public IEnumerable<LoadedExtension> ThemeExtensions =>
         LoadedExtensions.Where(e => e.Type.Equals("theme", StringComparison.OrdinalIgnoreCase) && e.ThemeDefinition is not null);
@@ -4368,31 +4500,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void SetSelectedExtensionsTab(string tab)
+    {
+        if (string.Equals(_selectedExtensionsTab, tab, StringComparison.Ordinal)) return;
+        _selectedExtensionsTab = tab;
+        OnPropertyChanged(nameof(IsInstalledTabSelected));
+        OnPropertyChanged(nameof(IsMarketplaceTabSelected));
+        OnPropertyChanged(nameof(IsCompilersTabSelected));
+        OnPropertyChanged(nameof(SelectedExtensionSort));
+        NotifyExtensionFiltersChanged();
+    }
+
     public bool IsInstalledTabSelected
     {
-        get => !_isMarketplaceTabSelected;
-        private set
-        {
-            var shouldSelectMarketplace = !value;
-            if (_isMarketplaceTabSelected == shouldSelectMarketplace) return;
-            _isMarketplaceTabSelected = shouldSelectMarketplace;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsMarketplaceTabSelected));
-            OnPropertyChanged(nameof(SelectedExtensionSort));
-        }
+        get => _selectedExtensionsTab == ExtensionsTabModes.Installed;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Installed); }
     }
 
     public bool IsMarketplaceTabSelected
     {
-        get => _isMarketplaceTabSelected;
-        private set
-        {
-            if (_isMarketplaceTabSelected == value) return;
-            _isMarketplaceTabSelected = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsInstalledTabSelected));
-            OnPropertyChanged(nameof(SelectedExtensionSort));
-        }
+        get => _selectedExtensionsTab == ExtensionsTabModes.Marketplace;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Marketplace); }
+    }
+
+    // Compilers tab, to the right of Marketplace - lists standalone toolchain installers
+    // (e.g. the Shine compiler) sourced from CompilerIndex.json rather than Kodo extensions.
+    public bool IsCompilersTabSelected
+    {
+        get => _selectedExtensionsTab == ExtensionsTabModes.Compilers;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Compilers); }
     }
 
     public IReadOnlyList<string> ExtensionSortOptions { get; } =
@@ -4843,6 +4979,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // distinct from IsNoExtensionsVisible/IsMarketplaceEmptyVisible above, which
     // previously fired (or failed to fire) regardless of the active search text.
     public bool IsInstalledSearchEmptyVisible =>
+        _selectedInstalledContentFilter != InstalledContentFilters.Compilers &&
         !string.IsNullOrWhiteSpace(_extensionSearchText) &&
         VisibleLoadedExtensions.Any() &&
         !FilteredInstalledExtensions.Any();
@@ -5370,6 +5507,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
+            if (_selectedInstalledContentFilter == InstalledContentFilters.Compilers)
+                return [];
+
             var source = string.IsNullOrWhiteSpace(_extensionSearchText)
                 ? VisibleLoadedExtensions
                 : VisibleLoadedExtensions.Where(e =>
@@ -5393,6 +5533,103 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     string.Equals(e.Type, "language", StringComparison.OrdinalIgnoreCase)),
                 _ => source
             };
+
+            if (!string.IsNullOrWhiteSpace(_extensionSearchText))
+            {
+                source = source.Where(e =>
+                    e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return SortMarketplaceExtensions(source);
+        }
+    }
+
+    public static class InstalledContentFilters
+    {
+        public const string All = "All";
+        public const string Extensions = "Extensions";
+        public const string Compilers = "Compilers";
+    }
+
+    public IReadOnlyList<string> InstalledContentFilterOptions { get; } =
+    [
+        InstalledContentFilters.All,
+        InstalledContentFilters.Extensions,
+        InstalledContentFilters.Compilers
+    ];
+
+    private string _selectedInstalledContentFilter = InstalledContentFilters.All;
+    public string SelectedInstalledContentFilter
+    {
+        get => _selectedInstalledContentFilter;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? InstalledContentFilters.All : value;
+            if (string.Equals(_selectedInstalledContentFilter, normalized, StringComparison.Ordinal))
+                return;
+
+            _selectedInstalledContentFilter = normalized;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsInstalledCompilersFilterSelected));
+            NotifyExtensionFiltersChanged();
+        }
+    }
+
+    // Drives visibility of the "add a compiler by path" bar - only shown in the Installed tab
+    // while its content filter is scoped to Compilers, not All or Extensions.
+    public bool IsInstalledCompilersFilterSelected => _selectedInstalledContentFilter == InstalledContentFilters.Compilers;
+
+    private string _manualCompilerPathText = string.Empty;
+    public string ManualCompilerPathText
+    {
+        get => _manualCompilerPathText;
+        set
+        {
+            if (_manualCompilerPathText == value) return;
+            _manualCompilerPathText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Installed compilers, surfaced in the Installed tab alongside LoadedExtensions -
+    // filtered by SelectedInstalledContentFilter (All / Extensions / Compilers) and search text.
+    // Combines index-installed compilers with manually-added/auto-detected ones (see
+    // ManualCompilerExtensions) into one list.
+    public IEnumerable<MarketplaceExtension> FilteredInstalledCompilerExtensions
+    {
+        get
+        {
+            if (_selectedInstalledContentFilter == InstalledContentFilters.Extensions)
+                return [];
+
+            IEnumerable<MarketplaceExtension> source = CompilerExtensions.Where(e => e.IsInstalled)
+                .Concat(ManualCompilerExtensions);
+
+            if (!string.IsNullOrWhiteSpace(_extensionSearchText))
+            {
+                source = source.Where(e =>
+                    e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    e.Author.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return SortMarketplaceExtensions(source);
+        }
+    }
+
+    public bool HasVisibleInstalledCompilerExtensions => FilteredInstalledCompilerExtensions.Any();
+    public bool IsInstalledCompilersEmptyStateVisible =>
+        !HasVisibleInstalledCompilerExtensions && _selectedInstalledContentFilter != InstalledContentFilters.Extensions;
+
+    // Compilers tab source list - same search behaviour as Marketplace, plus the
+    // Installed-only filter toggle (compilers have no Type/Theme/Language split).
+    public IEnumerable<MarketplaceExtension> FilteredCompilerExtensions
+    {
+        get
+        {
+            IEnumerable<MarketplaceExtension> source = CompilerExtensions;
 
             if (!string.IsNullOrWhiteSpace(_extensionSearchText))
             {
@@ -8786,7 +9023,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshExtensionsDataAsync(force: true);
 
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
-        IsMarketplaceTabSelected = false;
+        IsInstalledTabSelected = true;
 
     // Switches the Extensions tab and refreshes the marketplace listing (respecting the normal refresh cooldown).
     private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)

@@ -3365,11 +3365,11 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                VerticalAlignment="Center"
-                                               Text="Extensions" />
+                                               Text="Extensions &amp; Compilers" />
                                 </StackPanel>
                                 <TextBlock FontSize="13"
                                            Foreground="{Binding MutedTextBrush}"
-                                           Text="Enhance Kodo with language support and themes" />
+                                           Text="Enhance Kodo with Syntax Highlighting, Plugins, Themes, and Compilers" />
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
@@ -3407,6 +3407,18 @@
                                     <TextBlock Classes="extstatlabel" Text="In Marketplace" />
                                 </StackPanel>
                             </Border>
+                            <Border Classes="extstatchip">
+                                <StackPanel Spacing="0">
+                                    <TextBlock Classes="extstatvalue" Text="{Binding CompilerExtensions.Count}" />
+                                    <TextBlock Classes="extstatlabel" Text="Compilers" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="extstatchip">
+                                <StackPanel Spacing="0">
+                                    <TextBlock Classes="extstatvalue" Text="{Binding InstalledCompilersCount}" />
+                                    <TextBlock Classes="extstatlabel" Text="Compilers Installed" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -3425,7 +3437,11 @@
                             <Button Classes="tab"
                                     Classes.tabactive="{Binding IsMarketplaceTabSelected}"
                                     Click="MarketplaceTabButton_OnClick"
-                                    Content="Marketplace" />
+                                    Content="Extensions" />
+                            <Button Classes="tab"
+                                    Classes.tabactive="{Binding IsCompilersTabSelected}"
+                                    Click="CompilersTabButton_OnClick"
+                                    Content="{Binding CompilersTabLabel}" />
                         </StackPanel>
 
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto"
@@ -3455,6 +3471,38 @@
                                     HorizontalAlignment="Left">
                                 <ComboBox ItemsSource="{Binding ExtensionTypeFilterOptions}"
                                           SelectedItem="{Binding SelectedExtensionTypeFilter, Mode=TwoWay}"
+                                          MinWidth="0"
+                                          HorizontalAlignment="Left"
+                                          VerticalAlignment="Center"
+                                          HorizontalContentAlignment="Left"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          FontSize="13"
+                                          Foreground="{Binding PrimaryTextBrush}">
+                                    <ComboBox.Styles>
+                                        <Style Selector="ComboBoxItem">
+                                            <Setter Property="Background" Value="{Binding #RootWindow.ButtonBrush}" />
+                                            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+                                        </Style>
+                                    </ComboBox.Styles>
+                                </ComboBox>
+                            </Border>
+                            <!-- Content filter: All / Extensions / Compilers - Installed tab only, so installed
+                                 compilers can surface alongside installed Kodo extensions in one place. -->
+                            <Border Grid.Column="1"
+                                    MinWidth="96"
+                                    MaxWidth="180"
+                                    IsVisible="{Binding IsInstalledTabSelected}"
+                                    Background="{Binding ButtonBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Height="36"
+                                    Padding="6,0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Left">
+                                <ComboBox ItemsSource="{Binding InstalledContentFilterOptions}"
+                                          SelectedItem="{Binding SelectedInstalledContentFilter, Mode=TwoWay}"
                                           MinWidth="0"
                                           HorizontalAlignment="Left"
                                           VerticalAlignment="Center"
@@ -3509,8 +3557,12 @@
                         </Grid>
 
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}" Spacing="12">
-                            <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensions}">
-                            <ItemsControl ItemsSource="{Binding FilteredInstalledExtensions}">
+                            <!-- Installed extensions and installed compilers now render as one continuous
+                                 list card, sharing the same flat "extensionrow" look - see extensionrow
+                                 DataTemplates below. -->
+                            <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensionsOrCompilers}">
+                            <StackPanel>
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledExtensions}" ItemsSource="{Binding FilteredInstalledExtensions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodo:LoadedExtension">
                                         <Border Classes="extensionrow">
@@ -3617,6 +3669,122 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <!-- Installed compilers - same flat "extensionrow" template as installed
+                                 extensions above, so both render as one continuous list. Compilers come
+                                 from CompilerExtensions.IsInstalled (installed-compilers.json), not a
+                                 LoadedExtension record, hence the separate ItemsControl/DataTemplate -
+                                 but visually they now match exactly. Hidden entirely when the content
+                                 filter is "Extensions". -->
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
+                                          ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                        <Border Classes="extensionrow">
+                                            <ToolTip.Tip>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="12" />
+                                                    <TextBlock Text="{Binding Author}"
+                                                               FontSize="11"
+                                                               Opacity="0.7" />
+                                                </StackPanel>
+                                            </ToolTip.Tip>
+                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
+                                                <Border Grid.Column="0"
+                                                        Width="3"
+                                                        VerticalAlignment="Stretch"
+                                                        CornerRadius="2"
+                                                        Background="{Binding #RootWindow.AccentBrush}" />
+
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        Background="{Binding #RootWindow.AccentBrush}"
+                                                        IsVisible="{Binding !HasIcon}">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                                               Text="{Binding NameAbbreviation}" />
+                                                </Border>
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        IsVisible="{Binding HasIcon}"
+                                                        ClipToBounds="True">
+                                                    <Panel>
+                                                        <Image Source="{Binding IconImage}"
+                                                               Width="40"
+                                                               Height="40"
+                                                               Stretch="Uniform"
+                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <svg:Svg Source="{Binding SvgData}"
+                                                                 Width="40"
+                                                                 Height="40"
+                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </Panel>
+                                                </Border>
+
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="14"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <Border Classes="extensiontag"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                            <TextBlock Text="{Binding Type}"
+                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Description}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxLines="1" />
+                                                </StackPanel>
+
+                                                <StackPanel Grid.Column="3"
+                                                            Orientation="Horizontal"
+                                                            Spacing="14"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Spacing="6"
+                                                                HorizontalAlignment="Right"
+                                                                VerticalAlignment="Center">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   FontSize="12"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button Classes="chrome"
+                                                                Tag="{Binding}"
+                                                                Click="InstallCompilerExtensionButton_OnClick"
+                                                                IsEnabled="{Binding IsInstallEnabled}"
+                                                                Content="{Binding InstallButtonText}"
+                                                                IsVisible="{Binding IsUpdateAvailable}" />
+                                                        <Button Classes="uninstall"
+                                                                Tag="{Binding}"
+                                                                Click="UninstallCompilerExtensionButton_OnClick"
+                                                                IsEnabled="{Binding !IsInstalling}"
+                                                                Content="Uninstall"
+                                                                IsVisible="{Binding IsInstalled}" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            </StackPanel>
                             </Border>
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3659,6 +3827,53 @@
                                                Text="No installed extensions match your search." />
                                 </StackPanel>
                             </Border>
+
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    IsVisible="{Binding IsInstalledCompilersEmptyStateVisible}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center"
+                                            IsVisible="{Binding !IsInstalledSearchEmptyVisible}">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="No compilers installed" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               Text="Install a compiler from the Compilers tab to see it here." />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Manually add a compiler by filepath - only shown in the Installed
+                                 tab while its content filter is scoped to Compilers, not All or
+                                 Extensions. Auto-detected default compilers land in the same list
+                                 above without needing this. -->
+                            <Grid IsVisible="{Binding IsInstalledCompilersFilterSelected}"
+                                  ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="10"
+                                  HorizontalAlignment="Right"
+                                  Width="440">
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding ManualCompilerPathText, Mode=TwoWay}"
+                                         PlaceholderText="Add compiler by filepath, press Enter..."
+                                         Background="{Binding ButtonBrush}"
+                                         Foreground="{Binding PrimaryTextBrush}"
+                                         BorderBrush="{Binding SurfaceBorderBrush}"
+                                         CornerRadius="10"
+                                         Height="36"
+                                         Padding="12,0"
+                                         VerticalContentAlignment="Center"
+                                         KeyDown="ManualCompilerPathTextBox_OnKeyDown" />
+                                <Button Grid.Column="1"
+                                        Classes="chrome"
+                                        Click="AddManualCompilerButton_OnClick"
+                                        Content="Add" />
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel IsVisible="{Binding IsMarketplaceTabSelected}">
@@ -3876,6 +4091,151 @@
                                                HorizontalAlignment="Center"
                                                TextAlignment="Center"
                                                Text="No marketplace extensions found. Try a different search." />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Compilers tab: reuses the MarketplaceExtension card template, sourced from
+                             CompilerIndex.json instead of ExtensionsIndex.json. Installs launch a
+                             downloaded installer exe rather than extracting a Kodo extension package. -->
+                        <StackPanel IsVisible="{Binding IsCompilersTabSelected}">
+                            <ItemsControl ItemsSource="{Binding FilteredCompilerExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="5" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                        <Border Classes="extensiontile"
+                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
+                                                Background="{Binding #RootWindow.CardBrush}"
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
+                                            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
+                                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                            Background="{Binding #RootWindow.AccentBrush}"
+                                                            IsVisible="{Binding !HasIcon}">
+                                                        <TextBlock HorizontalAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   FontSize="15"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                                                   Text="{Binding NameAbbreviation}" />
+                                                    </Border>
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                            IsVisible="{Binding HasIcon}"
+                                                            ClipToBounds="True">
+                                                        <Panel>
+                                                            <Image Source="{Binding IconImage}"
+                                                                   Width="52"
+                                                                   Height="52"
+                                                                   Stretch="Uniform"
+                                                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                            <svg:Svg Source="{Binding SvgData}"
+                                                                     Width="52"
+                                                                     Height="52"
+                                                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        </Panel>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                                        <TextBlock FontSize="15"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <!-- The "compiler" tag is intentionally omitted here - the Compilers
+                                                             tab is already scoped to compilers, so it's redundant on every
+                                                             single card. It's still shown in the Installed section, where
+                                                             compilers are mixed in alongside other extension types. -->
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0"
+                                                               FontSize="11"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Author}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock FontSize="11"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <TextBlock Grid.Row="2"
+                                                           FontSize="12"
+                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                           Text="{Binding Description}"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxLines="3" />
+
+                                                <Grid Grid.Row="3">
+                                                    <Border Classes="installedtag"
+                                                            HorizontalAlignment="Stretch"
+                                                            Opacity="0.7"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            IsVisible="{Binding ShowInstalledBadge}">
+                                                        <TextBlock HorizontalAlignment="Center"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="Installed" />
+                                                    </Border>
+                                                    <Button Classes="chrome"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Center"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                            Tag="{Binding}"
+                                                            Click="InstallCompilerExtensionButton_OnClick"
+                                                            IsEnabled="{Binding IsInstallEnabled}"
+                                                            Content="{Binding InstallButtonText}"
+                                                            IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <Button Classes="marketinstall"
+                                                            HorizontalAlignment="Stretch"
+                                                            HorizontalContentAlignment="Center"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                            Tag="{Binding}"
+                                                            Click="InstallCompilerExtensionButton_OnClick"
+                                                            IsEnabled="{Binding IsInstallEnabled}"
+                                                            Content="{Binding InstallButtonText}"
+                                                            IsVisible="{Binding !IsInstalled}" />
+                                                </Grid>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <!-- Empty state: no compilers matched the current filter/search, or the index is empty. -->
+                            <Border Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="14"
+                                    Padding="20"
+                                    Margin="0,4,0,0"
+                                    IsVisible="{Binding !HasVisibleCompilerExtensions}">
+                                <StackPanel Spacing="4" HorizontalAlignment="Center">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               HorizontalAlignment="Center"
+                                               Text="Nothing here yet" />
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               FontSize="13"
+                                               HorizontalAlignment="Center"
+                                               TextAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Text="No compilers matched. Try clearing the search or the Installed only filter." />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
