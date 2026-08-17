@@ -314,22 +314,54 @@ internal static class UpdateService
     // Install / restart
 
     // Launches the installer silently, then exits so it can overwrite Kodo.exe.
-    // Process.Kill() below is a fallback if CloseApplicationsFilter isn't in the .iss.
-    public static void LaunchInstallerAndExit(string installerPath)
+    // When reopenAfterInstall is true (manual update), a detached batch script waits for the
+    // installer to finish and then relaunches Kodo. When false (background update), Kodo stays closed.
+    public static void LaunchInstallerAndExit(string installerPath, bool reopenAfterInstall = false)
     {
-        var startInfo = new ProcessStartInfo
+        if (reopenAfterInstall)
+        {
+            var kodoExePath = Environment.ProcessPath;
+            if (!string.IsNullOrEmpty(kodoExePath))
+            {
+                try
+                {
+                    // A detached batch script runs the installer (which blocks until complete)
+                    // and then relaunches Kodo. The cmd.exe process survives Environment.Exit(0).
+                    var batPath = Path.Combine(Path.GetTempPath(), "Kodo-Update", "restart-kodo.bat");
+                    Directory.CreateDirectory(Path.GetDirectoryName(batPath)!);
+                    File.WriteAllText(batPath,
+                        $"@echo off\r\n" +
+                        $"\"{installerPath}\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS\r\n" +
+                        $"start \"\" \"{kodoExePath}\"\r\n" +
+                        $"del \"%~f0\"\r\n");
+
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName     = batPath,
+                        UseShellExecute = false,
+                        CreateNoWindow   = true,
+                    });
+
+                    Thread.Sleep(1500);
+                    Environment.Exit(0);
+                    return;
+                }
+                catch
+                {
+                    // Fall through to the direct-launch fallback below.
+                }
+            }
+        }
+
+        // Background-update path (or fallback): launch installer, no restart.
+        Process.Start(new ProcessStartInfo
         {
             FileName        = installerPath,
-            // No /SKIPIFSILENT - the .iss's "Launch Kodo" entry needs a silent run to fire.
-            Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+            Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS",
             UseShellExecute = true,
-        };
+        });
 
-        Process.Start(startInfo);
-
-        // Gives the installer time to start and Restart Manager to register this process - 500ms was too tight.
         Thread.Sleep(1500);
-
         Environment.Exit(0);
     }
 
@@ -432,6 +464,7 @@ internal sealed class UpdateDialog : Window
     private readonly Button _primaryButton;
     private readonly Button _laterButton;
     private readonly StackPanel _content;
+    private bool _canClose = true;
 
     // preDownloadedInstallerPath means KodoUpdater already fetched the installer; Update Now skips straight to launching it.
     public UpdateDialog(UpdateInfo update, string? preDownloadedInstallerPath = null)
@@ -504,11 +537,11 @@ internal sealed class UpdateDialog : Window
             Minimum    = 0,
             Maximum    = 1,
             Value      = 0,
-            Height     = 6,
+            Height     = 8,
             IsVisible  = false,
             Foreground = new SolidColorBrush(_accentColor),
             Background = new SolidColorBrush(BadgeBgColor),
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(4),
         };
 
         _laterButton = new Button
@@ -558,6 +591,14 @@ internal sealed class UpdateDialog : Window
         Content = _content;
     }
 
+    // Prevents the dialog from being closed while an update is in progress.
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (!_canClose)
+            e.Cancel = true;
+        base.OnClosing(e);
+    }
+
     // Shows non-modally if no owner can be safely used, modal otherwise - mirrors the crash dialog's owner-safety check.
     public static void ShowFor(UpdateInfo update, string? installerPath = null)
     {
@@ -583,22 +624,26 @@ internal sealed class UpdateDialog : Window
 
     private async Task BeginUpdateAsync()
     {
+        _canClose = false;
         _primaryButton.IsEnabled = false;
         _laterButton.IsEnabled   = false;
 
         // Fast path: sentinel file means it's already downloaded.
         if (_preDownloadedInstallerPath is not null && File.Exists(_preDownloadedInstallerPath))
         {
-            _primaryButton.Content = "Restarting…";
-            _statusText.Text       = "Restarting Kodo to finish installing…";
+            _progressBar.IsVisible      = true;
+            _progressBar.IsIndeterminate = true;
+            _primaryButton.Content      = "Installing…";
+            _statusText.Text            = "Installing update… Kodo will restart shortly.";
             await Task.Delay(400);
-            UpdateService.LaunchInstallerAndExit(_preDownloadedInstallerPath);
+            UpdateService.LaunchInstallerAndExit(_preDownloadedInstallerPath, reopenAfterInstall: true);
             return;
         }
 
-        _primaryButton.Content   = "Downloading…";
-        _progressBar.IsVisible   = true;
-        _statusText.Text         = "Downloading the update…";
+        _primaryButton.Content      = "Downloading…";
+        _progressBar.IsVisible      = true;
+        _progressBar.IsIndeterminate = false;
+        _statusText.Text            = "Downloading the update…";
 
         var progress = new Progress<UpdateDownloadProgress>(p =>
         {
@@ -610,21 +655,24 @@ internal sealed class UpdateDialog : Window
         {
             var installerPath = await UpdateService.DownloadInstallerAsync(_update, progress);
 
-            _statusText.Text       = "Update downloaded. Restarting Kodo to finish installing…";
-            _primaryButton.Content = "Restarting…";
+            _progressBar.IsIndeterminate = true;
+            _statusText.Text            = "Installing update… Kodo will restart shortly.";
+            _primaryButton.Content      = "Installing…";
 
-            // Brief pause so the "downloaded" message is actually visible.
+            // Brief pause so the "installing" message is actually visible.
             await Task.Delay(600);
 
-            UpdateService.LaunchInstallerAndExit(installerPath);
+            UpdateService.LaunchInstallerAndExit(installerPath, reopenAfterInstall: true);
         }
         catch (Exception ex)
         {
-            _statusText.Text         = "The update couldn't be downloaded. Check your connection and try again.";
-            _primaryButton.Content   = "Retry";
-            _primaryButton.IsEnabled = true;
-            _laterButton.IsEnabled   = true;
-            _progressBar.IsVisible   = false;
+            _statusText.Text            = "The update couldn't be downloaded. Check your connection and try again.";
+            _primaryButton.Content      = "Retry";
+            _primaryButton.IsEnabled    = true;
+            _laterButton.IsEnabled      = true;
+            _progressBar.IsVisible      = false;
+            _progressBar.IsIndeterminate = false;
+            _canClose = true;
 
             KodoDiagnostics.WriteDiagnosticLog(
                 source: "UpdateDialog.BeginUpdateAsync",
