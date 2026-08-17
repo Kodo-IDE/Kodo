@@ -3081,6 +3081,9 @@
                                                                         <ItemsControl.ItemTemplate>
                                                                                 <DataTemplate x:DataType="kodo:LoadedExtension">
                                                                                     <Button Classes="chrome"
+                                                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                                             Click="ThemeButton_OnClick"
                                                                                             Tag="{Binding ThemeCardThemeId}"
                                                                                             Width="170">
@@ -3772,6 +3775,9 @@
                                                     </StackPanel>
                                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <Button Classes="chrome"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                 Tag="{Binding}"
                                                                 Click="UpdateInstalledExtensionButton_OnClick"
                                                                 Content="Update"
@@ -3889,6 +3895,9 @@
                                                     </StackPanel>
                                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <Button Classes="chrome"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                 Tag="{Binding}"
                                                                 Click="InstallCompilerExtensionButton_OnClick"
                                                                 IsEnabled="{Binding IsInstallEnabled}"
@@ -4570,6 +4579,9 @@
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="kodo:LoadedExtension">
                                                                 <Button Classes="chrome"
+                                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                                        BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                         Click="ThemeButton_OnClick"
                                                                         Tag="{Binding ThemeCardThemeId}"
                                                                         Width="170">
