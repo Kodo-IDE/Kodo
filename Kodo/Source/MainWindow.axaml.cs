@@ -828,6 +828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
+    private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
@@ -1273,6 +1274,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .Where(path => File.Exists(path))
             .Distinct(StringComparer.OrdinalIgnoreCase));
         _startupActiveTabPath = settings.ActiveTabPath;
+        _startupFolderPath = !string.IsNullOrWhiteSpace(settings.LastOpenedFolderPath) &&
+                              Directory.Exists(settings.LastOpenedFolderPath)
+            ? settings.LastOpenedFolderPath
+            : null;
         LoadRecentFiles(settings.RecentFiles);
         _isPSReadLinePredictionEnabled = settings.PSReadLinePredictionEnabled;
         RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
@@ -7060,6 +7065,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ActiveTabPath = ActiveEditorTab is { IsUntitled: false } activeTab
                 ? activeTab.Path
                 : null,
+            LastOpenedFolderPath = _currentFolderPath,
             RecentFiles = RecentFiles
                 .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened, IsPinned = f.IsPinned })
                 .ToList()
@@ -8032,6 +8038,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
             {
+                // Only restore the folder if one of the tabs being restored actually
+                // came from it - otherwise a stale LastOpenedFolderPath from a folder
+                // the user has since closed would reopen unexpectedly.
+                if (!string.IsNullOrWhiteSpace(_startupFolderPath) &&
+                    _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
+                {
+                    await OpenFolderFromPathAsync(_startupFolderPath!);
+                }
+
                 foreach (var path in _startupOpenTabPaths)
                 {
                     await OpenFileFromPathAsync(path);
@@ -8120,6 +8135,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var path = folder.TryGetLocalPath();
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
 
+        await OpenFolderFromPathAsync(path);
+    }
+
+    // Shared by the folder picker and by startup tab restoration, so a folder
+    // opened either way ends up in the same state (tree populated, watcher armed,
+    // added to Recent).
+    private async Task OpenFolderFromPathAsync(string path)
+    {
         _currentFolderPath = path;
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
@@ -13117,6 +13140,9 @@ internal sealed class AppSettings
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }
+    // The folder open at last shutdown, restored alongside OpenTabPaths when
+    // RestoreOpenTabsOnLaunchEnabled is on and at least one restored tab lived inside it.
+    public string? LastOpenedFolderPath { get; set; }
     public List<RecentFileEntry> RecentFiles { get; set; } = [];
     // False on first launch (settings file didn't exist yet); set to true after the
     // tutorial is dismissed so it never shows again on subsequent launches.
