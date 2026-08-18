@@ -9341,7 +9341,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Ctrl+H",             "Go to Home"),
             ("Ctrl+Shift+E",       "Go to Editor"),
             ("Ctrl+,",             "Open Settings"),
-            ("Ctrl+E  or  Ctrl+Shift+X", "Open Extensions / Marketplace"),
+            ("Ctrl+E  or  Ctrl+Shift+X", "Marketplace"),
             // Files & tabs
             ("Ctrl+N",             "New file"),
             ("Ctrl+O",             "Open file"),
