@@ -385,22 +385,22 @@ public partial class MainWindow
         }
     }
 
-    private static readonly (string Id, string DisplayName, string Author, string[] ExeNames, string? CanonicalCompilerId)[] AutoDetectCompilerCandidates =
+    private static readonly (string Id, string DisplayName, string Author, string[] ExeNames, string? CanonicalCompilerId, bool MultiVersion, string? VersionArg)[] AutoDetectCompilerCandidates =
     [
-        ("dotnet-cli", ".NET SDK (dotnet)", "Microsoft", new[] { "dotnet.exe" }, "dotnet-sdk"),
-        ("csc", "C# Compiler (csc.exe)", "Microsoft", new[] { "csc.exe" }, "dotnet-sdk"),
-        ("gcc", "GCC", "GNU / MinGW-w64", new[] { "gcc.exe" }, "msys2-mingw"),
-        ("gpp", "G++", "GNU / MinGW-w64", new[] { "g++.exe" }, "msys2-mingw"),
-        ("clang", "Clang", "LLVM Project", new[] { "clang.exe" }, "llvm-clang"),
-        ("python-auto", "Python", "Python Software Foundation", new[] { "python.exe" }, "python"),
-        ("node-auto", "Node.js", "OpenJS Foundation", new[] { "node.exe" }, "nodejs"),
-        ("javac", "Java (JDK)", "OpenJDK", new[] { "javac.exe" }, "temurin-jdk"),
-        ("go-auto", "Go", "Google", new[] { "go.exe" }, "go"),
-        ("rustc", "Rust (rustc)", "Rust Foundation", new[] { "rustc.exe" }, "rust-rustup"),
-        ("perl-auto", "Perl", "Strawberry Perl", new[] { "perl.exe" }, "strawberry-perl"),
-        ("ruby-auto", "Ruby", "RubyInstaller", new[] { "ruby.exe" }, "rubyinstaller"),
-        ("swift-auto", "Swift", "Swift.org", new[] { "swift.exe" }, "swift"),
-        ("julia-auto", "Julia", "JuliaLang", new[] { "julia.exe" }, "julia")
+        ("dotnet-cli", ".NET SDK (dotnet)", "Microsoft", new[] { "dotnet.exe" }, "dotnet-sdk", true, "--version"),
+        ("csc", "C# Compiler (csc.exe)", "Microsoft", new[] { "csc.exe" }, "dotnet-sdk", false, null),
+        ("gcc", "GCC", "GNU / MinGW-w64", new[] { "gcc.exe" }, "msys2-mingw", false, null),
+        ("gpp", "G++", "GNU / MinGW-w64", new[] { "g++.exe" }, "msys2-mingw", false, null),
+        ("clang", "Clang", "LLVM Project", new[] { "clang.exe" }, "llvm-clang", false, null),
+        ("python-auto", "Python", "Python Software Foundation", new[] { "python.exe" }, "python", true, "--version"),
+        ("node-auto", "Node.js", "OpenJS Foundation", new[] { "node.exe" }, "nodejs", true, "--version"),
+        ("javac", "Java (JDK)", "OpenJDK", new[] { "javac.exe" }, "temurin-jdk", true, "-version"),
+        ("go-auto", "Go", "Google", new[] { "go.exe" }, "go", false, null),
+        ("rustc", "Rust (rustc)", "Rust Foundation", new[] { "rustc.exe" }, "rust-rustup", false, null),
+        ("perl-auto", "Perl", "Strawberry Perl", new[] { "perl.exe" }, "strawberry-perl", false, null),
+        ("ruby-auto", "Ruby", "RubyInstaller", new[] { "ruby.exe" }, "rubyinstaller", false, null),
+        ("swift-auto", "Swift", "Swift.org", new[] { "swift.exe" }, "swift", false, null),
+        ("julia-auto", "Julia", "JuliaLang", new[] { "julia.exe" }, "julia", false, null)
     ];
 
     private async Task AutoDetectDefaultCompilersAsync()
@@ -427,11 +427,34 @@ public partial class MainWindow
                     {
                         foreach (var exeName in candidate.ExeNames)
                         {
-                            var found = TryFindOnPath(exeName);
-                            if (found is null)
-                                continue;
+                            if (candidate.MultiVersion)
+                            {
+                                var allFound = FindAllOnPath(exeName);
+                                foreach (var found in allFound)
+                                {
+                                    if (IsKnownShimOrLauncher(found, candidate.Id))
+                                        continue;
 
-                            results.Add((candidate.Id, found, candidate.DisplayName, candidate.Author, candidate.CanonicalCompilerId));
+                                    var version = TryGetVersionFromPath(found);
+                                    if (string.IsNullOrWhiteSpace(version) && candidate.VersionArg is { } arg)
+                                        version = TryGetVersionFromProcess(found, arg);
+                                    var id = string.IsNullOrWhiteSpace(version)
+                                        ? candidate.Id
+                                        : $"{candidate.Id}-{version}";
+                                    var displayName = string.IsNullOrWhiteSpace(version)
+                                        ? candidate.DisplayName
+                                        : $"{candidate.DisplayName} {version}";
+                                    results.Add((id, found, displayName, candidate.Author, candidate.CanonicalCompilerId));
+                                }
+                            }
+                            else
+                            {
+                                var found = TryFindOnPath(exeName);
+                                if (found is null)
+                                    continue;
+
+                                results.Add((candidate.Id, found, candidate.DisplayName, candidate.Author, candidate.CanonicalCompilerId));
+                            }
                             break;
                         }
                     }
@@ -442,6 +465,34 @@ public partial class MainWindow
 
                 return results;
             });
+
+            var discoveredIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (id, _, _, _, _) in discovered)
+                discoveredIds.Add("auto:" + id);
+
+            foreach (var candidate in AutoDetectCompilerCandidates.Where(c => c.MultiVersion))
+            {
+                var baseId = "auto:" + candidate.Id;
+                var hasVersioned = discoveredIds.Any(d =>
+                    d.StartsWith(baseId + "-", StringComparison.OrdinalIgnoreCase));
+                if (hasVersioned && _manualCompilers.ContainsKey(baseId))
+                {
+                    _manualCompilers.Remove(baseId);
+                    _autoDetectDismissedIds.Add(baseId);
+                }
+            }
+
+            var shimKeys = _manualCompilers
+                .Where(kvp => kvp.Value.AutoDetected && IsKnownShimOrLauncher(kvp.Value.ExecutablePath, kvp.Key.Contains("python") ? "python-auto" : kvp.Key.Contains("node") ? "node-auto" : ""))
+                .Select(kvp => kvp.Key)
+                .ToList();
+            foreach (var key in shimKeys)
+            {
+                _manualCompilers.Remove(key);
+                _autoDetectDismissedIds.Add(key);
+            }
+            if (shimKeys.Count > 0)
+                SaveManualCompilerRegistry();
 
             var addedAny = false;
             foreach (var (id, path, name, author, canonicalCompilerId) in discovered)
@@ -456,10 +507,11 @@ public partial class MainWindow
 
             if (addedAny)
             {
+                SaveManualCompilerRegistry();
                 RefreshManualCompilerExtensions();
-NotifyExtensionFiltersChanged();
-        RefreshRunBuildState();
-    }
+                NotifyExtensionFiltersChanged();
+                RefreshRunBuildState();
+            }
         }
         catch
         {
@@ -489,6 +541,124 @@ NotifyExtensionFiltersChanged();
         }
 
         return null;
+    }
+
+    private static List<string> FindAllOnPath(string exeName)
+    {
+        var results = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var candidate = Path.Combine(dir.Trim(), exeName);
+                    if (File.Exists(candidate))
+                    {
+                        var full = Path.GetFullPath(candidate);
+                        if (seen.Add(full))
+                            results.Add(full);
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
+        return results;
+    }
+
+    private static string TryGetVersionFromPath(string exePath)
+    {
+        try
+        {
+            var dirName = Path.GetFileName(Path.GetDirectoryName(exePath)) ?? string.Empty;
+
+            var match = Regex.Match(dirName, @"(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)");
+            if (match.Success)
+                return match.Groups[1].Value;
+
+            var fileName = Path.GetFileNameWithoutExtension(exePath);
+            match = Regex.Match(fileName, @"(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)");
+            if (match.Success)
+                return match.Groups[1].Value;
+
+            var info = FileVersionInfo.GetVersionInfo(exePath);
+            var fileVer = info.FileVersion?.Trim();
+            if (!string.IsNullOrWhiteSpace(fileVer))
+                return fileVer;
+
+            var prodVer = info.ProductVersion?.Trim();
+            if (!string.IsNullOrWhiteSpace(prodVer))
+                return prodVer;
+        }
+        catch
+        {
+        }
+        return string.Empty;
+    }
+
+    private static string TryGetVersionFromProcess(string exePath, string versionArg)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = exePath,
+                Arguments = versionArg,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            });
+            if (process is null)
+                return string.Empty;
+
+            var output = process.StandardOutput.ReadToEnd().Trim();
+            if (string.IsNullOrWhiteSpace(output))
+                output = process.StandardError.ReadToEnd().Trim();
+            process.WaitForExit(3000);
+
+            var match = Regex.Match(output, @"(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)");
+            return match.Success ? match.Groups[1].Value : string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool IsKnownShimOrLauncher(string exePath, string candidateId)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(exePath) ?? string.Empty;
+            var dirName = Path.GetFileName(dir);
+            var parentDir = Path.GetFileName(Path.GetDirectoryName(dir)) ?? string.Empty;
+
+            if (candidateId is "python-auto")
+            {
+                if (dirName.Equals("bin", StringComparison.OrdinalIgnoreCase) &&
+                    parentDir.Equals("Python", StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                if (dirName.Equals("WindowsApps", StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            if (candidateId is "node-auto" &&
+                dirName.Equals("node_modules", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        catch
+        {
+        }
+        return false;
     }
 
     private static string? TryFindMsvcCl()
