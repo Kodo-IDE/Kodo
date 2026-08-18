@@ -192,6 +192,7 @@ public class FileTreeItem : INotifyPropertyChanged
                 ".dll" => "DLL",
                 ".gitignore" => "IGNR",
                 ".shine" => "SHINE",
+                ".asm" or ".s" or ".S" => "ASM",
 			    _ => "..",
 			};
     }
