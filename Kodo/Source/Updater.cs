@@ -445,13 +445,8 @@ internal static class UpdateService
 // Update dialog UI: self-contained, built in code. Flow: Update available -> Update Now -> progress -> installer launch.
 internal sealed class UpdateDialog : Window
 {
-    // Same dark-surface palette as every other Kodo dialog, for visual consistency.
-    private static readonly Color SurfaceColor   = DialogPalette.Surface;
-    private static readonly Color SurfaceDeep    = DialogPalette.SurfaceDeep;
-    private static readonly Color BorderColor    = DialogPalette.Border;
-    private static readonly Color BadgeBgColor   = DialogPalette.BadgeBg;
-    private static readonly Color TextMutedColor = DialogPalette.TextMuted;
-    private static readonly Color TextDimColor   = DialogPalette.TextDim;
+    // Theme-resolved palette, matching the user's active Light/Dark/extension theme.
+    private readonly DialogThemePalette _palette;
 
     // Resolved from the user's active accent setting, same as MainWindow.
     private readonly Color _accentColor;
@@ -471,13 +466,14 @@ internal sealed class UpdateDialog : Window
     {
         _update = update;
         _preDownloadedInstallerPath = preDownloadedInstallerPath;
+        _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
 
         Title  = "Kodo - Update Available";
         Width  = 460;
         SizeToContent = SizeToContent.Height;
         CanResize  = false;
-        Background = new SolidColorBrush(SurfaceColor);
+        Background = new SolidColorBrush(_palette.Background);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
         var iconBadge = new Border
@@ -501,7 +497,7 @@ internal sealed class UpdateDialog : Window
             Text       = $"Kodo {update.Version} is available",
             FontSize   = 16,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = Brushes.White,
+            Foreground = new SolidColorBrush(_palette.Text),
             TextWrapping = TextWrapping.Wrap,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -519,7 +515,7 @@ internal sealed class UpdateDialog : Window
                 ? "A new version of Kodo has already been downloaded and is ready to install."
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
             FontSize     = 13,
-            Foreground   = new SolidColorBrush(TextMutedColor),
+            Foreground   = new SolidColorBrush(_palette.TextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
 
@@ -540,7 +536,7 @@ internal sealed class UpdateDialog : Window
             Height     = 8,
             IsVisible  = false,
             Foreground = new SolidColorBrush(_accentColor),
-            Background = new SolidColorBrush(BadgeBgColor),
+            Background = new SolidColorBrush(_palette.BadgeBg),
             CornerRadius = new CornerRadius(4),
         };
 
@@ -549,9 +545,9 @@ internal sealed class UpdateDialog : Window
             Content             = "Later",
             HorizontalAlignment = HorizontalAlignment.Left,
             Padding             = new Thickness(16, 8),
-            Background          = new SolidColorBrush(BadgeBgColor),
-            Foreground          = new SolidColorBrush(TextMutedColor),
-            BorderBrush         = new SolidColorBrush(BorderColor),
+            Background          = new SolidColorBrush(_palette.BadgeBg),
+            Foreground          = new SolidColorBrush(_palette.TextMuted),
+            BorderBrush         = new SolidColorBrush(_palette.Border),
             BorderThickness     = new Thickness(1),
             CornerRadius        = new CornerRadius(8),
         };
@@ -819,6 +815,170 @@ internal static class AccentResolver
         public string AccentColorMode { get; set; } = "kodo";
         public string CustomAccentHex { get; set; } = DefaultAccentHex;
         public string? CachedThemeAccentHex { get; set; }
+    }
+}
+
+// Full colour palette for code-built dialogs, resolved from the user's active theme.
+// Mirrors the brush properties on MainWindow but reads directly from kodosettings.json
+// so standalone processes (KodoUpdater) can use it without loading the extension system.
+internal sealed record DialogThemePalette(
+    Color Background,
+    Color SurfaceDeep,
+    Color Border,
+    Color BadgeBg,
+    Color Text,
+    Color TextMuted,
+    Color TextDim);
+
+internal static class ThemeResolver
+{
+    private const string SettingsFileName = "kodosettings.json";
+
+    // Built-in palettes matching MainWindow.ApplyThemeBrushes.
+    private static readonly DialogThemePalette DarkPalette = new(
+        Background: Color.Parse("#1E1E1E"),
+        SurfaceDeep: Color.Parse("#1A1A1A"),
+        Border: Color.Parse("#3A3A3A"),
+        BadgeBg: Color.Parse("#2B2B2B"),
+        Text: Color.Parse("#F4F4F4"),
+        TextMuted: Color.Parse("#A0A0A0"),
+        TextDim: Color.Parse("#606060"));
+
+    private static readonly DialogThemePalette LightPalette = new(
+        Background: Color.Parse("#F3F3F3"),
+        SurfaceDeep: Color.Parse("#FFFFFF"),
+        Border: Color.Parse("#D7DCE5"),
+        BadgeBg: Color.Parse("#E3E8F1"),
+        Text: Color.Parse("#202124"),
+        TextMuted: Color.Parse("#5F6B7A"),
+        TextDim: Color.Parse("#8A8A8A"));
+
+    public static DialogThemePalette GetCurrentPalette()
+    {
+        var settings = LoadThemeSettings();
+
+        return settings.ThemeName switch
+        {
+            "Light"  => LightPalette,
+            "Dark"   => DarkPalette,
+#pragma warning disable CA1416 // Kodo targets Windows only; System theme check is Windows-only by design.
+            "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
+#pragma warning restore CA1416
+            _        => ResolveExtensionPalette(settings),
+        };
+    }
+
+    private static DialogThemePalette ResolveExtensionPalette(ThemeSettings settings)
+    {
+        // If MainWindow cached the extension theme's window background, use it
+        // to derive a full palette. Otherwise fall back to the dark palette.
+        var bgHex = settings.CachedThemeWindowBackgroundHex;
+        if (string.IsNullOrWhiteSpace(bgHex))
+            return DarkPalette;
+
+        Color bg;
+        try { bg = Color.Parse(bgHex); }
+        catch { return DarkPalette; }
+
+        var isLight = IsLightColor(bg);
+
+        // Derive supporting colours by blending toward known good values for
+        // the detected light/dark polarity. This gives a reasonable match even
+        // when the exact extension palette colours aren't available.
+        return isLight
+            ? new DialogThemePalette(
+                Background: bg,
+                SurfaceDeep: Lighten(bg, 0.04),
+                Border: Blend(Color.Parse("#D7DCE5"), bg, 0.5),
+                BadgeBg: Blend(Color.Parse("#E3E8F1"), bg, 0.4),
+                Text: Color.Parse("#202124"),
+                TextMuted: Color.Parse("#5F6B7A"),
+                TextDim: Color.Parse("#8A8A8A"))
+            : new DialogThemePalette(
+                Background: bg,
+                SurfaceDeep: Darken(bg, 0.04),
+                Border: Blend(Color.Parse("#3A3A3A"), bg, 0.5),
+                BadgeBg: Blend(Color.Parse("#2B2B2B"), bg, 0.4),
+                Text: Color.Parse("#F4F4F4"),
+                TextMuted: Color.Parse("#A0A0A0"),
+                TextDim: Color.Parse("#606060"));
+    }
+
+    // Determines light vs dark from the background luminance (WCAG relative luminance).
+    private static bool IsLightColor(Color c)
+    {
+        static double Lin(byte ch)
+        {
+            var s = ch / 255.0;
+            return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+        }
+        var luminance = 0.2126 * Lin(c.R) + 0.7152 * Lin(c.G) + 0.0722 * Lin(c.B);
+        return luminance > 0.4;
+    }
+
+    private static Color Lighten(Color c, double amount)
+    {
+        var r = (byte)Math.Clamp(c.R + (255 - c.R) * amount, 0, 255);
+        var g = (byte)Math.Clamp(c.G + (255 - c.G) * amount, 0, 255);
+        var b = (byte)Math.Clamp(c.B + (255 - c.B) * amount, 0, 255);
+        return Color.Parse($"#{r:X2}{g:X2}{b:X2}");
+    }
+
+    private static Color Darken(Color c, double amount)
+    {
+        var r = (byte)Math.Clamp(c.R * (1 - amount), 0, 255);
+        var g = (byte)Math.Clamp(c.G * (1 - amount), 0, 255);
+        var b = (byte)Math.Clamp(c.B * (1 - amount), 0, 255);
+        return Color.Parse($"#{r:X2}{g:X2}{b:X2}");
+    }
+
+    private static Color Blend(Color a, Color b, double t)
+    {
+        var r = (byte)(a.R + (b.R - a.R) * t);
+        var g = (byte)(a.G + (b.G - a.G) * t);
+        var bl = (byte)(a.B + (b.B - a.B) * t);
+        return Color.Parse($"#{r:X2}{g:X2}{bl:X2}");
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static bool IsWindowsLightTheme()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("AppsUseLightTheme") is int raw)
+                return raw != 0;
+        }
+        catch { /* Registry unavailable */ }
+        return false; // Default to dark.
+    }
+
+    private static ThemeSettings LoadThemeSettings()
+    {
+        try
+        {
+            var path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Kodo", SettingsFileName);
+
+            if (!File.Exists(path)) return new ThemeSettings();
+
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return new ThemeSettings();
+
+            return JsonSerializer.Deserialize<ThemeSettings>(json) ?? new ThemeSettings();
+        }
+        catch
+        {
+            return new ThemeSettings();
+        }
+    }
+
+    private sealed class ThemeSettings
+    {
+        public string ThemeName { get; set; } = "Dark";
+        public string? CachedThemeWindowBackgroundHex { get; set; }
     }
 }
 

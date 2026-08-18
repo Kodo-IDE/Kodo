@@ -3,10 +3,9 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <!-- WinExe, not Exe: this process is launched silently by Kodo and must
-         never flash a console window. It has no UI of its own - it only
-         writes the sentinel file that Kodo reads on next launch, or (when
-         "install in background" is enabled and Kodo isn't running) launches
-         the installer directly. -->
+         never flash a console window. It shows an installer-progress dialog
+         when Kodo hands off an update, and writes the sentinel file that Kodo
+         reads on next launch otherwise. -->
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -20,5 +19,12 @@
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+  </ItemGroup>
 
 </Project>

@@ -1,13 +1,16 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Kodo;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
 
 namespace KodoUpdater;
 
@@ -19,6 +22,14 @@ internal static class Program
 
     private static async Task Main(string[] args)
     {
+        // When launched by the installer's [Run] section after an update,
+        // check whether we need to relaunch Kodo and then exit immediately.
+        if (args.Length > 0 && args[0] == "--relaunch")
+        {
+            HandleRelaunchSentinel();
+            return;
+        }
+
         Mutex? singleInstance = null;
         try
         {
@@ -32,6 +43,11 @@ internal static class Program
 
         try
         {
+            // Start the named pipe listener on a background thread so it
+            // doesn't block the 30-minute poll loop.
+            var pipeCts = new CancellationTokenSource();
+            _ = Task.Run(() => PipeListenerLoopAsync(pipeCts.Token));
+
             while (true)
             {
                 try
@@ -51,6 +67,186 @@ internal static class Program
             singleInstance?.Dispose();
         }
     }
+
+    // ── Named pipe listener ────────────────────────────────────────────────
+    // Kodo sends an InstallRequest JSON payload when it is about to exit so
+    // that KodoUpdater can show the installer-progress dialog.
+
+    private const string PipeName = "Kodo-KodoUpdater-InstallCommand";
+
+    private sealed class InstallRequest
+    {
+        [JsonPropertyName("installerPath")]
+        public string InstallerPath { get; set; } = "";
+
+        [JsonPropertyName("reopen")]
+        public bool Reopen { get; set; }
+    }
+
+    private static async Task PipeListenerLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await using var server = new NamedPipeServerStream(
+                    PipeName,
+                    PipeDirection.In,
+                    maxNumberOfServerInstances: 1,
+                    PipeTransmissionMode.Byte,
+                    PipeOptions.Asynchronous);
+
+                await server.WaitForConnectionAsync(ct);
+
+                using var reader = new StreamReader(server);
+                var json = await reader.ReadToEndAsync(ct);
+                var request = JsonSerializer.Deserialize<InstallRequest>(json, JsonOptions);
+                if (request is not null && !string.IsNullOrEmpty(request.InstallerPath))
+                {
+                    // Fire-and-forget: the handler runs Avalonia on an STA thread
+                    // and blocks until the installer exits (or is killed by it).
+                    _ = Task.Run(() => HandleInstallRequestAsync(request));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Transient pipe error - back off briefly and retry.
+                try { await Task.Delay(1000, ct); } catch { break; }
+            }
+        }
+    }
+
+    private static async Task HandleInstallRequestAsync(InstallRequest request)
+    {
+        try
+        {
+            if (request.Reopen)
+                WriteRelaunchSentinel();
+
+            IClassicDesktopStyleApplicationLifetime? appLifetime = null;
+            var dialog = new InstallerProgressDialog();
+
+            // Show the Avalonia progress dialog on an STA thread (required by Win32).
+            // StartWithClassicDesktopLifetime blocks until lifetime.Shutdown() is called.
+            var staThread = new Thread(() =>
+            {
+                BuildAvaloniaApp().StartWithClassicDesktopLifetime(new string[0], lt =>
+                {
+                    appLifetime = lt;
+                    dialog.Show();
+                });
+                // Blocks here until appLifetime.Shutdown() is called from the installer thread.
+            });
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.IsBackground = true;
+            staThread.Start();
+
+            // Run the installer on a background thread while the UI pumps messages.
+            await Task.Run(() =>
+            {
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName  = request.InstallerPath,
+                        Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+                        UseShellExecute = true,
+                    };
+                    var proc = Process.Start(psi);
+                    proc?.WaitForExit();
+                }
+                catch
+                {
+                    // Best-effort - if the installer fails to launch, the
+                    // user is picked up on the next Kodo update check.
+                }
+
+                // The installer's [Code] section will kill this process
+                // (taskkill /F /IM KodoUpdater.exe) before it finishes
+                // replacing files, so we may never reach this line. That's
+                // fine - the relaunch sentinel persists on disk for the new
+                // KodoUpdater instance started by the [Run] section.
+                Dispatcher.UIThread.Post(() =>
+                {
+                    dialog.Close();
+                    appLifetime?.Shutdown();
+                });
+            });
+
+            staThread.Join();
+        }
+        catch
+        {
+            // Best-effort - on failure Kodo just doesn't restart this cycle.
+        }
+    }
+
+    private static AppBuilder BuildAvaloniaApp()
+        => AppBuilder.Configure<Application>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .LogToTrace();
+
+    // ── Relaunch sentinel ──────────────────────────────────────────────────
+    // A small JSON file written before the installer runs and read by the
+    // fresh KodoUpdater.exe instance that the installer's [Run] section spawns.
+
+    private static string RelaunchSentinelPath =>
+        Path.Combine(Path.GetTempPath(), "Kodo-Update", "relaunch.json");
+
+    private sealed class RelaunchRecord
+    {
+        public string KodoExePath { get; set; } = "";
+        public DateTime WrittenAtUtc { get; set; }
+    }
+
+    private static void WriteRelaunchSentinel()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(RelaunchSentinelPath)!;
+            Directory.CreateDirectory(dir);
+
+            var kodoExePath = Environment.ProcessPath ?? "";
+            var record = new RelaunchRecord { KodoExePath = kodoExePath, WrittenAtUtc = DateTime.UtcNow };
+            File.WriteAllText(RelaunchSentinelPath, JsonSerializer.Serialize(record));
+        }
+        catch
+        {
+            // Best-effort - if this fails, Kodo just doesn't restart after update.
+        }
+    }
+
+    private static void HandleRelaunchSentinel()
+    {
+        try
+        {
+            if (!File.Exists(RelaunchSentinelPath)) return;
+
+            var json = File.ReadAllText(RelaunchSentinelPath);
+            var record = JsonSerializer.Deserialize<RelaunchRecord>(json);
+            File.Delete(RelaunchSentinelPath);
+
+            if (record is null || string.IsNullOrEmpty(record.KodoExePath)) return;
+            if (!File.Exists(record.KodoExePath)) return;
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = record.KodoExePath,
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Best-effort - user can still open Kodo manually.
+        }
+    }
+
+    // ── Settings ──────────────────────────────────────────────────────────
 
     private static async Task RunOneCycleAsync()
     {
@@ -99,8 +295,6 @@ internal static class Program
 
         PendingUpdate.Write(update.Version, installerPath);
     }
-
-    // ── Settings ──────────────────────────────────────────────────────────
 
     private static UpdaterSettings ReadSettings()
     {

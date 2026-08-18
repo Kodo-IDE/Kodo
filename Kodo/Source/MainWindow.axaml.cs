@@ -794,6 +794,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // The accent colour supplied by the active theme; restored when switching back to "kodo" mode.
     private string _themeAccentHex = "#8C00FF";
     private bool   _hasThemeAccent  = false;
+    private string _windowBackgroundHex = "#1E1E1E";
+    private bool   _hasWindowBackground = false;
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
@@ -7110,6 +7112,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AccentColorMode                         = _accentColorMode,
             CustomAccentHex                         = _customAccentHex,
             CachedThemeAccentHex                    = _hasThemeAccent ? _themeAccentHex : null,
+            CachedThemeWindowBackgroundHex           = _hasWindowBackground ? _windowBackgroundHex : null,
             UserCountry                             = _userCountry,
             UserHemisphere                          = _userHemisphere,
             UserTimezoneOffset                      = _userTimezoneOffset,
@@ -7245,6 +7248,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
             _hasThemeAccent       = true;
+            _windowBackgroundHex  = extensionTheme.WindowBackground;
+            _hasWindowBackground  = true;
             ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
         }
         else
@@ -7268,6 +7273,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
+                _windowBackgroundHex  = "#F3F3F3";
             }
             else
             {
@@ -7283,8 +7289,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
+                _windowBackgroundHex  = "#1E1E1E";
             }
             _hasThemeAccent         = false;
+            _hasWindowBackground    = false;
             ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
@@ -7344,6 +7352,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AccentBrush           = GetCachedBrush(extensionTheme.Accent);
             _themeAccentHex       = extensionTheme.Accent;
             _hasThemeAccent       = true;
+            _windowBackgroundHex  = extensionTheme.WindowBackground;
+            _hasWindowBackground  = true;
             ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
         }
         else
@@ -7367,6 +7377,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
+                _windowBackgroundHex  = "#F3F3F3";
             }
             else
             {
@@ -7382,8 +7393,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
                 AccentBrush           = GetCachedBrush("#8C00FF");
                 _themeAccentHex       = "#8C00FF";
+                _windowBackgroundHex  = "#1E1E1E";
             }
             _hasThemeAccent         = false;
+            _hasWindowBackground    = false;
             ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
@@ -13227,6 +13240,10 @@ internal sealed class AppSettings
     // Lets standalone dialogs (crash dialog, updater) match the theme's accent without
     // loading the extension system - see AccentResolver in Updater.cs.
     public string? CachedThemeAccentHex { get; set; }
+    // Last-resolved window-background hex for the active extension theme.
+    // Lets standalone dialogs (updater progress) match the theme's background without
+    // loading the extension system - see ThemeResolver in Updater.cs.
+    public string? CachedThemeWindowBackgroundHex { get; set; }
     // Personalization - optional; empty/0 means "use OS defaults".
     public string? UserCountry { get; set; }
     public int UserHemisphere { get; set; }
