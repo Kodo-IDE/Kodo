@@ -776,6 +776,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWordWrapEnabled;
     // Defaults to true - predictive completion is on unless the user turns it off.
     private bool _isInsightEnabled = true;
+    private string _insightBlacklistExtensions = ".txt,.md";
+    private HashSet<string> _insightBlacklistSet = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
@@ -1257,6 +1259,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isInsightEnabled = settings.InsightEnabled;
+        _insightBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightBlacklistExtensions) ? ".txt,.md" : settings.InsightBlacklistExtensions;
+        RebuildInsightBlacklist();
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
@@ -5262,6 +5266,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string InsightBlacklistExtensions
+    {
+        get => _insightBlacklistExtensions;
+        set
+        {
+            if (_insightBlacklistExtensions == value) return;
+            _insightBlacklistExtensions = value;
+            RebuildInsightBlacklist();
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    private void RebuildInsightBlacklist()
+    {
+        _insightBlacklistSet.Clear();
+        foreach (var part in _insightBlacklistExtensions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var ext = part.StartsWith('.') ? part : "." + part;
+            _insightBlacklistSet.Add(ext);
+        }
+    }
+
+    private bool IsInsightBlacklisted(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+        var ext = Path.GetExtension(filePath);
+        return !string.IsNullOrEmpty(ext) && _insightBlacklistSet.Contains(ext);
+    }
+
     public bool IsPSReadLinePredictionEnabled
     {
         get => _isPSReadLinePredictionEnabled;
@@ -7058,6 +7092,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
             InsightEnabled                        = IsInsightEnabled,
+            InsightBlacklistExtensions           = InsightBlacklistExtensions,
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
@@ -11102,6 +11137,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        if (IsInsightBlacklisted(_currentFilePath))
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
         var doc = EditorTextBox.Document;
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
         var text = doc.Text;
@@ -13143,6 +13184,8 @@ internal sealed class AppSettings
     public bool WordWrapEnabled { get; set; }
     // Predictive completion (Insight). Defaults to true; on unless the user disables it.
     public bool InsightEnabled { get; set; } = true;
+    // Comma-separated file extensions (e.g. ".txt,.md") where Insight is disabled.
+    public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool CodePredictEnabled
