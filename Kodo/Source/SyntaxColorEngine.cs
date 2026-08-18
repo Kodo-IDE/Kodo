@@ -8,6 +8,7 @@ using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
+using Kodo.Models;
 
 namespace Kodo;
 

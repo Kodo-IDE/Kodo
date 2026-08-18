@@ -49,155 +49,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-// Compares strings the way humans expect - splits into digit/non-digit chunks, compares digits numerically.
-public sealed class NaturalSortComparer : IComparer<string>
-{
-    public static readonly NaturalSortComparer OrdinalIgnoreCase = new();
-
-    public int Compare(string? x, string? y)
-    {
-        if (ReferenceEquals(x, y)) return 0;
-        if (x is null) return -1;
-        if (y is null) return  1;
-
-        var xi = 0;
-        var yi = 0;
-
-        while (xi < x.Length && yi < y.Length)
-        {
-            var xIsDigit = char.IsAsciiDigit(x[xi]);
-            var yIsDigit = char.IsAsciiDigit(y[yi]);
-
-            if (xIsDigit && yIsDigit)
-            {
-                // Skip leading zeros so "007" == "7" numerically
-                while (xi < x.Length && x[xi] == '0') xi++;
-                while (yi < y.Length && y[yi] == '0') yi++;
-
-                // Find end of digit run in both strings
-                var xStart = xi;
-                var yStart = yi;
-                while (xi < x.Length && char.IsAsciiDigit(x[xi])) xi++;
-                while (yi < y.Length && char.IsAsciiDigit(y[yi])) yi++;
-
-                var xLen = xi - xStart;
-                var yLen = yi - yStart;
-
-                // Longer digit sequence is numerically larger
-                if (xLen != yLen) return xLen.CompareTo(yLen);
-
-                // Same length: compare digit-by-digit
-                var cmp = string.Compare(x, xStart, y, yStart, xLen, StringComparison.Ordinal);
-                if (cmp != 0) return cmp;
-            }
-            else
-            {
-                // Non-digit chunk: plain case-insensitive char comparison
-                var cmp = char.ToUpperInvariant(x[xi])
-                              .CompareTo(char.ToUpperInvariant(y[yi]));
-                if (cmp != 0) return cmp;
-                xi++;
-                yi++;
-            }
-        }
-
-        return (x.Length - xi).CompareTo(y.Length - yi);
-    }
-}
-
-// Represents a single row in the file explorer tree
-public class FileTreeItem : INotifyPropertyChanged
-{
-    private bool _isExpanded;
-
-    public string Name { get; init; } = string.Empty;
-    public string FullPath { get; init; } = string.Empty;
-    public bool IsDirectory { get; init; }
-    public int Depth { get; init; }
-
-    // Pixel indentation based on nesting depth
-    public double IndentWidth => Depth * 14.0;
-
-    // Chevron shown next to directories; blank for files
-    public string ChevronText => IsDirectory ? (_isExpanded ? "↓" : "→") : string.Empty;
-
-    public bool IsExpanded
-    {
-        get => _isExpanded;
-        set
-        {
-            if (_isExpanded == value) return;
-            _isExpanded = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ChevronText));
-            OnPropertyChanged(nameof(Icon));
-        }
-    }
-
-    // Icon varies between open/closed folder vs file
-    public string Icon => IsDirectory ? (_isExpanded ? "\U0001F4C2" : "\U0001F4C1") : GetFileIcon(Name);
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-    // Returns a simple file-type icon based on extension.
-    internal static string GetFileIcon(string fileName)
-    {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        return ext switch
-			{
-			    ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
-			    ".xml" => "XML",
-			    ".axaml" or ".xaml" => "XAML",
-			    ".html" or ".htm" => "HTML",
-			    ".json" or ".yaml" or ".yml" or ".toml" or ".jsonc" or ".jsonl" => "JSON",
-			    ".txt" or ".rst" or ".log" => "TXT",
-                ".md" or ".markdown" => "MD",
-			    ".png" => "PNG",
-			    ".jpg" or ".jpeg" => "JPG",
-			    ".gif" => "GIF",
-			    ".svg" => "SVG",
-			    ".ico" => "ICO",
-			    ".webp" => "WBP",
-			    ".bmp" => "BMP",
-			    ".py" => "PY",
-			    ".js" or ".jsx" => "JS",
-			    ".ts" or ".tsx" => "TS",
-			    ".vue" or ".svelte" => "UI",
-			    ".css" or ".scss" or ".less" => "CSS",
-			    ".sh" => "SH",
-			    ".bat" => "BAT",
-			    ".ps1" => "PS1",
-			    ".zip" or ".tar" or ".gz" or ".rar" => "ZIP",
-			    ".cpp" or ".cc" or ".cxx" => "C++",
-			    ".c" => "C",
-			    ".h" or ".hpp" or ".hxx" => "C++",
-			    ".rs" => "RS",
-			    ".go" => "GO",
-			    ".rb" => "RB",
-			    ".java" => "JAVA",
-			    ".kt" or ".kts" => "KT",
-			    ".swift" => "SW",
-			    ".fs" or ".fsi" or ".fsx" => "F#",
-			    ".sql" => "DB",
-			    ".lua" => "LUA",
-			    ".r" => "R",
-			    ".lock" => "Lk",
-				".csv" or ".tsv" => "CSV",
-				".nova" => "NOVA",
-				".kox" => "KOX",
-                ".exe" => "EXE",
-                ".dll" => "DLL",
-                ".gitignore" => "IGNR",
-                ".shine" => "SHINE",
-                ".asm" or ".s" or ".S" => "ASM",
-			    _ => "..",
-			};
-    }
-}
-
 // Computes how much room a file-tree row's name TextBlock has to work with, so
 // long names truncate less (or not at all) as the user widens the explorer panel
 // via ExplorerPanelSplitter, instead of being capped at a fixed pixel width.
@@ -215,440 +66,6 @@ internal sealed class ExplorerItemNameMaxWidthConverter : IMultiValueConverter
         return Math.Max(MinWidth, panelWidth - indentWidth - MainWindow.FileTreeRowFixedOverhead);
     }
 }
-
-// Single source of truth for the built-in Markdown extension id, used by several colorizers.
-public static class KodoExtensionIds
-{
-    public const string Markdown = "markdown-kodo-extension";
-
-    public static bool IsMarkdown(string? extensionId) =>
-        string.Equals(extensionId, Markdown, StringComparison.OrdinalIgnoreCase);
-}
-
-public record class LoadedExtension : INotifyPropertyChanged
-{
-    private bool _isUpdateAvailable;
-
-    public string Id { get; init; } = string.Empty;
-    public string Version { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
-    public string Type { get; init; } = string.Empty;
-    public string Author { get; init; } = string.Empty;
-    public string Description { get; init; } = string.Empty;
-    public string[] Extensions { get; init; } = [];
-    public string[] Keywords { get; set; } = [];
-    public string[] Types { get; set; } = [];
-    public string[] Functions { get; set; } = [];
-    public string[] Properties { get; set; } = [];
-    public string[] Namespaces { get; set; } = [];
-    public string[] Blacklist { get; set; } = [];
-    public string CommentLine { get; set; } = "//";
-    public string CommentBlockStart { get; set; } = "/*";
-    public string CommentBlockEnd { get; set; } = "*/";
-    public string[] StringDelimiters { get; set; } = ["\"", "'"];
-    public string[] MultiLineStringDelimiters { get; set; } = [];
-    // True: use a precise char-literal regex instead of an open string span (disableSingleQuoteStrings in language.json).
-    public bool DisableSingleQuoteStrings { get; set; }
-    public Dictionary<string, string> ColorTokens { get; set; } = new();
-    public List<LanguageSyntaxProfile> SyntaxProfiles { get; } = [];
-    public IBrush AccentBrush { get; set; } = Brush.Parse("#8C00FF");
-    public IBrush CardBrush { get; set; } = Brush.Parse("#252526");
-    public IBrush PrimaryTextBrush { get; set; } = Brush.Parse("#F4F4F4");
-    public IBrush SurfaceBorderBrush { get; set; } = Brush.Parse("#2B2B2B");
-    public IBrush MutedTextBrush { get; set; } = Brush.Parse("#A0A0A0");
-    public string SourcePath { get; set; } = string.Empty;
-    public bool IsDirectorySource { get; set; }
-    public string? PluginAssemblyFileName { get; set; }
-    public string? PluginFolderPath { get; set; }
-    public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
-    public DateTime? InstalledOnUtc { get; set; }
-    public ExtensionThemeDefinition? ThemeDefinition { get; set; }
-    public string ThemeCardThemeId => ThemeDefinition?.ThemeId ?? string.Empty;
-    public string ThemeCardDisplayName => ThemeDefinition?.DisplayName ?? Name;
-    public string ThemeCardPreviewBackground => ThemeDefinition?.PreviewBackground ?? "#000000";
-    public string ThemeCardPreviewBorder => ThemeDefinition?.PreviewBorder ?? "#4A4A4A";
-    public string ThemeCardAccent => ThemeDefinition?.Accent ?? "#8C00FF";
-    // True for the 2nd, 3rd, etc. entries split out of a multi-theme array -
-    // they appear in ThemeExtensions but are hidden from the Installed list.
-    public bool IsThemeSubEntry { get; init; }
-    // Raw PNG or SVG bytes read from icon.png / icon.svg on the background scan thread.
-    // Decoded into IconImage (PNG) or SvgData (SVG) on the UI thread by ApplyLoadedExtensionsResult.
-    public byte[]? IconBytes { get; set; }
-    // Optional icon loaded from icon.png / icon.svg inside the .kox / folder
-    public Bitmap? IconImage { get; set; }
-    // SVG text for icons sourced from the marketplace index or local icon.svg
-    public string? SvgData { get; set; }
-    // Fallback: first two letters of the name, shown when no icon is present
-    public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
-    public bool HasIcon => IconImage is not null || SvgData is not null;
-    public bool IsUpdateAvailable
-    {
-        get => _isUpdateAvailable;
-        set
-        {
-            if (_isUpdateAvailable == value) return;
-            _isUpdateAvailable = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUpdateAvailable)));
-        }
-    }
-
-    private bool _isActiveTheme;
-    public bool IsActiveTheme
-    {
-        get => _isActiveTheme;
-        set
-        {
-            if (_isActiveTheme == value) return;
-            _isActiveTheme = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsActiveTheme)));
-        }
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public void NotifyAllBrushesChanged()
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AccentBrush)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CardBrush)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PrimaryTextBrush)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SurfaceBorderBrush)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MutedTextBrush)));
-    }
-
-    public void NotifyIconChanged()
-    {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IconImage)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SvgData)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasIcon)));
-    }
-}
-
-public sealed class LanguageSyntaxProfile
-{
-    public string[] Extensions { get; init; } = [];
-    public string[] Keywords { get; init; } = [];
-    public string[] Types { get; init; } = [];
-    public string[] Functions { get; init; } = [];
-    public string[] Properties { get; init; } = [];
-    public string[] Namespaces { get; init; } = [];
-    public string[] Blacklist { get; init; } = [];
-    public string? CommentLine { get; init; }
-    public string? CommentBlockStart { get; init; }
-    public string? CommentBlockEnd { get; init; }
-    public string[]? StringDelimiters { get; init; }
-    public string[]? MultiLineStringDelimiters { get; init; }
-    public bool? DisableSingleQuoteStrings { get; init; }
-    public Dictionary<string, string> ColorTokens { get; init; } = new();
-}
-
-public class ExtensionThemeDefinition
-{
-    public string ThemeId { get; init; } = string.Empty;
-    public string DisplayName { get; init; } = string.Empty;
-    public string BaseTheme { get; init; } = "Dark";
-    public string WindowBackground { get; init; } = "#000000";
-    public string TopBar { get; init; } = "#0E0E0E";
-    public string Sidebar { get; init; } = "#0E0E0E";
-    public string Button { get; init; } = "#242424";
-    public string ButtonHover { get; init; } = "#343434";
-    public string EditorBackground { get; init; } = "#000000";
-    public string Card { get; init; } = "#121212";
-    public string PrimaryText { get; init; } = "#FFFFFF";
-    public string MutedText { get; init; } = "#BDBDBD";
-    public string SurfaceBorder { get; init; } = "#4A4A4A";
-    public string Accent { get; init; } = "#8C00FF";
-    public string PreviewBackground { get; init; } = "#000000";
-    public string PreviewBorder { get; init; } = "#4A4A4A";
-}
-
-
-/// A named group of theme cards from one extension; multi-theme groups render as a collapsible section.
-public class ThemeExtensionGroup : INotifyPropertyChanged
-{
-    private bool _isExpanded;
-
-    public string GroupName { get; }
-    public IReadOnlyList<LoadedExtension> Themes { get; }
-
-    /// True when this extension packs more than one theme.
-    public bool IsMultiTheme => Themes.Count > 1;
-
-    /// Whether the card row is expanded; single-theme groups are always shown.
-    public bool IsExpanded
-    {
-        get => _isExpanded;
-        set
-        {
-            if (_isExpanded == value) return;
-            _isExpanded = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChevronGlyph)));
-        }
-    }
-
-    /// ▶ when collapsed, ▼ when expanded.
-    public string ChevronGlyph => _isExpanded ? "▾" : "▸";
-
-    public ThemeExtensionGroup(string groupName, IReadOnlyList<LoadedExtension> themes)
-    {
-        GroupName = groupName;
-        Themes    = themes;
-        // Multi-theme groups start collapsed; single-theme groups are always open.
-        _isExpanded = !IsMultiTheme;
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-}
-
-public class ReleaseInfo
-{
-    public string Name { get; init; } = string.Empty;
-    public string Tag { get; init; } = string.Empty;
-    public string Notes { get; init; } = string.Empty;
-    public string Url { get; init; } = string.Empty;
-}
-
-public class ReleaseLinkItem
-{
-    public string Label { get; init; } = string.Empty;
-    public string Url { get; init; } = string.Empty;
-}
-
-// One inline run (bold or normal) within a release-notes paragraph.
-public sealed class FormattedRun
-{
-    public string Text   { get; init; } = string.Empty;
-    public bool   IsBold { get; init; }
-}
-
-// One release-notes paragraph; the bullet/number marker is kept separate so wrapped lines hang-indent.
-public sealed class FormattedParagraph
-{
-    public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
-    // Extra top margin so paragraphs breathe; bullet items get slightly less.
-    public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
-    // "•" for bullets, "1." / "2." / ... for ordered items, or empty for a
-    // plain paragraph/heading (in which case MarkerColumnWidth is 0).
-    public string Marker { get; init; } = string.Empty;
-    // Fixed width of the marker column, shared across rows so every bullet's
-    // wrapped text lines up under its own first line instead of under "• ".
-    public double MarkerColumnWidth { get; init; }
-}
-
-public static class ExtensionSortModes
-{
-    public const string Alphabetical = "A-Z";
-    public const string ReverseAlphabetical = "Z-A";
-    public const string RecentlyInstalled = "Recently Installed";
-    public const string UpdatesAvailable = "Updates Available";
-}
-
-public static class ExtensionTypeFilters
-{
-    public const string All = "All";
-    public const string Themes = "Themes";
-    public const string Languages = "Languages";
-}
-
-// Backing values for the three Extensions-page tabs: Installed, Marketplace, and Compilers.
-public static class ExtensionsTabModes
-{
-    public const string Installed = "Installed";
-    public const string Marketplace = "Marketplace";
-    public const string Compilers = "Compilers";
-}
-
-public enum ExplorerClipboardMode
-{
-    Copy,
-    Cut
-}
-
-public class MarketplaceExtension : INotifyPropertyChanged
-{
-    private bool _isInstalling;
-    private string _installButtonText = "Install";
-    private bool _isUpdateAvailable;
-    private string _installedVersion = string.Empty;
-    private DateTime? _installedOnUtc;
-
-    public string Id { get; init; } = string.Empty;
-    public string Name { get; init; } = string.Empty;
-    public string Type { get; init; } = string.Empty;
-    public string Author { get; init; } = string.Empty;
-    public string Description { get; init; } = string.Empty;
-    public string IconUrl { get; init; } = string.Empty;
-
-    // Version/DownloadUrl/FileName are mutable (not init-only) because compiler entries now
-    // resolve these live from the vendor after the initial fast paint - see
-    // MainWindow.RefreshCompilerResolutionsAsync. Extensions still only ever set them once,
-    // at construction, so this is a no-op behavior change for the Marketplace tab.
-    private string _version = string.Empty;
-    public string Version
-    {
-        get => _version;
-        set { if (_version == value) return; _version = value; OnPropertyChanged(); }
-    }
-
-    private string _downloadUrl = string.Empty;
-    public string DownloadUrl
-    {
-        get => _downloadUrl;
-        set { if (_downloadUrl == value) return; _downloadUrl = value; OnPropertyChanged(); }
-    }
-
-    private string _fileName = string.Empty;
-    public string FileName
-    {
-        get => _fileName;
-        set { if (_fileName == value) return; _fileName = value; OnPropertyChanged(); }
-    }
-
-    // Compiler-only metadata used by the editor's Run/Build buttons. Extensions never set these.
-    // FileExtensions maps open files onto this compiler; LanguageExtensionIds lists the language
-    // extensions it provides tooling for (so installing a compiler can also install its language
-    // counterpart). RunCommandTemplate/BuildCommandTemplate are command lines with {file}/{name}/
-    // {folder}/{args} placeholders; FileCommands override them per file extension where a compiler
-    // needs different tools for different file types (e.g. gcc for .c vs g++ for .cpp).
-    public string[] FileExtensions { get; init; } = [];
-    public string[] LanguageExtensionIds { get; init; } = [];
-    public string? RunCommandTemplate { get; init; }
-    public string? BuildCommandTemplate { get; init; }
-    public IReadOnlyDictionary<string, (string? Run, string? Build)>? FileCommands { get; init; }
-
-    private Bitmap? _iconImage;
-    public Bitmap? IconImage
-    {
-        get => _iconImage;
-        set
-        {
-            if (_iconImage == value) return;
-            _iconImage = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasIcon));
-        }
-    }
-
-    private string? _svgData;
-    public string? SvgData
-    {
-        get => _svgData;
-        set
-        {
-            if (_svgData == value) return;
-            _svgData = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(HasIcon));
-        }
-    }
-
-    public bool HasIcon => IconImage is not null || SvgData is not null;
-    public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
-
-    public bool IsInstalling
-    {
-        get => _isInstalling;
-        set
-        {
-            if (_isInstalling == value) return;
-            _isInstalling = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(IsInstallEnabled));
-        }
-    }
-
-    public bool IsInstalled { get; private set; }
-
-    public bool IsUpdateAvailable
-    {
-        get => _isUpdateAvailable;
-        private set
-        {
-            if (_isUpdateAvailable == value) return;
-            _isUpdateAvailable = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(ShowInstalledBadge));
-        }
-    }
-
-    public string InstalledVersion
-    {
-        get => _installedVersion;
-        private set
-        {
-            if (_installedVersion == value) return;
-            _installedVersion = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public DateTime? InstalledOnUtc
-    {
-        get => _installedOnUtc;
-        private set
-        {
-            if (_installedOnUtc == value) return;
-            _installedOnUtc = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
-
-    // Installed with nothing to update - shown as a quiet status pill instead of an action button.
-    public bool ShowInstalledBadge => IsInstalled && !IsUpdateAvailable;
-
-    public string InstallButtonText
-    {
-        get => _installButtonText;
-        set
-        {
-            if (_installButtonText == value) return;
-            _installButtonText = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public void SetInstalledState(LoadedExtension? installedExtension, bool isUpdateAvailable)
-    {
-        var isInstalled = installedExtension is not null;
-        ApplyInstalledState(isInstalled, installedExtension?.Version ?? string.Empty, installedExtension?.InstalledOnUtc, isUpdateAvailable);
-    }
-
-    // Compilers aren't Kodo extensions (no LoadedExtension record), so their installed state
-    // comes from the local Compilers install registry instead - see SyncCompilerInstallStates.
-    public void SetCompilerInstalledState(string? installedVersion, DateTime? installedOnUtc, bool isUpdateAvailable) =>
-        ApplyInstalledState(installedVersion is not null, installedVersion ?? string.Empty, installedOnUtc, isUpdateAvailable);
-
-    private void ApplyInstalledState(bool isInstalled, string installedVersion, DateTime? installedOnUtc, bool isUpdateAvailable)
-    {
-        InstalledVersion = installedVersion;
-        InstalledOnUtc = installedOnUtc;
-        IsUpdateAvailable = isUpdateAvailable;
-
-        if (IsInstalled != isInstalled)
-        {
-            IsInstalled = isInstalled;
-            OnPropertyChanged(nameof(IsInstalled));
-            OnPropertyChanged(nameof(ShowInstalledBadge));
-        }
-
-        if (!IsInstalling)
-        {
-            InstallButtonText = isInstalled
-                ? (isUpdateAvailable ? "Update" : "Installed")
-                : "Install";
-        }
-
-        OnPropertyChanged(nameof(IsInstallEnabled));
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-}
-
 
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
@@ -900,7 +317,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _settingsSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
-    private string _selectedExtensionTypeFilter = ExtensionTypeFilters.All;
     // Personalization, persisted in settings.json (empty/0 = auto-detect).
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
@@ -2421,9 +1837,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
         OnPropertyChanged(nameof(InstalledExtensionsCount));
         OnPropertyChanged(nameof(InstalledCompilersCount));
-        OnPropertyChanged(nameof(InstalledTabLabel));
-        OnPropertyChanged(nameof(MarketplaceTabLabel));
-        OnPropertyChanged(nameof(CompilersTabLabel));
+        OnPropertyChanged(nameof(MarketplaceEmptyStateText));
         OnPropertyChanged(nameof(HasVisibleInstalledExtensions));
         OnPropertyChanged(nameof(HasVisibleMarketplaceExtensions));
         OnPropertyChanged(nameof(HasVisibleCompilerExtensions));
@@ -4503,9 +3917,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HasVisibleInstalledExtensions || HasVisibleInstalledCompilerExtensions;
     public bool HasVisibleInstalledExtensionsAndCompilers =>
         HasVisibleInstalledExtensions && HasVisibleInstalledCompilerExtensions;
-    public string InstalledTabLabel => $"Installed ({InstalledExtensionsCount})";
-    public string MarketplaceTabLabel => $"Marketplace ({MarketplaceExtensions.Count})";
-    public string CompilersTabLabel => "Compilers";
 
     public IEnumerable<LoadedExtension> ThemeExtensions =>
         LoadedExtensions.Where(e => e.Type.Equals("theme", StringComparison.OrdinalIgnoreCase) && e.ThemeDefinition is not null);
@@ -4544,8 +3955,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.Equals(_selectedExtensionsTab, tab, StringComparison.Ordinal)) return;
         _selectedExtensionsTab = tab;
         OnPropertyChanged(nameof(IsInstalledTabSelected));
-        OnPropertyChanged(nameof(IsMarketplaceTabSelected));
+        OnPropertyChanged(nameof(IsLanguagesTabSelected));
+        OnPropertyChanged(nameof(IsThemesTabSelected));
+        OnPropertyChanged(nameof(IsPluginsTabSelected));
         OnPropertyChanged(nameof(IsCompilersTabSelected));
+        OnPropertyChanged(nameof(IsMarketplaceSectionTabSelected));
         OnPropertyChanged(nameof(SelectedExtensionSort));
         NotifyExtensionFiltersChanged();
     }
@@ -4556,19 +3970,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Installed); }
     }
 
-    public bool IsMarketplaceTabSelected
+    public bool IsLanguagesTabSelected
     {
-        get => _selectedExtensionsTab == ExtensionsTabModes.Marketplace;
-        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Marketplace); }
+        get => _selectedExtensionsTab == ExtensionsTabModes.Languages;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Languages); }
     }
 
-    // Compilers tab, to the right of Marketplace - lists standalone toolchain installers
+    public bool IsThemesTabSelected
+    {
+        get => _selectedExtensionsTab == ExtensionsTabModes.Themes;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Themes); }
+    }
+
+    public bool IsPluginsTabSelected
+    {
+        get => _selectedExtensionsTab == ExtensionsTabModes.Plugins;
+        private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Plugins); }
+    }
+
+    // Compilers tab, to the right of Plugins - lists standalone toolchain installers
     // (e.g. the Shine compiler) sourced from CompilerIndex.json rather than Kodo extensions.
     public bool IsCompilersTabSelected
     {
         get => _selectedExtensionsTab == ExtensionsTabModes.Compilers;
         private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Compilers); }
     }
+
+    // The Languages/Themes/Plugins tabs share the marketplace browse UI (search, sort, tiles).
+    public bool IsMarketplaceSectionTabSelected =>
+        _selectedExtensionsTab is ExtensionsTabModes.Languages or ExtensionsTabModes.Themes or ExtensionsTabModes.Plugins;
+
+    // Extension type the active marketplace tab lists; empty on non-marketplace tabs.
+    private string ActiveMarketplaceTabType => _selectedExtensionsTab switch
+    {
+        ExtensionsTabModes.Languages => "language",
+        ExtensionsTabModes.Themes => "theme",
+        ExtensionsTabModes.Plugins => "plugin",
+        _ => string.Empty
+    };
 
     public IReadOnlyList<string> ExtensionSortOptions { get; } =
     [
@@ -4580,11 +4019,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string SelectedExtensionSort
     {
-        get => IsMarketplaceTabSelected ? _selectedMarketplaceExtensionSort : _selectedInstalledExtensionSort;
+        get => IsMarketplaceSectionTabSelected ? _selectedMarketplaceExtensionSort : _selectedInstalledExtensionSort;
         set
         {
             var normalized = string.IsNullOrWhiteSpace(value) ? ExtensionSortModes.Alphabetical : value;
-            if (IsMarketplaceTabSelected)
+            if (IsMarketplaceSectionTabSelected)
             {
                 if (string.Equals(_selectedMarketplaceExtensionSort, normalized, StringComparison.Ordinal))
                     return;
@@ -4599,28 +4038,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _selectedInstalledExtensionSort = normalized;
             }
 
-            OnPropertyChanged();
-            NotifyExtensionFiltersChanged();
-        }
-    }
-
-    public IReadOnlyList<string> ExtensionTypeFilterOptions { get; } =
-    [
-        ExtensionTypeFilters.All,
-        ExtensionTypeFilters.Themes,
-        ExtensionTypeFilters.Languages
-    ];
-
-    public string SelectedExtensionTypeFilter
-    {
-        get => _selectedExtensionTypeFilter;
-        set
-        {
-            var normalized = string.IsNullOrWhiteSpace(value) ? ExtensionTypeFilters.All : value;
-            if (string.Equals(_selectedExtensionTypeFilter, normalized, StringComparison.Ordinal))
-                return;
-
-            _selectedExtensionTypeFilter = normalized;
             OnPropertyChanged();
             NotifyExtensionFiltersChanged();
         }
@@ -5012,7 +4429,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsMarketplaceUnavailableVisible => MarketplaceExtensions.Count == 0 && IsMarketplaceConnectivityWarningVisible;
     // True when the marketplace has entries but some failed to load (partial error).
     public bool IsMarketplacePartialErrorVisible => MarketplaceExtensions.Count > 0 && IsMarketplaceConnectivityWarningVisible;
-    public bool IsMarketplaceEmptyVisible => MarketplaceExtensions.Count == 0 && !IsRefreshingExtensions && !IsMarketplaceConnectivityWarningVisible;
 
     // Search produced zero results but the underlying list isn't actually empty -
     // distinct from IsNoExtensionsVisible/IsMarketplaceEmptyVisible above, which
@@ -5024,9 +4440,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         !FilteredInstalledExtensions.Any();
 
     public bool IsMarketplaceSearchEmptyVisible =>
-        (!string.IsNullOrWhiteSpace(_extensionSearchText) || _selectedExtensionTypeFilter != ExtensionTypeFilters.All) &&
+        !string.IsNullOrWhiteSpace(_extensionSearchText) &&
         MarketplaceExtensions.Any() &&
         !FilteredMarketplaceExtensions.Any();
+
+    // True when the active marketplace tab has no entries of its own type (no search text,
+    // no connectivity error, not mid-refresh) - distinct from IsMarketplaceSearchEmptyVisible.
+    public bool IsMarketplaceEmptyVisible =>
+        !IsRefreshingExtensions &&
+        !IsMarketplaceConnectivityWarningVisible &&
+        string.IsNullOrWhiteSpace(_extensionSearchText) &&
+        !FilteredMarketplaceExtensions.Any();
+
+    public string MarketplaceEmptyStateText => ActiveMarketplaceTabType switch
+    {
+        "language" => "No language extensions in the Marketplace right now.",
+        "theme"    => "No themes in the Marketplace right now.",
+        "plugin"   => "No plugins in the Marketplace right now.",
+        _          => "The Marketplace has no extensions listed right now."
+    };
 
     public bool IsMarketplaceConnectivityWarningVisible
     {
@@ -5594,14 +5026,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             IEnumerable<MarketplaceExtension> source = MarketplaceExtensions;
 
-            source = _selectedExtensionTypeFilter switch
+            // Each marketplace tab (Languages/Themes/Plugins) shows only its own extension type.
+            var tabType = ActiveMarketplaceTabType;
+            if (!string.IsNullOrEmpty(tabType))
             {
-                ExtensionTypeFilters.Themes => source.Where(e =>
-                    string.Equals(e.Type, "theme", StringComparison.OrdinalIgnoreCase)),
-                ExtensionTypeFilters.Languages => source.Where(e =>
-                    string.Equals(e.Type, "language", StringComparison.OrdinalIgnoreCase)),
-                _ => source
-            };
+                source = source.Where(e =>
+                    string.Equals(e.Type, tabType, StringComparison.OrdinalIgnoreCase));
+            }
 
             if (!string.IsNullOrWhiteSpace(_extensionSearchText))
             {
@@ -9157,10 +8588,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsInstalledTabSelected = true;
 
-    // Switches the Extensions tab and refreshes the marketplace listing (respecting the normal refresh cooldown).
-    private void MarketplaceTabButton_OnClick(object? sender, RoutedEventArgs e)
+    // Switches to one of the marketplace tabs (Languages/Themes/Plugins) and refreshes the
+    // listing (respecting the normal refresh cooldown).
+    private void LanguagesTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenMarketplaceTab(ExtensionsTabModes.Languages);
+
+    private void ThemesTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenMarketplaceTab(ExtensionsTabModes.Themes);
+
+    private void PluginsTabButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenMarketplaceTab(ExtensionsTabModes.Plugins);
+
+    private void OpenMarketplaceTab(string tab)
     {
-        IsMarketplaceTabSelected = true;
+        SetSelectedExtensionsTab(tab);
         RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync();
     }
@@ -9265,7 +8706,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void OpenExtensionsPage(bool showMarketplaceTab, bool forceRefresh)
     {
         NavigateTo(Page.Extensions);
-        IsMarketplaceTabSelected = showMarketplaceTab;
+        if (showMarketplaceTab) IsLanguagesTabSelected = true;
         RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync(force: forceRefresh);
     }
@@ -12822,109 +12263,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 }
 
 
-public sealed class RecentFileItem : INotifyPropertyChanged
-{
-    private bool _isPinned;
-
-    public RecentFileItem(string path, bool isFolder, DateTime lastOpened, bool isPinned = false)
-    {
-        Path       = path;
-        IsFolder   = isFolder;
-        LastOpened = lastOpened;
-        _isPinned  = isPinned;
-    }
-
-    public string Path { get; }
-    public bool IsFolder { get; }
-    public DateTime LastOpened { get; set; }
-
-    public bool IsPinned
-    {
-        get => _isPinned;
-        set
-        {
-            if (_isPinned == value) return;
-            _isPinned = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPinned)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinButtonText)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinTooltipText)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PinnedBadgeText)));
-        }
-    }
-
-    public string PinButtonText => IsPinned ? "Unpin" : "Pin";
-
-    public string PinTooltipText => IsPinned ? "Unpin this item" : "Pin this item";
-
-    public string PinnedBadgeText => "Pinned";
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public string DisplayName
-    {
-        get
-        {
-            if (IsFolder)
-                return System.IO.Path.GetFileName(Path.TrimEnd(System.IO.Path.DirectorySeparatorChar));
-            var name = System.IO.Path.GetFileName(Path);
-            var dot = name.IndexOf("."[0]);
-            return dot > 0 ? name[..dot] : name;
-        }
-    }
-
-    public string DirectoryPath => IsFolder
-        ? System.IO.Path.GetDirectoryName(Path.TrimEnd(System.IO.Path.DirectorySeparatorChar)) ?? string.Empty
-        : System.IO.Path.GetDirectoryName(Path) ?? string.Empty;
-
-    public string FileTypeName
-    {
-        get
-        {
-            if (IsFolder) return "Folder";
-            var ext = System.IO.Path.GetExtension(Path);
-            if (string.IsNullOrEmpty(ext))
-            {
-                var name = System.IO.Path.GetFileName(Path);
-                return string.IsNullOrWhiteSpace(name) ? "File" : $"{name} file";
-            }
-            return $"{ext.ToLowerInvariant()} file";
-        }
-    }
-
-    public string LastOpenedText
-    {
-        get
-        {
-            var diff = DateTime.Now - LastOpened;
-            if (diff.TotalMinutes < 1)  return "Just now";
-            if (diff.TotalHours   < 1)  return $"{(int)diff.TotalMinutes}m ago";
-            if (diff.TotalDays    < 1)  return $"{(int)diff.TotalHours}h ago";
-            if (diff.TotalDays    < 30) return $"{(int)diff.TotalDays}d ago";
-            return LastOpened.ToString("MMM d");
-        }
-    }
-
-    public string LastOpenedLongText
-    {
-        get
-        {
-            var diff = DateTime.Now - LastOpened;
-            if (diff.TotalMinutes < 1)  return "just now";
-            if (diff.TotalMinutes < 2)  return "1 minute ago";
-            if (diff.TotalHours   < 1)  return $"{(int)diff.TotalMinutes} minutes ago";
-            if (diff.TotalHours   < 2)  return "1 hour ago";
-            if (diff.TotalDays    < 1)  return $"{(int)diff.TotalHours} hours ago";
-            if (diff.TotalDays    < 2)  return "yesterday";
-            if (diff.TotalDays    < 7)  return $"{(int)diff.TotalDays} days ago";
-            if (diff.TotalDays    < 14) return "1 week ago";
-            if (diff.TotalDays    < 30) return $"{(int)(diff.TotalDays / 7)} weeks ago";
-            if (diff.TotalDays    < 60) return "1 month ago";
-            if (diff.TotalDays    < 365) return $"{(int)(diff.TotalDays / 30)} months ago";
-            if (diff.TotalDays    < 730) return "1 year ago";
-            return $"{(int)(diff.TotalDays / 365)} years ago";
-        }
-    }
-}
 
 public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 {
@@ -13166,115 +12504,3 @@ public sealed class MarketplaceTileWidthConverter : Avalonia.Data.Converters.IVa
         throw new NotSupportedException();
 }
 
-public sealed class NewsItem
-{
-    public string Title     { get; init; } = string.Empty;
-    public string Body      { get; init; } = string.Empty;
-    public string UpdatedAt { get; init; } = string.Empty;
-    public bool HasTitle     => !string.IsNullOrWhiteSpace(Title);
-    public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
-    public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
-}
-
-/// The full schema Kodo persists to <c>kodosettings.json</c>. Pure data - no I/O, no
-/// defaults resolution logic beyond simple property initializers. MainWindow owns
-/// reading/writing this to disk (LoadSettings / BuildSettingsSnapshot / PersistSettingsSnapshot);
-/// this type only defines the shape.
-
-internal sealed class AppSettings
-{
-    // Single source of truth for the default terminal panel height.
-    public const double DefaultTerminalPanelHeight = 300;
-    // Single source of truth for the default file explorer panel width.
-    public const double DefaultExplorerPanelWidth = 260;
-
-    public string ThemeName { get; set; } = "Dark";
-    public bool AutoSaveEnabled { get; set; }
-    public bool DiscordRichPresenceEnabled { get; set; }
-    public bool DiscordImprovedRpcEnabled { get; set; }
-    public bool DeveloperOptionsVisible { get; set; }
-    public bool VerboseLoggingEnabled { get; set; }
-    public bool StatusBarFilePathVisible { get; set; } = true;
-    public bool WordWrapEnabled { get; set; }
-    // Predictive completion (Insight). Defaults to true; on unless the user disables it.
-    public bool InsightEnabled { get; set; } = true;
-    // Comma-separated file extensions (e.g. ".txt,.md") where Insight is disabled.
-    public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
-
-    [System.Text.Json.Serialization.JsonIgnore]
-    public bool CodePredictEnabled
-    {
-        get => InsightEnabled;
-        set => InsightEnabled = value;
-    }
-    public int TabSize { get; set; } = 4;
-    public int EditorFontSize { get; set; } = 14;
-    public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
-    public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
-    public bool AutoUpdateExtensionsEnabled { get; set; }
-    // Sub-setting under AutoUpdateExtensionsEnabled - see
-    // IsAutoUpdateExtensionsInBackgroundEnabled for what it controls.
-    public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
-    // Defaults to true - most users want Kodo to stay current without thinking about it.
-    public bool AutoUpdateAppEnabled { get; set; } = true;
-    // Sub-setting: defaults to false so Update Now/Later still shows.
-    public bool AutoUpdateAppInBackgroundEnabled { get; set; }
-    public string? PreferredTerminalShellId { get; set; }
-    // PSReadLine's predictive IntelliSense in the PowerShell terminal. Off by default - it
-    // used to cause rendering glitches in the ConPTY terminal; users can opt back in.
-    public bool PSReadLinePredictionEnabled { get; set; }
-    public bool TerminalVisible { get; set; }
-    public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
-    public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
-    public List<string> OpenTabPaths { get; set; } = [];
-    public string? ActiveTabPath { get; set; }
-    // The folder open at last shutdown, restored alongside OpenTabPaths when
-    // RestoreOpenTabsOnLaunchEnabled is on and at least one restored tab lived inside it.
-    public string? LastOpenedFolderPath { get; set; }
-    public List<RecentFileEntry> RecentFiles { get; set; } = [];
-    // False on first launch (settings file didn't exist yet); set to true after the
-    // tutorial is dismissed so it never shows again on subsequent launches.
-    public bool HasCompletedTutorial { get; set; }
-    public string AccentColorMode { get; set; } = "kodo";
-    public string CustomAccentHex { get; set; } = "#8C00FF";
-    // Last-resolved accent hex for the active extension theme (AccentColorMode == "theme").
-    // Lets standalone dialogs (crash dialog, updater) match the theme's accent without
-    // loading the extension system - see AccentResolver in Updater.cs.
-    public string? CachedThemeAccentHex { get; set; }
-    // Last-resolved window-background hex for the active extension theme.
-    // Lets standalone dialogs (updater progress) match the theme's background without
-    // loading the extension system - see ThemeResolver in Updater.cs.
-    public string? CachedThemeWindowBackgroundHex { get; set; }
-    // Personalization - optional; empty/0 means "use OS defaults".
-    public string? UserCountry { get; set; }
-    public int UserHemisphere { get; set; }
-    public string? UserTimezoneOffset { get; set; }
-    public string? UserName { get; set; }
-    public string? LastSeenVersion { get; set; }
-    // Anonymous usage-analytics opt-in. False (no tracking) until the user
-    // has explicitly responded to the consent prompt at least once.
-    public bool AllowDataTracking { get; set; }
-    public bool HasRespondedToDataTrackingPrompt { get; set; }
-    // Acknowledgment of the embedded Privacy Policy text - separate from the data-tracking
-    // opt-in above. There's no decline path; this only tracks whether the user has scrolled
-    // through and accepted the terms at least once.
-    public bool HasAcceptedPrivacyPolicy { get; set; }
-
-    // Custom Run/Build commands set from the editor header dropdowns, keyed by compiler id.
-    // They override whatever the compiler index provides (useful when a compiler has no
-    // command template, or when the user wants to change how a tool is invoked).
-    public Dictionary<string, string> CustomRunCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    public Dictionary<string, string> CustomBuildCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    // File extension (lowercased) -> compiler id. An explicit user choice made from the
-    // compiler icon button; wins over automatic detection for that file type.
-    public Dictionary<string, string> CompilerOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-}
-
-/// One entry in AppSettings.RecentFiles - a recently opened file or folder.
-public sealed class RecentFileEntry
-{
-    public string Path { get; set; } = string.Empty;
-    public bool IsFolder { get; set; }
-    public DateTime LastOpened { get; set; } = DateTime.Now;
-    public bool IsPinned { get; set; }
-}

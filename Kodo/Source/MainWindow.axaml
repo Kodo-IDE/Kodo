@@ -294,21 +294,6 @@
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
-        <!-- Extension type tag (Language/Theme/...) - quiet eyebrow pill, same
-             recipe as the tutorial's section-title pill: ButtonBrush fill, accent text.
-             Colors are NOT set here - this style is reused inside item templates whose
-             DataContext is the extension, not the window, so Background/Foreground are
-             always set explicitly per usage with a #RootWindow reference instead. -->
-        <Style Selector="Border.extensiontag">
-            <Setter Property="CornerRadius" Value="999" />
-            <Setter Property="Padding" Value="8,3" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="Border.extensiontag TextBlock">
-            <Setter Property="FontSize" Value="10" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-        </Style>
-
         <!-- "Installed" status pill for the Marketplace tab - quiet/neutral so it
              doesn't compete with the accent-filled primary action button. Same rule as
              above: no colors here, set explicitly per usage. -->
@@ -1001,7 +986,7 @@
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="kodo:FileTreeItem">
+                            <DataTemplate x:DataType="kodoModels:FileTreeItem">
                                 <Button Classes="fileitem"
                                         Tag="{Binding}"
                                         Click="FileTreeItem_OnClick"
@@ -1893,7 +1878,7 @@
                                                     </ControlTheme>
                                                 </ItemsControl.ItemContainerTheme>
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodo:RecentFileItem">
+                                                    <DataTemplate x:DataType="kodoModels:RecentFileItem">
                                                         <Button Classes="recent"
                                                                 Tag="{Binding}"
                                                                 Click="RecentFileButton_OnClick"
@@ -2107,7 +2092,7 @@
                                                                   HorizontalScrollBarVisibility="Disabled">
                                                         <ItemsControl ItemsSource="{Binding NewsItems}">
                                                             <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="kodo:NewsItem">
+                                                                <DataTemplate x:DataType="kodoModels:NewsItem">
                                                                     <Border BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                                                             BorderThickness="0,0,0,1"
                                                                             Padding="4,12">
@@ -2210,7 +2195,7 @@
                                                                   HorizontalScrollBarVisibility="Disabled">
                                                         <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                             <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="kodo:FormattedParagraph">
+                                                                <DataTemplate x:DataType="kodoModels:FormattedParagraph">
                                                                     <Grid Margin="{Binding TopMargin}"
                                                                           ColumnDefinitions="Auto,*">
                                                                         <TextBlock Grid.Column="0"
@@ -2228,7 +2213,7 @@
                                                                                 </ItemsPanelTemplate>
                                                                             </ItemsControl.ItemsPanel>
                                                                             <ItemsControl.ItemTemplate>
-                                                                                <DataTemplate x:DataType="kodo:FormattedRun">
+                                                                                <DataTemplate x:DataType="kodoModels:FormattedRun">
                                                                                     <TextBlock Text="{Binding Text}"
                                                                                                TextWrapping="Wrap"
                                                                                                FontSize="12"
@@ -3042,7 +3027,7 @@
                                                             </ItemsPanelTemplate>
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
+                                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup">
                                                                 <StackPanel Spacing="6">
 
                                                                     <!-- Collapsible header - only shown for multi-theme groups -->
@@ -3079,7 +3064,7 @@
                                                                             </ItemsPanelTemplate>
                                                                         </ItemsControl.ItemsPanel>
                                                                         <ItemsControl.ItemTemplate>
-                                                                                <DataTemplate x:DataType="kodo:LoadedExtension">
+                                                                                <DataTemplate x:DataType="kodoModels:LoadedExtension">
                                                                                     <Button Classes="chrome"
                                                                                             Background="{Binding #RootWindow.ButtonBrush}"
                                                                                             BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
@@ -3522,24 +3507,6 @@
                                     <TextBlock Classes="extstatlabel" Text="Updates" />
                                 </StackPanel>
                             </Border>
-                            <Border Classes="extstatchip">
-                                <StackPanel Spacing="0">
-                                    <TextBlock Classes="extstatvalue" Text="{Binding MarketplaceExtensions.Count}" />
-                                    <TextBlock Classes="extstatlabel" Text="In Marketplace" />
-                                </StackPanel>
-                            </Border>
-                            <Border Classes="extstatchip">
-                                <StackPanel Spacing="0">
-                                    <TextBlock Classes="extstatvalue" Text="{Binding CompilerExtensions.Count}" />
-                                    <TextBlock Classes="extstatlabel" Text="Compilers" />
-                                </StackPanel>
-                            </Border>
-                            <Border Classes="extstatchip">
-                                <StackPanel Spacing="0">
-                                    <TextBlock Classes="extstatvalue" Text="{Binding InstalledCompilersCount}" />
-                                    <TextBlock Classes="extstatlabel" Text="Compilers Installed" />
-                                </StackPanel>
-                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -3556,13 +3523,21 @@
                                     Click="InstalledTabButton_OnClick"
                                     Content="Installed" />
                             <Button Classes="tab"
-                                    Classes.tabactive="{Binding IsMarketplaceTabSelected}"
-                                    Click="MarketplaceTabButton_OnClick"
-                                    Content="Extensions" />
+                                    Classes.tabactive="{Binding IsLanguagesTabSelected}"
+                                    Click="LanguagesTabButton_OnClick"
+                                    Content="Languages" />
+                            <Button Classes="tab"
+                                    Classes.tabactive="{Binding IsThemesTabSelected}"
+                                    Click="ThemesTabButton_OnClick"
+                                    Content="Themes" />
+                            <Button Classes="tab"
+                                    Classes.tabactive="{Binding IsPluginsTabSelected}"
+                                    Click="PluginsTabButton_OnClick"
+                                    Content="Plugins" />
                             <Button Classes="tab"
                                     Classes.tabactive="{Binding IsCompilersTabSelected}"
                                     Click="CompilersTabButton_OnClick"
-                                    Content="{Binding CompilersTabLabel}" />
+                                    Content="Compilers" />
                         </StackPanel>
 
                         <Grid ColumnDefinitions="*,Auto,Auto,Auto"
@@ -3577,37 +3552,6 @@
                                      Height="36"
                                      Padding="12,0"
                                      VerticalContentAlignment="Center" />
-                            <!-- Type filter: All / Themes / Languages - Marketplace tab only, defaults to All. -->
-                            <Border Grid.Column="1"
-                                    MinWidth="96"
-                                    MaxWidth="180"
-                                    IsVisible="{Binding IsMarketplaceTabSelected}"
-                                    Background="{Binding ButtonBrush}"
-                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="10"
-                                    Height="36"
-                                    Padding="6,0"
-                                    VerticalAlignment="Center"
-                                    HorizontalAlignment="Left">
-                                <ComboBox ItemsSource="{Binding ExtensionTypeFilterOptions}"
-                                          SelectedItem="{Binding SelectedExtensionTypeFilter, Mode=TwoWay}"
-                                          MinWidth="0"
-                                          HorizontalAlignment="Left"
-                                          VerticalAlignment="Center"
-                                          HorizontalContentAlignment="Left"
-                                          Background="Transparent"
-                                          BorderThickness="0"
-                                          FontSize="13"
-                                          Foreground="{Binding PrimaryTextBrush}">
-                                    <ComboBox.Styles>
-                                        <Style Selector="ComboBoxItem">
-                                            <Setter Property="Background" Value="{Binding #RootWindow.ButtonBrush}" />
-                                            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
-                                        </Style>
-                                    </ComboBox.Styles>
-                                </ComboBox>
-                            </Border>
                             <!-- Content filter: All / Extensions / Compilers - Installed tab only, so installed
                                  compilers can surface alongside installed Kodo extensions in one place. -->
                             <Border Grid.Column="1"
@@ -3685,7 +3629,7 @@
                             <StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledExtensions}" ItemsSource="{Binding FilteredInstalledExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodo:LoadedExtension">
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -3740,12 +3684,6 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding Name}"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        <Border Classes="extensiontag"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                            <TextBlock Text="{Binding Type}"
-                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
-                                                        </Border>
                                                     </StackPanel>
                                                     <TextBlock FontSize="12"
                                                                Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -3808,7 +3746,7 @@
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
                                           ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -3860,12 +3798,6 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding Name}"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        <Border Classes="extensiontag"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                            <TextBlock Text="{Binding Type}"
-                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
-                                                        </Border>
                                                     </StackPanel>
                                                     <TextBlock FontSize="12"
                                                                Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -4008,7 +3940,7 @@
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel IsVisible="{Binding IsMarketplaceTabSelected}">
+                        <StackPanel IsVisible="{Binding IsMarketplaceSectionTabSelected}">
                             <!-- Full failure: no entries loaded -->
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4059,7 +3991,7 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
@@ -4098,13 +4030,6 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding Name}"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        <Border Classes="extensiontag"
-                                                                HorizontalAlignment="Left"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                IsVisible="{Binding Type, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                                            <TextBlock Text="{Binding Type}"
-                                                                       Foreground="{Binding #RootWindow.AccentBrush}" />
-                                                        </Border>
                                                     </StackPanel>
                                                 </Grid>
 
@@ -4199,7 +4124,7 @@
                                                FontSize="13"
                                                HorizontalAlignment="Center"
                                                TextAlignment="Center"
-                                               Text="The Marketplace has no extensions listed right now." />
+                                               Text="{Binding MarketplaceEmptyStateText}" />
                                 </StackPanel>
                             </Border>
                             <!-- Search active, but nothing in the marketplace matches it - this used
@@ -4238,7 +4163,7 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodo:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
@@ -4540,7 +4465,7 @@
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:ThemeExtensionGroup">
+                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup">
                                                 <StackPanel Spacing="6">
 
                                                     <!-- Collapsible header - only shown for multi-theme groups -->
@@ -4577,7 +4502,7 @@
                                                             </ItemsPanelTemplate>
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="kodo:LoadedExtension">
+                                                            <DataTemplate x:DataType="kodoModels:LoadedExtension">
                                                                 <Button Classes="chrome"
                                                                         Background="{Binding #RootWindow.ButtonBrush}"
                                                                         BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
@@ -5499,7 +5424,7 @@
                                                       VerticalScrollBarVisibility="Auto">
                                             <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodo:FormattedParagraph">
+                                                    <DataTemplate x:DataType="kodoModels:FormattedParagraph">
                                                         <Grid Margin="{Binding TopMargin}"
                                                               ColumnDefinitions="Auto,*">
                                                             <TextBlock Grid.Column="0"
@@ -5517,7 +5442,7 @@
                                                                     </ItemsPanelTemplate>
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="kodo:FormattedRun">
+                                                                    <DataTemplate x:DataType="kodoModels:FormattedRun">
                                                                         <TextBlock Text="{Binding Text}"
                                                                                    TextWrapping="Wrap"
                                                                                    FontSize="13"
@@ -5541,7 +5466,7 @@
                                                        Text="Links" />
                                             <ItemsControl ItemsSource="{Binding LatestReleaseLinks}">
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodo:ReleaseLinkItem">
+                                                    <DataTemplate x:DataType="kodoModels:ReleaseLinkItem">
                                                         <Button Classes="chrome"
                                                                 Tag="{Binding Url}"
                                                                 Click="OpenReleaseLinkButton_OnClick"

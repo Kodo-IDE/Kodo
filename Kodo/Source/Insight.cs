@@ -11,6 +11,7 @@ using Avalonia.Media;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
+using Kodo.Models;
 
 namespace Kodo;
 
