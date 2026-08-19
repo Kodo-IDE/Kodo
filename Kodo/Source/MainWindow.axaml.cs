@@ -5237,6 +5237,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _findMatchOffsets.Clear();
                 _currentFindMatchIndex = -1;
                 ResetHistoryIndex();
+                SearchPanelBorder.MinWidth = 0;
                 EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             }
         }
@@ -10677,6 +10678,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             foreach (var item in _searchResults)
                 _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
+            UpdateSearchPanelMinWidth();
             return;
         }
 
@@ -10706,6 +10708,48 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
             }
         }
+
+        UpdateSearchPanelMinWidth();
+    }
+
+    private void UpdateSearchPanelMinWidth()
+    {
+        if (_searchResults.Count == 0)
+        {
+            SearchPanelBorder.MinWidth = 0;
+            return;
+        }
+
+        double maxWidth = 0;
+        const double charWidth12 = 7.2;
+        const double charWidth11 = 6.4;
+        const double iconWidth = 22;
+        const double chevronWidth = 12;
+        const double paddingAndMargins = 56;
+
+        // Individual result row: Icon(22) + DisplayName(12px) + gap(8) + RelativePath(11px, star column)
+        // The star column fills remaining space so we only need the auto columns.
+        // Group header row: Chevron(12) + FileName(12px) + gap(8) + RelativePath(11px) + gap + MatchCount(11px)
+        foreach (var item in _searchResults)
+        {
+            // Individual result width (auto columns only)
+            double resultWidth = iconWidth + item.DisplayName.Length * charWidth12;
+            if (resultWidth > maxWidth) maxWidth = resultWidth;
+        }
+
+        foreach (var group in _fileGroups)
+        {
+            // Group header width (all auto columns)
+            double groupWidth = chevronWidth
+                               + group.FileName.Length * charWidth12
+                               + 8
+                               + group.RelativePath.Length * charWidth11
+                               + 8
+                               + (group.MatchCount.ToString().Length + 9) * charWidth11; // "N matches"
+            if (groupWidth > maxWidth) maxWidth = groupWidth;
+        }
+
+        SearchPanelBorder.MinWidth = Math.Min(maxWidth + paddingAndMargins, 560);
     }
 
     private void ToggleGroup(SearchFileGroup group)

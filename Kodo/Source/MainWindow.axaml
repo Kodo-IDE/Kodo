@@ -2814,7 +2814,7 @@
             </Grid>
 
             <!-- Floating search panel (overlays editor content, positioned top-right) -->
-            <Border Classes="searchpanel"
+            <Border Classes="searchpanel" x:Name="SearchPanelBorder"
                     IsVisible="{Binding IsSearchPanelActive}"
                     HorizontalAlignment="Right"
                     VerticalAlignment="Top"
