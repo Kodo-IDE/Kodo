@@ -39,6 +39,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Animation;
 using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
@@ -322,7 +323,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int    _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
     private string _userName = string.Empty;
-    private bool _isFindPanelVisible;
+    private bool _isSearchPanelVisible;
+    private SearchMode _searchMode = SearchMode.FindInFile;
+    private readonly ObservableCollection<SearchResultItem> _searchResults = new();
+    private readonly ObservableCollection<SearchDisplayItem> _searchDisplayItems = new();
+    private readonly List<SearchFileGroup> _fileGroups = new();
+    private string _searchStatusText = string.Empty;
+    private bool _isSearchBusy;
+    private CancellationTokenSource? _searchCancellation;
+    private readonly DispatcherTimer _searchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    // Caches the enumerated file list (with ignore rules) for the currently
+    // open folder so repeated searches don't re-walk the tree.
+    private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
+    // Find-in-file highlight state: tracks all match offsets for live highlighting.
+    private readonly FindHighlightRenderer _findHighlightRenderer = new();
+    private List<int> _findMatchOffsets = new();
+    private int _currentFindMatchIndex = -1;
+    // MRU search history: per-mode lists of recent queries (most recent first).
+    private readonly List<string> _findInFileHistory = new();
+    private readonly List<string> _fileByNameHistory = new();
+    private readonly List<string> _projectSearchHistory = new();
+    private int _historyIndex = -1;
+    private string _savedFindText = string.Empty;
+    // Per-search include/exclude glob filters for Project search mode.
+    private string _searchIncludeFilter = string.Empty;
+    private string _searchExcludeFilter = string.Empty;
+    private bool _isFilterRowVisible;
     private bool _isFileCorrupted;
     private bool _isPointerOverEditorLink;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
@@ -355,6 +381,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
 
     private string _findText = string.Empty;
+    private string _replaceText = string.Empty;
+    private bool _isSearchMatchCaseEnabled;
+    private bool _isSearchWholeWordEnabled;
+    private bool _isSearchRegexEnabled;
     private int _tutorialStepIndex;
 
     // File tree clipboard state (cut/copy/paste)
@@ -629,6 +659,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             dottedLineMargin.Height = Math.Min(textView.DocumentHeight, textView.Bounds.Height);
         };
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_htmlEmbeddedColorizer);
@@ -654,6 +685,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
+        _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
@@ -3538,7 +3570,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsCorruptedFileViewVisible));
         OnPropertyChanged(nameof(IsTextEditorVisible));
         OnPropertyChanged(nameof(CanShowFindInFile));
-        OnPropertyChanged(nameof(IsFindPanelActive));
+        OnPropertyChanged(nameof(CanShowSearchPanel));
+        OnPropertyChanged(nameof(IsSearchPanelActive));
         OnPropertyChanged(nameof(CanShowSaveActions));
     }
 
@@ -3872,7 +3905,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool CanShowFindInFile => IsTextEditorVisible;
 
-    public bool IsFindPanelActive => IsFindPanelVisible && CanShowFindInFile;
+    public bool CanShowSearchPanel => CanShowFindInFile || IsFolderOpen;
+
+    public bool IsSearchPanelActive => IsSearchPanelVisible && CanShowSearchPanel;
 
     public bool IsEditorTabsVisible => OpenTabs.Count >= 1 && IsEditorPageVisible && !IsHomePageVisible;
 
@@ -5179,17 +5214,139 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return 2;
     }
 
-    public bool IsFindPanelVisible
+    public bool IsSearchPanelVisible
     {
-        get => _isFindPanelVisible;
+        get => _isSearchPanelVisible;
         set
         {
-            if (_isFindPanelVisible == value) return;
-            _isFindPanelVisible = value;
+            if (_isSearchPanelVisible == value) return;
+            _isSearchPanelVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsFindPanelActive));
+            OnPropertyChanged(nameof(IsSearchPanelActive));
+            if (!value)
+            {
+                _searchDebounceTimer.Stop();
+                _searchCancellation?.Cancel();
+                _findHighlightRenderer.Clear();
+                _findMatchOffsets.Clear();
+                _currentFindMatchIndex = -1;
+                ResetHistoryIndex();
+                EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            }
         }
     }
+
+    public bool IsFindInFileSearchMode => _searchMode == SearchMode.FindInFile;
+    public bool IsFileByNameSearchMode => _searchMode == SearchMode.FileByName;
+    public bool IsProjectSearchMode => _searchMode == SearchMode.ProjectSearch;
+    public bool IsSearchResultsVisible => _searchMode != SearchMode.FindInFile;
+    public bool IsSearchMatchCaseEnabled
+    {
+        get => _isSearchMatchCaseEnabled;
+        set
+        {
+            if (_isSearchMatchCaseEnabled == value) return;
+            _isSearchMatchCaseEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsSearchWholeWordEnabled
+    {
+        get => _isSearchWholeWordEnabled;
+        set
+        {
+            if (_isSearchWholeWordEnabled == value) return;
+            _isSearchWholeWordEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsSearchRegexEnabled
+    {
+        get => _isSearchRegexEnabled;
+        set
+        {
+            if (_isSearchRegexEnabled == value) return;
+            _isSearchRegexEnabled = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string SearchPlaceholderText => _searchMode switch
+    {
+        SearchMode.FindInFile => "Find in file...",
+        SearchMode.FileByName => "Find files by name...",
+        SearchMode.ProjectSearch => "Search in project...",
+        _ => "Search...",
+    };
+
+    public ObservableCollection<SearchResultItem> SearchResults => _searchResults;
+    public ObservableCollection<SearchDisplayItem> SearchDisplayItems => _searchDisplayItems;
+
+    public string SearchStatusText
+    {
+        get => _searchStatusText;
+        private set
+        {
+            if (_searchStatusText == value) return;
+            _searchStatusText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSearchStatusVisible));
+        }
+    }
+
+    public bool IsSearchStatusVisible => !string.IsNullOrEmpty(_searchStatusText);
+
+    public bool IsSearchBusy
+    {
+        get => _isSearchBusy;
+        private set
+        {
+            if (_isSearchBusy == value) return;
+            _isSearchBusy = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string SearchIncludeFilter
+    {
+        get => _searchIncludeFilter;
+        set
+        {
+            if (_searchIncludeFilter == value) return;
+            _searchIncludeFilter = value;
+            OnPropertyChanged();
+            if (IsProjectSearchMode && IsSearchPanelActive)
+                RestartSearchDebounce();
+        }
+    }
+
+    public string SearchExcludeFilter
+    {
+        get => _searchExcludeFilter;
+        set
+        {
+            if (_searchExcludeFilter == value) return;
+            _searchExcludeFilter = value;
+            OnPropertyChanged();
+            if (IsProjectSearchMode && IsSearchPanelActive)
+                RestartSearchDebounce();
+        }
+    }
+
+    public bool IsFilterRowVisible
+    {
+        get => _isFilterRowVisible;
+        set
+        {
+            if (_isFilterRowVisible == value) return;
+            _isFilterRowVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsFilterRowSupported => _searchMode == SearchMode.ProjectSearch && IsFolderOpen;
 
     public bool IsTerminalVisible
     {
@@ -5380,6 +5537,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_findText == value) return;
             _findText = value;
             OnPropertyChanged();
+            RestartSearchDebounce();
+            if (IsFindInFileSearchMode)
+                UpdateFindHighlights();
         }
     }
 
@@ -5823,6 +5983,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public string ReplaceText
+    {
+        get => _replaceText;
+        set
+        {
+            if (_replaceText == value) return;
+            _replaceText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string WordCountText
     {
         get => _wordCountText;
@@ -6114,7 +6285,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsImagePreviewVisible));
         OnPropertyChanged(nameof(IsTextEditorVisible));
         OnPropertyChanged(nameof(CanShowFindInFile));
-        OnPropertyChanged(nameof(IsFindPanelActive));
+        OnPropertyChanged(nameof(CanShowSearchPanel));
+        OnPropertyChanged(nameof(IsSearchPanelActive));
         OnPropertyChanged(nameof(CanShowSaveActions));
         OnPropertyChanged(nameof(IsWordCountVisible));
         OnPropertyChanged(nameof(HasFileOpen));
@@ -7653,6 +7825,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task OpenFolderFromPathAsync(string path)
     {
         _currentFolderPath = path;
+        _searchFileCache = null;
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
         SetupProjectFolderWatcher(path);
@@ -7665,6 +7838,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         DisposeProjectFolderWatcher();
         _currentFolderPath = null;
+        _searchFileCache = null;
         FileTreeItems.Clear();
         IsFileExplorerVisible = false;
         RefreshState(fullRefresh: true);
@@ -7829,6 +8003,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _fileTreeRefreshTimer.Stop();
+        _searchFileCache = null;
         await RefreshFileTreePreservingExpansionAsync();
     }
 
@@ -8424,6 +8599,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // any notifications, so the UI only re-renders once instead of once per property set.
     private enum Page { Home, Editor, Settings, Extensions, Tutorial, WhatsNew }
 
+    // Modes for the unified search panel opened by Ctrl+F / Ctrl+Shift+F / the status bar.
+    private enum SearchMode { FindInFile, FileByName, ProjectSearch }
+
     private void NavigateTo(Page page)
     {
         var newHome       = page == Page.Home;
@@ -8807,6 +8985,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Ctrl+W",             "Close tab"),
             // Editor
             ("Ctrl+F",             "Find in file"),
+            ("Ctrl+Shift+F",       "Find in project (search all files)"),
             ("Ctrl+B",             "Toggle file explorer"),
             ("Ctrl+X / C / V",     "Cut / Copy / Paste"),
             ("Ctrl+/",             "Toggle line comment"),
@@ -8823,7 +9002,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Ctrl+-",             "Zoom out"),
             ("Ctrl+0",             "Reset zoom"),
             // General
-            ("Escape",             "Close Settings / Extensions / Tutorial / What's New"),
+            ("Escape",             "Close search / Settings / Extensions / Tutorial / What's New"),
         };
 
         // Header
@@ -9206,6 +9385,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
             _currentFolderPath = item.Path;
+            _searchFileCache = null;
             AddRecentFolder(item.Path);
             await PopulateFileTreeAsync(item.Path);
             SetupProjectFolderWatcher(item.Path);
@@ -9793,6 +9973,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await OpenPathInSystemExplorer(item.FullPath, selectItem: !item.IsDirectory);
     }
 
+    private void SearchInFolderMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
+        if (_currentFolderPath is null) return;
+
+        // Compute relative path from project root to the selected item.
+        var relativePath = GetRelativePathOrName(_currentFolderPath, item.FullPath);
+        if (!string.IsNullOrEmpty(relativePath))
+        {
+            // If it's a directory, append /** glob; if it's a file, just use the filename.
+            SearchIncludeFilter = item.IsDirectory
+                ? relativePath.Replace('\\', '/') + "/**"
+                : relativePath.Replace('\\', '/');
+        }
+
+        OpenSearchPanel(SearchMode.ProjectSearch);
+    }
+
     private void CopyFileNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
@@ -9970,15 +10168,1054 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void ToggleFindPanel_OnClick(object? sender, RoutedEventArgs e)
+    private void OpenSearchMenu_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenSearchPanel(SearchMode.FindInFile);
+
+    private void SearchModeFindInFileButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenSearchPanel(SearchMode.FindInFile);
+
+    private void SearchModeFileByNameButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenSearchPanel(SearchMode.FileByName);
+
+    private void SearchModeProjectButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenSearchPanel(SearchMode.ProjectSearch);
+
+    private void SearchMatchCaseButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (!CanShowFindInFile)
+        IsSearchMatchCaseEnabled = !IsSearchMatchCaseEnabled;
+        if (IsFindInFileSearchMode)
         {
-            IsFindPanelVisible = false;
+            UpdateFindHighlights();
+            FocusSearchInput();
+        }
+        else if (IsSearchPanelActive)
+            RestartSearchDebounce();
+    }
+
+    private void SearchWholeWordButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSearchWholeWordEnabled = !IsSearchWholeWordEnabled;
+        if (IsFindInFileSearchMode)
+        {
+            UpdateFindHighlights();
+            FocusSearchInput();
+        }
+        else if (IsSearchPanelActive)
+            RestartSearchDebounce();
+    }
+
+    private void SearchRegexButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSearchRegexEnabled = !IsSearchRegexEnabled;
+        if (IsFindInFileSearchMode)
+        {
+            UpdateFindHighlights();
+            FocusSearchInput();
+        }
+        else if (IsSearchPanelActive)
+            RestartSearchDebounce();
+    }
+
+    private void SearchFilterButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsFilterRowVisible = !IsFilterRowVisible;
+        OnPropertyChanged(nameof(IsFilterRowSupported));
+        if (IsFilterRowVisible && IsProjectSearchMode)
+            RestartSearchDebounce();
+    }
+
+    private void ReplaceButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        ReplaceCurrentMatch();
+    }
+
+    private async void ReplaceAllButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
+            return;
+
+        var count = CountCurrentMatches();
+        if (count == 0)
+        {
+            SearchStatusText = "No matches to replace.";
             return;
         }
 
-        IsFindPanelVisible = !IsFindPanelVisible;
+        var matchWord = count == 1 ? "match" : "matches";
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Replace All?",
+            $"This will replace {count} {matchWord} in the current file. This action can be undone with Ctrl+Z.",
+            confirmLabel: "Replace All");
+
+        if (confirmed)
+            ReplaceAllMatches();
+    }
+
+    private int CountCurrentMatches()
+    {
+        if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
+            return 0;
+
+        var text = EditorTextBox.Document.Text;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var regex = BuildFindRegex();
+        var count = 0;
+        var searchIndex = 0;
+        while (searchIndex <= text.Length)
+        {
+            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            if (m.Offset < 0) break;
+            count++;
+            searchIndex = m.Offset + m.Length;
+            if (m.Length == 0) break;
+        }
+        return count;
+    }
+
+    private void CloseSearchPanel_OnClick(object? sender, RoutedEventArgs e)
+    {
+        IsSearchPanelVisible = false;
+        FocusEditor();
+    }
+
+    private void SearchResultsListBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not ListBox listBox) return;
+
+        if (e.Key == Key.Enter)
+        {
+            if (listBox.SelectedItem is SearchDisplayItem { IsGroupHeader: true, Group: { } group })
+                ToggleGroup(group);
+            else
+                OpenSelectedSearchResult();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            IsSearchPanelVisible = false;
+            FocusEditor();
+            e.Handled = true;
+        }
+        else if (e.Key is Key.Up or Key.Down)
+        {
+            int nextIndex = FindNextResultIndex(listBox.SelectedIndex, e.Key == Key.Down ? 1 : -1);
+            if (nextIndex >= 0)
+            {
+                listBox.SelectedIndex = nextIndex;
+                e.Handled = true;
+            }
+            else
+            {
+                FocusSearchInput();
+                ResetHistoryIndex();
+                e.Handled = true;
+            }
+        }
+    }
+
+    private int FindNextResultIndex(int current, int direction)
+    {
+        var items = SearchDisplayItems;
+        var next = current + direction;
+        while (next >= 0 && next < items.Count)
+        {
+            if (!items[next].IsGroupHeader)
+                return next;
+            next += direction;
+        }
+        return -1;
+    }
+
+    private void SearchResultsListBox_OnDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        OpenSelectedSearchResult();
+    }
+
+    private void SearchResultsListBox_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        // Auto-scroll the selected item into view.
+        if (SearchResultsListBox?.SelectedItem is SearchDisplayItem { IsGroupHeader: false, Result: { } item } displayItem)
+        {
+            var index = SearchDisplayItems.IndexOf(displayItem);
+            if (index >= 0)
+                SearchResultsListBox.ScrollIntoView(index);
+        }
+    }
+
+    private void OpenSelectedSearchResult()
+    {
+        if (SearchResultsListBox?.SelectedItem is not SearchDisplayItem { IsGroupHeader: false, Result: { } result })
+            return;
+
+        OpenSearchResult(result);
+    }
+
+    private async void OpenSearchResult(SearchResultItem result)
+    {
+        await OpenFileFromPathAsync(result.Path);
+
+        if (result.LineNumber > 0 && EditorTextBox?.Document is { } doc)
+        {
+            var lineNumber = Math.Clamp(result.LineNumber, 1, doc.LineCount);
+            var line = doc.GetLineByNumber(lineNumber);
+            var matchOffset = string.IsNullOrEmpty(FindText)
+                ? -1
+                : doc.GetText(line.Offset, line.Length).IndexOf(FindText, StringComparison.OrdinalIgnoreCase);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var caretOffset = matchOffset >= 0 ? line.Offset + matchOffset : line.Offset;
+                EditorTextBox.TextArea.Caret.Offset = caretOffset;
+                if (matchOffset >= 0 && !string.IsNullOrEmpty(FindText))
+                {
+                    EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(
+                        EditorTextBox.TextArea, caretOffset, caretOffset + FindText.Length);
+                }
+                else
+                {
+                    EditorTextBox.TextArea.ClearSelection();
+                }
+                EditorTextBox.ScrollToLine(lineNumber);
+                FocusEditor();
+            }, DispatcherPriority.Background);
+        }
+    }
+
+    private void OpenSearchPanel(SearchMode mode)
+    {
+        if (!CanShowSearchPanelForMode(mode))
+            return;
+
+        _searchMode = mode;
+        NotifySearchModeChanged();
+        IsSearchPanelVisible = true;
+        _searchResults.Clear();
+        _searchDisplayItems.Clear();
+        SearchResultsListBox!.SelectedIndex = -1;
+        SearchStatusText = string.Empty;
+        if (mode == SearchMode.FindInFile)
+            UpdateFindHighlights();
+        else
+            _ = RunActiveSearchAsync();
+        FocusSearchInput();
+    }
+
+    // Ctrl+F and the search button both route through the same menu now.
+    // Picking a mode opens the panel directly.
+    private void ToggleSearchPanel(SearchMode mode)
+    {
+        if (IsSearchPanelVisible && _searchMode == mode)
+        {
+            IsSearchPanelVisible = false;
+            FocusEditor();
+            return;
+        }
+
+        OpenSearchPanel(mode);
+    }
+
+    // Clicking a mode tab inside the panel. Unlike ToggleSearchPanel this never
+    // closes the panel - it just switches the active mode (and shows a hint if
+    // the chosen mode can't run yet, e.g. Project search with no folder open).
+    private void SwitchSearchMode(SearchMode mode)
+    {
+        ResetHistoryIndex();
+        _searchMode = mode;
+        NotifySearchModeChanged();
+
+        if (!CanShowSearchPanelForMode(mode))
+        {
+            _searchCancellation?.Cancel();
+            _searchResults.Clear();
+            _searchDisplayItems.Clear();
+            SearchResultsListBox!.SelectedIndex = -1;
+            SearchStatusText = GetModeUnavailableMessage(mode);
+            return;
+        }
+
+        SearchStatusText = string.Empty;
+        _searchResults.Clear();
+        _searchDisplayItems.Clear();
+        SearchResultsListBox!.SelectedIndex = -1;
+        if (mode == SearchMode.FindInFile)
+            UpdateFindHighlights();
+        else
+            _ = RunActiveSearchAsync();
+        FocusSearchInput();
+    }
+
+    private bool CanShowSearchPanelForMode(SearchMode mode) => mode switch
+    {
+        SearchMode.FindInFile => CanShowFindInFile,
+        SearchMode.FileByName => IsFolderOpen,
+        SearchMode.ProjectSearch => IsFolderOpen,
+        _ => false,
+    };
+
+    private static string GetModeUnavailableMessage(SearchMode mode) => mode switch
+    {
+        SearchMode.FileByName => "Open a folder to search files by name.",
+        SearchMode.ProjectSearch => "Open a folder to search the project.",
+        _ => string.Empty,
+    };
+
+    private void NotifySearchModeChanged()
+    {
+        OnPropertyChanged(nameof(IsFindInFileSearchMode));
+        OnPropertyChanged(nameof(IsFileByNameSearchMode));
+        OnPropertyChanged(nameof(IsProjectSearchMode));
+        OnPropertyChanged(nameof(IsSearchResultsVisible));
+        OnPropertyChanged(nameof(SearchPlaceholderText));
+        OnPropertyChanged(nameof(IsSearchPanelActive));
+    }
+
+    private void FocusSearchInput()
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            var searchTextBox = this.FindControl<TextBox>("SearchTextBox");
+            if (searchTextBox is null) return;
+            searchTextBox.Focus();
+            searchTextBox.SelectAll();
+        }, DispatcherPriority.Background);
+    }
+
+    private void SearchTextBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            IsSearchPanelVisible = false;
+            FocusEditor();
+            ResetHistoryIndex();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Enter)
+        {
+            if (_searchMode == SearchMode.FindInFile)
+            {
+                if (!string.IsNullOrEmpty(FindText))
+                    AddToHistory(FindText);
+                FindInEditor(forward: true);
+            }
+            else
+            {
+                OpenSelectedSearchResult();
+            }
+            ResetHistoryIndex();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Up)
+        {
+            CycleHistory(-1);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Down)
+        {
+            if (IsSearchResultsVisible && SearchDisplayItems.Count > 0)
+            {
+                SearchResultsListBox?.Focus();
+                ResetHistoryIndex();
+            }
+            else
+            {
+                CycleHistory(1);
+            }
+            e.Handled = true;
+        }
+        else
+        {
+            // Any regular keypress resets MRU cycling state.
+            ResetHistoryIndex();
+        }
+    }
+
+    // Unified search: debounced execution for Files/Project modes.
+
+    private void RestartSearchDebounce()
+    {
+        _searchDebounceTimer.Stop();
+        _searchDebounceTimer.Start();
+    }
+
+    private void SearchDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _searchDebounceTimer.Stop();
+        _ = RunActiveSearchAsync();
+    }
+
+    // MRU query history helpers.
+
+    private List<string> GetCurrentHistory() => _searchMode switch
+    {
+        SearchMode.FindInFile => _findInFileHistory,
+        SearchMode.FileByName => _fileByNameHistory,
+        SearchMode.ProjectSearch => _projectSearchHistory,
+        _ => _findInFileHistory,
+    };
+
+    private void AddToHistory(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return;
+        var history = GetCurrentHistory();
+        history.Remove(query);
+        history.Insert(0, query);
+        if (history.Count > 10)
+            history.RemoveRange(10, history.Count - 10);
+    }
+
+    private void ResetHistoryIndex()
+    {
+        _historyIndex = -1;
+        _savedFindText = string.Empty;
+    }
+
+    private void CycleHistory(int direction)
+    {
+        var history = GetCurrentHistory();
+        if (history.Count == 0) return;
+
+        if (_historyIndex < 0)
+        {
+            _savedFindText = FindText ?? string.Empty;
+            _historyIndex = direction < 0 ? 0 : history.Count - 1;
+        }
+        else
+        {
+            _historyIndex += direction;
+        }
+
+        if (_historyIndex < 0)
+        {
+            FindText = _savedFindText;
+            ResetHistoryIndex();
+        }
+        else if (_historyIndex >= history.Count)
+        {
+            FindText = _savedFindText;
+            ResetHistoryIndex();
+        }
+        else
+        {
+            FindText = history[_historyIndex];
+        }
+    }
+
+    // Search result display grouping.
+
+    private void RebuildDisplayItems()
+    {
+        _searchDisplayItems.Clear();
+
+        // In FindInFile mode or FileByName mode: no grouping, flat list.
+        if (_searchMode != SearchMode.ProjectSearch)
+        {
+            foreach (var item in _searchResults)
+                _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
+            return;
+        }
+
+        // Project search: group by file path.
+        _fileGroups.Clear();
+        var grouped = _searchResults
+            .GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new SearchFileGroup
+            {
+                FilePath = g.Key,
+                FileName = Path.GetFileName(g.Key),
+                RelativePath = g.First().RelativePath,
+                MatchCount = g.Count(),
+            })
+            .ToList();
+
+        foreach (var group in grouped)
+        {
+            _fileGroups.Add(group);
+            _searchDisplayItems.Add(new SearchDisplayItem { IsGroupHeader = true, Group = group });
+            if (group.IsExpanded)
+            {
+                foreach (var item in _searchResults.Where(r =>
+                    string.Equals(r.Path, group.FilePath, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
+                }
+            }
+        }
+    }
+
+    private void ToggleGroup(SearchFileGroup group)
+    {
+        group.IsExpanded = !group.IsExpanded;
+        RebuildDisplayItems();
+    }
+
+    private void GroupHeaderToggle_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: SearchFileGroup group })
+            ToggleGroup(group);
+    }
+
+    private async Task RunActiveSearchAsync()
+    {
+        if (!IsSearchPanelVisible)
+            return;
+
+        if (_searchMode == SearchMode.FindInFile)
+        {
+            _searchResults.Clear();
+            _searchDisplayItems.Clear();
+            UpdateFindHighlights();
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(FindText))
+        {
+            _searchCancellation?.Cancel();
+            _searchResults.Clear();
+            _searchDisplayItems.Clear();
+            SearchStatusText = _searchMode == SearchMode.FileByName
+                ? "Type a file name to find files."
+                : "Type text to search the project.";
+            return;
+        }
+
+        if (!CanShowSearchPanelForMode(_searchMode))
+        {
+            _searchCancellation?.Cancel();
+            _searchResults.Clear();
+            _searchDisplayItems.Clear();
+            SearchStatusText = GetModeUnavailableMessage(_searchMode);
+            return;
+        }
+
+        var mode = _searchMode;
+        _searchCancellation?.Cancel();
+        _searchCancellation?.Dispose();
+        var cts = new CancellationTokenSource();
+        _searchCancellation = cts;
+        var token = cts.Token;
+
+        IsSearchBusy = true;
+        SearchStatusText = "Searching...";
+
+        var matchCase = IsSearchMatchCaseEnabled;
+        var wholeWord = IsSearchWholeWordEnabled;
+        var useRegex = IsSearchRegexEnabled;
+        var includeFilter = IsProjectSearchMode ? SearchIncludeFilter : null;
+        var excludeFilter = IsProjectSearchMode ? SearchExcludeFilter : null;
+        var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
+        var sw = Stopwatch.StartNew();
+
+        List<SearchResultItem> results;
+        bool truncated = false;
+        try
+        {
+            if (mode == SearchMode.FileByName)
+            {
+                results = await Task.Run(() => SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token), token);
+            }
+            else
+            {
+                var (projectResults, wasTruncated) = await Task.Run(() => SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token), token);
+                results = projectResults;
+                truncated = wasTruncated;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer search superseded this one (or the panel closed mid-search).
+            IsSearchBusy = false;
+            return;
+        }
+
+        if (token.IsCancellationRequested || !IsSearchPanelVisible || _searchMode != mode)
+        {
+            IsSearchBusy = false;
+            return;
+        }
+
+        sw.Stop();
+        _searchResults.Clear();
+        foreach (var item in results)
+            _searchResults.Add(item);
+        RebuildDisplayItems();
+        AddToHistory(FindText);
+        SearchStatusText = BuildSearchStatusText(results.Count, truncated, sw.Elapsed);
+        IsSearchBusy = false;
+    }
+
+    private string BuildSearchStatusText(int resultCount, bool truncated = false, TimeSpan elapsed = default)
+    {
+        var countText = resultCount.ToString("N0");
+        var text = _searchMode switch
+        {
+            SearchMode.FileByName => resultCount == 0
+                ? "No files found."
+                : resultCount == 1 ? "1 file found." : $"{countText} files found.",
+            SearchMode.ProjectSearch => resultCount == 0
+                ? "No matches found."
+                : resultCount == 1 ? "1 match found." : $"{countText} matches found.",
+            _ => string.Empty,
+        };
+        if (truncated)
+            text += " (showing first 2,000)";
+        if (elapsed.TotalMilliseconds >= 1)
+            text += $" ({elapsed.TotalMilliseconds:F0}ms)";
+        return text;
+    }
+
+    private (List<string> Files, SearchIgnoreRules Rules) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
+    {
+        // Invalidate cache if filters changed.
+        if (_searchFileCache is { } cached &&
+            string.Equals(cached.Rules.IncludeFilterSnapshot, includeFilter ?? "", StringComparison.Ordinal) &&
+            string.Equals(cached.Rules.ExcludeFilterSnapshot, excludeFilter ?? "", StringComparison.Ordinal))
+        {
+            return cached;
+        }
+
+        var rules = SearchIgnoreRules.Load(root, includeFilter, excludeFilter);
+        rules.IncludeFilterSnapshot = includeFilter ?? "";
+        rules.ExcludeFilterSnapshot = excludeFilter ?? "";
+        var files = new List<string>();
+        EnumerateProjectFiles(root, files, rules);
+        _searchFileCache = (files, rules);
+        return _searchFileCache.Value;
+    }
+
+    // Built-in directory names that are always skipped during project search,
+    // regardless of .gitignore contents.
+    private static readonly HashSet<string> DefaultIgnoreDirectories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".git", "node_modules", "bin", "obj", "dist", ".vs",
+    };
+
+    /// <summary>
+    /// Minimal .gitignore parser. Collects patterns from .gitignore files and
+    /// answers whether a given path should be excluded from project search.
+    /// </summary>
+    private sealed class SearchIgnoreRules
+    {
+        private readonly List<(string Pattern, string Root, bool Negated)> _rules = new();
+        private readonly List<string> _includePatterns = new();
+        private readonly List<string> _excludePatterns = new();
+        public string IncludeFilterSnapshot { get; set; } = "";
+        public string ExcludeFilterSnapshot { get; set; } = "";
+
+        /// <summary>
+        /// Creates rules by walking from <paramref name="projectRoot"/> upward
+        /// to the filesystem root, loading every .gitignore encountered.
+        /// Optional user-defined include/exclude glob patterns are layered on top.
+        /// </summary>
+        public static SearchIgnoreRules Load(string projectRoot, string? includeFilter = null, string? excludeFilter = null)
+        {
+            var rules = new SearchIgnoreRules();
+            var dir = projectRoot;
+            while (!string.IsNullOrEmpty(dir))
+            {
+                var gitignore = Path.Combine(dir, ".gitignore");
+                if (File.Exists(gitignore))
+                    rules.LoadFile(gitignore, dir);
+
+                var parent = Path.GetDirectoryName(dir);
+                if (parent is null || parent == dir) break;
+                dir = parent;
+            }
+
+            // Parse comma-separated user include/exclude patterns.
+            if (!string.IsNullOrWhiteSpace(includeFilter))
+            {
+                foreach (var pat in includeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    rules._includePatterns.Add(pat);
+            }
+            if (!string.IsNullOrWhiteSpace(excludeFilter))
+            {
+                foreach (var pat in excludeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    rules._excludePatterns.Add(pat);
+            }
+
+            return rules;
+        }
+
+        private void LoadFile(string gitignorePath, string rootDir)
+        {
+            try
+            {
+                foreach (var raw in File.ReadLines(gitignorePath))
+                {
+                    var line = raw.TrimEnd('\r');
+                    if (string.IsNullOrWhiteSpace(line) || line[0] == '#') continue;
+
+                    var negated = line[0] == '!';
+                    if (negated) line = line[1..];
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    // Strip leading slash (anchored to .gitignore directory).
+                    if (line[0] is '/' or '\\')
+                        line = line[1..];
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+
+                    _rules.Add((line, rootDir, negated));
+                }
+            }
+            catch { /* unreadable .gitignore — skip */ }
+        }
+
+        /// <summary>
+        /// Returns true if the directory should be skipped entirely.
+        /// Checks default ignore names, .gitignore directory patterns, and
+        /// hidden/system file attributes.
+        /// </summary>
+        public bool ShouldSkipDirectory(string dirPath)
+        {
+            var name = Path.GetFileName(dirPath);
+            if (string.IsNullOrEmpty(name)) return false;
+
+            if (DefaultIgnoreDirectories.Contains(name)) return true;
+            if (IsHiddenOnDisk(dirPath)) return true;
+
+            foreach (var (pattern, root, negated) in _rules)
+            {
+                // Directory-only rule (trailing /)
+                if (pattern.Length > 0 && pattern[^1] == '/')
+                {
+                    var p = pattern[..^1];
+                    if (MatchesFileName(p, name))
+                        return !negated;
+                    continue;
+                }
+
+                if (MatchesAnyPathComponent(pattern, name))
+                    return !negated;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true if the file should be excluded from results.
+        /// Checks hidden/system attributes and .gitignore file patterns.
+        /// </summary>
+        public bool ShouldSkipFile(string filePath)
+        {
+            if (IsHiddenOnDisk(filePath)) return true;
+
+            var name = Path.GetFileName(filePath);
+            if (string.IsNullOrEmpty(name)) return false;
+
+            foreach (var (pattern, root, negated) in _rules)
+            {
+                if (MatchesFilePath(pattern, root, filePath))
+                    return !negated;
+            }
+
+            // User-defined exclude patterns: skip if file matches any.
+            if (_excludePatterns.Count > 0)
+            {
+                var relPath = Path.GetRelativePath(_excludePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
+                foreach (var pat in _excludePatterns)
+                {
+                    if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath.Replace('\\', '/')))
+                        return true;
+                }
+            }
+
+            // User-defined include patterns: skip if file matches NONE.
+            if (_includePatterns.Count > 0)
+            {
+                var relPath2 = Path.GetRelativePath(_includePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
+                var included = false;
+                foreach (var pat in _includePatterns)
+                {
+                    if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath2.Replace('\\', '/')))
+                    {
+                        included = true;
+                        break;
+                    }
+                }
+                if (!included) return true;
+            }
+
+            return false;
+        }
+
+        private static bool MatchesAnyPathComponent(string pattern, string componentName)
+        {
+            // Pattern without slash — match against a single path component.
+            if (!pattern.Contains('/') && !pattern.Contains('\\'))
+                return MatchesFileName(pattern, componentName);
+
+            return false;
+        }
+
+        private static bool MatchesFilePath(string pattern, string ruleRoot, string fullPath)
+        {
+            if (!pattern.Contains('/') && !pattern.Contains('\\'))
+            {
+                // Filename-only pattern — match against just the filename.
+                return MatchesFileName(pattern, Path.GetFileName(fullPath));
+            }
+
+            // Path pattern — match against relative path from the .gitignore root.
+            try
+            {
+                var relative = Path.GetRelativePath(ruleRoot, fullPath)
+                    .Replace('\\', '/');
+                return MatchesGlob(pattern, relative);
+            }
+            catch { return false; }
+        }
+
+        private static bool MatchesFileName(string pattern, string name) =>
+            MatchesGlob(pattern, name);
+
+        internal static bool MatchesGlob(string pattern, string value)
+        {
+            if (pattern == "*") return true;
+            if (!pattern.Contains('*') && !pattern.Contains('?'))
+                return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
+
+            return GlobMatch(pattern.AsSpan(), value.AsSpan());
+        }
+
+        private static bool GlobMatch(ReadOnlySpan<char> pattern, ReadOnlySpan<char> value)
+        {
+            var pi = 0;
+            var vi = 0;
+            var starPi = -1;
+            var starVi = -1;
+
+            while (vi < value.Length)
+            {
+                if (pi < pattern.Length && (pattern[pi] == '?' || char.ToUpperInvariant(pattern[pi]) == char.ToUpperInvariant(value[vi])))
+                {
+                    pi++;
+                    vi++;
+                }
+                else if (pi < pattern.Length && pattern[pi] == '*')
+                {
+                    starPi = pi++;
+                    starVi = vi;
+                }
+                else if (starPi >= 0)
+                {
+                    pi = starPi + 1;
+                    vi = ++starVi;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            while (pi < pattern.Length && pattern[pi] == '*') pi++;
+            return pi == pattern.Length;
+        }
+    }
+
+    // Walks the open folder's whole tree, skipping ignored directories and
+    // guarding against directory cycles (junction points etc.).
+    private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null)
+    {
+        visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+            if (!visited.Add(normalized))
+                return;
+
+            foreach (var dir in Directory.GetDirectories(root))
+            {
+                if (ignoreRules.ShouldSkipDirectory(dir)) continue;
+                EnumerateProjectFiles(dir, files, ignoreRules, visited);
+            }
+            foreach (var file in Directory.GetFiles(root))
+            {
+                if (ignoreRules.ShouldSkipFile(file)) continue;
+                files.Add(file);
+            }
+        }
+        catch
+        {
+            // Unreadable directory - skip it and keep going elsewhere.
+        }
+    }
+
+    private static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
+    {
+        Regex? regex = null;
+        if (useRegex)
+        {
+            try
+            {
+                var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
+                regex = new Regex(query, options | RegexOptions.Compiled);
+            }
+            catch
+            {
+                return new List<SearchResultItem>();
+            }
+        }
+
+        var scoredResults = new List<(SearchResultItem Item, int Score)>();
+        foreach (var file in files)
+        {
+            token.ThrowIfCancellationRequested();
+            var name = Path.GetFileName(file);
+
+            if (regex is not null)
+            {
+                var match = regex.Match(name);
+                if (!match.Success) continue;
+
+                var matchIndices = new List<int>();
+                foreach (Group g in match.Groups)
+                    foreach (Capture c in g.Captures)
+                        for (var i = 0; i < c.Length; i++)
+                            matchIndices.Add(c.Index + i);
+
+                scoredResults.Add((new SearchResultItem
+                {
+                    Path = file,
+                    DisplayName = name,
+                    RelativePath = GetRelativePathOrName(root, file),
+                    Icon = FileTreeItem.GetFileIcon(name),
+                    MatchedIndices = matchIndices,
+                    Score = match.Index == 0 ? 2000 : 1000,
+                }, match.Index == 0 ? 2000 : 1000));
+            }
+            else
+            {
+                var (score, indices) = FuzzyMatch.Match(query, name, matchCase);
+                if (score < 0) continue;
+
+                scoredResults.Add((new SearchResultItem
+                {
+                    Path = file,
+                    DisplayName = name,
+                    RelativePath = GetRelativePathOrName(root, file),
+                    Icon = FileTreeItem.GetFileIcon(name),
+                    MatchedIndices = indices,
+                    Score = score,
+                }, score));
+            }
+        }
+
+        scoredResults.Sort((a, b) => b.Score.CompareTo(a.Score));
+        return scoredResults.Select(r => r.Item).ToList();
+    }
+
+    private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
+    {
+        const int maxResults = 2000;
+        var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        Regex? regex = null;
+        if (useRegex)
+        {
+            try
+            {
+                var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
+                regex = new Regex(query, options | RegexOptions.Compiled);
+            }
+            catch
+            {
+                return (new List<SearchResultItem>(), false);
+            }
+        }
+
+        var results = new List<SearchResultItem>();
+        var truncated = false;
+        foreach (var file in files)
+        {
+            token.ThrowIfCancellationRequested();
+            if (IsImagePreviewFile(file) || IsBinaryContent(file)) continue;
+
+            try
+            {
+                var lineNumber = 0;
+                foreach (var line in File.ReadLines(file))
+                {
+                    lineNumber++;
+
+                    bool matched;
+                    List<int>? matchIndices = null;
+                    if (regex is not null)
+                    {
+                        var m = regex.Match(line);
+                        matched = m.Success;
+                        if (matched)
+                        {
+                            matchIndices = new List<int>();
+                            foreach (Group g in m.Groups)
+                                foreach (Capture c in g.Captures)
+                                    for (var i = 0; i < c.Length; i++)
+                                        matchIndices.Add(c.Index + i);
+                        }
+                    }
+                    else
+                    {
+                        matched = line.Contains(query, comparison);
+                        if (matched && wholeWord && !LineContainsWholeWord(line, query, comparison))
+                            matched = false;
+                    }
+
+                    if (!matched) continue;
+
+                    results.Add(new SearchResultItem
+                    {
+                        Path = file,
+                        DisplayName = Path.GetFileName(file),
+                        RelativePath = GetRelativePathOrName(root, file),
+                        LineNumber = lineNumber,
+                        PreviewText = $"{lineNumber}: {TrimSearchPreview(line)}",
+                        Icon = FileTreeItem.GetFileIcon(file),
+                        MatchedPreviewIndices = matchIndices is not null ? matchIndices.ToArray() : System.Array.Empty<int>(),
+                    });
+                    if (results.Count >= maxResults)
+                    {
+                        truncated = true;
+                        return (results, truncated);
+                    }
+                }
+            }
+            catch
+            {
+                // Unreadable or locked file - skip it.
+            }
+        }
+        return (results, truncated);
+    }
+
+    private static bool LineContainsWholeWord(string line, string needle, StringComparison comparison)
+    {
+        var idx = 0;
+        while (idx <= line.Length - needle.Length)
+        {
+            idx = line.IndexOf(needle, idx, comparison);
+            if (idx < 0) return false;
+            if (IsWholeWordMatch(line, idx, needle.Length))
+                return true;
+            idx += Math.Max(1, needle.Length);
+        }
+        return false;
+    }
+
+    private static string GetRelativePathOrName(string root, string path)
+    {
+        try
+        {
+            var rel = Path.GetRelativePath(root, path);
+            return string.IsNullOrEmpty(rel) ? Path.GetFileName(path) : rel;
+        }
+        catch
+        {
+            return path;
+        }
+    }
+
+    private static string TrimSearchPreview(string line)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Length <= 140 ? trimmed : trimmed[..140];
     }
 
     // Encoding detection & change
@@ -10140,8 +11377,68 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void FindPrevButton_OnClick(object? sender, RoutedEventArgs e) =>
         FindInEditor(forward: false);
 
-    private void CloseFindPanel_OnClick(object? sender, RoutedEventArgs e) =>
-        IsFindPanelVisible = false;
+    private void ReplaceCurrentMatch()
+    {
+        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
+            return;
+
+        var doc = EditorTextBox.Document.Text;
+        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var regex = BuildFindRegex();
+        var match = FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
+        if (match.Offset < 0)
+            return;
+
+        EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
+        FindInEditor(forward: true);
+    }
+
+    private void ReplaceAllMatches()
+    {
+        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
+            return;
+
+        var doc = EditorTextBox.Document;
+        var text = doc.Text;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var replacement = ReplaceText ?? string.Empty;
+        var regex = BuildFindRegex();
+
+        // Collect all match offsets in a single pass over the original text.
+        var matches = new List<(int Offset, int Length)>();
+        var searchIndex = 0;
+        while (searchIndex <= text.Length)
+        {
+            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            if (m.Offset < 0)
+                break;
+            matches.Add(m);
+            searchIndex = m.Offset + m.Length;
+            if (m.Length == 0) break; // prevent infinite loop on zero-length regex matches
+        }
+
+        if (matches.Count == 0)
+            return;
+
+        // Build the replacement string by copying unchanged segments and inserting replacements.
+        var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - FindText.Length));
+        var pos = 0;
+        foreach (var match in matches)
+        {
+            if (match.Offset > pos)
+                sb.Append(text, pos, match.Offset - pos);
+            sb.Append(replacement);
+            pos = match.Offset + match.Length;
+        }
+        if (pos < text.Length)
+            sb.Append(text, pos, text.Length - pos);
+
+        // Single document operation — keeps the undo history clean.
+        doc.Replace(0, text.Length, sb.ToString());
+
+        SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
+    }
 
     // Editor context menu (right-click)
 
@@ -10184,25 +11481,167 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null) return;
         var doc = EditorTextBox.Document.Text;
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-        int index;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var regex = BuildFindRegex();
+        (int Offset, int Length) match;
         if (forward)
         {
-            index = doc.IndexOf(FindText, caretOffset + 1, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                index = doc.IndexOf(FindText, 0, StringComparison.OrdinalIgnoreCase);
+            match = FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            if (match.Offset < 0)
+                match = FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
         }
         else
         {
             var searchTo = Math.Max(0, caretOffset - 1);
-            index = doc.LastIndexOf(FindText, searchTo, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                index = doc.LastIndexOf(FindText, doc.Length - 1, StringComparison.OrdinalIgnoreCase);
+            match = FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+            if (match.Offset < 0)
+                match = FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
         }
 
-        if (index < 0) return;
-        EditorTextBox.TextArea.Caret.Offset = index;
-        EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, index, index + FindText.Length);
-        EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(index).LineNumber);
+        if (match.Offset < 0) return;
+        EditorTextBox.TextArea.Caret.Offset = match.Offset;
+        EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
+        EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
+
+        // Track which match we're on for the "X of Y" status display.
+        if (_findMatchOffsets.Count > 0)
+        {
+            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
+            if (_currentFindMatchIndex < 0)
+                _currentFindMatchIndex = ~_currentFindMatchIndex - 1;
+            if (_currentFindMatchIndex < 0)
+                _currentFindMatchIndex = _findMatchOffsets.Count - 1;
+            UpdateFindStatusText();
+        }
+    }
+
+    private static (int Offset, int Length) FindNextMatch(string text, string needle, int startIndex, bool forward, StringComparison comparison, bool wholeWord, Regex? regex = null)
+    {
+        if (regex is not null)
+        {
+            if (forward)
+            {
+                var m = regex.Match(text, startIndex);
+                return m.Success ? (m.Index, m.Length) : (-1, 0);
+            }
+            else
+            {
+                // For backward regex search, scan all matches up to startIndex and return the last one before it.
+                (int Offset, int Length) last = (-1, 0);
+                foreach (Match m in regex.Matches(text))
+                {
+                    if (m.Index > startIndex) break;
+                    last = (m.Index, m.Length);
+                }
+                return last;
+            }
+        }
+
+        if (string.IsNullOrEmpty(needle))
+            return (-1, 0);
+
+        if (forward)
+        {
+            var index = Math.Max(0, startIndex);
+            while (index <= text.Length - needle.Length)
+            {
+                index = text.IndexOf(needle, index, comparison);
+                if (index < 0) return (-1, 0);
+                if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
+                    return (index, needle.Length);
+                index += Math.Max(1, needle.Length);
+            }
+
+            return (-1, 0);
+        }
+
+        var searchTo = Math.Min(Math.Max(0, startIndex), text.Length - 1);
+        while (searchTo >= 0)
+        {
+            var index = text.LastIndexOf(needle, searchTo, comparison);
+            if (index < 0) return (-1, 0);
+            if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
+                return (index, needle.Length);
+            searchTo = index - 1;
+        }
+
+        return (-1, 0);
+    }
+
+    private static bool IsWholeWordMatch(string text, int index, int length)
+    {
+        static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+        var beforeOk = index == 0 || !IsWordChar(text[index - 1]);
+        var afterIndex = index + length;
+        var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
+        return beforeOk && afterOk;
+    }
+
+    private void UpdateFindHighlights()
+    {
+        if (EditorTextBox?.Document is null) return;
+
+        _findHighlightRenderer.Clear();
+        _findMatchOffsets.Clear();
+        _currentFindMatchIndex = -1;
+
+        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText))
+        {
+            SearchStatusText = string.Empty;
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            return;
+        }
+
+        var text = EditorTextBox.Document.Text;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var regex = BuildFindRegex();
+        var searchIndex = 0;
+        while (searchIndex <= text.Length)
+        {
+            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            if (m.Offset < 0) break;
+            _findMatchOffsets.Add(m.Offset);
+            _findHighlightRenderer.AddMatch(m.Offset, m.Length);
+            searchIndex = m.Offset + m.Length;
+            if (m.Length == 0) break;
+        }
+
+        // Determine which match the caret is on.
+        if (_findMatchOffsets.Count > 0)
+        {
+            var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(caretOffset);
+            if (_currentFindMatchIndex < 0)
+                _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
+        }
+
+        UpdateFindStatusText();
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    }
+
+    private Regex? BuildFindRegex()
+    {
+        if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText)) return null;
+        try
+        {
+            var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;
+            return new Regex(FindText, options | RegexOptions.Compiled);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void UpdateFindStatusText()
+    {
+        if (!IsFindInFileSearchMode) return;
+        var total = _findMatchOffsets.Count;
+        if (total == 0)
+            SearchStatusText = string.IsNullOrEmpty(FindText) ? string.Empty : "No matches.";
+        else
+            SearchStatusText = $"{_currentFindMatchIndex + 1} of {total}";
     }
 
     private void IncreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -10489,6 +11928,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
         QueueInsightRefresh();
+        if (IsFindInFileSearchMode && IsSearchPanelVisible)
+            UpdateFindHighlights();
     }
 
 	// Fires before the character is written; skips an auto-inserted closing character.
@@ -10761,6 +12202,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var doc = EditorTextBox.Document;
         switch (e.Key)
         {
+            case Key.F when (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control:
+                // Swallow editor-local Ctrl+F so AvaloniaEdit doesn't open its own find UI.
+                if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
+                    OpenSearchPanel(SearchMode.ProjectSearch);
+                else
+                    OpenSearchPanel(SearchMode.FindInFile);
+                e.Handled = true;
+                return;
+
             case Key.Enter when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
                 HandleSmartEnter(doc, caret);
                 e.Handled = true;
@@ -11459,10 +12909,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         var hasShift   = (e.KeyModifiers & KeyModifiers.Shift)   == KeyModifiers.Shift;
 
-        // Escape - dismiss Settings / Extensions / Tutorial / WhatsNew and return to editor
+        // Escape - dismiss the search panel / Settings / Extensions / Tutorial / WhatsNew and return to editor
         if (e.Key == Key.Escape && !hasControl)
         {
-            if (IsTutorialPageVisible)
+            if (IsSearchPanelVisible)
+            {
+                IsSearchPanelVisible = false;
+                FocusEditor();
+                e.Handled = true;
+            }
+            else if (IsTutorialPageVisible)
             {
                 TryFinishTutorial();
                 e.Handled = true;
@@ -11570,11 +13026,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 break;
 
             case Key.F:
-                // Ctrl+F - toggle find panel
-                if (CanShowFindInFile)
-                    IsFindPanelVisible = !IsFindPanelVisible;
+                // Ctrl+F / Ctrl+Shift+F now open the same search panel used by the status bar button.
+                if (hasShift)
+                    OpenSearchPanel(SearchMode.ProjectSearch);
                 else
-                    IsFindPanelVisible = false;
+                    OpenSearchPanel(SearchMode.FindInFile);
                 e.Handled = true;
                 break;
 
@@ -12363,6 +13819,64 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             else break;
         }
         return columns;
+    }
+}
+
+/// <summary>
+/// Highlights all search matches in the editor when Find-in-file is active.
+/// </summary>
+internal sealed class FindHighlightRenderer : IBackgroundRenderer
+{
+    private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));
+    private readonly List<(int Offset, int Length)> _matches = new();
+
+    public KnownLayer Layer => KnownLayer.Background;
+
+    public void AddMatch(int offset, int length) => _matches.Add((offset, length));
+
+    public void Clear() => _matches.Clear();
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (textView is null || !textView.VisualLinesValid || _matches.Count == 0)
+            return;
+
+        var visualLines = textView.VisualLines;
+        if (visualLines.Count == 0)
+            return;
+
+        var viewStart = visualLines[0].FirstDocumentLine.Offset;
+        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
+
+        var geoBuilder = new BackgroundGeometryBuilder
+        {
+            AlignToWholePixels = true,
+            CornerRadius = 2
+        };
+
+        foreach (var (offset, length) in _matches)
+        {
+            if (offset + length < viewStart || offset > viewEnd)
+                continue;
+            geoBuilder.AddSegment(textView, new SimpleSegment(offset, length));
+        }
+
+        var geometry = geoBuilder.CreateGeometry();
+        if (geometry is not null)
+            drawingContext.DrawGeometry(HighlightBrush, null, geometry);
+    }
+
+    private sealed class SimpleSegment : ISegment
+    {
+        public SimpleSegment(int offset, int length)
+        {
+            Offset = offset;
+            Length = length;
+        }
+
+        public int Offset { get; }
+        public int Length { get; }
+        public int EndOffset => Offset + Length;
     }
 }
 
