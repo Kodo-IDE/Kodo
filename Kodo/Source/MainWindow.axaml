@@ -1450,16 +1450,18 @@
                             <Button Classes="compilericon"
                                     IsVisible="{Binding IsCompilerIconVisible}"
                                     ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                    PointerPressed="CompilerIconButton_OnPointerPressed">
+                                    Click="CompilerIconButton_OnClick">
                                 <Panel>
                                     <Image Source="{Binding ActiveCompilerExtension.IconImage}"
                                            Width="22"
                                            Height="22"
                                            Stretch="Uniform"
+                                           IsHitTestVisible="False"
                                            IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                     <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
                                              Width="22"
                                              Height="22"
+                                             IsHitTestVisible="False"
                                              IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                 </Panel>
                             </Button>
