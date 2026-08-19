@@ -1412,16 +1412,18 @@
                             <Border Classes="runbuildgroup">
                                 <Grid ColumnDefinitions="Auto,Auto">
                                     <Button Classes="runbuildprimary"
-                                            Content="Run"
                                             IsEnabled="{Binding IsRunButtonEnabled}"
                                             ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunButton_OnClick" />
+                                            Click="RunButton_OnClick">
+                                        <TextBlock Text="Run" LineHeight="16"/>
+                                    </Button>
                                     <Button Grid.Column="1"
                                             Classes="runbuildarrow"
-                                            Content="&#x25BE;"
                                             IsEnabled="{Binding IsRunButtonEnabled}"
                                             ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunMenuButton_OnClick" />
+                                            Click="RunMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
                                 </Grid>
                             </Border>
 
@@ -1429,16 +1431,18 @@
                             <Border Classes="runbuildgroup">
                                 <Grid ColumnDefinitions="Auto,Auto">
                                     <Button Classes="runbuildprimary"
-                                            Content="Build"
                                             IsEnabled="{Binding IsBuildButtonEnabled}"
                                             ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildButton_OnClick" />
+                                            Click="BuildButton_OnClick">
+                                        <TextBlock Text="Build" LineHeight="16"/>
+                                    </Button>
                                     <Button Grid.Column="1"
                                             Classes="runbuildarrow"
-                                            Content="&#x25BE;"
                                             IsEnabled="{Binding IsBuildButtonEnabled}"
                                             ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildMenuButton_OnClick" />
+                                            Click="BuildMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
                                 </Grid>
                             </Border>
 
