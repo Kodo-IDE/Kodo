@@ -2269,10 +2269,29 @@ public partial class MainWindow
             BuildRunBuildMenu(isBuild: true).ShowAt(button);
     }
 
-    private void CompilerIconButton_OnClick(object? sender, RoutedEventArgs e)
+    private MenuFlyout? _compilerSwitchFlyout;
+
+    private void CompilerIconButton_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is Button button)
-            BuildCompilerSwitchMenu().ShowAt(button);
+        if (sender is not Button button) return;
+        if (!e.GetCurrentPoint(button).Properties.IsLeftButtonPressed) return;
+
+        // A plain Click handler here misses roughly every other press: when the
+        // flyout is already open, its light-dismiss overlay consumes the
+        // press/release pair on the anchor button before Click ever fires, so the
+        // click that should re-toggle it silently does nothing. Handling
+        // PointerPressed directly and tracking/toggling the flyout ourselves
+        // avoids that race.
+        e.Handled = true;
+
+        if (_compilerSwitchFlyout is { IsOpen: true } open)
+        {
+            open.Hide();
+            return;
+        }
+
+        _compilerSwitchFlyout = BuildCompilerSwitchMenu();
+        _compilerSwitchFlyout.ShowAt(button);
     }
 
     private MenuFlyout BuildRunBuildMenu(bool isBuild)

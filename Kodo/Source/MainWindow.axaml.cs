@@ -9501,6 +9501,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = dialog.ShowDialog(this);
     }
 
+    private int _homeVersionTapCount;
+    private DateTime _homeVersionLastTap;
+
+    private void HomeVersionText_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not TextBlock tb) return;
+        if (!e.GetCurrentPoint(tb).Properties.IsLeftButtonPressed) return;
+
+        var now = DateTime.UtcNow;
+        if ((now - _homeVersionLastTap).TotalSeconds > 1.2)
+            _homeVersionTapCount = 0;
+        _homeVersionLastTap = now;
+        _homeVersionTapCount++;
+
+        if (_homeVersionTapCount < 7)
+            return;
+
+        _homeVersionTapCount = 0;
+        var originalText = tb.Text;
+        tb.Text = "Hehe, that tickles!";
+        var revertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        revertTimer.Tick += (_, _) =>
+        {
+            revertTimer.Stop();
+            tb.Text = originalText;
+        };
+        revertTimer.Start();
+    }
+
+    private int _aboutVersionTapCount;
+    private DateTime _aboutVersionLastTap;
+
+    private void AboutVersionText_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not TextBlock tb) return;
+        if (!e.GetCurrentPoint(tb).Properties.IsLeftButtonPressed) return;
+
+        var now = DateTime.UtcNow;
+        if ((now - _aboutVersionLastTap).TotalSeconds > 1.2)
+            _aboutVersionTapCount = 0;
+        _aboutVersionLastTap = now;
+        _aboutVersionTapCount++;
+
+        if (_aboutVersionTapCount < 7)
+            return;
+
+        _aboutVersionTapCount = 0;
+        var originalText = tb.Text;
+        tb.Text = "That tickles!";
+        var revertTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        revertTimer.Tick += (_, _) =>
+        {
+            revertTimer.Stop();
+            tb.Text = originalText;
+        };
+        revertTimer.Start();
+    }
+
     private async void OpenCrashLogFolderButton_OnClick(object? sender, RoutedEventArgs e)
     {
         try

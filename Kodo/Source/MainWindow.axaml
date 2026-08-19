@@ -1450,7 +1450,7 @@
                             <Button Classes="compilericon"
                                     IsVisible="{Binding IsCompilerIconVisible}"
                                     ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                    Click="CompilerIconButton_OnClick">
+                                    PointerPressed="CompilerIconButton_OnPointerPressed">
                                 <Panel>
                                     <Image Source="{Binding ActiveCompilerExtension.IconImage}"
                                            Width="22"
@@ -1763,8 +1763,10 @@
                                         CornerRadius="14"
                                         Padding="12,5"
                                         VerticalAlignment="Center">
-                                    <TextBlock FontSize="12"
+                                    <TextBlock x:Name="HomeVersionText"
+                                               FontSize="12"
                                                Foreground="{Binding MutedTextBrush}"
+                                               PointerPressed="HomeVersionText_OnPointerPressed"
                                                Text="{Binding CurrentAppVersionDisplay}" />
                                 </Border>
                             </Grid>
@@ -5587,10 +5589,12 @@
                                         </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="1"
+                                               x:Name="AboutVersionText"
                                                FontSize="13"
                                                Foreground="{Binding MutedTextBrush}"
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Right"
+                                               PointerPressed="AboutVersionText_OnPointerPressed"
                                                Text="{Binding CurrentAppVersionDisplay}" />
                                 </Grid>
 
