@@ -573,7 +573,6 @@ internal sealed class UpdateDialog : Window
         _content = new StackPanel
         {
             Spacing = 14,
-            Margin  = new Thickness(22),
             Children =
             {
                 headerRow,
@@ -584,7 +583,16 @@ internal sealed class UpdateDialog : Window
             },
         };
 
-        Content = _content;
+        Content = new Border
+        {
+            Background      = new SolidColorBrush(_palette.SurfaceDeep),
+            BorderBrush     = new SolidColorBrush(_palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius    = new CornerRadius(20),
+            Padding         = new Thickness(22),
+            Margin          = new Thickness(16),
+            Child           = _content,
+        };
     }
 
     // Prevents the dialog from being closed while an update is in progress.

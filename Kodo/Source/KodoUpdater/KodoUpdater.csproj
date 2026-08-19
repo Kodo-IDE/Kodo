@@ -12,6 +12,7 @@
     <AssemblyName>KodoUpdater</AssemblyName>
     <RootNamespace>KodoUpdater</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationIcon>..\..\Assets\kodo_logo.ico</ApplicationIcon>
     <!-- Single-file, self-contained publish keeps this a standalone background
          process with no dependency on the main Kodo install folder layout. -->
     <SelfContained>true</SelfContained>

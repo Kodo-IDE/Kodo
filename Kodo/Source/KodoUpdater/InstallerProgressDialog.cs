@@ -84,11 +84,21 @@ internal sealed class InstallerProgressDialog : Window
             CornerRadius  = new CornerRadius(4),
         };
 
-        Content = new StackPanel
+        var content = new StackPanel
         {
             Spacing = 14,
-            Margin  = new Thickness(22),
             Children = { headerRow, _statusText, _progressBar },
+        };
+
+        Content = new Border
+        {
+            Background      = new SolidColorBrush(palette.SurfaceDeep),
+            BorderBrush     = new SolidColorBrush(palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius    = new CornerRadius(20),
+            Padding         = new Thickness(22),
+            Margin          = new Thickness(16),
+            Child           = content,
         };
     }
 
