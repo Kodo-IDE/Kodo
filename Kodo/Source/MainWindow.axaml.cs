@@ -3897,6 +3897,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasOpenEditors => OpenTabs.Count > 0;
 
+    public bool HasMultipleOpenEditors => OpenTabs.Count > 1;
+
     public bool IsDocumentViewVisible => HasDocumentOpen && IsEditorPageVisible && !IsHomePageVisible;
 
     public bool HasImagePreview => CurrentImagePreview is not null;
@@ -6188,6 +6190,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (e.Action == NotifyCollectionChangedAction.Add)
             IsFileExplorerVisible = true;
         OnPropertyChanged(nameof(HasOpenEditors));
+        OnPropertyChanged(nameof(HasMultipleOpenEditors));
         OnPropertyChanged(nameof(IsEditorTabsVisible));
         SaveSettings();
     }
