@@ -132,7 +132,7 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Template">
                 <ControlTemplate>
-                    <Panel Background="Transparent">
+                    <Border Background="Transparent">
                         <Border Name="PART_Border"
                                 Margin="4,0"
                                 Background="Transparent"
@@ -145,7 +145,7 @@
                                               Content="{TemplateBinding Content}"
                                               ContentTemplate="{TemplateBinding ContentTemplate}" />
                         </Border>
-                    </Panel>
+                    </Border>
                 </ControlTemplate>
             </Setter>
         </Style>
@@ -1034,7 +1034,7 @@
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
-                                                    ToolTip.Tip="{Binding FullPath}"
+                                                    ToolTip.Tip="{Binding DisplayName}"
                                                     HorizontalContentAlignment="Stretch">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Viewbox Grid.Column="0"
@@ -2916,9 +2916,11 @@
                                      SelectionChanged="SearchResultsListBox_OnSelectionChanged">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate DataType="kodoModels:SearchDisplayItem">
-                                        <Panel>
+                                        <Border Background="Transparent">
+                                            <Panel>
                                             <!-- Group header row -->
-                                            <Button IsVisible="{Binding IsGroupHeader}" Classes="chrome groupheader" Tag="{Binding Group}" Click="GroupHeaderToggle_OnClick" HorizontalContentAlignment="Left" Padding="8,6" Margin="0" BorderThickness="0">
+                                            <Button IsVisible="{Binding IsGroupHeader}" Classes="chrome groupheader" Tag="{Binding Group}" HorizontalContentAlignment="Left" Padding="8,6" Margin="0" BorderThickness="0"
+                                                    Click="SearchGroupHeader_OnClick">
                                                 <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0">
                                                     <TextBlock Grid.Column="0" Text="{Binding Group.ChevronGlyph}" FontSize="9" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                     <TextBlock Grid.Column="1" Text="{Binding Group.FileName}" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" />
@@ -2930,25 +2932,14 @@
                                             <!-- Individual result row -->
                                             <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True">
                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap">
-                                                    <TextBlock.Inlines>
-                                                        <MultiBinding Converter="{x:Static kodoModels:HighlightConverter.Instance}">
-                                                            <Binding Path="Result.DisplayName" />
-                                                            <Binding Path="Result.MatchedIndices" />
-                                                        </MultiBinding>
-                                                    </TextBlock.Inlines>
-                                                </TextBlock>
+                                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap"
+                                                           Text="{Binding Result.DisplayName}" />
                                                 <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Result.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0">
-                                                    <TextBlock.Inlines>
-                                                        <MultiBinding Converter="{x:Static kodoModels:PreviewHighlightConverter.Instance}">
-                                                            <Binding Path="Result.PreviewText" />
-                                                            <Binding Path="Result.MatchedPreviewIndices" />
-                                                        </MultiBinding>
-                                                    </TextBlock.Inlines>
-                                                </TextBlock>
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0"
+                                                           Text="{Binding Result.PreviewText}" />
                                             </Grid>
-                                        </Panel>
+                                            </Panel>
+                                        </Border>
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>

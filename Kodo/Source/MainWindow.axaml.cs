@@ -10400,13 +10400,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SearchResultsListBox_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        // Auto-scroll the selected item into view.
         if (SearchResultsListBox?.SelectedItem is SearchDisplayItem { IsGroupHeader: false, Result: { } item } displayItem)
         {
             var index = SearchDisplayItems.IndexOf(displayItem);
             if (index >= 0)
                 SearchResultsListBox.ScrollIntoView(index);
         }
+    }
+
+    private void SearchGroupHeader_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: SearchFileGroup group })
+            ToggleGroup(group);
     }
 
     private void OpenSelectedSearchResult()
@@ -10683,6 +10688,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         // Project search: group by file path.
+        // Preserve each group's expanded/collapsed state across rebuilds - new
+        // SearchFileGroup instances are constructed below, so without this the
+        // state set by ToggleGroup() would be discarded on every call.
+        var previousExpansion = _fileGroups
+            .ToDictionary(g => g.FilePath, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
+
         _fileGroups.Clear();
         var grouped = _searchResults
             .GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
@@ -10692,6 +10703,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 FileName = Path.GetFileName(g.Key),
                 RelativePath = g.First().RelativePath,
                 MatchCount = g.Count(),
+                IsExpanded = previousExpansion.TryGetValue(g.Key, out var wasExpanded) && wasExpanded,
             })
             .ToList();
 
@@ -10756,12 +10768,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         group.IsExpanded = !group.IsExpanded;
         RebuildDisplayItems();
-    }
-
-    private void GroupHeaderToggle_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: SearchFileGroup group })
-            ToggleGroup(group);
     }
 
     private async Task RunActiveSearchAsync()
@@ -14127,4 +14133,3 @@ public sealed class MarketplaceTileWidthConverter : Avalonia.Data.Converters.IVa
     public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
         throw new NotSupportedException();
 }
-

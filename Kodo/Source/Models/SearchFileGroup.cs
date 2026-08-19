@@ -10,7 +10,7 @@ namespace Kodo.Models;
 /// </summary>
 public sealed class SearchFileGroup : INotifyPropertyChanged
 {
-    private bool _isExpanded = true;
+    private bool _isExpanded;
 
     public string FilePath { get; init; } = string.Empty;
     public string FileName { get; init; } = string.Empty;
