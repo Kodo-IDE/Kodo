@@ -2306,11 +2306,14 @@ public partial class MainWindow
             var commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
             if (!string.IsNullOrWhiteSpace(commandLine))
             {
-                menu.Items.Add(new MenuItem
+                var summary = $"{compiler.Name}  ·  {commandLine}";
+                var infoItem = new MenuItem
                 {
-                    Header = $"{compiler.Name}  ·  {commandLine}",
+                    Header = BuildCompilerMenuHeader(summary),
                     IsEnabled = false,
-                });
+                };
+                ToolTip.SetTip(infoItem, summary);
+                menu.Items.Add(infoItem);
                 menu.Items.Add(new Separator());
             }
         }
@@ -2396,11 +2399,12 @@ public partial class MainWindow
             var compilerId = compiler.Id;
             var item = new MenuItem
             {
-                Header = compiler.Name,
+                Header = BuildCompilerMenuHeader(compiler.Name),
                 Icon = BuildCompilerMenuIcon(compiler),
                 IsChecked = ActiveCompilerExtension is { } active &&
                             active.Id.Equals(compilerId, StringComparison.OrdinalIgnoreCase),
             };
+            ToolTip.SetTip(item, compiler.Name);
             item.Click += (_, _) =>
             {
                 _compilerOverrides[ext] = compilerId;
@@ -2415,6 +2419,14 @@ public partial class MainWindow
 
         return menu;
     }
+
+    private static Control BuildCompilerMenuHeader(string text) => new TextBlock
+    {
+        Text = text,
+        MaxWidth = 280,
+        TextTrimming = TextTrimming.CharacterEllipsis,
+        TextWrapping = TextWrapping.NoWrap,
+    };
 
     private static Control BuildCompilerMenuIcon(MarketplaceExtension compiler)
     {
