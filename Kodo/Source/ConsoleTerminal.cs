@@ -128,6 +128,17 @@ public sealed class ConsoleTerminal : Control
     // Fired when the shell reports its current working directory via OSC 1337;CurrentDir=<path>.
     public event EventHandler<string>? WorkingDirectoryChanged;
 
+    // Customizable terminal gestures, keyed by the command id used in MainWindow's
+    // KeybindDefinitions ("TerminalCopy", "TerminalPaste", "TerminalSearch"). Any id that's
+    // missing (or a null table entirely, e.g. when this control is hosted standalone)
+    // falls back to the built-in defaults below.
+    public IReadOnlyDictionary<string, KeyGesture>? Keybinds { get; set; }
+
+    // Built-in defaults, matching MainWindow's KeybindDefinitions for the same ids.
+    private static readonly KeyGesture DefaultCopy   = new(Key.C, KeyModifiers.Control | KeyModifiers.Shift);
+    private static readonly KeyGesture DefaultPaste  = new(Key.V, KeyModifiers.Control);
+    private static readonly KeyGesture DefaultSearch = new(Key.F, KeyModifiers.Control);
+
     // Starts a shell; stops any previous session first.
     // suppressOutputUntilRestored: discard output until a pending restore completes.
     public void Start(string shellPath, string arguments, string workingDirectory,
@@ -313,11 +324,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        var ctrl  = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        var shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        var alt   = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
-
-        if (ctrl && shift && !alt && e.Key == Key.C)
+        if (MatchesTerminalKeybind(e, "TerminalCopy", DefaultCopy))
         {
             _ = CopySelectionToClipboardAsync();
             e.Handled = true;
@@ -325,7 +332,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        if (ctrl && !shift && !alt && e.Key == Key.V)
+        if (MatchesTerminalKeybind(e, "TerminalPaste", DefaultPaste))
         {
             _ = PasteFromClipboardAsync();
             e.Handled = true;
@@ -333,7 +340,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        if (ctrl && !shift && !alt && e.Key == Key.F)
+        if (MatchesTerminalKeybind(e, "TerminalSearch", DefaultSearch))
         {
             OpenSearch();
             e.Handled = true;
@@ -382,6 +389,28 @@ public sealed class ConsoleTerminal : Control
 
         // Everything else arrives via OnTextInput.
         base.OnKeyDown(e);
+    }
+
+    // True if the pressed key matches the current (possibly user-customized) gesture for the
+    // given terminal command id, falling back to a built-in default when no keybind table (or
+    // entry) is present.
+    private bool MatchesTerminalKeybind(KeyEventArgs e, string id, KeyGesture fallback)
+    {
+        var gesture = fallback;
+        if (Keybinds is not null && Keybinds.TryGetValue(id, out var custom))
+            gesture = custom;
+
+        // Guard against gestures that can't be assigned via the shortcuts dialog (it requires
+        // at least one modifier unless the key is a function key). This protects bare keys the
+        // terminal must always pass through to the shell - Enter, Tab, Escape, arrows, ... -
+        // even if an invalid value is hand-edited into the settings file.
+        if (gesture.KeyModifiers == KeyModifiers.None &&
+            (gesture.Key < Key.F1 || gesture.Key > Key.F24))
+        {
+            return false;
+        }
+
+        return e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
     }
 
     protected override void OnTextInput(TextInputEventArgs e)

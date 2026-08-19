@@ -700,6 +700,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RoutingStrategies.Tunnel);
         _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
+        InitializeKeybinds(settings);
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
@@ -4913,7 +4914,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var cards = SettingsCardsPanel.Children
             .OfType<Control>()
-            .Where(c => c.Name != "SettingsSearchEmptyPlaceholder")
+            .Where(c => c.Name != "SettingsSearchEmptyPlaceholder" &&
+                        (c.Name is null || !c.Name.StartsWith("SectionHeader", StringComparison.Ordinal)))
             .ToList();
         var groupVisible = cards
             .GroupBy(SettingsCardGroupKey)
@@ -6621,6 +6623,154 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Settings persistence
 
+    // Keybinds -------------------------------------------------------------
+    // A small, fixed set of app-level commands whose gesture can be changed from
+    // Settings -> Help -> View Shortcuts. Editor-local single-key bindings (Tab, Enter,
+    // Backspace) and context-dependent ones (terminal search navigation, image zoom) aren't
+    // included - they either need a modifier-free key (which would collide with typing) or
+    // only make sense in one specific context.
+    //
+    // IsContextLocal marks bindings that only fire while a specific control is focused
+    // (currently the terminal). Two bindings are considered a conflict only when they share
+    // the same scope, so e.g. Ctrl+V can be "Paste" in the editor and "Paste" in the terminal
+    // at the same time.
+    private sealed record KeybindDefinition(string Id, string Description, KeyGesture Default, string Category, bool IsContextLocal = false);
+
+    private static readonly KeybindDefinition[] KeybindDefinitions =
+    {
+        new("GoHome",             "Go to Home",             new KeyGesture(Key.H, KeyModifiers.Control),                        "Navigation"),
+        new("GoEditor",           "Go to Editor",            new KeyGesture(Key.E, KeyModifiers.Control | KeyModifiers.Shift),  "Navigation"),
+        new("OpenSettings",       "Open Settings",           new KeyGesture(Key.OemComma, KeyModifiers.Control),                 "Navigation"),
+        new("OpenExtensions",     "Open Marketplace",        new KeyGesture(Key.E, KeyModifiers.Control),                        "Navigation"),
+        new("OpenExtensionsAlt",  "Open Marketplace (alternate)", new KeyGesture(Key.X, KeyModifiers.Control | KeyModifiers.Shift), "Navigation"),
+        new("CloseOverlay",       "Close search / Settings / Extensions / Tutorial / What's New", new KeyGesture(Key.Escape, KeyModifiers.None), "Navigation"),
+        new("NewFile",            "New file",                new KeyGesture(Key.N, KeyModifiers.Control),                        "Files & Tabs"),
+        new("OpenFile",           "Open file",               new KeyGesture(Key.O, KeyModifiers.Control),                        "Files & Tabs"),
+        new("OpenFolder",         "Open folder",             new KeyGesture(Key.K, KeyModifiers.Control),                        "Files & Tabs"),
+        new("CloseFolder",        "Close folder",            new KeyGesture(Key.K, KeyModifiers.Control | KeyModifiers.Shift),  "Files & Tabs"),
+        new("Save",               "Save",                    new KeyGesture(Key.S, KeyModifiers.Control),                        "Files & Tabs"),
+        new("SaveAs",             "Save as",                 new KeyGesture(Key.S, KeyModifiers.Control | KeyModifiers.Shift),  "Files & Tabs"),
+        new("CloseTab",           "Close tab",               new KeyGesture(Key.W, KeyModifiers.Control),                        "Files & Tabs"),
+        new("FindInFile",         "Find in file",            new KeyGesture(Key.F, KeyModifiers.Control),                        "Editor"),
+        new("FindInProject",      "Find in project",         new KeyGesture(Key.F, KeyModifiers.Control | KeyModifiers.Shift),  "Editor"),
+        new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
+        new("ToggleLineComment",  "Toggle line comment",     new KeyGesture(Key.Oem2, KeyModifiers.Control),                     "Editor"),
+        new("Cut",                "Cut",                     new KeyGesture(Key.X, KeyModifiers.Control),                        "Editor"),
+        new("Copy",               "Copy",                    new KeyGesture(Key.C, KeyModifiers.Control),                        "Editor"),
+        new("Paste",              "Paste",                   new KeyGesture(Key.V, KeyModifiers.Control),                        "Editor"),
+        new("ToggleTerminal",     "Toggle terminal panel",   new KeyGesture(Key.J, KeyModifiers.Control),                        "Terminal"),
+        new("ToggleTerminalAlt",  "Toggle terminal panel (alternate)", new KeyGesture(Key.Oem3, KeyModifiers.Control),           "Terminal"),
+        new("NewTerminalSession", "New terminal session",   new KeyGesture(Key.Oem3, KeyModifiers.Control | KeyModifiers.Shift),"Terminal"),
+        new("TerminalCopy",       "Copy selection (in terminal)", new KeyGesture(Key.C, KeyModifiers.Control | KeyModifiers.Shift), "Terminal", IsContextLocal: true),
+        new("TerminalPaste",      "Paste (in terminal)",    new KeyGesture(Key.V, KeyModifiers.Control),                        "Terminal", IsContextLocal: true),
+        new("TerminalSearch",     "Search terminal output",  new KeyGesture(Key.F, KeyModifiers.Control),                        "Terminal", IsContextLocal: true),
+        new("ZoomIn",             "Zoom in (image viewer)",  new KeyGesture(Key.OemPlus, KeyModifiers.Control),                  "Image viewer"),
+        new("ZoomOut",            "Zoom out (image viewer)", new KeyGesture(Key.OemMinus, KeyModifiers.Control),                 "Image viewer"),
+        new("ZoomReset",          "Reset zoom (image viewer)", new KeyGesture(Key.D0, KeyModifiers.Control),                     "Image viewer"),
+    };
+
+    private Dictionary<string, KeyGesture> _keybinds = new(StringComparer.OrdinalIgnoreCase);
+
+    private static string SerializeGesture(KeyGesture gesture) => $"{gesture.KeyModifiers}|{gesture.Key}";
+
+    private static KeyGesture? DeserializeGesture(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var parts = raw.Split('|');
+        if (parts.Length != 2) return null;
+        if (!Enum.TryParse<KeyModifiers>(parts[0], out var modifiers)) return null;
+        if (!Enum.TryParse<Key>(parts[1], out var key)) return null;
+        return new KeyGesture(key, modifiers);
+    }
+
+    // Mirrors the capture dialog's rule (Settings -> Help -> View Shortcuts): a gesture is
+    // only assignable if it carries at least one modifier key or is a bare function key.
+    // Bare keys like Enter, Tab, or Escape are deliberately not customizable - they'd
+    // otherwise collide with typing and (in the terminal) with keys the shell expects to
+    // receive as raw input. Hand-edited settings files are validated against this too, so
+    // an invalid gesture can never take effect even if it wasn't entered through the dialog.
+    private static bool IsValidKeybindGesture(KeyGesture gesture) =>
+        gesture.KeyModifiers != KeyModifiers.None ||
+        (gesture.Key >= Key.F1 && gesture.Key <= Key.F24);
+
+    private void InitializeKeybinds(AppSettings settings)
+    {
+        _keybinds = new Dictionary<string, KeyGesture>(StringComparer.OrdinalIgnoreCase);
+        foreach (var def in KeybindDefinitions)
+        {
+            var gesture = def.Default;
+            if (settings.CustomKeybinds is not null &&
+                settings.CustomKeybinds.TryGetValue(def.Id, out var raw) &&
+                DeserializeGesture(raw) is { } custom &&
+                IsValidKeybindGesture(custom))
+            {
+                gesture = custom;
+            }
+            _keybinds[def.Id] = gesture;
+        }
+
+        // Shares the live keybind table with the terminal so its copy/paste/search
+        // gestures follow the user's customizations (and any in-place edits from the
+        // shortcuts dialog) without re-wiring.
+        TerminalHostControl.Keybinds = _keybinds;
+    }
+
+    // Only the deltas from default are persisted, so future default changes (e.g. a new
+    // build remapping a command) still take effect for users who never touched that bind.
+    private Dictionary<string, string> BuildCustomKeybindsSnapshot()
+    {
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var def in KeybindDefinitions)
+        {
+            if (_keybinds.TryGetValue(def.Id, out var gesture) &&
+                (gesture.Key != def.Default.Key || gesture.KeyModifiers != def.Default.KeyModifiers))
+            {
+                result[def.Id] = SerializeGesture(gesture);
+            }
+        }
+        return result;
+    }
+
+    // e.g. "Ctrl+Shift+F", ",", "Ctrl+/" - a friendlier rendering than KeyGesture.ToString()
+    // for the Oem* keys that show up in our default bindings.
+    private static string FormatGesture(KeyGesture gesture)
+    {
+        var parts = new List<string>();
+        if ((gesture.KeyModifiers & KeyModifiers.Control) != 0) parts.Add("Ctrl");
+        if ((gesture.KeyModifiers & KeyModifiers.Alt) != 0) parts.Add("Alt");
+        if ((gesture.KeyModifiers & KeyModifiers.Shift) != 0) parts.Add("Shift");
+        if ((gesture.KeyModifiers & KeyModifiers.Meta) != 0) parts.Add("Win");
+        parts.Add(FormatKey(gesture.Key));
+        return string.Join("+", parts);
+    }
+
+    private static string FormatKey(Key key) => key switch
+    {
+        Key.OemComma => ",",
+        Key.OemPeriod => ".",
+        Key.Oem2 => "/",
+        Key.OemPlus => "=",
+        Key.OemMinus => "-",
+        Key.Oem3 => "`",
+        Key.D0 => "0",
+        Key.D1 => "1",
+        Key.D2 => "2",
+        Key.D3 => "3",
+        Key.D4 => "4",
+        Key.D5 => "5",
+        Key.D6 => "6",
+        Key.D7 => "7",
+        Key.D8 => "8",
+        Key.D9 => "9",
+        _ => key.ToString(),
+    };
+
+    // True if the pressed key event matches the current (possibly user-customized)
+    // gesture for the given command id. Falls back to false for unknown ids.
+    private bool MatchesKeybind(KeyEventArgs e, string id) =>
+        _keybinds.TryGetValue(id, out var gesture) &&
+        e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
+
     private string SettingsFilePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
 
@@ -6747,7 +6897,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 .ToList(),
             CustomRunCommands = new Dictionary<string, string>(_customRunCommands, StringComparer.OrdinalIgnoreCase),
             CustomBuildCommands = new Dictionary<string, string>(_customBuildCommands, StringComparer.OrdinalIgnoreCase),
-            CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase)
+            CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase),
+            CustomKeybinds = BuildCustomKeybindsSnapshot()
         };
     }
 
@@ -9034,42 +9185,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ViewShortcutsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Shortcut rows: (gesture, description)
-        var shortcuts = new (string Gesture, string Description)[]
+        // Non-rebindable reference list - context-specific keys that only fire inside an
+        // active terminal search overlay and rely on modifier-free keys (which would collide
+        // with typing the query), so they're not exposed in the editable list.
+        var fixedShortcuts = new (string Gesture, string Description)[]
         {
-            // Navigation
-            ("Ctrl+H",             "Go to Home"),
-            ("Ctrl+Shift+E",       "Go to Editor"),
-            ("Ctrl+,",             "Open Settings"),
-            ("Ctrl+E  or  Ctrl+Shift+X", "Marketplace"),
-            // Files & tabs
-            ("Ctrl+N",             "New file"),
-            ("Ctrl+O",             "Open file"),
-            ("Ctrl+K",             "Open folder"),
-            ("Ctrl+Shift+K",       "Close folder"),
-            ("Ctrl+S",             "Save"),
-            ("Ctrl+Shift+S",       "Save as"),
-            ("Ctrl+W",             "Close tab"),
-            // Editor
-            ("Ctrl+F",             "Find in file"),
-            ("Ctrl+Shift+F",       "Find in project (search all files)"),
-            ("Ctrl+B",             "Toggle file explorer"),
-            ("Ctrl+X / C / V",     "Cut / Copy / Paste"),
-            ("Ctrl+/",             "Toggle line comment"),
-            // Terminal
-            ("Ctrl+`  or  Ctrl+J", "Toggle terminal panel"),
-            ("Ctrl+Shift+`",       "New terminal session"),
-            ("Ctrl+Shift+C",       "Copy selection (in terminal)"),
-            ("Ctrl+V",             "Paste (in terminal)"),
-            ("Ctrl+F",             "Search terminal output (in terminal)"),
             ("Enter / F3",         "Next search match (in terminal)"),
             ("Shift+Enter / Shift+F3", "Previous search match (in terminal)"),
-            // Image viewer
-            ("Ctrl++",             "Zoom in"),
-            ("Ctrl+-",             "Zoom out"),
-            ("Ctrl+0",             "Reset zoom"),
-            // General
-            ("Escape",             "Close search / Settings / Extensions / Tutorial / What's New"),
         };
 
         // Header
@@ -9082,16 +9204,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // Shortcut grid
-        var grid = new Grid
+        var hintText = new TextBlock
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
-            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", shortcuts.Length))),
+            Text         = "Click a shortcut below, then press a new key combination. Press Escape to cancel (so Escape itself can only be reassigned via Reset, not capture).",
+            FontSize     = 12,
+            Foreground   = MutedTextBrush,
+            TextWrapping = TextWrapping.Wrap,
         };
 
-        for (var i = 0; i < shortcuts.Length; i++)
+        var editableHeader = new TextBlock
         {
-            var (gesture, description) = shortcuts[i];
+            Text       = "Editable",
+            FontSize   = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = MutedTextBrush,
+            Margin     = new Thickness(0, 4, 0, 0),
+        };
+
+        var otherHeader = new TextBlock
+        {
+            Text       = "Other",
+            FontSize   = 12,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = MutedTextBrush,
+            Margin     = new Thickness(0, 4, 0, 0),
+        };
+
+        // Editable (rebindable) grid - one row per KeybindDefinition
+        var editableGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("140,*,Auto,Auto"),
+            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
+        };
+
+        // Non-rebindable reference list, reusing the old static layout
+        var fixedGrid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
+            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", fixedShortcuts.Length))),
+        };
+
+        for (var i = 0; i < fixedShortcuts.Length; i++)
+        {
+            var (gesture, description) = fixedShortcuts[i];
 
             var gestureBorder = new Border
             {
@@ -9112,25 +9267,160 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var descText = new TextBlock
             {
-                Text       = description,
-                FontSize   = 13,
-                Foreground = MutedTextBrush,
+                Text              = description,
+                FontSize          = 13,
+                Foreground        = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                Margin     = new Thickness(0, 0, 0, 6),
+                TextWrapping      = TextWrapping.Wrap,
+                Margin            = new Thickness(0, 0, 0, 6),
             };
 
             Grid.SetRow(gestureBorder, i);
             Grid.SetColumn(gestureBorder, 0);
             Grid.SetRow(descText, i);
             Grid.SetColumn(descText, 2);
-            grid.Children.Add(gestureBorder);
-            grid.Children.Add(descText);
+            fixedGrid.Children.Add(gestureBorder);
+            fixedGrid.Children.Add(descText);
+        }
+
+        // Conflict/status line shown under the editable list while capturing or on error.
+        var statusText = new TextBlock
+        {
+            Text         = string.Empty,
+            FontSize     = 12,
+            Foreground   = Brush.Parse("#E5484D"),
+            TextWrapping = TextWrapping.Wrap,
+            IsVisible    = false,
+        };
+
+        // Only one row can be "listening" for a new key combo at a time.
+        string? capturingId = null;
+        var gestureTextBlocks = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
+        var editButtons        = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        var resetButtons        = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+
+        void RefreshRow(string id)
+        {
+            if (gestureTextBlocks.TryGetValue(id, out var tb))
+                tb.Text = FormatGesture(_keybinds[id]);
+            var def = KeybindDefinitions.First(d => d.Id == id);
+            var isCustom = _keybinds[id].Key != def.Default.Key || _keybinds[id].KeyModifiers != def.Default.KeyModifiers;
+            if (resetButtons.TryGetValue(id, out var rb))
+                rb.IsVisible = isCustom;
+        }
+
+        void CancelCapture()
+        {
+            if (capturingId is null) return;
+            if (editButtons.TryGetValue(capturingId, out var btn))
+                btn.Content = "Edit";
+            capturingId = null;
+            statusText.IsVisible = false;
+        }
+
+        for (var i = 0; i < KeybindDefinitions.Length; i++)
+        {
+            var def = KeybindDefinitions[i];
+
+            var gestureBorder = new Border
+            {
+                Background      = CardBrush,
+                BorderBrush     = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(5),
+                Padding         = new Thickness(8, 3),
+                Margin          = new Thickness(0, 0, 0, 6),
+            };
+            var gestureText = new TextBlock
+            {
+                Text       = FormatGesture(_keybinds[def.Id]),
+                FontSize   = 12,
+                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground = PrimaryTextBrush,
+            };
+            gestureBorder.Child = gestureText;
+            gestureTextBlocks[def.Id] = gestureText;
+
+            var descText = new TextBlock
+            {
+                Text              = def.Description,
+                FontSize          = 13,
+                Foreground        = MutedTextBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping      = TextWrapping.Wrap,
+                Margin            = new Thickness(12, 0, 0, 6),
+            };
+
+            var editButton = new Button
+            {
+                Content         = "Edit",
+                FontSize        = 11,
+                Padding         = new Thickness(10, 3),
+                Margin          = new Thickness(0, 0, 6, 6),
+                Background      = ButtonBrush,
+                Foreground      = PrimaryTextBrush,
+                BorderThickness = new Thickness(0),
+                CornerRadius    = new CornerRadius(5),
+            };
+            editButtons[def.Id] = editButton;
+
+            var resetButton = new Button
+            {
+                Content         = "Reset",
+                FontSize        = 11,
+                Padding         = new Thickness(10, 3),
+                Margin          = new Thickness(0, 0, 0, 6),
+                Background      = ButtonBrush,
+                Foreground      = MutedTextBrush,
+                BorderThickness = new Thickness(0),
+                CornerRadius    = new CornerRadius(5),
+                IsVisible       = _keybinds[def.Id].Key != def.Default.Key || _keybinds[def.Id].KeyModifiers != def.Default.KeyModifiers,
+            };
+            resetButtons[def.Id] = resetButton;
+
+            editButton.Click += (_, _) =>
+            {
+                if (capturingId == def.Id)
+                {
+                    CancelCapture();
+                    return;
+                }
+                CancelCapture();
+                capturingId = def.Id;
+                editButton.Content = "Press keys\u2026";
+                statusText.IsVisible = false;
+            };
+
+            resetButton.Click += (_, _) =>
+            {
+                CancelCapture();
+                _keybinds[def.Id] = def.Default;
+                RefreshRow(def.Id);
+                SaveSettings(immediate: true);
+            };
+
+            var id = def.Id;
+            Grid.SetRow(gestureBorder, i);
+            Grid.SetColumn(gestureBorder, 0);
+            Grid.SetRow(descText, i);
+            Grid.SetColumn(descText, 1);
+            Grid.SetRow(editButton, i);
+            Grid.SetColumn(editButton, 2);
+            Grid.SetRow(resetButton, i);
+            Grid.SetColumn(resetButton, 3);
+            editableGrid.Children.Add(gestureBorder);
+            editableGrid.Children.Add(descText);
+            editableGrid.Children.Add(editButton);
+            editableGrid.Children.Add(resetButton);
         }
 
         var scroll = new ScrollViewer
         {
-            Content                       = grid,
+            Content = new StackPanel
+            {
+                Spacing  = 6,
+                Children = { editableHeader, editableGrid, otherHeader, fixedGrid },
+            },
             VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             MaxHeight                     = 460,
@@ -9152,22 +9442,83 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Spacing  = 16,
             Margin   = new Thickness(20),
-            Children = { titleText, scroll, dismissButton },
+            Children = { titleText, hintText, scroll, statusText, dismissButton },
         };
 
         Window? dialog = null;
         dialog = new Window
         {
             Title                 = "Kodo - Keyboard Shortcuts",
-            Width                 = 460,
+            Width                 = 520,
             SizeToContent         = SizeToContent.Height,
-            MinWidth              = 340,
-            MaxHeight             = 620,
+            MinWidth              = 400,
+            MaxHeight             = 680,
             CanResize             = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background            = CardBrush,
             Content               = content,
         };
+
+        // Captures the next key combo while a row is in "Press keys..." mode. Runs in the
+        // tunnel phase (with handledEventsToo) so it sees the key before any control inside
+        // the dialog would otherwise consume it.
+        dialog.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
+        {
+            if (capturingId is null) return;
+
+            if (keyArgs.Key is Key.Escape)
+            {
+                keyArgs.Handled = true;
+                CancelCapture();
+                return;
+            }
+
+            // Ignore bare modifier presses - wait for the actual key.
+            if (keyArgs.Key is Key.LeftCtrl or Key.RightCtrl or Key.LeftShift or Key.RightShift
+                or Key.LeftAlt or Key.RightAlt or Key.LWin or Key.RWin)
+            {
+                return;
+            }
+
+            keyArgs.Handled = true;
+            var newGesture = new KeyGesture(keyArgs.Key, keyArgs.KeyModifiers);
+
+            // A gesture with no modifiers at all would normally fight with regular typing,
+            // so it's only allowed for keys that never appear in text input (function keys).
+            if (!IsValidKeybindGesture(newGesture))
+            {
+                statusText.Text = "Shortcuts need at least one modifier key (Ctrl, Alt, Shift, or Win), unless it's a function key.";
+                statusText.IsVisible = true;
+                return;
+            }
+
+            var capturingDef = KeybindDefinitions.First(d => d.Id == capturingId);
+            // Conflicts are only reported within the same scope: context-local bindings
+            // (terminal) may reuse a chord that a global binding already uses, since they
+            // can't be active at the same time.
+            var conflict = KeybindDefinitions.FirstOrDefault(d =>
+                d.Id != capturingId &&
+                d.IsContextLocal == capturingDef.IsContextLocal &&
+                _keybinds[d.Id].Key == newGesture.Key &&
+                _keybinds[d.Id].KeyModifiers == newGesture.KeyModifiers);
+
+            if (conflict is not null)
+            {
+                statusText.Text = $"{FormatGesture(newGesture)} is already used by \"{conflict.Description}\".";
+                statusText.IsVisible = true;
+                return;
+            }
+
+            var id = capturingId;
+            _keybinds[id] = newGesture;
+            RefreshRow(id);
+            SaveSettings(immediate: true);
+
+            if (editButtons.TryGetValue(id, out var btn))
+                btn.Content = "Edit";
+            capturingId = null;
+            statusText.IsVisible = false;
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         dismissButton.Click += (_, _) => dialog!.Close();
         _ = dialog.ShowDialog(this);
@@ -12340,17 +12691,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var textArea = EditorTextBox.TextArea;
         var caret = textArea.Caret;
         var doc = EditorTextBox.Document;
+        // Swallow editor-local Find/Find-in-project so AvaloniaEdit doesn't open its own find UI,
+        // whatever gesture the user has them bound to.
+        if (MatchesKeybind(e, "FindInProject"))
+        {
+            OpenSearchPanel(SearchMode.ProjectSearch);
+            e.Handled = true;
+            return;
+        }
+        if (MatchesKeybind(e, "FindInFile"))
+        {
+            OpenSearchPanel(SearchMode.FindInFile);
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
-            case Key.F when (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control:
-                // Swallow editor-local Ctrl+F so AvaloniaEdit doesn't open its own find UI.
-                if ((e.KeyModifiers & KeyModifiers.Shift) == KeyModifiers.Shift)
-                    OpenSearchPanel(SearchMode.ProjectSearch);
-                else
-                    OpenSearchPanel(SearchMode.FindInFile);
-                e.Handled = true;
-                return;
-
             case Key.Enter when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
                 HandleSmartEnter(doc, caret);
                 e.Handled = true;
@@ -12379,10 +12736,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _ = HandleSmartPasteAsync(doc, textArea, caret);
                 return;
 
-            case Key.Oem2 when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control:
-                ToggleLineComment(doc, textArea, textArea.Selection, caret);
-                e.Handled = true;
-                return;
+        }
+
+        if (IsSmartSyntaxEnabled() && MatchesKeybind(e, "ToggleLineComment"))
+        {
+            ToggleLineComment(doc, textArea, textArea.Selection, caret);
+            e.Handled = true;
         }
     }
 
@@ -13047,10 +13406,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
-        var hasShift   = (e.KeyModifiers & KeyModifiers.Shift)   == KeyModifiers.Shift;
 
         // Escape - dismiss the search panel / Settings / Extensions / Tutorial / WhatsNew and return to editor
-        if (e.Key == Key.Escape && !hasControl)
+        if (MatchesKeybind(e, "CloseOverlay"))
         {
             if (IsSearchPanelVisible)
             {
@@ -13072,152 +13430,167 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        if (!hasControl) return;
-
-        switch (e.Key)
+        // Rebindable commands (Settings -> Help -> View Shortcuts) are checked against
+        // the user's current gesture for each id, rather than a fixed Key/modifier switch,
+        // so a remapped shortcut actually takes effect here. Every entry in
+        // KeybindDefinitions is covered by a branch below - nothing left hardcoded.
+        if (MatchesKeybind(e, "NewFile"))
         {
-            case Key.N:
-                NewFile();
-                e.Handled = true;
-                break;
-
-            case Key.E:
-                if (hasShift)
-                {
-                    // Ctrl+Shift+E - back to editor (original behaviour)
-                    NavigateTo(Page.Editor);
-                    FocusEditor();
-                    e.Handled = true;
-                }
-                else
-                {
-                    // Ctrl+E - open Extensions
-                    NavigateTo(Page.Extensions);
-                    RefreshMarketplaceConnectivityState();
-                    _ = RefreshExtensionsDataAsync();
-                    e.Handled = true;
-                }
-                break;
-
-            case Key.OemComma:
-                // Ctrl+, - open Settings
-                NavigateTo(Page.Settings);
-                e.Handled = true;
-                break;
-
-            case Key.H:
-                // Ctrl+H - go to Home
-                NavigateTo(Page.Home);
-                e.Handled = true;
-                break;
-
-            case Key.S:
-                if (hasShift)
-                {
-                    // Ctrl+Shift+S - Save As (always prompt for path)
-                    e.Handled = true;
-                    await SaveAsAsync();
-                }
-                else
-                {
-                    // Ctrl+S - Save
-                    e.Handled = true;
-                    await SaveAsync();
-                }
-                break;
-
-            case Key.O:
-                e.Handled = true;
-                await OpenFileAsync();
-                break;
-
-            case Key.K:
-                // Ctrl+K - open folder. Ctrl+Shift+K - close the open folder.
-                // (Matches the tooltips on the Open Folder / Close Folder buttons.)
-                e.Handled = true;
-                if (hasShift)
-                {
-                    if (IsFolderOpen)
-                        CloseFolder();
-                }
-                else
-                {
-                    await OpenFolderAsync();
-                }
-                break;
-
-            case Key.B:
-                // Ctrl+B - toggle file explorer sidebar
-                IsFileExplorerVisible = !IsFileExplorerVisible;
-                e.Handled = true;
-                break;
-
-            case Key.J:
-                // Ctrl+J - toggle the bottom terminal panel
-                ToggleTerminalPanel();
-                e.Handled = true;
-                break;
-
-            case Key.W:
-                // Ctrl+W - close current tab
-                if (ActiveEditorTab is not null)
-                    await RequestCloseTabAsync(ActiveEditorTab);
-                e.Handled = true;
-                break;
-
-            case Key.F:
-                // Ctrl+F / Ctrl+Shift+F now open the same search panel used by the status bar button.
-                if (hasShift)
-                    OpenSearchPanel(SearchMode.ProjectSearch);
-                else
-                    OpenSearchPanel(SearchMode.FindInFile);
-                e.Handled = true;
-                break;
-
-            case Key.X when hasShift:
-                // Ctrl+Shift+X - open Extensions (secondary binding)
-                NavigateTo(Page.Extensions);
-                RefreshMarketplaceConnectivityState();
-                _ = RefreshExtensionsDataAsync();
-                e.Handled = true;
-                break;
-
-            case Key.Oem3:
-                if (hasShift)
-                    CreateTerminalSession();
-                else
-                    ToggleTerminalPanel();
-                e.Handled = true;
-                break;
-
-            // Image zoom: Ctrl++/= zooms in, Ctrl+- zooms out, Ctrl+0 resets to 100%.
-            case Key.OemPlus:
-            case Key.Add:
-                if (HasImagePreview)
-                {
-                    ZoomImageIn();
-                    e.Handled = true;
-                }
-                break;
-
-            case Key.OemMinus:
-            case Key.Subtract:
-                if (HasImagePreview)
-                {
-                    ZoomImageOut();
-                    e.Handled = true;
-                }
-                break;
-
-            case Key.D0:
-            case Key.NumPad0:
-                if (HasImagePreview)
-                {
-                    ZoomImageReset();
-                    e.Handled = true;
-                }
-                break;
+            NewFile();
+            e.Handled = true;
         }
+        else if (MatchesKeybind(e, "GoEditor"))
+        {
+            NavigateTo(Page.Editor);
+            FocusEditor();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "OpenExtensions") || MatchesKeybind(e, "OpenExtensionsAlt"))
+        {
+            NavigateTo(Page.Extensions);
+            RefreshMarketplaceConnectivityState();
+            _ = RefreshExtensionsDataAsync();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "OpenSettings"))
+        {
+            NavigateTo(Page.Settings);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "GoHome"))
+        {
+            NavigateTo(Page.Home);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "SaveAs"))
+        {
+            e.Handled = true;
+            await SaveAsAsync();
+        }
+        else if (MatchesKeybind(e, "Save"))
+        {
+            e.Handled = true;
+            await SaveAsync();
+        }
+        else if (MatchesKeybind(e, "OpenFile"))
+        {
+            e.Handled = true;
+            await OpenFileAsync();
+        }
+        else if (MatchesKeybind(e, "CloseFolder"))
+        {
+            e.Handled = true;
+            if (IsFolderOpen)
+                CloseFolder();
+        }
+        else if (MatchesKeybind(e, "OpenFolder"))
+        {
+            e.Handled = true;
+            await OpenFolderAsync();
+        }
+        else if (MatchesKeybind(e, "ToggleFileExplorer"))
+        {
+            IsFileExplorerVisible = !IsFileExplorerVisible;
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "ToggleTerminal") || MatchesKeybind(e, "ToggleTerminalAlt"))
+        {
+            ToggleTerminalPanel();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "NewTerminalSession"))
+        {
+            CreateTerminalSession();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "CloseTab"))
+        {
+            if (ActiveEditorTab is not null)
+                await RequestCloseTabAsync(ActiveEditorTab);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "FindInProject"))
+        {
+            OpenSearchPanel(SearchMode.ProjectSearch);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "FindInFile"))
+        {
+            OpenSearchPanel(SearchMode.FindInFile);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "Cut"))
+        {
+            e.Handled = true;
+            await CutEditorSelectionAsync();
+        }
+        else if (MatchesKeybind(e, "Copy"))
+        {
+            e.Handled = true;
+            await CopyEditorSelectionAsync();
+        }
+        else if (MatchesKeybind(e, "Paste"))
+        {
+            e.Handled = true;
+            await PasteIntoEditorAsync();
+        }
+        // Image zoom: the numpad +/-/0 keys always work as a hardware fallback alongside
+        // whichever gesture ZoomIn/ZoomOut/ZoomReset are currently bound to.
+        else if (MatchesKeybind(e, "ZoomIn") || (hasControl && e.Key == Key.Add))
+        {
+            if (HasImagePreview)
+            {
+                ZoomImageIn();
+                e.Handled = true;
+            }
+        }
+        else if (MatchesKeybind(e, "ZoomOut") || (hasControl && e.Key == Key.Subtract))
+        {
+            if (HasImagePreview)
+            {
+                ZoomImageOut();
+                e.Handled = true;
+            }
+        }
+        else if (MatchesKeybind(e, "ZoomReset") || (hasControl && e.Key == Key.NumPad0))
+        {
+            if (HasImagePreview)
+            {
+                ZoomImageReset();
+                e.Handled = true;
+            }
+        }
+    }
+
+    private async Task CutEditorSelectionAsync()
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
+        var text = sel.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+            await clipboard.SetTextAsync(text);
+        sel.ReplaceSelectionWithText(string.Empty);
+    }
+
+    private async Task CopyEditorSelectionAsync()
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { } sel) return;
+        var text = sel.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+            await clipboard.SetTextAsync(text);
+    }
+
+    private async Task PasteIntoEditorAsync()
+    {
+        if (EditorTextBox?.TextArea is not { } textArea) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+        var text = await clipboard.TryGetTextAsync();
+        if (!string.IsNullOrEmpty(text))
+            textArea.Selection.ReplaceSelectionWithText(text);
     }
 
     // Nested types

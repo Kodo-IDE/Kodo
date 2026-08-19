@@ -96,6 +96,12 @@ internal sealed class AppSettings
     // File extension (lowercased) -> compiler id. An explicit user choice made from the
     // compiler icon button; wins over automatic detection for that file type.
     public Dictionary<string, string> CompilerOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // User-modified keybinds, keyed by the rebindable command id (see MainWindow's
+    // KeybindDefinitions) with values serialized as "Modifiers|Key" (e.g. "Control|OemComma").
+    // Only entries that differ from their built-in default are stored here; anything absent
+    // falls back to the default gesture for that command.
+    public Dictionary<string, string> CustomKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// One entry in AppSettings.RecentFiles - a recently opened file or folder.

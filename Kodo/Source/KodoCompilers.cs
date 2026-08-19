@@ -2241,7 +2241,10 @@ public partial class MainWindow
             commandLine,
             resolvedExe,
             args,
-            workingDirectory);
+            workingDirectory)
+        {
+            TerminalKeybinds = _keybinds,
+        };
 
         if (isBuild) _buildWindow = window; else _runWindow = window;
         window.Closed += (_, _) => { if (isBuild) _buildWindow = null; else _runWindow = null; };
@@ -2531,6 +2534,14 @@ internal sealed class CompilerRunWindow : Window
     private readonly Color _accentForeground;
     private TextBlock _statusText = null!;
     private Button _rerunButton = null!;
+
+    // Mirrors the user's customizable terminal gestures (copy/paste/search) so this
+    // window's terminal behaves like the main terminal panel.
+    public IReadOnlyDictionary<string, KeyGesture>? TerminalKeybinds
+    {
+        get => _terminal.Keybinds;
+        set => _terminal.Keybinds = value;
+    }
 
     public CompilerRunWindow(string title, string commandDisplay, string exePath, string arguments, string workingDirectory)
     {

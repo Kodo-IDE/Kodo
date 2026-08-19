@@ -4568,7 +4568,20 @@
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Top">
 
-                        <!-- Theme -->
+                        <Grid x:Name="SectionHeaderAppearance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="APPEARANCE" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -4792,7 +4805,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Accent Colour -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -4890,7 +4902,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Editor -->
+                        <Grid x:Name="SectionHeaderEditor" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="EDITOR" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -4955,9 +4980,15 @@
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding EditorBehaviorStatusText}" />
+                                <Button Classes="chrome"
+                                        HorizontalAlignment="Left"
+                                        Click="ViewShortcutsButton_OnClick"
+                                        ToolTip.Tip="View and rebind keyboard shortcuts"
+                                        Content="Edit Keyboard Shortcuts" />
                             </StackPanel>
                         </Border>
-                         <Border Background="{Binding CardBrush}"
+
+                        <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
@@ -4993,7 +5024,77 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Terminal -->
+                        <Grid x:Name="SectionHeaderGeneral" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="WORKSPACE" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24"
+                                x:Name="DisplaySettingsCard">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Workspace" />
+                                </StackPanel>
+
+                                <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Enable autosave" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding AutoSaveStatusText}" />
+
+                                <CheckBox IsChecked="{Binding IsRestoreOpenTabsOnLaunchEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Restore open tabs on launch" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding TabRestoreStatusText}" />
+
+                                <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Confirm before closing unsaved tabs" />
+
+                                <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Show full file paths in the status bar" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding StatusBarFilePathVisibilityText}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid x:Name="SectionHeaderTerminal" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="TERMINAL" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5040,13 +5141,26 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Display -->
+                        <Grid x:Name="SectionHeaderIntegrations" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="INTEGRATIONS" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="DisplaySettingsCard">
+                                x:Name="DiscordRichPresenceSettingsCard">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5054,72 +5168,44 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                VerticalAlignment="Center"
-                                               Text="Display" />
+                                               Text="Discord Rich Presence" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
+                                <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Show full file paths in the status bar" />
+                                          Content="Enable Discord Rich Presence" />
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                            IsVisible="{Binding IsDiscordRichPresenceEnabled}">
+                                    <CheckBox IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Show detailed activity" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Shows language, page context, and open tab count." />
+                                    </StackPanel>
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="{Binding StatusBarFilePathVisibilityText}" />
-
+                                           Text="{Binding DiscordRichPresenceStatusText}" />
                             </StackPanel>
                         </Border>
 
-                        <!-- Tabs &amp; Launch -->
-                        <Border Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="16"
-                                Padding="24"
-                                x:Name="TabsLaunchSettingsCard">
-                            <StackPanel Spacing="14">
-                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                    <TextBlock FontSize="18"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="Tabs &amp; Launch" />
-                                </StackPanel>
-                                <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Confirm before closing unsaved tabs" />
-                                <CheckBox IsChecked="{Binding IsRestoreOpenTabsOnLaunchEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Restore open tabs on launch" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding TabRestoreStatusText}" />
-                            </StackPanel>
-                        </Border>
+                        <Grid x:Name="SectionHeaderUpdates" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="UPDATES" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
 
-                        <!-- Autosave -->
-                        <Border Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="16"
-                                Padding="24"
-                                x:Name="AutosaveSettingsCard">
-                            <StackPanel Spacing="14">
-                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                    <TextBlock FontSize="18"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="Autosave" />
-                                </StackPanel>
-                                <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable autosave" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding AutoSaveStatusText}" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Updates -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5176,45 +5262,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Discord Rich Presence -->
-                        <Border Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="16"
-                                Padding="24"
-                                x:Name="DiscordRichPresenceSettingsCard">
-                            <StackPanel Spacing="14">
-                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                    <TextBlock FontSize="18"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="Discord Rich Presence" />
-                                </StackPanel>
-                                <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable Discord Rich Presence" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsDiscordRichPresenceEnabled}">
-                                    <CheckBox IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
-                                              VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Detailed RPC" />
-                                        <TextBlock Foreground="{Binding MutedTextBrush}"
-                                                   FontSize="11"
-                                                   Text="Shows language, page context, and open tab count." />
-                                    </StackPanel>
-                                </StackPanel>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding DiscordRichPresenceStatusText}" />
-                            </StackPanel>
-                        </Border>
+                        <Grid x:Name="SectionHeaderPrivacy" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="PRIVACY" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
 
-                        <!-- Privacy -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5244,7 +5305,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Personalization -->
+                        <Grid x:Name="SectionHeaderPersonalization" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="PERSONALIZATION" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5330,7 +5404,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Developer Options -->
+                        <Grid x:Name="SectionHeaderAdvanced" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="DEVELOPER TOOLS" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5406,7 +5493,20 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Help -->
+                        <Grid x:Name="SectionHeaderHelpAbout" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="HELP &amp; ABOUT" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5440,15 +5540,10 @@
                                             Click="OpenWebsiteButton_OnClick"
                                             ToolTip.Tip="Open the Kodo website in your browser"
                                             Content="Visit Website" />
-                                    <Button Classes="chrome"
-                                            Click="ViewShortcutsButton_OnClick"
-                                            ToolTip.Tip="View all available keyboard shortcuts"
-                                            Content="View Shortcuts" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
 
-                        <!-- About -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5544,7 +5639,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- What's New -->
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
@@ -5870,5 +5964,3 @@
         </Grid>
     </Grid>
 </Window>
-
-
