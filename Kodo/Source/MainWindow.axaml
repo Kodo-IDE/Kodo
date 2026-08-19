@@ -1596,6 +1596,10 @@
                                 <MenuItem Header="Paste"
                                           InputGesture="Ctrl+V"
                                           Click="EditorPasteMenuItem_OnClick" />
+                                <Separator />
+                                <MenuItem Name="EditorChangeAllOccurrencesMenuItem"
+                                          Header="Change All Occurrences"
+                                          Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
                             </ContextMenu>
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
@@ -2885,7 +2889,7 @@
                     <!-- Row 2: Replace input + status + Replace All -->
                     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
                         <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center" IsVisible="{Binding IsFindInFileSearchMode}">
-                            <TextBox Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
+                            <TextBox x:Name="ReplaceTextBox" Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
                         </Border>
                         <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" FontSize="12" Text="{Binding SearchStatusText}" Margin="0,0,12,0" />
                         <Button Grid.Column="2" Classes="chrome" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceAllButton_OnClick" ToolTip.Tip="Replace all matches">

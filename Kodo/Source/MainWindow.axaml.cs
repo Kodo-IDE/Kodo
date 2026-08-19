@@ -11564,9 +11564,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sender is not ContextMenu menu) return;
         foreach (var item in menu.Items.OfType<MenuItem>())
         {
-            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem")
+            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorChangeAllOccurrencesMenuItem")
                 item.IsEnabled = hasSelection;
         }
+    }
+
+    // Mirrors VS Code's "Change All Occurrences": grabs the current selection,
+    // drops it into Find, and opens the Find/Replace panel so the user can
+    // type a replacement and hit Replace All.
+    private void EditorChangeAllOccurrencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
+        var selectedText = sel.GetText();
+        if (string.IsNullOrEmpty(selectedText)) return;
+
+        FindText = selectedText;
+        OpenSearchPanel(SearchMode.FindInFile);
+
+        // Send focus to the Replace box instead of the Find box, since the
+        // find term is already filled in and the user's next move is typing
+        // the replacement.
+        Dispatcher.UIThread.Post(() =>
+        {
+            var replaceTextBox = this.FindControl<TextBox>("ReplaceTextBox");
+            if (replaceTextBox is null) return;
+            replaceTextBox.Focus();
+            replaceTextBox.SelectAll();
+        }, DispatcherPriority.Background);
     }
 
     private void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e) =>
