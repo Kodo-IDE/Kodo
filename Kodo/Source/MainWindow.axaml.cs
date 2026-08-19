@@ -5788,28 +5788,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return string.Empty; }
     }
 
-    // Holiday, sporting-event, and greeting-pool logic all live in WelcomeMessageBuilder.cs.
-
-    // Populated by FetchSportingEventMessagesAsync and joined into the greeting pool once available.
-    private List<string>? _sportingEventMessages;
-
-
-    /// Best-effort fetch of sporting-event greeting lines.
-
-    private async Task FetchSportingEventMessagesAsync()
-    {
-        var messages = await WelcomeMessageBuilder.FetchSportingEventMessagesAsync(MarketplaceHttpClient);
-        if (messages is null) return;
-
-        _sportingEventMessages = messages;
-
-        // Only rebuilds the pool if Home hasn't shown a greeting yet, to avoid a flicker.
-        if (_selectedWelcomeMessage is null)
-        {
-            _welcomeMessagesCache = null;
-            OnPropertyChanged(nameof(WelcomeMessage));
-        }
-    }
+    // Holiday and greeting-pool logic lives in WelcomeMessageBuilder.cs.
 
     // Lazily constructed per-instance so it can incorporate the personalization settings
     // which are read from settings before DataContext is set.
@@ -5882,8 +5861,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _userHemisphere,
                 _userTimezoneOffset,
                 IsKodoBirthday,
-                KodoBirthdayAge,
-                _sportingEventMessages);
+                KodoBirthdayAge);
             _selectedWelcomeMessage ??= _welcomeMessagesCache[Random.Shared.Next(_welcomeMessagesCache.Length)];
             return _selectedWelcomeMessage;
         }
@@ -7926,7 +7904,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshExtensionsAndAutoUpdateAsync();
         _ = RefreshLatestReleaseAsync();
         _ = FetchAnnouncementsAsync(forceNetwork: false);
-        _ = FetchSportingEventMessagesAsync();
 
         // Exactly one of tutorial (first launch) or What's New splash (subsequent launches) shows per run.
         var isReturningUser = _hasCompletedTutorial;

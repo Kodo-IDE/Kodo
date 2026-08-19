@@ -1,15 +1,10 @@
 // Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Kodo;
 
-// Home screen welcome-pool logic: holiday detection, sporting-event theming, and the message-pool builder.
+// Home screen welcome-pool logic: holiday detection and the message-pool builder.
 internal static class WelcomeMessageBuilder
 {
     // Holiday / calendar helpers
@@ -460,9 +455,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// True when date is a weekend or sandwiched into a long weekend around a Monday holiday.
-    private static bool IsWeekend(DateTime date) =>
-        date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
     private static bool IsLongWeekendEve(DateTime date, string country)
     {
         if (date.DayOfWeek != DayOfWeek.Friday) return false;
@@ -474,151 +466,6 @@ internal static class WelcomeMessageBuilder
         return GetHolidayEntry(date.AddDays(-1), country) is not null;
     }
 
-    // Tournament messages: hardcoded window table (offline-safe) plus a live TheSportsDB
-    // lookup. Network/parse failures are swallowed. Table needs a yearly date top-up.
-    private static readonly (string Name, DateTime Start, DateTime End, string LeagueQuery, string[] Messages)[] MajorTournaments =
-    {
-        ("FIFA World Cup", new DateTime(2026, 6, 11), new DateTime(2026, 7, 19), "FIFA_World_Cup", new[]
-        {
-            "World Cup fever! Quick coding session before kickoff?",
-            "It's World Cup season - code now, cheer later.",
-            "The World Cup is on. Ship something before the next match!",
-            "World Cup energy: fast breaks, fast builds.",
-        }),
-
-        ("Winter Olympics", new DateTime(2026, 2, 6), new DateTime(2026, 2, 22), "", new[]
-        {
-            "The Winter Olympics are on - go for gold on this codebase.",
-            "Olympic season! Stick the landing on this feature.",
-        }),
-
-        ("Super Bowl", new DateTime(2027, 2, 11), new DateTime(2027, 2, 14), "NFL", new[]
-        {
-            "Super Bowl weekend! One more commit before kickoff.",
-            "It's Super Bowl season - let's run up the score on this codebase.",
-        }),
-
-        ("The Masters", new DateTime(2026, 4, 8), new DateTime(2026, 4, 12), "", new[]
-        {
-            "It's Masters week - chase that green jacket, one commit at a time.",
-        }),
-
-        ("NBA Finals", new DateTime(2026, 6, 3), new DateTime(2026, 6, 19), "NBA", new[]
-        {
-            "NBA Finals season! Clutch code for crunch time.",
-            "Finals fever - let's close this out like Game 7.",
-        }),
-
-        ("UEFA Champions League Final", new DateTime(2027, 6, 2), new DateTime(2027, 6, 5), "UEFA_Champions_League", new[]
-        {
-            "Champions League final week! One more commit before kickoff.",
-        }),
-
-        ("Wimbledon", new DateTime(2026, 6, 29), new DateTime(2026, 7, 12), "", new[]
-        {
-            "Wimbledon's on - strawberries, cream, and clean code.",
-            "Grass court season. Let's keep this build serving aces.",
-        }),
-
-        ("Stanley Cup Final", new DateTime(2026, 6, 1), new DateTime(2026, 6, 26), "NHL", new[]
-        {
-            "Stanley Cup Final season! Let's skate through this sprint.",
-        }),
-
-        ("World Series", new DateTime(2026, 10, 20), new DateTime(2026, 11, 1), "MLB", new[]
-        {
-            "World Series time! Swing for the fences on this feature.",
-        }),
-
-        ("US Open Tennis", new DateTime(2026, 8, 24), new DateTime(2026, 9, 13), "", new[]
-        {
-            "US Open season - let's ace this build.",
-        }),
-
-        // Add future tournaments here.
-    };
-
-
-    // Minimal shape of TheSportsDB's eventsday.php response - only used fields mapped.
-    private sealed class TsdbEventsResponse
-    {
-        public List<TsdbEvent>? events { get; set; }
-    }
-
-    private sealed class TsdbEvent
-    {
-        public string? strHomeTeam { get; set; }
-        public string? strAwayTeam { get; set; }
-        public string? strTime { get; set; }
-    }
-
-    // Fetches sporting-event messages: hardcoded windows plus a live TheSportsDB lookup.
-    // Returns null if nothing applies. Never throws.
-    public static async Task<List<string>?> FetchSportingEventMessagesAsync(HttpClient httpClient)
-    {
-        try
-        {
-            var now = DateTime.Now;
-            var today = now.ToString("yyyy-MM-dd");
-            var messages = new List<string>();
-
-            foreach (var tournament in MajorTournaments)
-            {
-                if (now.Date < tournament.Start.Date || now.Date > tournament.End.Date)
-                    continue;
-
-                // Generic tournament messages always apply for the window, regardless of whether the live match lookup succeeds.
-                messages.AddRange(tournament.Messages);
-
-                if (string.IsNullOrWhiteSpace(tournament.LeagueQuery))
-                    continue;
-
-                try
-                {
-                    var url = "https://www.thesportsdb.com/api/v1/json/3/eventsday.php"
-                        + $"?d={today}&l={Uri.EscapeDataString(tournament.LeagueQuery)}";
-
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
-                    using var response = await httpClient.GetAsync(url, cts.Token);
-                    if (!response.IsSuccessStatusCode)
-                        continue;
-
-                    var json = await response.Content.ReadAsStringAsync(cts.Token);
-                    var parsed = JsonSerializer.Deserialize<TsdbEventsResponse>(json);
-
-                    if (parsed?.events is { Count: > 0 } events)
-                    {
-                        // Cap at 3 so one heavy match-day doesn't drown out the pool.
-                        foreach (var ev in events.Take(3))
-                        {
-                            if (string.IsNullOrWhiteSpace(ev.strHomeTeam) || string.IsNullOrWhiteSpace(ev.strAwayTeam))
-                                continue;
-
-                            var timeText = string.IsNullOrWhiteSpace(ev.strTime) ? "" : $" at {ev.strTime} UTC";
-                            var line = $"{ev.strHomeTeam} vs {ev.strAwayTeam} today{timeText} - quick build before kickoff?";
-
-                            // Weighted x2 - a real match today beats a generic line.
-                            messages.Add(line);
-                            messages.Add(line);
-                        }
-                    }
-                }
-                catch
-                {
-                    // Best-effort only - the generic tournament messages already cover us.
-                }
-            }
-
-            return messages.Count == 0 ? null : messages;
-        }
-        catch (Exception ex)
-        {
-            // Should be unreachable, but never let this crash startup.
-            KodoDiagnostics.LogDebug("Failed to build sporting event welcome messages", ex);
-            return null;
-        }
-    }
-
     // Welcome message construction
     public static string[] BuildMessages(
         string userName,
@@ -626,8 +473,7 @@ internal static class WelcomeMessageBuilder
         int userHemisphereIndex,
         string userTimezoneOffset,
         bool isKodoBirthday,
-        int kodoBirthdayAge,
-        IReadOnlyList<string>? sportingEventMessages)
+        int kodoBirthdayAge)
     {
         // Resolve effective local time, honouring the user's timezone override when set.
         DateTime now;
@@ -648,6 +494,13 @@ internal static class WelcomeMessageBuilder
         var dayName = now.ToString("dddd");   // e.g. "Monday"
 
         var messages = new List<string>();
+
+        // Adds text to the pool `times` times - used to weight special-moment/holiday
+        // greetings so they dominate the pool on the day they apply.
+        void Add(string text, int times = 1)
+        {
+            for (var i = 0; i < times; i++) messages.Add(text);
+        }
 
         // Prepend the user's name to a subset of greetings so it's not repetitive.
         var name = userName;
@@ -672,9 +525,7 @@ internal static class WelcomeMessageBuilder
         // Holiday / special day: added multiple times (x8) so it dominates the pool on the day itself.
         var holiday = GetHolidayEntry(now, country);
         if (holiday?.Greeting is not null)
-        {
-            for (var i = 0; i < 8; i++) messages.Add(holiday.Greeting);
-        }
+            Add(holiday.Greeting, 8);
 
         // Kodo birthday (April 18): weighted x5 so it dominates the pool that day.
         if (isKodoBirthday)
@@ -682,7 +533,7 @@ internal static class WelcomeMessageBuilder
             var age = kodoBirthdayAge;
             var bdayMsg = age == 1 ? "Kodo turns 1 today! 🎂" : $"Kodo turns {age} today! 🎂";
             var ordinal = age switch { 1 => "1st", 2 => "2nd", 3 => "3rd", _ => $"{age}th" };
-            for (var i = 0; i < 5; i++) messages.Add(bdayMsg);
+            Add(bdayMsg, 5);
             messages.Add("Happy birthday, Kodo! Thanks for coding with us 🎉");
             messages.Add($"It's Kodo's {ordinal} birthday! Let's celebrate with some great code 🎂");
             messages.Add("One year of fast, focused editing. Here's to many more! 🎉");
@@ -690,64 +541,46 @@ internal static class WelcomeMessageBuilder
 
         // 11:11 wish moment: easter egg at exactly 11:11, weighted x8 like the other special-moment greetings.
         if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
-        {
-            for (var i = 0; i < 8; i++) messages.Add("11:11! Make a wish!");
-        }
+            Add("11:11! Make a wish!", 8);
 
         // Friday the 13th: easter egg weighted x8, same pattern as the 11:11 check.
         if (dow == DayOfWeek.Friday && now.Day == 13)
         {
-            for (var i = 0; i < 8; i++) messages.Add("Friday the 13th... may your builds stay bug-free! 🖤");
+            Add("Friday the 13th... may your builds stay bug-free! 🖤", 8);
             messages.Add("Unlucky for some, lucky for your commit history?");
         }
 
         // Leap Day: Feb 29 only exists every 4 years, so it gets its own one-off greeting.
         if (now.Month == 2 && now.Day == 29)
-        {
-            for (var i = 0; i < 8; i++) messages.Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.");
-        }
+            Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.", 8);
 
         // Programmer's Day (256th day of the year, Sept 12/13) and Pi Day (3/14) get the same easter-egg treatment.
         if (now.DayOfYear == 256)
-        {
-            for (var i = 0; i < 8; i++) messages.Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?");
-        }
+            Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?", 8);
         if (now.Month == 3 && now.Day == 14)
-        {
-            for (var i = 0; i < 8; i++) messages.Add("Happy Pi Day! 🥧 3.14159265...");
-        }
+            Add("Happy Pi Day! 🥧 3.14159265...", 8);
 
         // New Year's Eve countdown: layers a countdown line over the last hour before midnight.
         if (now.Month == 12 && now.Day == 31 && now.Hour == 23)
         {
-            for (var i = 0; i < 8; i++) messages.Add("Almost midnight - one more commit before the new year?");
+            Add("Almost midnight - one more commit before the new year?", 8);
             messages.Add("The countdown's on. Ship it before the ball drops!");
         }
-
-        // Sporting events: added from FetchSportingEventMessagesAsync, weighting baked in at the source.
-        if (sportingEventMessages is { Count: > 0 })
-            messages.AddRange(sportingEventMessages);
 
         // 2. Long weekend hints
         // Weighted up so these feel timely when applicable.
         if (IsLongWeekendEve(now, country))
         {
-            messages.Add("Long weekend starts tomorrow - one more push!");
-            messages.Add("Long weekend starts tomorrow - one more push!");
-            messages.Add("Almost there! Long weekend is just around the corner.");
-            messages.Add("Almost there! Long weekend is just around the corner.");
-            messages.Add($"Happy {dayName}! The long weekend is almost here.");
-            messages.Add($"Happy {dayName}! The long weekend is almost here.");
+            Add("Long weekend starts tomorrow - one more push!", 2);
+            Add("Almost there! Long weekend is just around the corner.", 2);
+            Add($"Happy {dayName}! The long weekend is almost here.", 2);
         }
 
         if (IsPostLongWeekend(now, country))
         {
-            messages.Add("Back from the long weekend - fresh start!");
-            messages.Add("Back from the long weekend - fresh start!");
-            messages.Add("Post-long-weekend. Let's ease back in.");
-            messages.Add("Post-long-weekend. Let's ease back in.");
-            messages.Add("Hope the long weekend recharged you. Ready to build?");
-            messages.Add("Hope the long weekend recharged you. Ready to build?");
+            Add("Back from the long weekend - fresh start!", 2);
+            Add("Post-long-weekend. Let's ease back in.", 2);
+            Add("Hope the long weekend recharged you. Ready to build?", 2);
         }
 
         // 3. Day-of-week personality
