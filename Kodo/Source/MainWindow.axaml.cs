@@ -3601,6 +3601,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isSettingsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
 
@@ -3613,6 +3614,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isExtensionsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
 
@@ -3625,6 +3627,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isTutorialPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
 
@@ -3637,6 +3640,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isWhatsNewPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
 
@@ -3907,7 +3911,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool CanShowSearchPanel => CanShowFindInFile || IsFolderOpen;
 
-    public bool IsSearchPanelActive => IsSearchPanelVisible && CanShowSearchPanel;
+    public bool IsSearchPanelActive => IsSearchPanelVisible && CanShowSearchPanel && IsEditorPageVisible;
 
     public bool IsEditorTabsVisible => OpenTabs.Count >= 1 && IsEditorPageVisible && !IsHomePageVisible;
 
@@ -8634,6 +8638,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsTutorialPageVisible));
         OnPropertyChanged(nameof(IsWhatsNewPageVisible));
         OnPropertyChanged(nameof(IsEditorPageVisible));
+        OnPropertyChanged(nameof(IsSearchPanelActive));
         OnPropertyChanged(nameof(IsEditorTabsVisible));
         OnPropertyChanged(nameof(IsDocumentViewVisible));
         OnPropertyChanged(nameof(IsEmptyStateVisible));
@@ -8657,6 +8662,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void SaveButton_OnClick(object? sender, RoutedEventArgs e) =>
         await SaveAsync();
+
+    private async void ToolbarSaveButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await SaveAsync();
+
+    private async void ToolbarSaveAsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        await SaveAsAsync();
+        await RefreshExplorerTreeAsync();
+    }
+
+    private async void ToolbarSaveAllButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await SaveAllAsync();
+
+    private async Task SaveAllAsync()
+    {
+        if (OpenTabs.Count == 0) return;
+
+        var originalActiveTab = ActiveEditorTab;
+        SaveCurrentEditorStateIntoTab();
+
+        try
+        {
+            foreach (var tab in OpenTabs.ToList())
+            {
+                if (!tab.IsDirty) continue;
+
+                if (tab.IsUntitled)
+                {
+                    if (!ReferenceEquals(tab, ActiveEditorTab))
+                        ActivateTab(tab, focusEditor: false, preserveCurrentState: false);
+
+                    await SaveAsync(allowPromptForPath: true, forcePromptForPath: true);
+                }
+                else
+                {
+                    try
+                    {
+                        await File.WriteAllTextAsync(tab.Path, tab.Content);
+                        tab.IsDirty = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        await ShowWarningDialogAsync("File save", ex);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (originalActiveTab is not null && OpenTabs.Contains(originalActiveTab) &&
+                !ReferenceEquals(originalActiveTab, ActiveEditorTab))
+            {
+                ActivateTab(originalActiveTab, focusEditor: false, preserveCurrentState: false);
+            }
+
+            RefreshState(fullRefresh: true);
+        }
+    }
 
     private void NewFileButton_OnClick(object? sender, RoutedEventArgs e) =>
         NewFile();

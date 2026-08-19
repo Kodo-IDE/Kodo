@@ -114,6 +114,25 @@
             <Setter Property="Opacity" Value="0.5" />
         </Style>
 
+        <!-- Toolbar save buttons (Save, Save As, Save All) -->
+        <Style Selector="Button.toolbarsave">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Button.toolbarsave:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+        <Style Selector="Button.toolbarsave:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
         <!-- Group header variant: full-row hit-testable via Border-backed template.
              Avalonia's Fluent theme paints :pointerover directly on
              ContentPresenter#PART_ContentPresenter, bypassing any wrapper border.
@@ -515,10 +534,11 @@
         <Style Selector="Border.searchpanel">
             <Setter Property="Background" Value="{Binding CardBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1,1,1,0" />
-            <Setter Property="CornerRadius" Value="16,16,0,0" />
-            <Setter Property="Margin" Value="28,0,28,0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
             <Setter Property="Padding" Value="16,14,16,14" />
+            <Setter Property="MaxWidth" Value="560" />
+            <Setter Property="BoxShadow" Value="0 8 32 0 #40000000" />
         </Style>
 
         <Style Selector="Button.searchmode">
@@ -576,7 +596,7 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0,4,0,0" />
-            <Setter Property="MaxHeight" Value="240" />
+            <Setter Property="MaxHeight" Value="320" />
         </Style>
         <Style Selector="ListBox.searchresults ListBoxItem">
             <Setter Property="Background" Value="Transparent" />
@@ -1343,7 +1363,7 @@
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="18,12">
-                    <Grid ColumnDefinitions="*,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Border Width="28"
                                     Height="28"
@@ -1364,7 +1384,43 @@
                             </StackPanel>
                         </StackPanel>
 
+                        <!-- Save toolbar -->
                         <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsEditorTabsVisible}">
+                            <!-- Save -->
+                            <Button Classes="toolbarsave"
+                                    ToolTip.Tip="Save (Ctrl+S)"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveButton_OnClick"
+                                    Content="Save" />
+
+                            <!-- Save As -->
+                            <Button Classes="toolbarsave"
+                                    ToolTip.Tip="Save As (Ctrl+Shift+S)"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveAsButton_OnClick"
+                                    Content="Save As" />
+
+                            <!-- Save All -->
+                            <Button Classes="toolbarsave"
+                                    ToolTip.Tip="Save All"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveAllButton_OnClick"
+                                    Content="Save All" />
+                        </StackPanel>
+
+                        <Border Grid.Column="2"
+                                Width="1"
+                                Height="20"
+                                Background="{Binding SurfaceBorderBrush}"
+                                Margin="8,0"
+                                VerticalAlignment="Center"
+                                IsVisible="{Binding IsEditorTabsVisible}" />
+
+                        <StackPanel Grid.Column="3"
                                     Orientation="Horizontal"
                                     Spacing="12"
                                     VerticalAlignment="Center"
@@ -2768,150 +2824,151 @@
                         </StackPanel>
                     </Grid>
                 </Border>
+            </Grid>
 
-                <!-- Unified search panel: Find in file / Find files by name / Find in project -->
-                <Border Grid.Row="5"
-                        IsVisible="{Binding IsSearchPanelActive}"
-                        Classes="searchpanel"
-                        VerticalAlignment="Bottom"
-                        ZIndex="10">
-                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*">
-                        <!-- Row 0: Mode tabs + placeholder + close -->
-                        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="Find in current file (Ctrl+F)">
-                                    <TextBlock Text="Find" />
-                                </Button>
-                                <Button Classes="searchmode" Classes.selected="{Binding IsFileByNameSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeFileByNameButton_OnClick" ToolTip.Tip="Find files by name">
-                                    <TextBlock Text="Files" />
-                                </Button>
-                                <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="Find in project (Ctrl+Shift+F)">
-                                    <TextBlock Text="Project" />
-                                </Button>
-                            </StackPanel>
-                            <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" Text="{Binding SearchPlaceholderText}" />
-                            <Button Grid.Column="2" Classes="chrome" Padding="6" Click="CloseSearchPanel_OnClick" ToolTip.Tip="Close (Escape)">
-                                <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- Floating search panel (overlays editor content, positioned top-right) -->
+            <Border Classes="searchpanel"
+                    IsVisible="{Binding IsSearchPanelActive}"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Margin="0,107,28,0"
+                    ZIndex="100">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*">
+                    <!-- Row 0: Mode tabs + placeholder + close -->
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="Find in current file (Ctrl+F)">
+                                <TextBlock Text="Find" />
+                            </Button>
+                            <Button Classes="searchmode" Classes.selected="{Binding IsFileByNameSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeFileByNameButton_OnClick" ToolTip.Tip="Find files by name">
+                                <TextBlock Text="Files" />
+                            </Button>
+                            <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="Find in project (Ctrl+Shift+F)">
+                                <TextBlock Text="Project" />
+                            </Button>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" Text="{Binding SearchPlaceholderText}" />
+                        <Button Grid.Column="2" Classes="chrome" Padding="6" Click="CloseSearchPanel_OnClick" ToolTip.Tip="Close (Escape)">
+                            <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Canvas Width="24" Height="24">
+                                    <Path Fill="{Binding $parent[Button].Foreground}" Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 0 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                    </Grid>
+
+                    <!-- Row 1: Search input + option buttons + navigation + Replace -->
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
+                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center">
+                            <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
+                        </Border>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchMatchCaseEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchMatchCaseButton_OnClick" ToolTip.Tip="Match case">
+                                <TextBlock Text="Aa" FontSize="12" />
+                            </Button>
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchWholeWordEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchWholeWordButton_OnClick" ToolTip.Tip="Whole word">
+                                <TextBlock Text="W" FontSize="12" FontWeight="SemiBold" />
+                            </Button>
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchRegexEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchRegexButton_OnClick" ToolTip.Tip="Regular expression">
+                                <TextBlock Text=".*" FontSize="12" FontWeight="Bold" />
+                            </Button>
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsFilterRowVisible}" IsVisible="{Binding IsFilterRowSupported}" Click="SearchFilterButton_OnClick" ToolTip.Tip="Include/Exclude filters">
+                                <TextBlock Text="+" FontSize="12" FontWeight="Bold" />
+                            </Button>
+                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindPrevButton_OnClick" ToolTip.Tip="Previous match">
+                                <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
-                                        <Path Fill="{Binding $parent[Button].Foreground}" Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 0 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                        <Path Fill="{Binding $parent[Button].Foreground}" Data="M11.47 7.72a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 1 1-1.06 1.06L12 9.31l-6.97 6.97a.75.75 0 0 1-1.06-1.06l7.5-7.5Z" />
                                     </Canvas>
                                 </Viewbox>
                             </Button>
-                        </Grid>
-
-                        <!-- Row 1: Search input + option buttons + navigation + Replace -->
-                        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
-                            <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center">
-                                <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
-                            </Border>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                <Button Classes="chromesmall" Classes.selected="{Binding IsSearchMatchCaseEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchMatchCaseButton_OnClick" ToolTip.Tip="Match case">
-                                    <TextBlock Text="Aa" FontSize="12" />
-                                </Button>
-                                <Button Classes="chromesmall" Classes.selected="{Binding IsSearchWholeWordEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchWholeWordButton_OnClick" ToolTip.Tip="Whole word">
-                                    <TextBlock Text="W" FontSize="12" FontWeight="SemiBold" />
-                                </Button>
-                                <Button Classes="chromesmall" Classes.selected="{Binding IsSearchRegexEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchRegexButton_OnClick" ToolTip.Tip="Regular expression">
-                                    <TextBlock Text=".*" FontSize="12" FontWeight="Bold" />
-                                </Button>
-                                <Button Classes="chromesmall" Classes.selected="{Binding IsFilterRowVisible}" IsVisible="{Binding IsFilterRowSupported}" Click="SearchFilterButton_OnClick" ToolTip.Tip="Include/Exclude filters">
-                                    <TextBlock Text="+" FontSize="12" FontWeight="Bold" />
-                                </Button>
-                                <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindPrevButton_OnClick" ToolTip.Tip="Previous match">
-                                    <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <Canvas Width="24" Height="24">
-                                            <Path Fill="{Binding $parent[Button].Foreground}" Data="M11.47 7.72a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 1 1-1.06 1.06L12 9.31l-6.97 6.97a.75.75 0 0 1-1.06-1.06l7.5-7.5Z" />
-                                        </Canvas>
-                                    </Viewbox>
-                                </Button>
-                                <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindNextButton_OnClick" ToolTip.Tip="Next match (Enter)">
-                                    <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <Canvas Width="24" Height="24">
-                                            <Path Fill="{Binding $parent[Button].Foreground}" Data="M12.53 16.28a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06L12 14.69l6.97-6.97a.75.75 0 1 1 1.06 1.06l-7.5 7.5Z" />
-                                        </Canvas>
-                                    </Viewbox>
-                                </Button>
-                            </StackPanel>
-                            <Button Grid.Column="2" Classes="chrome" Margin="8,0,0,0" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceButton_OnClick" ToolTip.Tip="Replace current match">
-                                <TextBlock Text="Replace" FontSize="12" />
+                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindNextButton_OnClick" ToolTip.Tip="Next match (Enter)">
+                                <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Fill="{Binding $parent[Button].Foreground}" Data="M12.53 16.28a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06L12 14.69l6.97-6.97a.75.75 0 1 1 1.06 1.06l-7.5 7.5Z" />
+                                    </Canvas>
+                                </Viewbox>
                             </Button>
-                        </Grid>
-
-                        <!-- Row 2: Replace input + status + Replace All -->
-                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
-                            <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center" IsVisible="{Binding IsFindInFileSearchMode}">
-                                <TextBox Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
-                            </Border>
-                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" FontSize="12" Text="{Binding SearchStatusText}" Margin="0,0,12,0" />
-                            <Button Grid.Column="2" Classes="chrome" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceAllButton_OnClick" ToolTip.Tip="Replace all matches">
-                                <TextBlock Text="Replace All" FontSize="12" />
-                            </Button>
-                        </Grid>
-
-                        <!-- Row 3: Include/Exclude filters -->
-                        <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="0,0,0,8" IsVisible="{Binding IsFilterRowVisible}">
-                            <TextBlock Grid.Column="0" Text="Include:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <Border Grid.Column="1" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
-                                <TextBox Text="{Binding SearchIncludeFilter, Mode=TwoWay}" PlaceholderText="*.cs,*.axaml" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
-                            </Border>
-                            <TextBlock Grid.Column="2" Text="Exclude:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="12,0,8,0" />
-                            <Border Grid.Column="3" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
-                                <TextBox Text="{Binding SearchExcludeFilter, Mode=TwoWay}" PlaceholderText="test/*,*.generated.cs" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
-                            </Border>
-                        </Grid>
-
-                        <!-- Row 4: Search results -->
-                        <Grid Grid.Row="4" IsVisible="{Binding IsSearchResultsVisible}">
-                            <Border BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,1,0,0" Margin="0,4,0,0">
-                                <ListBox x:Name="SearchResultsListBox"
-                                         Classes="searchresults"
-                                         ItemsSource="{Binding SearchDisplayItems}"
-                                         KeyDown="SearchResultsListBox_OnKeyDown"
-                                         DoubleTapped="SearchResultsListBox_OnDoubleTapped"
-                                         SelectionChanged="SearchResultsListBox_OnSelectionChanged">
-                                    <ListBox.ItemTemplate>
-                                        <DataTemplate DataType="kodoModels:SearchDisplayItem">
-                                            <Panel>
-                                                <!-- Group header row -->
-                                                <Button IsVisible="{Binding IsGroupHeader}" Classes="chrome groupheader" Tag="{Binding Group}" Click="GroupHeaderToggle_OnClick" HorizontalContentAlignment="Left" Padding="8,6" Margin="0" BorderThickness="0">
-                                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0">
-                                                        <TextBlock Grid.Column="0" Text="{Binding Group.ChevronGlyph}" FontSize="9" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding Group.FileName}" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" />
-                                                        <TextBlock Grid.Column="2" Text="{Binding Group.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                        <TextBlock Grid.Column="3" />
-                                                        <TextBlock Grid.Column="4" Text="{Binding Group.MatchCount, StringFormat='{}{0} matches'}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                    </Grid>
-                                                </Button>
-                                                <!-- Individual result row -->
-                                                <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True">
-                                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                    <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap">
-                                                        <TextBlock.Inlines>
-                                                            <MultiBinding Converter="{x:Static kodoModels:HighlightConverter.Instance}">
-                                                                <Binding Path="Result.DisplayName" />
-                                                                <Binding Path="Result.MatchedIndices" />
-                                                            </MultiBinding>
-                                                        </TextBlock.Inlines>
-                                                    </TextBlock>
-                                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Result.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0">
-                                                        <TextBlock.Inlines>
-                                                            <MultiBinding Converter="{x:Static kodoModels:PreviewHighlightConverter.Instance}">
-                                                                <Binding Path="Result.PreviewText" />
-                                                                <Binding Path="Result.MatchedPreviewIndices" />
-                                                            </MultiBinding>
-                                                        </TextBlock.Inlines>
-                                                    </TextBlock>
-                                                </Grid>
-                                            </Panel>
-                                        </DataTemplate>
-                                    </ListBox.ItemTemplate>
-                                </ListBox>
-                            </Border>
-                        </Grid>
+                        </StackPanel>
+                        <Button Grid.Column="2" Classes="chrome" Margin="8,0,0,0" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceButton_OnClick" ToolTip.Tip="Replace current match">
+                            <TextBlock Text="Replace" FontSize="12" />
+                        </Button>
                     </Grid>
-                </Border>
-            </Grid>
+
+                    <!-- Row 2: Replace input + status + Replace All -->
+                    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
+                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center" IsVisible="{Binding IsFindInFileSearchMode}">
+                            <TextBox Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
+                        </Border>
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" FontSize="12" Text="{Binding SearchStatusText}" Margin="0,0,12,0" />
+                        <Button Grid.Column="2" Classes="chrome" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceAllButton_OnClick" ToolTip.Tip="Replace all matches">
+                            <TextBlock Text="Replace All" FontSize="12" />
+                        </Button>
+                    </Grid>
+
+                    <!-- Row 3: Include/Exclude filters -->
+                    <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="0,0,0,8" IsVisible="{Binding IsFilterRowVisible}">
+                        <TextBlock Grid.Column="0" Text="Include:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Border Grid.Column="1" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
+                            <TextBox Text="{Binding SearchIncludeFilter, Mode=TwoWay}" PlaceholderText="*.cs,*.axaml" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
+                        </Border>
+                        <TextBlock Grid.Column="2" Text="Exclude:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="12,0,8,0" />
+                        <Border Grid.Column="3" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
+                            <TextBox Text="{Binding SearchExcludeFilter, Mode=TwoWay}" PlaceholderText="test/*,*.generated.cs" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Row 4: Search results -->
+                    <Grid Grid.Row="4" IsVisible="{Binding IsSearchResultsVisible}">
+                        <Border BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,1,0,0" Margin="0,4,0,0">
+                            <ListBox x:Name="SearchResultsListBox"
+                                     Classes="searchresults"
+                                     ItemsSource="{Binding SearchDisplayItems}"
+                                     KeyDown="SearchResultsListBox_OnKeyDown"
+                                     DoubleTapped="SearchResultsListBox_OnDoubleTapped"
+                                     SelectionChanged="SearchResultsListBox_OnSelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate DataType="kodoModels:SearchDisplayItem">
+                                        <Panel>
+                                            <!-- Group header row -->
+                                            <Button IsVisible="{Binding IsGroupHeader}" Classes="chrome groupheader" Tag="{Binding Group}" Click="GroupHeaderToggle_OnClick" HorizontalContentAlignment="Left" Padding="8,6" Margin="0" BorderThickness="0">
+                                                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0">
+                                                    <TextBlock Grid.Column="0" Text="{Binding Group.ChevronGlyph}" FontSize="9" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Group.FileName}" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding Group.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                    <TextBlock Grid.Column="3" />
+                                                    <TextBlock Grid.Column="4" Text="{Binding Group.MatchCount, StringFormat='{}{0} matches'}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                </Grid>
+                                            </Button>
+                                            <!-- Individual result row -->
+                                            <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True">
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap">
+                                                    <TextBlock.Inlines>
+                                                        <MultiBinding Converter="{x:Static kodoModels:HighlightConverter.Instance}">
+                                                            <Binding Path="Result.DisplayName" />
+                                                            <Binding Path="Result.MatchedIndices" />
+                                                        </MultiBinding>
+                                                    </TextBlock.Inlines>
+                                                </TextBlock>
+                                                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Result.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0">
+                                                    <TextBlock.Inlines>
+                                                        <MultiBinding Converter="{x:Static kodoModels:PreviewHighlightConverter.Instance}">
+                                                            <Binding Path="Result.PreviewText" />
+                                                            <Binding Path="Result.MatchedPreviewIndices" />
+                                                        </MultiBinding>
+                                                    </TextBlock.Inlines>
+                                                </TextBlock>
+                                            </Grid>
+                                        </Panel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </Border>
 
             <Grid IsVisible="{Binding IsTutorialPageVisible}"
                   IsHitTestVisible="{Binding IsTutorialPageVisible}"
