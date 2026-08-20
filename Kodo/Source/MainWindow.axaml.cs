@@ -5919,7 +5919,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
         : IsDiscordImprovedRpcEnabled
-            ? "Improved Discord Rich Presence is on when the Discord desktop app is running."
+            ? "Discord Rich Presence with detailed status is on when the Discord desktop app is running."
             : "Discord Rich Presence is on when the Discord desktop app is running.";
 
     public string AutoSaveStatusText =>
