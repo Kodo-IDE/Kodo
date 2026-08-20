@@ -117,6 +117,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
+    // Performance mode: when on, News & Announcements are never pulled from the local
+    // cache or GitHub and never shown on the home screen (see FetchAnnouncementsAsync).
+    private bool _isPerformanceModeEnabled;
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
@@ -541,7 +544,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsNewsLoading
     {
         get => _isNewsLoading;
-        private set { if (_isNewsLoading == value) return; _isNewsLoading = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); }
+        private set { if (_isNewsLoading == value) return; _isNewsLoading = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); OnPropertyChanged(nameof(IsNewsRefreshEnabled)); }
     }
 
     public bool IsNewsError
@@ -550,8 +553,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set { if (_isNewsError == value) return; _isNewsError = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); }
     }
 
-    public bool IsNewsContentVisible => !IsNewsLoading && !IsNewsError && NewsItems.Count > 0;
-    public bool IsNewsEmpty => !IsNewsLoading && !IsNewsError && NewsItems.Count == 0;
+    public bool IsNewsDisabled => IsPerformanceModeEnabled;
+    public bool IsNewsContentVisible => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count > 0;
+    public bool IsNewsEmpty => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count == 0;
+    // Refresh button is unusable while performance mode disables News & Announcements.
+    public bool IsNewsRefreshEnabled => !IsPerformanceModeEnabled && !IsNewsLoading;
+
+    public bool IsWhatsNewDisabled => IsPerformanceModeEnabled;
+    public bool IsWhatsNewRefreshEnabled => !IsPerformanceModeEnabled && !IsRefreshingLatestRelease;
+    // Status text is hidden when performance mode disables What's New, so the "Disabled" panel is shown instead.
+    public bool IsLatestReleaseStatusVisible => !IsWhatsNewDisabled && !HasLatestRelease;
+
+    // Settings toggle: performance mode completely disables News & Announcements and
+    // What's New release notes - they are not fetched from GitHub, not shown on the
+    // home screen (a "Disabled" note takes their place), and their refresh buttons
+    // are disabled. Nothing else is affected.
+    public bool IsPerformanceModeEnabled
+    {
+        get => _isPerformanceModeEnabled;
+        set
+        {
+            if (_isPerformanceModeEnabled == value) return;
+            _isPerformanceModeEnabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsNewsDisabled));
+            OnPropertyChanged(nameof(IsNewsContentVisible));
+            OnPropertyChanged(nameof(IsNewsEmpty));
+            OnPropertyChanged(nameof(IsNewsRefreshEnabled));
+            OnPropertyChanged(nameof(IsWhatsNewDisabled));
+            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
+            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
+            SaveSettings();
+            if (value)
+            {
+                // Drop anything already on screen so no cached or previously-fetched
+                // items keep showing, then settle into the disabled state.
+                NewsItems.Clear();
+                IsNewsLoading = false;
+                IsNewsError = false;
+                LatestRelease = null;
+                LatestReleaseStatusText = "Disabled by Performance mode.";
+            }
+            else
+            {
+                _ = FetchAnnouncementsAsync(forceNetwork: false);
+                _ = RefreshLatestReleaseAsync();
+            }
+        }
+    }
 
     public LoadedExtension? CurrentLanguageExtension
     {
@@ -719,6 +768,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isAutoUpdateExtensionsInBackgroundEnabled = settings.AutoUpdateExtensionsInBackgroundEnabled;
         _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
         _isAutoUpdateAppInBackgroundEnabled = settings.AutoUpdateAppInBackgroundEnabled;
+        _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
+        if (_isPerformanceModeEnabled)
+            _latestReleaseStatusText = "Disabled by Performance mode.";
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
@@ -1431,11 +1483,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshLatestReleaseAsync()
     {
-        if (_isRefreshingLatestRelease)
+        if (_isRefreshingLatestRelease || IsPerformanceModeEnabled)
             return;
 
         _isRefreshingLatestRelease = true;
         OnPropertyChanged(nameof(IsRefreshingLatestRelease));
+        OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
         OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
         LatestReleaseStatusText = "Loading latest release...";
 
@@ -1461,12 +1514,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _isRefreshingLatestRelease = false;
             OnPropertyChanged(nameof(IsRefreshingLatestRelease));
+            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
             OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
         }
     }
 
     private async Task FetchAnnouncementsAsync(bool forceNetwork)
     {
+        // Performance mode: never pull from the local cache or GitHub, and never show
+        // anything - the disabled state is already in place from the toggle setter.
+        if (IsPerformanceModeEnabled)
+        {
+            NewsItems.Clear();
+            IsNewsLoading = false;
+            IsNewsError = false;
+            return;
+        }
+
         IsNewsLoading = true;
         IsNewsError = false;
         NewsItems.Clear();
@@ -4126,6 +4190,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(HasLatestReleaseLinks));
             OnPropertyChanged(nameof(IsNewerVersionAvailable));
             OnPropertyChanged(nameof(IsAppUpdateAvailable));
+            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
         }
     }
 
@@ -6843,6 +6908,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AutoUpdateExtensionsInBackgroundEnabled = IsAutoUpdateExtensionsInBackgroundEnabled,
             AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
             AutoUpdateAppInBackgroundEnabled         = IsAutoUpdateAppInBackgroundEnabled,
+            PerformanceModeEnabled                   = IsPerformanceModeEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
             TerminalVisible                         = IsTerminalVisible,
@@ -8995,8 +9061,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: true);
     }
 
-    private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsPerformanceModeEnabled) return;
         _ = FetchAnnouncementsAsync(forceNetwork: true);
+    }
 
     private void OpenTutorialButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -9060,8 +9129,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
-    private async void RefreshLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void RefreshLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsPerformanceModeEnabled) return;
         await RefreshLatestReleaseAsync();
+    }
 
     private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsWhatsNewExpanded = !IsWhatsNewExpanded;

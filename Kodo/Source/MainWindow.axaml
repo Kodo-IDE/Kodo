@@ -2193,7 +2193,7 @@
                                                     <Button Grid.Column="1"
                                                             Classes="chrome"
                                                             Click="RefreshNewsButton_OnClick"
-                                                            IsEnabled="{Binding !IsNewsLoading}"
+                                                            IsEnabled="{Binding IsNewsRefreshEnabled}"
                                                             VerticalAlignment="Center"
                                                             ToolTip.Tip="Refresh news"
                                                             Content="↻" />
@@ -2204,6 +2204,27 @@
                                             <Border Grid.Row="1"
                                                     Padding="16,14">
                                                 <Panel ClipToBounds="True">
+                                                    <!-- Disabled state (performance mode) -->
+                                                    <StackPanel IsVisible="{Binding IsNewsDisabled}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="8">
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding AccentBrush}"
+                                                                   FontWeight="SemiBold"
+                                                                   LetterSpacing="1"
+                                                                   Text="DISABLED" />
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.6"
+                                                                   TextAlignment="Center"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="220"
+                                                                   Text="News &amp; Announcements are turned off by Performance mode." />
+                                                    </StackPanel>
+
                                                     <!-- Loading state -->
                                                     <StackPanel IsVisible="{Binding IsNewsLoading}"
                                                                 HorizontalAlignment="Center"
@@ -2329,12 +2350,13 @@
                                                                 VerticalAlignment="Center">
                                                         <Button Classes="chrome"
                                                                 Click="RefreshLatestReleaseButton_OnClick"
-                                                                IsEnabled="{Binding !IsRefreshingLatestRelease}"
+                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                                 VerticalAlignment="Center"
                                                                 ToolTip.Tip="Check for newer release information"
                                                                 Content="↻" />
                                                         <Button Classes="chrome"
                                                                 Click="OpenLatestReleaseButton_OnClick"
+                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                                 ToolTip.Tip="Open this release on GitHub in your browser"
                                                                 Content="GitHub" />
                                                     </StackPanel>
@@ -2346,8 +2368,29 @@
                                                     Padding="20,14">
                                                 <Panel ClipToBounds="True">
 
+                                                    <!-- Disabled state (performance mode) -->
+                                                    <StackPanel IsVisible="{Binding IsWhatsNewDisabled}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="8">
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding AccentBrush}"
+                                                                   FontWeight="SemiBold"
+                                                                   LetterSpacing="1"
+                                                                   Text="DISABLED" />
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.6"
+                                                                   TextAlignment="Center"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="220"
+                                                                   Text="What's New is turned off by Performance mode." />
+                                                    </StackPanel>
+
                                                     <!-- Status text (loading / error / up-to-date message) -->
-                                                    <TextBlock IsVisible="{Binding !HasLatestRelease}"
+                                                    <TextBlock IsVisible="{Binding IsLatestReleaseStatusVisible}"
                                                                Foreground="{Binding MutedTextBrush}"
                                                                FontSize="12"
                                                                TextWrapping="Wrap"
@@ -5305,6 +5348,45 @@
                             </StackPanel>
                         </Border>
 
+                        <Grid x:Name="SectionHeaderPerformance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="PERFORMANCE" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding SurfaceBorderBrush}" />
+                        </Grid>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24"
+                                x:Name="PerformanceSettingsCard">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Performance" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsPerformanceModeEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Performance mode" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Disables News &amp; Announcements and What's New to save network and background activity. They are no longer fetched from GitHub or the local cache, are hidden from the home screen, and their refresh buttons are disabled. Nothing else is affected." />
+                            </StackPanel>
+                        </Border>
+
                         <Grid x:Name="SectionHeaderPrivacy" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
@@ -5765,23 +5847,43 @@
                                                         VerticalAlignment="Top">
                                                 <Button Classes="chrome"
                                                         Click="RefreshLatestReleaseButton_OnClick"
-                                                        IsEnabled="{Binding !IsRefreshingLatestRelease}"
+                                                        IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                         ToolTip.Tip="Check for newer release information"
                                                         Content="{Binding RefreshLatestReleaseButtonText}" />
                                                 <Button Classes="chrome"
                                                         Click="OpenLatestReleaseButton_OnClick"
+                                                        IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                         ToolTip.Tip="Open this release on GitHub in your browser"
                                                         Content="View on GitHub" />
                                             </StackPanel>
                                         </Grid>
 
-                                        <TextBlock FontSize="16"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Release Notes" />
+<TextBlock FontSize="16"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{Binding PrimaryTextBrush}"
+                                                    Text="Release Notes"
+                                                    IsVisible="{Binding !IsWhatsNewDisabled}" />
+
+                                        <StackPanel IsVisible="{Binding IsWhatsNewDisabled}"
+                                                    Spacing="8"
+                                                    Margin="0,4">
+                                            <TextBlock FontSize="11"
+                                                       HorizontalAlignment="Center"
+                                                       Foreground="{Binding AccentBrush}"
+                                                       FontWeight="SemiBold"
+                                                       LetterSpacing="1"
+                                                       Text="DISABLED" />
+                                            <TextBlock FontSize="11"
+                                                       Foreground="{Binding MutedTextBrush}"
+                                                       Opacity="0.6"
+                                                       TextAlignment="Center"
+                                                       TextWrapping="Wrap"
+                                                       Text="What's New is turned off by Performance mode." />
+                                        </StackPanel>
 
                                         <ScrollViewer MaxHeight="300"
-                                                      VerticalScrollBarVisibility="Auto">
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      IsVisible="{Binding !IsWhatsNewDisabled}">
                                             <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="kodoModels:FormattedParagraph">
