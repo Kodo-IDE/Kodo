@@ -4654,7 +4654,7 @@
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Top">
 
-                        <Grid x:Name="SectionHeaderAppearance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderAppearance" Tag="appearance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -4673,7 +4673,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="ThemeSettingsCard">
+                                x:Name="ThemeSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4896,7 +4896,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="AccentColourSettingsCard">
+                                x:Name="AccentColourSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -4988,7 +4988,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderEditor" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderEditor" Tag="editor" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5007,7 +5007,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="EditorSettingsCard">
+                                x:Name="EditorSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5079,7 +5079,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="EditorInsightSettingsCard">
+                                x:Name="EditorInsightSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5110,7 +5110,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderGeneral" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderGeneral" Tag="general" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5129,7 +5129,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="DisplaySettingsCard">
+                                x:Name="DisplaySettingsCard" Tag="general">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5167,7 +5167,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderTerminal" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderTerminal" Tag="terminal" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5186,7 +5186,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="TerminalSettingsCard">
+                                x:Name="TerminalSettingsCard" Tag="terminal">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5227,7 +5227,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderIntegrations" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderIntegrations" Tag="integrations" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5246,7 +5246,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="DiscordRichPresenceSettingsCard">
+                                x:Name="DiscordRichPresenceSettingsCard" Tag="integrations">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5278,7 +5278,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderUpdates" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderUpdates" Tag="updates" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5297,7 +5297,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="UpdatesSettingsCard">
+                                x:Name="UpdatesSettingsCard" Tag="updates">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5348,7 +5348,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderPerformance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderPerformance" Tag="performance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5367,7 +5367,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="PerformanceSettingsCard">
+                                x:Name="PerformanceSettingsCard" Tag="performance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5387,7 +5387,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderPrivacy" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderPrivacy" Tag="privacy" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5406,7 +5406,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="PrivacySettingsCard">
+                                x:Name="PrivacySettingsCard" Tag="privacy">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5430,7 +5430,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderPersonalization" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderPersonalization" Tag="personalization" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5449,7 +5449,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="PersonalizationSettingsCard">
+                                x:Name="PersonalizationSettingsCard" Tag="personalization">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5529,7 +5529,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderAdvanced" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderAdvanced" Tag="advanced" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5548,7 +5548,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="DeveloperOptionsSettingsCard">
+                                x:Name="DeveloperOptionsSettingsCard" Tag="advanced">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5618,7 +5618,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderHelpAbout" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderHelpAbout" Tag="helpabout" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5637,7 +5637,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="HelpSettingsCard">
+                                x:Name="HelpSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5674,7 +5674,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="AboutSettingsCard">
+                                x:Name="AboutSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -5771,7 +5771,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
-                                x:Name="WhatsNewSettingsCard">
+                                x:Name="WhatsNewSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
                                 <Grid ColumnDefinitions="*,Auto"
                                       ColumnSpacing="16">

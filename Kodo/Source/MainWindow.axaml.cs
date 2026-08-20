@@ -4982,6 +4982,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .Where(c => c.Name != "SettingsSearchEmptyPlaceholder" &&
                         (c.Name is null || !c.Name.StartsWith("SectionHeader", StringComparison.Ordinal)))
             .ToList();
+        var headers = SettingsCardsPanel.Children
+            .OfType<Control>()
+            .Where(c => c.Name?.StartsWith("SectionHeader", StringComparison.Ordinal) == true)
+            .ToList();
         var groupVisible = cards
             .GroupBy(SettingsCardGroupKey)
             .ToDictionary(g => g.Key, g => g.Any(MatchesSettingsSearchCard));
@@ -4992,6 +4996,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var visible = groupVisible[SettingsCardGroupKey(card)];
             card.IsVisible = visible;
             anyVisible |= visible;
+        }
+
+        foreach (var header in headers)
+        {
+            var sectionTag = header.Tag as string;
+            if (sectionTag is null)
+            {
+                header.IsVisible = true;
+                continue;
+            }
+            header.IsVisible = cards.Any(c => c.Tag as string == sectionTag && c.IsVisible);
         }
 
         _isSettingsSearchEmpty = !string.IsNullOrWhiteSpace(_settingsSearchText) && !anyVisible;
