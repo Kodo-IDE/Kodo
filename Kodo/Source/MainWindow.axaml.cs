@@ -117,9 +117,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
-    // Performance mode: when on, News & Announcements are never pulled from the local
-    // cache or GitHub and never shown on the home screen (see FetchAnnouncementsAsync).
+    // Performance mode: when on, toggled features are never pulled from local cache
+    // or GitHub and never shown on the home screen (see FetchAnnouncementsAsync).
     private bool _isPerformanceModeEnabled;
+    private bool _newsDisabled;
+    private bool _whatsNewDisabled;
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
@@ -553,21 +555,76 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set { if (_isNewsError == value) return; _isNewsError = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsNewsContentVisible)); OnPropertyChanged(nameof(IsNewsEmpty)); }
     }
 
-    public bool IsNewsDisabled => IsPerformanceModeEnabled;
+    public bool IsNewsDisabled => IsPerformanceModeEnabled && _newsDisabled;
     public bool IsNewsContentVisible => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count > 0;
     public bool IsNewsEmpty => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count == 0;
-    // Refresh button is unusable while performance mode disables News & Announcements.
-    public bool IsNewsRefreshEnabled => !IsPerformanceModeEnabled && !IsNewsLoading;
+    public bool IsNewsRefreshEnabled => !IsNewsDisabled && !IsNewsLoading;
 
-    public bool IsWhatsNewDisabled => IsPerformanceModeEnabled;
-    public bool IsWhatsNewRefreshEnabled => !IsPerformanceModeEnabled && !IsRefreshingLatestRelease;
-    // Status text is hidden when performance mode disables What's New, so the "Disabled" panel is shown instead.
+    public bool IsWhatsNewDisabled => IsPerformanceModeEnabled && _whatsNewDisabled;
+    public bool IsWhatsNewRefreshEnabled => !IsWhatsNewDisabled && !IsRefreshingLatestRelease;
     public bool IsLatestReleaseStatusVisible => !IsWhatsNewDisabled && !HasLatestRelease;
 
-    // Settings toggle: performance mode completely disables News & Announcements and
-    // What's New release notes - they are not fetched from GitHub, not shown on the
-    // home screen (a "Disabled" note takes their place), and their refresh buttons
-    // are disabled. Nothing else is affected.
+    // Individual sub-toggles under Performance mode.
+    public bool NewsDisabled
+    {
+        get => _newsDisabled;
+        set
+        {
+            if (_newsDisabled == value) return;
+            _newsDisabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsNewsDisabled));
+            OnPropertyChanged(nameof(IsNewsContentVisible));
+            OnPropertyChanged(nameof(IsNewsEmpty));
+            OnPropertyChanged(nameof(IsNewsRefreshEnabled));
+            SaveSettings();
+            if (IsPerformanceModeEnabled)
+            {
+                if (value)
+                {
+                    NewsItems.Clear();
+                    IsNewsLoading = false;
+                    IsNewsError = false;
+                }
+                else
+                {
+                    _ = FetchAnnouncementsAsync(forceNetwork: false);
+                }
+            }
+        }
+    }
+
+    public bool WhatsNewDisabled
+    {
+        get => _whatsNewDisabled;
+        set
+        {
+            if (_whatsNewDisabled == value) return;
+            _whatsNewDisabled = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsWhatsNewDisabled));
+            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
+            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
+            SaveSettings();
+            if (IsPerformanceModeEnabled)
+            {
+                if (value)
+                {
+                    LatestRelease = null;
+                    LatestReleaseStatusText = "Disabled by Performance mode.";
+                }
+                else
+                {
+                    _ = RefreshLatestReleaseAsync();
+                }
+            }
+        }
+    }
+
+    // Settings toggle: performance mode lets you selectively disable News & Announcements
+    // and What's New release notes - they are not fetched from GitHub, not shown on the
+    // home screen (a "Disabled" note takes their place), and their refresh buttons are
+    // disabled. Nothing else is affected.
     public bool IsPerformanceModeEnabled
     {
         get => _isPerformanceModeEnabled;
@@ -586,18 +643,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
             if (value)
             {
-                // Drop anything already on screen so no cached or previously-fetched
-                // items keep showing, then settle into the disabled state.
-                NewsItems.Clear();
-                IsNewsLoading = false;
-                IsNewsError = false;
-                LatestRelease = null;
-                LatestReleaseStatusText = "Disabled by Performance mode.";
+                if (_newsDisabled)
+                {
+                    NewsItems.Clear();
+                    IsNewsLoading = false;
+                    IsNewsError = false;
+                }
+                if (_whatsNewDisabled)
+                {
+                    LatestRelease = null;
+                    LatestReleaseStatusText = "Disabled by Performance mode.";
+                }
             }
             else
             {
-                _ = FetchAnnouncementsAsync(forceNetwork: false);
-                _ = RefreshLatestReleaseAsync();
+                if (_newsDisabled)
+                    _ = FetchAnnouncementsAsync(forceNetwork: false);
+                if (_whatsNewDisabled)
+                    _ = RefreshLatestReleaseAsync();
             }
         }
     }
@@ -771,6 +834,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
         if (_isPerformanceModeEnabled)
             _latestReleaseStatusText = "Disabled by Performance mode.";
+        _newsDisabled = settings.NewsDisabled;
+        _whatsNewDisabled = settings.WhatsNewDisabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
@@ -1483,7 +1548,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RefreshLatestReleaseAsync()
     {
-        if (_isRefreshingLatestRelease || IsPerformanceModeEnabled)
+        if (_isRefreshingLatestRelease || IsWhatsNewDisabled)
             return;
 
         _isRefreshingLatestRelease = true;
@@ -1523,7 +1588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Performance mode: never pull from the local cache or GitHub, and never show
         // anything - the disabled state is already in place from the toggle setter.
-        if (IsPerformanceModeEnabled)
+        if (IsNewsDisabled)
         {
             NewsItems.Clear();
             IsNewsLoading = false;
@@ -6924,6 +6989,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
             AutoUpdateAppInBackgroundEnabled         = IsAutoUpdateAppInBackgroundEnabled,
             PerformanceModeEnabled                   = IsPerformanceModeEnabled,
+            NewsDisabled                             = NewsDisabled,
+            WhatsNewDisabled                         = WhatsNewDisabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
             TerminalVisible                         = IsTerminalVisible,
@@ -9078,7 +9145,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (IsPerformanceModeEnabled) return;
+        if (IsNewsDisabled) return;
         _ = FetchAnnouncementsAsync(forceNetwork: true);
     }
 
@@ -9146,7 +9213,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void RefreshLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (IsPerformanceModeEnabled) return;
+        if (IsWhatsNewDisabled) return;
         await RefreshLatestReleaseAsync();
     }
 

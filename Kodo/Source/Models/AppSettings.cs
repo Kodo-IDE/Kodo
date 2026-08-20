@@ -85,6 +85,8 @@ internal sealed class AppSettings
     // Performance mode: disables News & Announcements entirely - no local cache reads,
     // no GitHub fetches, no home-screen display, and the refresh button is disabled.
     public bool PerformanceModeEnabled { get; set; }
+    public bool NewsDisabled { get; set; }
+    public bool WhatsNewDisabled { get; set; }
     public bool HasRespondedToDataTrackingPrompt { get; set; }
     // Acknowledgment of the embedded Privacy Policy text - separate from the data-tracking
     // opt-in above. There's no decline path; this only tracks whether the user has scrolled

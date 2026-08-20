@@ -5380,10 +5380,36 @@
                                 <CheckBox IsChecked="{Binding IsPerformanceModeEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Performance mode" />
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                            IsVisible="{Binding IsPerformanceModeEnabled}">
+                                    <CheckBox IsChecked="{Binding NewsDisabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Disable News &amp; Announcements" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Hides the News card from the home screen and stops fetching announcements from GitHub or the local cache." />
+                                    </StackPanel>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
+                                            IsVisible="{Binding IsPerformanceModeEnabled}">
+                                    <CheckBox IsChecked="{Binding WhatsNewDisabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Disable What's New" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Hides the What's New card from the home screen and stops fetching release notes from GitHub." />
+                                    </StackPanel>
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            FontSize="11"
                                            TextWrapping="Wrap"
-                                           Text="Disables News &amp; Announcements and What's New to save network and background activity. They are no longer fetched from GitHub or the local cache, are hidden from the home screen, and their refresh buttons are disabled. Nothing else is affected." />
+                                           Text="When Performance mode is on, you can choose which features to disable individually. Disabled features are hidden from the home screen and their refresh buttons are turned off. Nothing else is affected." />
                             </StackPanel>
                         </Border>
 
