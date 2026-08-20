@@ -194,11 +194,6 @@ internal static class Program
             return null;
         }
     }
-
-    // Entry point for the temp helper copy: shows the progress dialog, runs
-    // the installer, polls real progress into the dialog, and exits when the
-    // installer finishes. Runs standalone - no mutex, no pipe listener - and
-    // is itself disposable; KodoUpdaterProgram.exe cleans it up on next start.
     private static async Task ShowProgressAndInstallAsync(string installerPath)
     {
         try
@@ -217,15 +212,12 @@ internal static class Program
                 });
                 // Blocks here until appLifetime.Shutdown() is called from the installer thread.
             });
-            staThread.SetApartmentState(ApartmentState.STA);
+            if (OperatingSystem.IsWindows())
+            {
+                staThread.SetApartmentState(ApartmentState.STA);
+            }
             staThread.IsBackground = true;
             staThread.Start();
-
-            // Polls install-progress.json (written by KodoInstaller.iss's
-            // CurInstallProgressChanged) and feeds real percentages into the
-            // dialog for the whole install - this process is a disposable
-            // temp copy, not the exe the installer taskkills, so it survives
-            // to see it through.
             var progressFilePath = Path.Combine(Path.GetTempPath(), "Kodo-Update", "install-progress.json");
             var progressCts = new CancellationTokenSource();
             var pollTask = Task.Run(() => PollInstallProgressAsync(dialog, progressFilePath, progressCts.Token));
