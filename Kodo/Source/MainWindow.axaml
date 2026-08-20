@@ -5406,11 +5406,12 @@
                                                    Text="Hides the What's New card from the home screen and stops fetching release notes from GitHub." />
                                     </StackPanel>
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsPerformanceModeEnabled}">
-                                    <CheckBox IsChecked="{Binding IsDebouncedSearchEnabled, Mode=TwoWay}"
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsPerformanceModeEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsDebouncedSearchEnabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Debounce search results" />
@@ -5419,7 +5420,7 @@
                                                    TextWrapping="Wrap"
                                                    Text="Extensions, Compilers, Languages, Installed, and Settings search only refresh after you stop typing, instead of on every keystroke." />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            FontSize="11"
                                            TextWrapping="Wrap"
