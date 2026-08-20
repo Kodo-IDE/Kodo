@@ -122,6 +122,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isPerformanceModeEnabled;
     private bool _newsDisabled;
     private bool _whatsNewDisabled;
+    // Performance: debounce search filtering until the user stops typing.
+    private bool _isDebouncedSearchEnabled;
+    private bool _extensionSearchPending;
+    private bool _settingsSearchPending;
 
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
@@ -337,6 +341,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSearchBusy;
     private CancellationTokenSource? _searchCancellation;
     private readonly DispatcherTimer _searchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    // Debounces extension/settings search filtering when IsDebouncedSearchEnabled is on.
+    private readonly DispatcherTimer _searchFilterDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     // Caches the enumerated file list (with ignore rules) for the currently
     // open folder so repeated searches don't re-walk the tree.
     private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
@@ -798,6 +804,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
+        _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
@@ -836,6 +843,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _latestReleaseStatusText = "Disabled by Performance mode.";
         _newsDisabled = settings.NewsDisabled;
         _whatsNewDisabled = settings.WhatsNewDisabled;
+        _isDebouncedSearchEnabled = settings.DebouncedSearchEnabled;
         _hasCompletedTutorial = settings.HasCompletedTutorial;
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
@@ -4971,7 +4979,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_extensionSearchText == value) return;
             _extensionSearchText = value;
             OnPropertyChanged();
-            NotifyExtensionFiltersChanged();
+            if (IsDebouncedSearchEnabled)
+            {
+                _extensionSearchPending = true;
+                RestartSearchFilterDebounce();
+            }
+            else
+            {
+                NotifyExtensionFiltersChanged();
+            }
         }
     }
 
@@ -4983,6 +4999,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_settingsSearchText == value) return;
             _settingsSearchText = value;
             OnPropertyChanged();
+            if (IsDebouncedSearchEnabled)
+            {
+                _settingsSearchPending = true;
+                RestartSearchFilterDebounce();
+            }
+            else
+            {
+                NotifySettingsSearchChanged();
+            }
+        }
+    }
+
+    // Performance setting: defer search filtering until the user stops typing.
+    public bool IsDebouncedSearchEnabled
+    {
+        get => _isDebouncedSearchEnabled;
+        set
+        {
+            if (_isDebouncedSearchEnabled == value) return;
+            _isDebouncedSearchEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            if (!value)
+                FlushPendingSearchFilters();
+        }
+    }
+
+    private void RestartSearchFilterDebounce()
+    {
+        _searchFilterDebounceTimer.Stop();
+        _searchFilterDebounceTimer.Start();
+    }
+
+    private void SearchFilterDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _searchFilterDebounceTimer.Stop();
+        FlushPendingSearchFilters();
+    }
+
+    private void FlushPendingSearchFilters()
+    {
+        if (_extensionSearchPending)
+        {
+            _extensionSearchPending = false;
+            NotifyExtensionFiltersChanged();
+        }
+        if (_settingsSearchPending)
+        {
+            _settingsSearchPending = false;
             NotifySettingsSearchChanged();
         }
     }
@@ -6991,6 +7056,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PerformanceModeEnabled                   = IsPerformanceModeEnabled,
             NewsDisabled                             = NewsDisabled,
             WhatsNewDisabled                         = WhatsNewDisabled,
+            DebouncedSearchEnabled                   = IsDebouncedSearchEnabled,
             PreferredTerminalShellId                = SelectedTerminalShell?.Id,
             PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
             TerminalVisible                         = IsTerminalVisible,
@@ -13499,6 +13565,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveStatusTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
+        _searchFilterDebounceTimer.Stop();
         _extensionAutoUpdateTimer.Stop();
         _appUpdateScheduler.Stop();
         _marketplaceRefreshTimer.Stop();

@@ -87,6 +87,9 @@ internal sealed class AppSettings
     public bool PerformanceModeEnabled { get; set; }
     public bool NewsDisabled { get; set; }
     public bool WhatsNewDisabled { get; set; }
+    // Performance: debounce search filtering so results only refresh after the user
+    // stops typing (Extensions/Compilers/Languages/Installed and Settings search).
+    public bool DebouncedSearchEnabled { get; set; }
     public bool HasRespondedToDataTrackingPrompt { get; set; }
     // Acknowledgment of the embedded Privacy Policy text - separate from the data-tracking
     // opt-in above. There's no decline path; this only tracks whether the user has scrolled

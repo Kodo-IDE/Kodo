@@ -5406,10 +5406,22 @@
                                                    Text="Hides the What's New card from the home screen and stops fetching release notes from GitHub." />
                                     </StackPanel>
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0">
+                                    <CheckBox IsChecked="{Binding IsDebouncedSearchEnabled, Mode=TwoWay}"
+                                              VerticalAlignment="Center" />
+                                    <StackPanel Spacing="2">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Debounce search results" />
+                                        <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                   FontSize="11"
+                                                   Text="Extensions, Compilers, Languages, Installed, and Settings search only refresh after you stop typing, instead of on every keystroke." />
+                                    </StackPanel>
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            FontSize="11"
                                            TextWrapping="Wrap"
-                                           Text="When Performance mode is on, you can choose which features to disable individually. Disabled features are hidden from the home screen and their refresh buttons are turned off. Nothing else is affected." />
+                                           Text="When Performance mode is on, you can choose which features to disable individually. Disabled features are hidden from the home screen and their refresh buttons are turned off. Debounce search results applies even when Performance mode is off. Nothing else is affected." />
                             </StackPanel>
                         </Border>
 
