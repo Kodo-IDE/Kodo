@@ -8553,7 +8553,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             FocusActiveTerminal();
     }
 
-    private void CreateTerminalSession(TerminalShellOption? shell = null, TerminalSession? replaceExisting = null)
+    private void CreateTerminalSession(TerminalShellOption? shell = null, TerminalSession? replaceExisting = null, string? workingDirectoryOverride = null)
     {
         if (!IsTerminalSupported)
             return;
@@ -8562,7 +8562,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (shell is null)
             return;
 
-        var workingDirectory = ResolveTerminalWorkingDirectory();
+        var workingDirectory = workingDirectoryOverride is not null && Directory.Exists(workingDirectoryOverride)
+            ? workingDirectoryOverride
+            : ResolveTerminalWorkingDirectory();
         var workspaceName = GetWorkspaceDisplayName(workingDirectory, shell.DisplayName);
 
         var session = new TerminalSession(shell.Id, shell.DisplayName, workspaceName, workingDirectory);
@@ -8925,6 +8927,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             string.Equals(s.Id, session.ShellId, StringComparison.OrdinalIgnoreCase))
             ?? GetSelectedTerminalShellOrFallback();
         CreateTerminalSession(shell, session);
+    }
+
+    private void CopyTerminalSessionWorkingDirectoryMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<TerminalSession>(sender) is not { } session) return;
+        if (string.IsNullOrWhiteSpace(session.WorkingDirectory)) return;
+        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(session.WorkingDirectory);
     }
 
     private void CloseOtherTerminalSessionsMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -10316,6 +10325,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(GetRelativePathOrFullPath(tab.Path));
     }
 
+    private void CopyEditorTabNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
+        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(Path.GetFileName(tab.Path));
+    }
+
+    // Closes every open tab positioned after the clicked one, mirroring
+    // Close Others' pattern but scoped to one side of the tab strip.
+    private async void CloseTabsToTheRightMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<EditorTab>(sender) is not { } pivotTab) return;
+        var pivotIndex = OpenTabs.IndexOf(pivotTab);
+        if (pivotIndex < 0) return;
+
+        var toClose = OpenTabs.Skip(pivotIndex + 1).ToList();
+        foreach (var tab in toClose)
+        {
+            if (!await RequestCloseTabAsync(tab))
+                break;
+        }
+    }
+
     private async void RevealEditorTabInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
@@ -10442,6 +10473,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         OpenSearchPanel(SearchMode.ProjectSearch);
+    }
+
+    // Opens a new terminal session rooted at the clicked item's own directory
+    // (or its containing folder, for a file) instead of the usual
+    // ResolveTerminalWorkingDirectory() fallback chain.
+    private void OpenExplorerItemInTerminalMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
+
+        var directory = item.IsDirectory ? item.FullPath : Path.GetDirectoryName(item.FullPath);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
+
+        CreateTerminalSession(workingDirectoryOverride: directory);
     }
 
     private void CopyFileNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -10837,6 +10881,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 FocusEditor();
             }, DispatcherPriority.Background);
         }
+    }
+
+    private void OpenSearchResultMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
+        OpenSearchResult(result);
+    }
+
+    private void CopySearchResultPathMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
+        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(result.Path);
+    }
+
+    private void CopySearchResultRelativePathMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
+        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(GetRelativePathOrFullPath(result.Path));
+    }
+
+    private async void RevealSearchResultInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
+        await OpenPathInSystemExplorer(result.Path, selectItem: true);
     }
 
     private void OpenSearchPanel(SearchMode mode)
@@ -11950,9 +12018,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (sender is not ContextMenu menu) return;
         foreach (var item in menu.Items.OfType<MenuItem>())
         {
-            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorChangeAllOccurrencesMenuItem")
+            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorFindAllOccurrencesMenuItem" or "EditorChangeAllOccurrencesMenuItem")
                 item.IsEnabled = hasSelection;
         }
+    }
+
+    // Mirrors VS Code's "Find All Occurrences": grabs the current selection,
+    // drops it into Find, and opens the Find panel with every match
+    // highlighted (via UpdateFindHighlights, triggered by the FindText set
+    // below) - no jump to Replace, unlike Change All Occurrences.
+    private void EditorFindAllOccurrencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
+        var selectedText = sel.GetText();
+        if (string.IsNullOrEmpty(selectedText)) return;
+
+        FindText = selectedText;
+        OpenSearchPanel(SearchMode.FindInFile);
     }
 
     // Mirrors VS Code's "Change All Occurrences": grabs the current selection,

@@ -1015,6 +1015,9 @@
                                                 <MenuItem Header="Copy Relative Path"
                                                           Tag="{Binding}"
                                                           Click="CopyEditorTabRelativePathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy File Name"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabNameMenuItem_OnClick" />
                                                 <MenuItem Header="Reveal in File Explorer"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
@@ -1025,6 +1028,9 @@
                                                 <MenuItem Header="Close Others"
                                                           Tag="{Binding}"
                                                           Click="CloseOtherTabsButton_OnClick" />
+                                                <MenuItem Header="Close Tabs to the Right"
+                                                          Tag="{Binding}"
+                                                          Click="CloseTabsToTheRightMenuItem_OnClick" />
                                                 <MenuItem Header="Close All"
                                                           Click="CloseAllTabsButton_OnClick" />
                                             </ContextMenu>
@@ -1117,6 +1123,9 @@
                                             <MenuItem Header="Search in Folder"
                                                       Tag="{Binding}"
                                                       Click="SearchInFolderMenuItem_OnClick" />
+                                            <MenuItem Header="Open in Integrated Terminal"
+                                                      Tag="{Binding}"
+                                                      Click="OpenExplorerItemInTerminalMenuItem_OnClick" />
                                             <Separator />
                                             <MenuItem Header="Rename"
                                                       Tag="{Binding}"
@@ -1501,6 +1510,9 @@
                                                 <MenuItem Header="Copy Relative Path"
                                                           Tag="{Binding}"
                                                           Click="CopyEditorTabRelativePathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy File Name"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabNameMenuItem_OnClick" />
                                                 <MenuItem Header="Reveal in File Explorer"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
@@ -1511,6 +1523,9 @@
                                                 <MenuItem Header="Close Others"
                                                           Tag="{Binding}"
                                                           Click="CloseOtherTabsButton_OnClick" />
+                                                <MenuItem Header="Close Tabs to the Right"
+                                                          Tag="{Binding}"
+                                                          Click="CloseTabsToTheRightMenuItem_OnClick" />
                                                 <MenuItem Header="Close All"
                                                           Click="CloseAllTabsButton_OnClick" />
                                             </ContextMenu>
@@ -1599,6 +1614,9 @@
                                           InputGesture="Ctrl+V"
                                           Click="EditorPasteMenuItem_OnClick" />
                                 <Separator />
+                                <MenuItem Name="EditorFindAllOccurrencesMenuItem"
+                                          Header="Find All Occurrences"
+                                          Click="EditorFindAllOccurrencesMenuItem_OnClick" />
                                 <MenuItem Name="EditorChangeAllOccurrencesMenuItem"
                                           Header="Change All Occurrences"
                                           Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
@@ -2531,6 +2549,10 @@
                                                                   Tag="{Binding}"
                                                                   Click="DuplicateTerminalSessionMenuItem_OnClick" />
                                                         <Separator />
+                                                        <MenuItem Header="Copy Working Directory"
+                                                                  Tag="{Binding}"
+                                                                  Click="CopyTerminalSessionWorkingDirectoryMenuItem_OnClick" />
+                                                        <Separator />
                                                         <MenuItem Header="Close Others"
                                                                   Tag="{Binding}"
                                                                   Click="CloseOtherTerminalSessionsMenuItem_OnClick" />
@@ -2939,6 +2961,23 @@
                                             </Button>
                                             <!-- Individual result row -->
                                             <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True">
+                                                <Grid.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="Open"
+                                                                  Tag="{Binding Result}"
+                                                                  Click="OpenSearchResultMenuItem_OnClick" />
+                                                        <Separator />
+                                                        <MenuItem Header="Copy Path"
+                                                                  Tag="{Binding Result}"
+                                                                  Click="CopySearchResultPathMenuItem_OnClick" />
+                                                        <MenuItem Header="Copy Relative Path"
+                                                                  Tag="{Binding Result}"
+                                                                  Click="CopySearchResultRelativePathMenuItem_OnClick" />
+                                                        <MenuItem Header="Reveal in File Explorer"
+                                                                  Tag="{Binding Result}"
+                                                                  Click="RevealSearchResultInExplorerMenuItem_OnClick" />
+                                                    </ContextMenu>
+                                                </Grid.ContextMenu>
                                                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                 <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap"
                                                            Text="{Binding Result.DisplayName}" />
