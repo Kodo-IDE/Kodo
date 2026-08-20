@@ -30,6 +30,17 @@ internal static class Program
             return;
         }
 
+        // Launched from a temp copy of this exe (see PrepareProgressHelper)
+        // so it isn't the process the installer's [Code] section taskkills to
+        // free up KodoUpdater.exe for overwriting. Owns the whole
+        // dialog+installer+progress lifecycle on its own and exits when done -
+        // no mutex, no pipe listener, no resident loop.
+        if (args.Length > 1 && args[0] == "--show-progress")
+        {
+            await ShowProgressAndInstallAsync(args[1]);
+            return;
+        }
+
         Mutex? singleInstance = null;
         try
         {
@@ -127,6 +138,71 @@ internal static class Program
             if (request.Reopen)
                 WriteRelaunchSentinel();
 
+            // Run the dialog+installer from a temp copy of this exe, not this
+            // process - the installer's [Code] section taskkills the running
+            // KodoUpdater.exe by image name to free the file for overwriting,
+            // which would otherwise kill whichever process is showing the
+            // dialog partway through the install, before progress means much.
+            var helperPath = PrepareProgressHelper();
+            if (helperPath is null)
+            {
+                // No UI possible - fall back to a silent, undialoged install
+                // so the update still lands.
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName  = request.InstallerPath,
+                    Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
+                    UseShellExecute = true,
+                });
+                return;
+            }
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName        = helperPath,
+                Arguments       = $"--show-progress \"{request.InstallerPath}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch
+        {
+            // Best-effort - on failure Kodo just doesn't restart this cycle.
+        }
+        await Task.CompletedTask;
+    }
+
+    // Copies this running exe (self-contained single-file, so the copy is a
+    // fully standalone runnable binary) to a differently-named temp path that
+    // the installer's taskkill /IM KodoUpdater.exe won't match.
+    private static string? PrepareProgressHelper()
+    {
+        try
+        {
+            var sourcePath = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(sourcePath) || !File.Exists(sourcePath))
+                return null;
+
+            var dir = Path.Combine(Path.GetTempPath(), "Kodo-Update");
+            Directory.CreateDirectory(dir);
+            var destPath = Path.Combine(dir, "KodoUpdaterProgress.exe");
+
+            File.Copy(sourcePath, destPath, overwrite: true);
+            return destPath;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // Entry point for the temp helper copy: shows the progress dialog, runs
+    // the installer, polls real progress into the dialog, and exits when the
+    // installer finishes. Runs standalone - no mutex, no pipe listener - and
+    // is itself disposable; KodoUpdaterProgram.exe cleans it up on next start.
+    private static async Task ShowProgressAndInstallAsync(string installerPath)
+    {
+        try
+        {
             IClassicDesktopStyleApplicationLifetime? appLifetime = null;
             var dialog = new InstallerProgressDialog();
 
@@ -145,6 +221,15 @@ internal static class Program
             staThread.IsBackground = true;
             staThread.Start();
 
+            // Polls install-progress.json (written by KodoInstaller.iss's
+            // CurInstallProgressChanged) and feeds real percentages into the
+            // dialog for the whole install - this process is a disposable
+            // temp copy, not the exe the installer taskkills, so it survives
+            // to see it through.
+            var progressFilePath = Path.Combine(Path.GetTempPath(), "Kodo-Update", "install-progress.json");
+            var progressCts = new CancellationTokenSource();
+            var pollTask = Task.Run(() => PollInstallProgressAsync(dialog, progressFilePath, progressCts.Token));
+
             // Run the installer on a background thread while the UI pumps messages.
             await Task.Run(() =>
             {
@@ -152,7 +237,7 @@ internal static class Program
                 {
                     var psi = new ProcessStartInfo
                     {
-                        FileName  = request.InstallerPath,
+                        FileName  = installerPath,
                         Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
                         UseShellExecute = true,
                     };
@@ -165,24 +250,57 @@ internal static class Program
                     // user is picked up on the next Kodo update check.
                 }
 
-                // The installer's [Code] section will kill this process
-                // (taskkill /F /IM KodoUpdater.exe) before it finishes
-                // replacing files, so we may never reach this line. That's
-                // fine - the relaunch sentinel persists on disk for the new
-                // KodoUpdater instance started by the [Run] section.
+                progressCts.Cancel();
                 Dispatcher.UIThread.Post(() =>
                 {
+                    dialog.SetProgress(100);
                     dialog.Close();
                     appLifetime?.Shutdown();
                 });
             });
 
+            try { await pollTask; } catch { /* cancelled */ }
             staThread.Join();
         }
         catch
         {
-            // Best-effort - on failure Kodo just doesn't restart this cycle.
+            // Best-effort - if the dialog/install pipeline throws, the update
+            // itself has already been kicked off; nothing left to recover here.
         }
+    }
+
+    private static async Task PollInstallProgressAsync(InstallerProgressDialog dialog, string path, CancellationToken ct)
+    {
+        var lastPercent = -1;
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    var json = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+                    var record = JsonSerializer.Deserialize<InstallProgressRecord>(json, JsonOptions);
+                    if (record is not null && record.Percent != lastPercent)
+                    {
+                        lastPercent = record.Percent;
+                        dialog.SetProgress(record.Percent);
+                    }
+                }
+            }
+            catch
+            {
+                // File may be mid-write from the installer's own SaveStringToFile - just retry next tick.
+            }
+
+            try { await Task.Delay(150, ct).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private sealed class InstallProgressRecord
+    {
+        [JsonPropertyName("percent")]
+        public int Percent { get; set; }
     }
 
     private static AppBuilder BuildAvaloniaApp()

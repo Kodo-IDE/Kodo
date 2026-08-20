@@ -74,10 +74,13 @@ internal sealed class InstallerProgressDialog : Window
         _progressBar = new ProgressBar
         {
             Minimum       = 0,
-            Maximum       = 1,
+            Maximum       = 100,
             Value         = 0,
             Height        = 8,
             IsVisible     = true,
+            // Indeterminate until the first real percentage comes in from the
+            // installer (there's a brief gap while it starts up) - SetProgress
+            // flips this off.
             IsIndeterminate = true,
             Foreground    = new SolidColorBrush(accentColor),
             Background    = new SolidColorBrush(palette.BadgeBg),
@@ -111,6 +114,19 @@ internal sealed class InstallerProgressDialog : Window
     public void SetStatus(string text)
     {
         Dispatcher.UIThread.Post(() => _statusText.Text = text);
+    }
+
+    // Drives the bar from the installer's real progress (0-100), as reported
+    // by KodoInstaller.iss's CurInstallProgressChanged via the shared
+    // install-progress.json file.
+    public void SetProgress(int percent)
+    {
+        var clamped = Math.Clamp(percent, 0, 100);
+        Dispatcher.UIThread.Post(() =>
+        {
+            _progressBar.IsIndeterminate = false;
+            _progressBar.Value = clamped;
+        });
     }
 }
 
