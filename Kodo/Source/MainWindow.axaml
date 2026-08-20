@@ -5259,19 +5259,21 @@
                                 <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable Discord Rich Presence" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsDiscordRichPresenceEnabled}">
-                                    <CheckBox IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsDiscordRichPresenceEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Show detailed activity" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
+                                                   TextWrapping="Wrap"
                                                    Text="Shows language, page context, and open tab count." />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding DiscordRichPresenceStatusText}" />
@@ -5310,38 +5312,42 @@
                                 <CheckBox IsChecked="{Binding IsAutoUpdateAppEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Automatically check for Kodo updates" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsAutoUpdateAppEnabled}">
-                                    <CheckBox IsChecked="{Binding IsAutoUpdateAppInBackgroundEnabled, Mode=TwoWay}"
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsAutoUpdateAppEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsAutoUpdateAppInBackgroundEnabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Update Kodo in the background" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
+                                                   TextWrapping="Wrap"
                                                    Text="Downloads and installs in the background - Kodo restarts briefly to finish, with no prompt beforehand." />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoUpdateAppStatusText}" />
                                 <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Automatically update extensions" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsAutoUpdateExtensionsEnabled}">
-                                    <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsInBackgroundEnabled, Mode=TwoWay}"
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsAutoUpdateExtensionsEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsAutoUpdateExtensionsInBackgroundEnabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Update without showing progress" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
+                                                   TextWrapping="Wrap"
                                                    Text="Installs pending extension updates silently, without changing the status message below while it works." />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoUpdateExtensionsStatusText}" />
@@ -5380,32 +5386,36 @@
                                 <CheckBox IsChecked="{Binding IsPerformanceModeEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Performance mode" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsPerformanceModeEnabled}">
-                                    <CheckBox IsChecked="{Binding NewsDisabled, Mode=TwoWay}"
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsPerformanceModeEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding NewsDisabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Disable News &amp; Announcements" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
+                                                   TextWrapping="Wrap"
                                                    Text="Hides the News card from the home screen and stops fetching announcements from GitHub or the local cache." />
                                     </StackPanel>
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="12" Margin="28,0,0,0"
-                                            IsVisible="{Binding IsPerformanceModeEnabled}">
-                                    <CheckBox IsChecked="{Binding WhatsNewDisabled, Mode=TwoWay}"
+                                </Grid>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
+                                      IsVisible="{Binding IsPerformanceModeEnabled}">
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding WhatsNewDisabled, Mode=TwoWay}"
                                               VerticalAlignment="Center" />
-                                    <StackPanel Spacing="2">
+                                    <StackPanel Grid.Column="1" Spacing="2">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
                                                    Text="Disable What's New" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
+                                                   TextWrapping="Wrap"
                                                    Text="Hides the What's New card from the home screen and stops fetching release notes from GitHub." />
                                     </StackPanel>
-                                </StackPanel>
+                                </Grid>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
                                       IsVisible="{Binding IsPerformanceModeEnabled}">
                                     <CheckBox Grid.Column="0"
