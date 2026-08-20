@@ -646,6 +646,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(IsWhatsNewDisabled));
             OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
             OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
+            OnPropertyChanged(nameof(IsDebouncedSearchActive));
             SaveSettings();
             if (value)
             {
@@ -667,6 +668,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _ = FetchAnnouncementsAsync(forceNetwork: false);
                 if (_whatsNewDisabled)
                     _ = RefreshLatestReleaseAsync();
+                FlushPendingSearchFilters();
             }
         }
     }
@@ -4979,7 +4981,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_extensionSearchText == value) return;
             _extensionSearchText = value;
             OnPropertyChanged();
-            if (IsDebouncedSearchEnabled)
+            if (IsDebouncedSearchActive)
             {
                 _extensionSearchPending = true;
                 RestartSearchFilterDebounce();
@@ -4999,7 +5001,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_settingsSearchText == value) return;
             _settingsSearchText = value;
             OnPropertyChanged();
-            if (IsDebouncedSearchEnabled)
+            if (IsDebouncedSearchActive)
             {
                 _settingsSearchPending = true;
                 RestartSearchFilterDebounce();
@@ -5012,6 +5014,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Performance setting: defer search filtering until the user stops typing.
+    // Only active while Performance mode is on (matches how the toggle is gated in the UI).
+    public bool IsDebouncedSearchActive => IsPerformanceModeEnabled && _isDebouncedSearchEnabled;
+
     public bool IsDebouncedSearchEnabled
     {
         get => _isDebouncedSearchEnabled;
@@ -5020,6 +5025,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isDebouncedSearchEnabled == value) return;
             _isDebouncedSearchEnabled = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsDebouncedSearchActive));
             SaveSettings();
             if (!value)
                 FlushPendingSearchFilters();
