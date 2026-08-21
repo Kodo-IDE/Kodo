@@ -342,6 +342,183 @@ public sealed class InsightEngine
 
     public void ForgetFile(string fileKey) => _variablesByFile.Remove(fileKey);
 
+    // ---- Dead code detection ----
+    // Function declarations, keyword-style: function/def/fn/func/sub/proc name(...)
+    private static readonly Regex KeywordFunctionDeclaration = new(
+        @"\b(?:function|def|fn|func|sub|proc)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        RegexOptions.Compiled);
+
+    // Function declarations, C-family style: [modifiers] ReturnType Name(args) { ...
+    // The trailing '{' on the same line keeps this from matching plain call statements.
+    private static readonly Regex CStyleFunctionDeclaration = new(
+        @"\b([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*\{",
+        RegexOptions.Compiled);
+
+    // A statement that unconditionally exits the current block: return/throw/break/continue.
+    private static readonly Regex BlockTerminatorStatement = new(
+        @"^\s*(?:return\b|throw\b|break\b|continue\b)[^{}]*;?\s*$",
+        RegexOptions.Compiled);
+
+    // A line that could be a jump target (case/default/goto label) - unreachable-code
+    // detection stops here rather than flagging it, since something could still jump to it.
+    private static readonly Regex PossibleJumpTarget = new(
+        @"^(?:case\b|default\s*:|[A-Za-z_][A-Za-z0-9_]*\s*:)",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ClosingBraceOnlyLine = new(@"^\}+;?$", RegexOptions.Compiled);
+
+    // Length of a line's real content, excluding a trailing '\r' left over from splitting
+    // \r\n text on '\n' alone - keeps highlighted spans from touching the line delimiter.
+    private static int ContentLength(string line) => line.EndsWith('\r') ? line.Length - 1 : line.Length;
+
+    private static int CountChar(string text, char c)
+    {
+        var count = 0;
+        foreach (var ch in text)
+            if (ch == c) count++;
+        return count;
+    }
+
+    // A dead-code finding: a whole-line/whole-section span to grey out, plus a short
+    // human-readable reason (used for the hover tooltip).
+    public sealed class DeadCodeSpan
+    {
+        public int StartOffset { get; }
+        public int Length { get; }
+        public string Reason { get; }
+
+        public DeadCodeSpan(int startOffset, int length, string reason)
+        {
+            StartOffset = startOffset;
+            Length = length;
+            Reason = reason;
+        }
+    }
+
+    // Heuristic, single-file dead code scan: unused variables, unused functions (with their
+    // whole body highlighted, not just the header), and code that's unreachable because it
+    // follows a return/throw/break/continue in the same block. Kodo has no real per-language
+    // parser (same constraint as the variable scanner above), so this works line-by-line with
+    // string/comment masking and brace-depth counting rather than a real AST - it will miss
+    // some cases and occasionally over-flag unusual formatting, but stays useful across
+    // Kodo's many supported languages without a language-specific implementation each.
+    public List<DeadCodeSpan> FindDeadCode(string documentText)
+    {
+        var spans = new List<DeadCodeSpan>();
+        if (string.IsNullOrEmpty(documentText))
+            return spans;
+
+        var lines = documentText.Split('\n');
+        var lineStart = new int[lines.Length];
+        var offset = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            lineStart[i] = offset;
+            offset += lines[i].Length + 1; // +1 accounts for the '\n' consumed by Split.
+        }
+
+        // Comment/string-masked copy of every line, reused by all three passes below so
+        // matches never land inside a string literal or a line comment.
+        var masked = new string[lines.Length];
+        for (var i = 0; i < lines.Length; i++)
+            masked[i] = TrailingLineComment.Replace(MaskStringLiterals(lines[i]), string.Empty);
+        var maskedDoc = string.Join("\n", masked);
+
+        int CountWholeWord(string name) => Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
+
+        // ---- Pass 1: unused variables (declared once, never referenced again) ----
+        var seenVariable = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < lines.Length; i++)
+        {
+            foreach (var name in IdentifyVariableInitializations(lines[i]))
+            {
+                if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
+                if (CountWholeWord(name) <= 1)
+                    spans.Add(new DeadCodeSpan(lineStart[i], ContentLength(lines[i]), "Unused variable"));
+            }
+        }
+
+        // ---- Pass 2: unused functions (never called anywhere else in the file) ----
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = masked[i];
+            string? name = null;
+
+            var keywordMatch = KeywordFunctionDeclaration.Match(line);
+            if (keywordMatch.Success)
+            {
+                name = keywordMatch.Groups[1].Value;
+            }
+            else
+            {
+                var cStyleMatch = CStyleFunctionDeclaration.Match(line);
+                if (cStyleMatch.Success && !ReservedWords.Contains(cStyleMatch.Groups[1].Value))
+                    name = cStyleMatch.Groups[1].Value;
+            }
+
+            if (name is null) continue;
+
+            // Counts call-shaped usages (name followed by '('); the declaration itself
+            // always matches once, so more than one means it's called somewhere.
+            var callSites = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\s*\(").Count;
+            if (callSites > 1) continue;
+
+            var endLine = i;
+            var depth = CountChar(line, '{') - CountChar(line, '}');
+            if (depth > 0)
+            {
+                var j = i + 1;
+                while (j < lines.Length && depth > 0)
+                {
+                    depth += CountChar(masked[j], '{') - CountChar(masked[j], '}');
+                    j++;
+                }
+                endLine = Math.Min(j - 1, lines.Length - 1);
+            }
+
+            var start = lineStart[i];
+            var end = lineStart[endLine] + ContentLength(lines[endLine]);
+            spans.Add(new DeadCodeSpan(start, end - start, "Unused function"));
+        }
+
+        // ---- Pass 3: code unreachable after return/throw/break/continue ----
+        for (var i = 0; i < lines.Length; i++)
+        {
+            if (!BlockTerminatorStatement.IsMatch(masked[i]))
+                continue;
+
+            var depth = 0;
+            var deadStart = -1;
+            var deadEnd = -1;
+            var j = i + 1;
+            while (j < lines.Length)
+            {
+                var trimmed = masked[j].Trim();
+                if (trimmed.Length == 0) { j++; continue; }
+                if (ClosingBraceOnlyLine.IsMatch(trimmed)) break; // end of the enclosing block
+                if (PossibleJumpTarget.IsMatch(trimmed)) break;   // could still be jumped to
+
+                if (deadStart < 0) deadStart = j;
+
+                var lineDepthChange = CountChar(masked[j], '{') - CountChar(masked[j], '}');
+                if (depth + lineDepthChange < 0) break; // this line closes the enclosing block too
+                depth += lineDepthChange;
+                deadEnd = j;
+                j++;
+            }
+
+            if (deadStart >= 0 && deadEnd >= deadStart)
+            {
+                var start = lineStart[deadStart];
+                var end = lineStart[deadEnd] + ContentLength(lines[deadEnd]);
+                spans.Add(new DeadCodeSpan(start, end - start, "Unreachable code"));
+                i = deadEnd; // skip past the section we just flagged
+            }
+        }
+
+        return spans;
+    }
+
     public IReadOnlyCollection<string> GetVariables(string fileKey) =>
         _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
 

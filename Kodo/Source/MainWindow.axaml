@@ -5091,8 +5091,20 @@
                                 </StackPanel>
                                 <CheckBox IsChecked="{Binding IsInsightEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Predictive code completion as you type"
-                                          Content="Enable Insight (code suggestions)" />
+                                          ToolTip.Tip="Master switch for Insight's code suggestions and dead code highlighting"
+                                          Content="Enable Insight" />
+                                <StackPanel Spacing="10"
+                                            Margin="24,0,0,0"
+                                            IsVisible="{Binding IsInsightEnabled}">
+                                    <CheckBox IsChecked="{Binding IsInsightCodeSuggestionsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              ToolTip.Tip="Predictive code completion as you type"
+                                              Content="Code Suggestions" />
+                                    <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code"
+                                              Content="Dead Code" />
+                                </StackPanel>
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="12"
                                                Foreground="{Binding MutedTextBrush}"

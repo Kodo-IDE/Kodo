@@ -159,6 +159,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // _completionWindow is the currently-open popup (null when nothing is showing).
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
+    // Whole-line/whole-section grey highlighting for Insight's dead code detection.
+    private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
+    private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
@@ -204,6 +207,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWordWrapEnabled;
     // Defaults to true - predictive completion is on unless the user turns it off.
     private bool _isInsightEnabled = true;
+    // Sub-toggles under IsInsightEnabled - only shown/meaningful while Insight itself is on.
+    private bool _isInsightCodeSuggestionsEnabled = true;
+    private bool _isInsightDeadCodeEnabled = true;
     private string _insightBlacklistExtensions = ".txt,.md";
     private HashSet<string> _insightBlacklistSet = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
     private bool _suppressExplorerWidthRefresh;
@@ -362,6 +368,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFilterRowVisible;
     private bool _isFileCorrupted;
     private bool _isPointerOverEditorLink;
+    private string? _hoveredDeadCodeReason;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
     // Tracks the subscribed SessionExited handler so it can be unsubscribed before a new one attaches on Start().
@@ -779,12 +786,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             dottedLineMargin.Height = Math.Min(textView.DocumentHeight, textView.Bounds.Height);
         };
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_htmlEmbeddedColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_markdownColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
+        // Added last so it runs after the syntax colorizers above and can lighten
+        // whatever foreground color they've already set.
+        EditorTextBox.TextArea.TextView.LineTransformers.Add(_deadCodeTextBrightener);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         // Replaces the default LinkElementGenerator with one that trims trailing punctuation from link spans.
@@ -832,6 +843,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isInsightEnabled = settings.InsightEnabled;
+        _isInsightCodeSuggestionsEnabled = settings.InsightCodeSuggestionsEnabled;
+        _isInsightDeadCodeEnabled = settings.InsightDeadCodeEnabled;
         _insightBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightBlacklistExtensions) ? ".txt,.md" : settings.InsightBlacklistExtensions;
         RebuildInsightBlacklist();
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
@@ -3424,6 +3437,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
             ? new SolidColorBrush(mutedBrush.Color, 0.4)
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
+        // Light themes need a darker, more opaque grey here - the same translucent grey that
+        // reads clearly on a dark background nearly disappears against a white one.
+        _deadCodeHighlightRenderer.HighlightBrush = IsLightThemeActive
+            ? new SolidColorBrush(Color.Parse("#000000"), 0.14)
+            : new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
     }
@@ -4877,8 +4895,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isInsightEnabled == value) return;
             _isInsightEnabled = value;
             OnPropertyChanged();
+            // The two sub-toggles only make sense (and only show in Settings) while
+            // Insight itself is on - turning Insight off tears down both effects too.
             if (!_isInsightEnabled)
+            {
                 CloseCompletionWindow();
+                ClearDeadCodeHighlighting();
+            }
+            SaveSettings();
+        }
+    }
+
+    // Sub-toggle: predictive completion popup. Only meaningful while IsInsightEnabled is true.
+    public bool IsInsightCodeSuggestionsEnabled
+    {
+        get => _isInsightCodeSuggestionsEnabled;
+        set
+        {
+            if (_isInsightCodeSuggestionsEnabled == value) return;
+            _isInsightCodeSuggestionsEnabled = value;
+            OnPropertyChanged();
+            if (!_isInsightCodeSuggestionsEnabled)
+                CloseCompletionWindow();
+            SaveSettings();
+        }
+    }
+
+    // Sub-toggle: dead code highlighting. Only meaningful while IsInsightEnabled is true.
+    public bool IsInsightDeadCodeEnabled
+    {
+        get => _isInsightDeadCodeEnabled;
+        set
+        {
+            if (_isInsightDeadCodeEnabled == value) return;
+            _isInsightDeadCodeEnabled = value;
+            OnPropertyChanged();
+            if (!_isInsightDeadCodeEnabled)
+            {
+                ClearDeadCodeHighlighting();
+            }
+            else
+            {
+                QueueInsightRefresh();
+            }
             SaveSettings();
         }
     }
@@ -6541,6 +6600,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _InsightRefreshTimer.Stop();
         UpdateInsight();
+        UpdateDeadCodeHighlighting();
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -7050,6 +7110,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
             WordWrapEnabled                        = IsWordWrapEnabled,
             InsightEnabled                        = IsInsightEnabled,
+            InsightCodeSuggestionsEnabled         = IsInsightCodeSuggestionsEnabled,
+            InsightDeadCodeEnabled                = IsInsightDeadCodeEnabled,
             InsightBlacklistExtensions           = InsightBlacklistExtensions,
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
@@ -8700,6 +8762,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Dispatcher.UIThread.Post(
             () => _suppressDirtyTracking = false,
             DispatcherPriority.Background);
+        // EditorTextBox_OnTextChanged bails out early while _suppressDirtyTracking is true,
+        // so tab switches/loads need their own nudge to refresh Insight (suggestions + dead code).
+        QueueInsightRefresh();
     }
 
     // Terminal helpers
@@ -12689,22 +12754,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await UninstallExtensionAsync(extension);
     }
 
-    // Shows a Ctrl+click tooltip and hand cursor over URLs; only fires on state transitions, not every pixel of movement.
+    // Shows a Ctrl+click tooltip and hand cursor over URLs, or the dead-code reason when
+    // hovering a greyed-out span; only fires on state transitions, not every pixel of movement.
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         var textView = EditorTextBox.TextArea.TextView;
-        var nowOverLink = IsPointerOverLink(e.GetPosition(textView), textView);
+        var position = e.GetPosition(textView);
+        var nowOverLink = IsPointerOverLink(position, textView);
+        var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
 
-        if (nowOverLink == _isPointerOverEditorLink)
+        if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason)
             return; // no state change - leave tooltip and cursor alone
 
         _isPointerOverEditorLink = nowOverLink;
+        _hoveredDeadCodeReason = deadCodeReason;
 
         if (nowOverLink)
         {
             ToolTip.SetTip(textView, "Ctrl+click to open link");
             ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Hand);
+        }
+        else if (deadCodeReason is not null)
+        {
+            ToolTip.SetTip(textView, $"Dead code: {deadCodeReason}");
+            ToolTip.SetShowDelay(textView, 400);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
         else
         {
@@ -12715,11 +12790,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
-        if (!_isPointerOverEditorLink) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null) return;
         _isPointerOverEditorLink = false;
+        _hoveredDeadCodeReason = null;
         var textView = EditorTextBox.TextArea.TextView;
         ToolTip.SetTip(textView, null);
         textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+    }
+
+    // Returns the dead-code reason ("Unused variable", "Unreachable code", etc.) at the
+    // given pointer position, or null if it isn't over a greyed-out span.
+    private string? GetDeadCodeReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    {
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled)
+            return null;
+
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return null;
+
+        try
+        {
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length); // Column is 1-based
+            return _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset);
+        }
+        catch
+        {
+            // Document may be null or line out of range during rapid edits - treat as no hit.
+            return null;
+        }
     }
 
     // Returns true if the given pointer position (relative to the TextView, not
@@ -12848,7 +12947,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
     private void UpdateInsight()
     {
-        if (!IsInsightEnabled)
+        if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
         {
             CloseCompletionWindow();
             return;
@@ -12924,6 +13023,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _completionWindow?.Close();
         _completionWindow = null;
+    }
+
+    // Insight (dead code highlighting)
+
+    // Recomputes the grey dead-code highlights for the active document. Heuristic and
+    // regex/brace-based (Kodo has no real per-language parser) - same trade-off Insight's
+    // variable tracker already makes. Runs on the same debounce timer as UpdateInsight.
+    private void UpdateDeadCodeHighlighting()
+    {
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
+            EditorTextBox?.Document is null ||
+            ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
+            IsPlainTextFile(_currentFilePath) ||
+            IsInsightBlacklisted(_currentFilePath))
+        {
+            ClearDeadCodeHighlighting();
+            return;
+        }
+
+        var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text);
+        _deadCodeHighlightRenderer.SetSpans(spans);
+        _deadCodeTextBrightener.SetSpans(spans);
+        // Redraw (not just InvalidateLayer) so the text-brightening LineTransformer also
+        // re-runs - our spans changed independently of any document edit.
+        EditorTextBox.TextArea.TextView.Redraw();
+    }
+
+    // Clears both the grey background and the text-brightening effect, and forces a redraw
+    // so stale highlighting doesn't linger (e.g. after switching to a blacklisted file).
+    private void ClearDeadCodeHighlighting()
+    {
+        _deadCodeHighlightRenderer.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
+        _deadCodeTextBrightener.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
+        EditorTextBox?.TextArea.TextView.Redraw();
     }
 
     // Row geometry - kept as named constants so the popup's MaxHeight can be an
@@ -14682,6 +14815,140 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 /// <summary>
 /// Highlights all search matches in the editor when Find-in-file is active.
 /// </summary>
+// Whole-line/whole-section grey highlighting for Insight's dead code detection
+// (unused variables, unused functions, unreachable code). Deliberately muted rather
+// than alarm-red - dead code isn't an error, just something the editor thinks is inert.
+// Brightens the syntax-highlighted text sitting on top of a dead-code grey overlay, so it
+// stays readable instead of washing out against the highlight. Lightens whatever foreground
+// color the syntax colorizer already picked, rather than overriding it with a flat color, so
+// each token keeps its own hue - just brighter.
+internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
+{
+    private static readonly MethodInfo? SetTextRunPropertiesMethod =
+        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
+
+    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
+
+    protected override void ColorizeLine(DocumentLine line)
+    {
+        if (_spans.Count == 0) return;
+
+        foreach (var span in _spans)
+        {
+            var start = Math.Max(span.StartOffset, line.Offset);
+            var end = Math.Min(span.StartOffset + span.Length, line.EndOffset - line.DelimiterLength);
+            if (start >= end) continue;
+
+            ChangeLinePart(start, end, element =>
+            {
+                if (element.TextRunProperties.ForegroundBrush is not ISolidColorBrush solid)
+                    return;
+                var properties = element.TextRunProperties.Clone();
+                properties.SetForegroundBrush(new SolidColorBrush(Lighten(solid.Color, 0.35)));
+                SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            });
+        }
+    }
+
+    private static Color Lighten(Color color, double amount)
+    {
+        byte Boost(byte channel) => (byte)Math.Min(255, channel + (255 - channel) * amount);
+        return Color.FromArgb(color.A, Boost(color.R), Boost(color.G), Boost(color.B));
+    }
+}
+
+internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
+{
+    // Instance (not static/const) so ApplyThemeToEditor can swap it for a darker overlay
+    // in light themes, where a translucent mid-grey barely shows up against white.
+    public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
+    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
+
+    public KnownLayer Layer => KnownLayer.Background;
+
+    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
+
+    // Returns the reason string for the dead-code span containing the given document
+    // offset, or null if the offset isn't inside one - used to drive the hover tooltip.
+    public string? GetReasonAt(int offset)
+    {
+        foreach (var span in _spans)
+        {
+            if (offset >= span.StartOffset && offset <= span.StartOffset + span.Length)
+                return span.Reason;
+        }
+        return null;
+    }
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (textView?.Document is null || !textView.VisualLinesValid || _spans.Count == 0)
+            return;
+
+        var visualLines = textView.VisualLines;
+        if (visualLines.Count == 0)
+            return;
+
+        var viewStart = visualLines[0].FirstDocumentLine.Offset;
+        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
+
+        var geoBuilder = new BackgroundGeometryBuilder
+        {
+            AlignToWholePixels = true,
+            CornerRadius = 0,
+            // Stretches each highlighted line to the full editor width rather than
+            // stopping at the last character, so short "dead" lines still read clearly.
+            ExtendToFullWidthAtLineEnd = true,
+        };
+
+        var document = textView.Document;
+        foreach (var span in _spans)
+        {
+            var spanEnd = span.StartOffset + span.Length;
+            if (spanEnd < viewStart || span.StartOffset > viewEnd)
+                continue;
+
+            // Walk one DocumentLine at a time and clamp each rectangle to that line's real
+            // content (excluding its \r/\n delimiter). Handing a multi-line span straight to
+            // AddSegment could otherwise paint a stray sliver onto the following line.
+            var clampedStart = Math.Max(span.StartOffset, 0);
+            if (clampedStart > document.TextLength) continue;
+            var line = document.GetLineByOffset(clampedStart);
+            while (line is not null)
+            {
+                var contentEnd = line.EndOffset - line.DelimiterLength;
+                var segStart = Math.Max(span.StartOffset, line.Offset);
+                var segEnd = Math.Min(spanEnd, contentEnd);
+                if (segEnd > segStart)
+                    geoBuilder.AddSegment(textView, new DeadCodeSegment(segStart, segEnd - segStart));
+
+                if (line.EndOffset >= spanEnd || line.NextLine is null)
+                    break;
+                line = line.NextLine;
+            }
+        }
+
+        var geometry = geoBuilder.CreateGeometry();
+        if (geometry is not null)
+            drawingContext.DrawGeometry(HighlightBrush, null, geometry);
+    }
+
+    private sealed class DeadCodeSegment : ISegment
+    {
+        public DeadCodeSegment(int offset, int length)
+        {
+            Offset = offset;
+            Length = length;
+        }
+
+        public int Offset { get; }
+        public int Length { get; }
+        public int EndOffset => Offset + Length;
+    }
+}
+
 internal sealed class FindHighlightRenderer : IBackgroundRenderer
 {
     private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));

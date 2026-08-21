@@ -26,6 +26,10 @@ internal sealed class AppSettings
     public bool WordWrapEnabled { get; set; }
     // Predictive completion (Insight). Defaults to true; on unless the user disables it.
     public bool InsightEnabled { get; set; } = true;
+    // Sub-toggles shown in Settings only while InsightEnabled is on. Both default to true so
+    // existing behavior is unchanged for users who already had Insight enabled.
+    public bool InsightCodeSuggestionsEnabled { get; set; } = true;
+    public bool InsightDeadCodeEnabled { get; set; } = true;
     // Comma-separated file extensions (e.g. ".txt,.md") where Insight is disabled.
     public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
 
