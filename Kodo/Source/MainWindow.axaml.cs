@@ -2977,6 +2977,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Functions         = src.Functions,
         Properties        = src.Properties,
         Namespaces        = src.Namespaces,
+        Blacklist         = src.Blacklist,
+        DeadCodeIgnore    = src.DeadCodeIgnore,
+        DeadCodeEntryPoints = src.DeadCodeEntryPoints,
         CommentLine       = src.CommentLine,
         CommentBlockStart = src.CommentBlockStart,
         CommentBlockEnd   = src.CommentBlockEnd,
@@ -3137,6 +3140,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Properties = ReadStringArray(lang, "properties"),
             Namespaces = ReadStringArray(lang, "namespaces"),
             Blacklist = ReadStringArray(lang, "blacklist"),
+            DeadCodeIgnore = ReadStringArray(lang, "deadCodeIgnore"),
+            DeadCodeEntryPoints = ReadStringArray(lang, "deadCodeEntryPoints"),
             CommentLine = lang.TryGetProperty("commentLine", out var cl) ? NormalizeSyntaxToken(cl.GetString()) : null,
             CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? NormalizeSyntaxToken(cbs.GetString()) : null,
             CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? NormalizeSyntaxToken(cbe.GetString()) : null,
@@ -3159,6 +3164,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ext.Properties = ext.Properties.Union(profile.Properties).ToArray();
         ext.Namespaces = ext.Namespaces.Union(profile.Namespaces).ToArray();
         ext.Blacklist = ext.Blacklist.Union(profile.Blacklist).ToArray();
+        ext.DeadCodeIgnore = ext.DeadCodeIgnore.Union(profile.DeadCodeIgnore).ToArray();
+        ext.DeadCodeEntryPoints = ext.DeadCodeEntryPoints.Union(profile.DeadCodeEntryPoints).ToArray();
 
         if (profile.CommentLine is not null)
             ext.CommentLine = profile.CommentLine;
@@ -13070,7 +13077,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text);
+        var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension);
         _deadCodeHighlightRenderer.SetSpans(spans);
         _deadCodeTextBrightener.SetSpans(spans);
         // Redraw (not just InvalidateLayer) so the text-brightening LineTransformer also

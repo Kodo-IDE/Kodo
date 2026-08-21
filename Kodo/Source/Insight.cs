@@ -410,11 +410,20 @@ public sealed class InsightEngine
     // string/comment masking and brace-depth counting rather than a real AST - it will miss
     // some cases and occasionally over-flag unusual formatting, but stays useful across
     // Kodo's many supported languages without a language-specific implementation each.
-    public List<DeadCodeSpan> FindDeadCode(string documentText)
+    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null)
     {
         var spans = new List<DeadCodeSpan>();
         if (string.IsNullOrEmpty(documentText))
             return spans;
+
+        // Extension-supplied additions: names that should never be flagged (unused var/func),
+        // and extra implicit entry-point function names on top of the built-in list.
+        var ignoreNames = languageExtension?.DeadCodeIgnore is { Length: > 0 } ignoreArr
+            ? new HashSet<string>(ignoreArr, StringComparer.OrdinalIgnoreCase)
+            : null;
+        var entryPoints = languageExtension?.DeadCodeEntryPoints is { Length: > 0 } entryArr
+            ? new HashSet<string>(entryArr, StringComparer.OrdinalIgnoreCase)
+            : null;
 
         var lines = documentText.Split('\n');
         var lineStart = new int[lines.Length];
@@ -441,6 +450,7 @@ public sealed class InsightEngine
             foreach (var name in IdentifyVariableInitializations(lines[i]))
             {
                 if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
+                if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
                 if (CountWholeWord(name) <= 1)
                     spans.Add(new DeadCodeSpan(lineStart[i], ContentLength(lines[i]), "Unused variable"));
             }
@@ -465,6 +475,8 @@ public sealed class InsightEngine
             }
 
             if (name is null || EntryPointNames.Contains(name)) continue;
+            if (entryPoints is not null && entryPoints.Contains(name)) continue;
+            if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
             // Counts call-shaped usages (name followed by '('); the declaration itself
             // always matches once, so more than one means it's called somewhere.

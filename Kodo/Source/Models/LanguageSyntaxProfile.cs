@@ -12,6 +12,8 @@ public sealed class LanguageSyntaxProfile
     public string[] Properties { get; init; } = [];
     public string[] Namespaces { get; init; } = [];
     public string[] Blacklist { get; init; } = [];
+    public string[] DeadCodeIgnore { get; init; } = [];
+    public string[] DeadCodeEntryPoints { get; init; } = [];
     public string? CommentLine { get; init; }
     public string? CommentBlockStart { get; init; }
     public string? CommentBlockEnd { get; init; }

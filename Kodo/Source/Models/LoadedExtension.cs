@@ -24,6 +24,12 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string[] Properties { get; set; } = [];
     public string[] Namespaces { get; set; } = [];
     public string[] Blacklist { get; set; } = [];
+    // Names the dead-code scanner should never flag (unused variable/function), e.g.
+    // framework-called hooks or conventionally-unused names for this language.
+    public string[] DeadCodeIgnore { get; set; } = [];
+    // Extra implicit entry-point function names for this language, added on top of
+    // Insight's built-in list (main, WinMain, etc).
+    public string[] DeadCodeEntryPoints { get; set; } = [];
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
