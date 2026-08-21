@@ -821,6 +821,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
+        // Insight's own popup closes itself on focus loss (window minimized, tabbed away
+        // from, etc.) - reopen it as soon as focus is back, so the user doesn't have to
+        // retype anything just to see it again.
+        EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
+        Activated += (_, _) => QueueInsightRefresh();
 		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
@@ -13161,8 +13166,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Tab always accepts the top suggestion (the list is already sorted by priority -
+        // see GetSuggestions), regardless of whether the popup happens to have a different
+        // row highlighted. Handled explicitly here rather than left to the popup's own
+        // selection state, which isn't something we set ourselves.
+        if (_completionWindow is not null && e.Key == Key.Tab)
+        {
+            var firstSuggestion = _completionWindow.CompletionList.CompletionData
+                .OfType<InsightSuggestion>()
+                .FirstOrDefault();
+            if (firstSuggestion is not null && EditorTextBox?.Document is not null)
+            {
+                var segment = new TextSegment
+                {
+                    StartOffset = _completionWindow.StartOffset,
+                    EndOffset = EditorTextBox.TextArea.Caret.Offset,
+                };
+                firstSuggestion.Complete(EditorTextBox.TextArea, segment, EventArgs.Empty);
+            }
+            CloseCompletionWindow();
+            e.Handled = true;
+            return;
+        }
+
         // Lets the open Insight popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
-        if (_completionWindow is not null && e.Key is Key.Tab or Key.Escape
+        // Enter was missing here - accepting a suggestion with Enter would fall through to
+        // HandleSmartEnter below and insert an auto-indented newline on top of the completion,
+        // which is exactly what "finishing" a word felt like it was doing.
+        if (_completionWindow is not null && e.Key is Key.Escape or Key.Enter
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
             return;

@@ -676,7 +676,15 @@ public sealed class InsightEngine
             AddCandidates(languageExtension.Keywords, InsightKind.Keyword);
         }
 
+        // Drops any candidate whose full text already exactly matches what's typed -
+        // accepting a completion equal to the word already on screen is a no-op, so
+        // there's nothing left to "complete" for it. This is a dynamic check against
+        // whatever's actually been typed, not a hardcoded list of words to hide: "if"
+        // stops suggesting itself the moment it's fully typed, but "ifdef" (or any other
+        // longer candidate sharing that prefix) still shows up normally. Case-sensitive
+        // on purpose - "IF" typed against keyword "if" is still a useful case-correction.
         return results
+            .Where(s => !string.Equals(s.Text, prefix, StringComparison.Ordinal))
             .OrderByDescending(s => s.Priority)
             .ThenBy(s => s.Text, StringComparer.OrdinalIgnoreCase)
             .Take(maxResults)
