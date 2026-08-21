@@ -228,6 +228,14 @@ public sealed class InsightEngine
         LoopOrHandlerBinding,
     };
 
+    // Batch `set` declarations: `set NAME=value`, `set "NAME=value"`, `set /a NAME=expr`,
+    // `set /p NAME=prompt`. Matched against the raw line, not the quote-masked copy - batch's
+    // quoting wraps the whole NAME=VALUE pair rather than delimiting a string literal, so
+    // masking would blank the variable name out along with the value.
+    private static readonly Regex BatchSetDeclaration = new(
+        @"^\s*set\s+(?:/a\s+|/p\s+)?""?([A-Za-z_][A-Za-z0-9_]*)\s*=",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
     private static readonly HashSet<string> ReservedWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "if", "elif", "elseif", "else", "for", "foreach", "while", "switch", "match", "case",
@@ -302,6 +310,15 @@ public sealed class InsightEngine
             trimmed.StartsWith("REM ", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Equals("REM", StringComparison.OrdinalIgnoreCase))
             return [];
+
+        // Batch `set` runs before quote-masking (see BatchSetDeclaration comment) and, when
+        // matched, is the line's only declaration - batch doesn't chain assignments per line.
+        var batchMatch = BatchSetDeclaration.Match(trimmed);
+        if (batchMatch.Success)
+        {
+            var batchName = batchMatch.Groups[1].Value;
+            return string.IsNullOrEmpty(batchName) ? [] : [batchName];
+        }
 
         var scanText = TrailingLineComment.Replace(MaskStringLiterals(lineText), string.Empty);
         if (string.IsNullOrWhiteSpace(scanText))
@@ -435,10 +452,17 @@ public sealed class InsightEngine
         }
 
         // Comment/string-masked copy of every line, reused by all three passes below so
-        // matches never land inside a string literal or a line comment.
+        // matches never land inside a string literal or a line comment. Batch `set "NAME=..."`
+        // lines are left unmasked (comments only stripped): batch's quotes wrap the whole
+        // NAME=VALUE pair rather than delimiting a string, so masking them would erase the
+        // declaration's own occurrence of NAME and make CountWholeWord undercount by one,
+        // flagging correctly-used batch variables as unused.
         var masked = new string[lines.Length];
         for (var i = 0; i < lines.Length; i++)
-            masked[i] = TrailingLineComment.Replace(MaskStringLiterals(lines[i]), string.Empty);
+        {
+            var isBatchSetLine = BatchSetDeclaration.IsMatch(lines[i].TrimStart());
+            masked[i] = TrailingLineComment.Replace(isBatchSetLine ? lines[i] : MaskStringLiterals(lines[i]), string.Empty);
+        }
         var maskedDoc = string.Join("\n", masked);
 
         int CountWholeWord(string name) => Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
