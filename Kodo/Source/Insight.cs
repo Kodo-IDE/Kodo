@@ -371,6 +371,14 @@ public sealed class InsightEngine
     // \r\n text on '\n' alone - keeps highlighted spans from touching the line delimiter.
     private static int ContentLength(string line) => line.EndsWith('\r') ? line.Length - 1 : line.Length;
 
+    // Entry-point functions every language calls implicitly (via the runtime/OS, not another
+    // line of source) - flagging these as "unused" would greyed-out the entire file for any
+    // program that's just a single main function, which is more misleading than helpful.
+    private static readonly HashSet<string> EntryPointNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "main", "wmain", "winmain", "wwinmain", "dllmain", "_start",
+    };
+
     private static int CountChar(string text, char c)
     {
         var count = 0;
@@ -456,7 +464,7 @@ public sealed class InsightEngine
                     name = cStyleMatch.Groups[1].Value;
             }
 
-            if (name is null) continue;
+            if (name is null || EntryPointNames.Contains(name)) continue;
 
             // Counts call-shaped usages (name followed by '('); the declaration itself
             // always matches once, so more than one means it's called somewhere.

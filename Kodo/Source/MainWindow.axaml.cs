@@ -3437,13 +3437,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
             ? new SolidColorBrush(mutedBrush.Color, 0.4)
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
-        // Light themes need a darker, more opaque grey here - the same translucent grey that
-        // reads clearly on a dark background nearly disappears against a white one.
+        // A real grey rather than a near-black/near-white tint - those looked either
+        // invisible or (combined with unlit text) crushed contrast to nothing.
         _deadCodeHighlightRenderer.HighlightBrush = IsLightThemeActive
-            ? new SolidColorBrush(Color.Parse("#000000"), 0.14)
-            : new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
+            ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
+            : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
+        // Force dead-code text to a fixed, theme-aware color instead of lightening whatever
+        // the syntax colorizer set - plain identifiers often have no explicit brush at all,
+        // so "lighten if present" silently left them dim while only accent tokens changed.
+        var basePrimary = PrimaryTextBrush.ToImmutable() is ISolidColorBrush primarySolid
+            ? primarySolid.Color
+            : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
+        _deadCodeTextBrightener.TextBrush = new SolidColorBrush(
+            PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        EditorTextBox.TextArea.TextView.Redraw();
 
+    }
+
+    // Pushes a color further toward black or white, used to keep dead-code text reliably
+    // readable against its grey overlay regardless of the active theme's exact palette.
+    private static Color PushTowardExtreme(Color color, bool towardWhite, double amount)
+    {
+        if (towardWhite)
+        {
+            byte Boost(byte channel) => (byte)Math.Min(255, channel + (255 - channel) * amount);
+            return Color.FromArgb(color.A, Boost(color.R), Boost(color.G), Boost(color.B));
+        }
+
+        byte Darken(byte channel) => (byte)Math.Max(0, channel - channel * amount);
+        return Color.FromArgb(color.A, Darken(color.R), Darken(color.G), Darken(color.B));
     }
 
     private void ApplyEditorSettings()
@@ -14827,6 +14850,13 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
+    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme. Unconditional
+    // override rather than lightening the existing brush - plain identifiers often carry no
+    // explicit brush at all (null, inherited from the editor default), so a "lighten if solid"
+    // check silently skipped them, which is why only accent-colored tokens (numbers, keywords)
+    // were changing while the rest of the line stayed dim.
+    public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
+
     private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
 
     public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
@@ -14838,24 +14868,19 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
         foreach (var span in _spans)
         {
             var start = Math.Max(span.StartOffset, line.Offset);
-            var end = Math.Min(span.StartOffset + span.Length, line.EndOffset - line.DelimiterLength);
+            // DocumentLine.EndOffset already excludes the line delimiter - subtracting
+            // DelimiterLength again here was crushing "end" down near "start" for short
+            // lines, which is why only a sliver near the start of the line was affected.
+            var end = Math.Min(span.StartOffset + span.Length, line.EndOffset);
             if (start >= end) continue;
 
             ChangeLinePart(start, end, element =>
             {
-                if (element.TextRunProperties.ForegroundBrush is not ISolidColorBrush solid)
-                    return;
                 var properties = element.TextRunProperties.Clone();
-                properties.SetForegroundBrush(new SolidColorBrush(Lighten(solid.Color, 0.35)));
+                properties.SetForegroundBrush(TextBrush);
                 SetTextRunPropertiesMethod?.Invoke(element, [properties]);
             });
         }
-    }
-
-    private static Color Lighten(Color color, double amount)
-    {
-        byte Boost(byte channel) => (byte)Math.Min(255, channel + (255 - channel) * amount);
-        return Color.FromArgb(color.A, Boost(color.R), Boost(color.G), Boost(color.B));
     }
 }
 
@@ -14911,14 +14936,14 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
                 continue;
 
             // Walk one DocumentLine at a time and clamp each rectangle to that line's real
-            // content (excluding its \r/\n delimiter). Handing a multi-line span straight to
-            // AddSegment could otherwise paint a stray sliver onto the following line.
+            // content. DocumentLine.EndOffset already excludes the \r/\n delimiter, so it's
+            // used directly here as the content end.
             var clampedStart = Math.Max(span.StartOffset, 0);
             if (clampedStart > document.TextLength) continue;
             var line = document.GetLineByOffset(clampedStart);
             while (line is not null)
             {
-                var contentEnd = line.EndOffset - line.DelimiterLength;
+                var contentEnd = line.EndOffset;
                 var segStart = Math.Max(span.StartOffset, line.Offset);
                 var segEnd = Math.Min(spanEnd, contentEnd);
                 if (segEnd > segStart)
