@@ -5104,6 +5104,10 @@
                                               Foreground="{Binding PrimaryTextBrush}"
                                               ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code"
                                               Content="Dead Code" />
+                                    <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords"
+                                              Content="Error Detection" />
                                 </StackPanel>
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="12"

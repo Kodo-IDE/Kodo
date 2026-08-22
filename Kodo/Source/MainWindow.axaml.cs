@@ -162,6 +162,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Whole-line/whole-section grey highlighting for Insight's dead code detection.
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
+    // Whole-line red highlights (grey/red stripes on lines also flagged as dead code)
+    // for Insight's basic error detection.
+    private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
+    private readonly ErrorTextDarkener _errorTextDarkener = new();
     private EditorTab? _activeEditorTab;
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
@@ -210,6 +214,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Sub-toggles under IsInsightEnabled - only shown/meaningful while Insight itself is on.
     private bool _isInsightCodeSuggestionsEnabled = true;
     private bool _isInsightDeadCodeEnabled = true;
+    private bool _isInsightErrorDetectionEnabled = true;
     private string _insightBlacklistExtensions = ".txt,.md";
     private HashSet<string> _insightBlacklistSet = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
     private bool _suppressExplorerWidthRefresh;
@@ -369,6 +374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileCorrupted;
     private bool _isPointerOverEditorLink;
     private string? _hoveredDeadCodeReason;
+    private string? _hoveredErrorReason;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
     // Tracks the subscribed SessionExited handler so it can be unsubscribed before a new one attaches on Start().
@@ -787,6 +793,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_errorHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
@@ -796,6 +803,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Added last so it runs after the syntax colorizers above and can lighten
         // whatever foreground color they've already set.
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_deadCodeTextBrightener);
+        // Added even later so pure-error red lines are forced to black text in light
+        // themes (dead-code stripes keep their own brighter treatment).
+        EditorTextBox.TextArea.TextView.LineTransformers.Add(_errorTextDarkener);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         // Replaces the default LinkElementGenerator with one that trims trailing punctuation from link spans.
@@ -850,6 +860,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isInsightEnabled = settings.InsightEnabled;
         _isInsightCodeSuggestionsEnabled = settings.InsightCodeSuggestionsEnabled;
         _isInsightDeadCodeEnabled = settings.InsightDeadCodeEnabled;
+        _isInsightErrorDetectionEnabled = settings.InsightErrorDetectionEnabled;
         _insightBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightBlacklistExtensions) ? ".txt,.md" : settings.InsightBlacklistExtensions;
         RebuildInsightBlacklist();
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
@@ -3451,9 +3462,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
         // A real grey rather than a near-black/near-white tint - those looked either
         // invisible or (combined with unlit text) crushed contrast to nothing.
-        _deadCodeHighlightRenderer.HighlightBrush = IsLightThemeActive
+        // The same grey also drives the error renderer's stripe half, so combined
+        // dead-code+error stripes stay visually tied to pure dead-code lines.
+        IBrush deadCodeGrey = IsLightThemeActive
             ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
             : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
+        _deadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
+        _errorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
         // Force dead-code text to a fixed, theme-aware color instead of lightening whatever
         // the syntax colorizer set - plain identifiers often have no explicit brush at all,
         // so "lighten if present" silently left them dim while only accent tokens changed.
@@ -3462,7 +3477,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
         _deadCodeTextBrightener.TextBrush = new SolidColorBrush(
             PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
+        // Mirror dead-code's per-theme text fix: in light themes the red wash buries the
+        // syntax colors, so force pure-error lines to black for contrast (dead-code
+        // stripes keep their own brightened treatment).
+        _errorTextDarkener.IsLightTheme = IsLightThemeActive;
+        _errorTextDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
         EditorTextBox.TextArea.TextView.Redraw();
 
     }
@@ -4936,6 +4957,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 CloseCompletionWindow();
                 ClearDeadCodeHighlighting();
+                ClearErrorHighlighting();
             }
             SaveSettings();
         }
@@ -4968,6 +4990,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!_isInsightDeadCodeEnabled)
             {
                 ClearDeadCodeHighlighting();
+            }
+            else
+            {
+                QueueInsightRefresh();
+            }
+            SaveSettings();
+        }
+    }
+
+    // Sub-toggle: basic error detection (unmatched brackets, unterminated strings,
+    // missing ';'/':' , misspelled keywords). Only meaningful while IsInsightEnabled is true.
+    public bool IsInsightErrorDetectionEnabled
+    {
+        get => _isInsightErrorDetectionEnabled;
+        set
+        {
+            if (_isInsightErrorDetectionEnabled == value) return;
+            _isInsightErrorDetectionEnabled = value;
+            OnPropertyChanged();
+            if (!_isInsightErrorDetectionEnabled)
+            {
+                ClearErrorHighlighting();
             }
             else
             {
@@ -6636,6 +6680,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _InsightRefreshTimer.Stop();
         UpdateInsight();
         UpdateDeadCodeHighlighting();
+        UpdateErrorHighlighting();
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -7147,6 +7192,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             InsightEnabled                        = IsInsightEnabled,
             InsightCodeSuggestionsEnabled         = IsInsightCodeSuggestionsEnabled,
             InsightDeadCodeEnabled                = IsInsightDeadCodeEnabled,
+            InsightErrorDetectionEnabled          = IsInsightErrorDetectionEnabled,
             InsightBlacklistExtensions           = InsightBlacklistExtensions,
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
@@ -12796,13 +12842,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var textView = EditorTextBox.TextArea.TextView;
         var position = e.GetPosition(textView);
         var nowOverLink = IsPointerOverLink(position, textView);
+        var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
 
-        if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason)
+        // A line can carry both findings (unused variable + syntax error, rendered as
+        // grey/red stripes) - show both messages together in that case.
+        string? tooltipText = (errorReason, deadCodeReason) switch
+        {
+            (null, null)     => null,
+            (_, null)        => errorReason,
+            (null, _)        => $"Dead code: {deadCodeReason}",
+            _                => $"{errorReason}{Environment.NewLine}Dead code: {deadCodeReason}",
+        };
+
+        if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason && errorReason == _hoveredErrorReason)
             return; // no state change - leave tooltip and cursor alone
 
         _isPointerOverEditorLink = nowOverLink;
         _hoveredDeadCodeReason = deadCodeReason;
+        _hoveredErrorReason = errorReason;
 
         if (nowOverLink)
         {
@@ -12810,9 +12868,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Hand);
         }
-        else if (deadCodeReason is not null)
+        else if (tooltipText is not null)
         {
-            ToolTip.SetTip(textView, $"Dead code: {deadCodeReason}");
+            ToolTip.SetTip(textView, tooltipText);
             ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
@@ -12825,12 +12883,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
-        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
+        _hoveredErrorReason = null;
         var textView = EditorTextBox.TextArea.TextView;
         ToolTip.SetTip(textView, null);
         textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+    }
+
+    // Returns the combined Insight tooltip for the line under the pointer: the error
+    // message(s) for any error touching the line, plus the dead-code reason when the
+    // pointer is inside a greyed-out span (e.g. "Missing ';'" + "Unused variable").
+    // Null when neither applies.
+    private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    {
+        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled)
+            return null;
+
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return null;
+
+        try
+        {
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     // Returns the dead-code reason ("Unused variable", "Unreachable code", etc.) at the
@@ -13080,8 +13162,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension);
         _deadCodeHighlightRenderer.SetSpans(spans);
         _deadCodeTextBrightener.SetSpans(spans);
-        // Redraw (not just InvalidateLayer) so the text-brightening LineTransformer also
-        // re-runs - our spans changed independently of any document edit.
+        // Keep the combined grey/red stripe decision and the error-only text darkening
+        // in sync when dead-code spans change out from under a red highlight.
+        _errorHighlightRenderer.SetDeadCodeSpans(spans);
+        _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, spans);
+        // Redraw (not just InvalidateLayer) so the text-brightening LineTransformers also
+        // re-run - our spans changed independently of any document edit.
         EditorTextBox.TextArea.TextView.Redraw();
     }
 
@@ -13091,6 +13177,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _deadCodeHighlightRenderer.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
         _deadCodeTextBrightener.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
+        var emptyDead = Array.Empty<InsightEngine.DeadCodeSpan>();
+        _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
+        _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, emptyDead);
+        EditorTextBox?.TextArea.TextView.Redraw();
+    }
+
+    // Recomputes the whole-line red error highlights for the active document. Same
+    // heuristic/regex trade-off as dead-code highlighting - runs on the same debounce timer.
+    private void UpdateErrorHighlighting()
+    {
+        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled ||
+            EditorTextBox?.Document is null ||
+            ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
+            IsPlainTextFile(_currentFilePath) ||
+            IsInsightBlacklisted(_currentFilePath))
+        {
+            ClearErrorHighlighting();
+            return;
+        }
+
+        var spans = _InsightEngine.FindErrors(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        _errorHighlightRenderer.SetSpans(spans);
+        // Runs right after UpdateDeadCodeHighlighting on the same tick, so these spans are
+        // fresh - they decide which error lines render as grey/red stripes vs plain red.
+        _errorHighlightRenderer.SetDeadCodeSpans(_deadCodeHighlightRenderer.Spans);
+        _errorTextDarkener.SetSpans(spans, _deadCodeHighlightRenderer.Spans);
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+        EditorTextBox.TextArea.TextView.Redraw();
+    }
+
+    private void ClearErrorHighlighting()
+    {
+        var emptyErr = Array.Empty<InsightEngine.ErrorSpan>();
+        var emptyDead = Array.Empty<InsightEngine.DeadCodeSpan>();
+        _errorHighlightRenderer.SetSpans(emptyErr);
+        _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
+        _errorTextDarkener.SetSpans(emptyErr, emptyDead);
         EditorTextBox?.TextArea.TextView.Redraw();
     }
 
@@ -14929,6 +15052,10 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
     public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
     private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
 
+    // Current spans, shared with ErrorLineHighlightRenderer so error lines covered by dead
+    // code can switch their whole-line highlight to grey/red stripes.
+    public IReadOnlyList<InsightEngine.DeadCodeSpan> Spans => _spans;
+
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
@@ -14954,61 +15081,206 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
         if (visualLines.Count == 0)
             return;
 
-        var viewStart = visualLines[0].FirstDocumentLine.Offset;
-        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
+        var scrollY = textView.ScrollOffset.Y;
+        var width = textView.Bounds.Width;
 
-        var geoBuilder = new BackgroundGeometryBuilder
+        // One full-width rectangle per visible line covered by a dead-code span. Manual
+        // rects reaching the viewport edge rather than BackgroundGeometryBuilder - its
+        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line, which
+        // left short lines highlighted just around their text.
+        foreach (var visualLine in visualLines)
         {
-            AlignToWholePixels = true,
-            CornerRadius = 0,
-            // Stretches each highlighted line to the full editor width rather than
-            // stopping at the last character, so short "dead" lines still read clearly.
-            ExtendToFullWidthAtLineEnd = true,
-        };
-
-        var document = textView.Document;
-        foreach (var span in _spans)
-        {
-            var spanEnd = span.StartOffset + span.Length;
-            if (spanEnd < viewStart || span.StartOffset > viewEnd)
+            if (!SpanCoversLine(visualLine.FirstDocumentLine))
                 continue;
 
-            // Walk one DocumentLine at a time and clamp each rectangle to that line's real
-            // content. DocumentLine.EndOffset already excludes the \r/\n delimiter, so it's
-            // used directly here as the content end.
-            var clampedStart = Math.Max(span.StartOffset, 0);
-            if (clampedStart > document.TextLength) continue;
-            var line = document.GetLineByOffset(clampedStart);
-            while (line is not null)
-            {
-                var contentEnd = line.EndOffset;
-                var segStart = Math.Max(span.StartOffset, line.Offset);
-                var segEnd = Math.Min(spanEnd, contentEnd);
-                if (segEnd > segStart)
-                    geoBuilder.AddSegment(textView, new DeadCodeSegment(segStart, segEnd - segStart));
+            var y1 = visualLine.VisualTop - scrollY;
+            var height = visualLine.Height;
+            if (height <= 0) continue;
 
-                if (line.EndOffset >= spanEnd || line.NextLine is null)
-                    break;
-                line = line.NextLine;
-            }
+            drawingContext.DrawRectangle(HighlightBrush, null, new Rect(0, y1, width, height));
         }
-
-        var geometry = geoBuilder.CreateGeometry();
-        if (geometry is not null)
-            drawingContext.DrawGeometry(HighlightBrush, null, geometry);
     }
 
-    private sealed class DeadCodeSegment : ISegment
+    private bool SpanCoversLine(DocumentLine line)
     {
-        public DeadCodeSegment(int offset, int length)
+        foreach (var span in _spans)
         {
-            Offset = offset;
-            Length = length;
+            if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
+                return true;
+        }
+        return false;
+    }
+}
+
+// Forces legible black text over error-only lines (red wash, no dead-code grey) in
+// light themes, where the default syntax colors become hard to read against the
+// translucent red background. Dead-code lines keep their own brighter text treatment.
+internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
+{
+    private static readonly MethodInfo? SetTextRunPropertiesMethod =
+        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
+
+    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme.
+    public IBrush TextBrush { get; set; } = Brushes.Black;
+
+    // Only darkens in light themes - in dark themes the red wash preserves contrast.
+    public bool IsLightTheme { get; set; }
+
+    private IReadOnlyList<InsightEngine.ErrorSpan> _errorSpans = Array.Empty<InsightEngine.ErrorSpan>();
+    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
+
+    public void SetSpans(
+        IReadOnlyList<InsightEngine.ErrorSpan> errorSpans,
+        IReadOnlyList<InsightEngine.DeadCodeSpan> deadCodeSpans)
+    {
+        _errorSpans = errorSpans;
+        _deadCodeSpans = deadCodeSpans;
+    }
+
+    protected override void ColorizeLine(DocumentLine line)
+    {
+        if (!IsLightTheme) return;
+        if (_errorSpans.Count == 0) return;
+
+        // Covered by dead-code? Skip - DeadCodeTextBrightener already handles it.
+        foreach (var deadSpan in _deadCodeSpans)
+        {
+            if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
+                return;
         }
 
-        public int Offset { get; }
-        public int Length { get; }
-        public int EndOffset => Offset + Length;
+        // Has any error span? Force black text (light theme only - see ApplyThemeToEditor).
+        foreach (var errorSpan in _errorSpans)
+        {
+            if (errorSpan.StartOffset < line.EndOffset && errorSpan.StartOffset + errorSpan.Length > line.Offset)
+            {
+                ChangeLinePart(line.Offset, line.EndOffset, element =>
+                {
+                    var properties = element.TextRunProperties.Clone();
+                    properties.SetForegroundBrush(TextBrush);
+                    SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+                });
+                return;
+            }
+        }
+    }
+}
+
+// Whole-line red highlight for Insight's basic error detection (unmatched/unclosed
+// brackets, unterminated strings, missing ';'/':' , misspelled keywords). Each line
+// containing an error is washed with a translucent full-width red highlight; when such
+// a line is ALSO covered by a dead-code finding (e.g. an unused variable), the wash
+// becomes alternating grey/red vertical stripes spanning the whole line, so both
+// findings stay visible on the same row.
+internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
+{
+    // Whole-line wash behind error-only lines. Kept translucent so the syntax colors
+    // underneath stay readable.
+    public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.18);
+    // Red half of the stripes on error+dead-code lines. Stronger than the plain wash so
+    // it reads as clearly red next to the grey.
+    public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.40);
+    // Grey half of the stripes - themed to match DeadCodeHighlightRenderer.HighlightBrush
+    // (see ApplyThemeToEditor) so mixed lines tie back to pure dead-code lines.
+    public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
+
+    private const double StripeWidth = 8.0;
+
+    private IReadOnlyList<InsightEngine.ErrorSpan> _spans = Array.Empty<InsightEngine.ErrorSpan>();
+    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
+
+    public IReadOnlyList<InsightEngine.ErrorSpan> Spans => _spans;
+
+    public KnownLayer Layer => KnownLayer.Selection;
+
+    public void SetSpans(IReadOnlyList<InsightEngine.ErrorSpan> spans) => _spans = spans;
+
+    public void SetDeadCodeSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _deadCodeSpans = spans;
+
+    // All error messages whose spans touch the given line, newline-separated - drives the
+    // hover tooltip. Line-based (not offset-based) because highlighting is line-wide, so
+    // hovering anywhere on the line should surface its message(s).
+    public string? GetMessageForLine(int lineStart, int lineEnd)
+    {
+        List<string>? messages = null;
+        foreach (var span in _spans)
+        {
+            if (span.StartOffset < lineEnd && span.StartOffset + span.Length > lineStart)
+                (messages ??= []).Add(span.Message);
+        }
+        return messages is null ? null : string.Join(Environment.NewLine, messages);
+    }
+
+    // True when any dead-code span overlaps the line's content - switches the whole-line
+    // highlight from a solid red wash to grey/red stripes.
+    private bool LineOverlapsDeadCode(DocumentLine line)
+    {
+        foreach (var deadSpan in _deadCodeSpans)
+        {
+            if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
+                return true;
+        }
+        return false;
+    }
+
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (textView?.Document is null || !textView.VisualLinesValid || _spans.Count == 0)
+            return;
+
+        var visualLines = textView.VisualLines;
+        if (visualLines.Count == 0)
+            return;
+
+        var scrollY = textView.ScrollOffset.Y;
+        var width = textView.Bounds.Width;
+
+        // One full-width rectangle per visible line touched by an error span: solid red
+        // wash normally, grey/red stripes when a dead-code finding covers the same line.
+        // Manual rects reaching the viewport edge - BackgroundGeometryBuilder's
+        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line.
+        foreach (var visualLine in visualLines)
+        {
+            var docLine = visualLine.FirstDocumentLine;
+            if (!SpanTouchesLine(docLine))
+                continue;
+
+            var y1 = visualLine.VisualTop - scrollY;
+            var height = visualLine.Height;
+            if (height <= 0) continue;
+
+            if (LineOverlapsDeadCode(docLine))
+                DrawStripes(drawingContext, y1, height, width);
+            else
+                drawingContext.DrawRectangle(LineHighlightBrush, null, new Rect(0, y1, width, height));
+        }
+    }
+
+    private bool SpanTouchesLine(DocumentLine line)
+    {
+        foreach (var span in _spans)
+        {
+            if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
+                return true;
+        }
+        return false;
+    }
+
+    // Alternating grey/red vertical bars spanning the full editor width of one line -
+    // the combined "dead code + error" treatment. Starts with grey so the pattern reads
+    // as a dead-code line first, then flags the error on top.
+    private void DrawStripes(DrawingContext drawingContext, double y, double height, double width)
+    {
+        var x = 0.0;
+        var index = 0;
+        while (x < width)
+        {
+            var stripeWidth = Math.Min(StripeWidth, width - x);
+            var brush = index % 2 == 0 ? StripeGreyBrush : StripeRedBrush;
+            drawingContext.DrawRectangle(brush, null, new Rect(x, y, stripeWidth, height));
+            x += stripeWidth;
+            index++;
+        }
     }
 }
 

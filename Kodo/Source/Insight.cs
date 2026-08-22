@@ -566,6 +566,284 @@ public sealed class InsightEngine
     public IReadOnlyCollection<string> GetVariables(string fileKey) =>
         _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
 
+    // ---- Basic error detection ----
+    // A syntax-error finding: the whole line containing it gets a full-width red
+    // highlight (grey/red stripes when dead code covers the same line), plus a short
+    // human-readable message for the hover tooltip.
+    public sealed class ErrorSpan
+    {
+        public int StartOffset { get; }
+        public int Length { get; }
+        public string Message { get; }
+
+        public ErrorSpan(int startOffset, int length, string message)
+        {
+            StartOffset = startOffset;
+            Length = Math.Max(1, length);
+            Message = message;
+        }
+    }
+
+    private static readonly Regex BlockKeywordLine = new(
+        @"^\s*(?:if|elif|else|for|while|def|class|try|except|finally|with)\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ColonStyleSample = new(
+        @"^\s*(?:if|elif|else|for|while|def|class|try|except|finally|with)\b.*:\s*$",
+        RegexOptions.Compiled);
+
+    // A line that plausibly ends a complete C-family statement even without a trailing
+    // ';' - closing punctuation, operators, or nothing worth flagging.
+    private static readonly Regex StatementSafeLineEnd = new(
+        @"[;{}:,\\+\-*/%&|^~<>=!\[(]$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
+        RegexOptions.Compiled);
+
+    // Preprocessor / attribute / label lines that never take a trailing ';'.
+    private static readonly Regex StatementExemptLine = new(
+        @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
+        RegexOptions.Compiled);
+
+    // A bare `Name =` (optionally type-annotated) with nothing after the '=' - an
+    // assignment that declares no value. The shared NotCompoundOrArrow guard keeps
+    // `==`, `=>`, and compound operators (`+=`, `<=`, ...) out of the match, and a
+    // trailing '\' (line continuation) skips the flag since the value continues below.
+    private static readonly Regex EmptyAssignment = new(
+        @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
+        RegexOptions.Compiled);
+
+    private static int LevenshteinDistance(string a, string b)
+    {
+        var dp = new int[a.Length + 1, b.Length + 1];
+        for (var i = 0; i <= a.Length; i++) dp[i, 0] = i;
+        for (var j = 0; j <= b.Length; j++) dp[0, j] = j;
+        for (var i = 1; i <= a.Length; i++)
+        {
+            for (var j = 1; j <= b.Length; j++)
+            {
+                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
+                dp[i, j] = Math.Min(Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1), dp[i - 1, j - 1] + cost);
+            }
+        }
+        return dp[a.Length, b.Length];
+    }
+
+    // Heuristic, single-file error scan - same trade-off as the dead-code scanner above
+    // (no real per-language parser, so this is line/char based rather than a true AST).
+    // Hardcoded, language-agnostic checks: unmatched/unclosed brackets, unterminated
+    // string literals, and (self-detected) missing ';' or ':'. Anything that needs
+    // language-specific knowledge - like flagging a misspelled keyword - is driven by
+    // whatever the active language extension supplies (its Keywords list), so new
+    // languages/checks can be added via extensions instead of hardcoding a dictionary here.
+    public List<ErrorSpan> FindErrors(string documentText, LoadedExtension? languageExtension = null)
+    {
+        var spans = new List<ErrorSpan>();
+        if (string.IsNullOrEmpty(documentText))
+            return spans;
+
+        var commentLine = languageExtension?.CommentLine is { Length: > 0 } cl ? cl : "//";
+        var blockStart = languageExtension?.CommentBlockStart is { Length: > 0 } bs ? bs : "/*";
+        var blockEnd = languageExtension?.CommentBlockEnd is { Length: > 0 } be ? be : "*/";
+        var multiLineStringDelims = languageExtension?.MultiLineStringDelimiters is { Length: > 0 } mls
+            ? mls
+            : Array.Empty<string>();
+
+        // ---- Pass 1: bracket matching + unterminated strings (whole-document scan) ----
+        var stack = new Stack<(char Bracket, int Offset)>();
+        var inLineComment = false;
+        var inBlockComment = false;
+        var inString = false;
+        var stringOpenOffset = -1;
+        var stringDelimiter = '\0';
+        var inMultiLineString = false;
+
+        for (var i = 0; i < documentText.Length; i++)
+        {
+            var c = documentText[i];
+
+            if (inLineComment)
+            {
+                if (c == '\n') inLineComment = false;
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (MatchesAt(documentText, i, blockEnd)) { inBlockComment = false; i += blockEnd.Length - 1; }
+                continue;
+            }
+
+            if (inString)
+            {
+                if (c == '\\' && !inMultiLineString) { i++; continue; }
+                if (c == '\n' && !inMultiLineString)
+                {
+                    spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal"));
+                    inString = false;
+                    continue;
+                }
+                var closingDelim = inMultiLineString
+                    ? multiLineStringDelims.FirstOrDefault(d => MatchesAt(documentText, i, d))
+                    : (MatchesAt(documentText, i, stringDelimiter.ToString()) ? stringDelimiter.ToString() : null);
+                if (closingDelim is not null)
+                {
+                    inString = false;
+                    inMultiLineString = false;
+                    i += closingDelim.Length - 1;
+                }
+                continue;
+            }
+
+            if (MatchesAt(documentText, i, commentLine)) { inLineComment = true; i += commentLine.Length - 1; continue; }
+            if (MatchesAt(documentText, i, blockStart)) { inBlockComment = true; i += blockStart.Length - 1; continue; }
+
+            var multiDelim = multiLineStringDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
+            if (multiDelim is not null)
+            {
+                inString = true;
+                inMultiLineString = true;
+                stringOpenOffset = i;
+                i += multiDelim.Length - 1;
+                continue;
+            }
+
+            if (c is '"' or '\'')
+            {
+                inString = true;
+                inMultiLineString = false;
+                stringDelimiter = c;
+                stringOpenOffset = i;
+                continue;
+            }
+
+            switch (c)
+            {
+                case '(' or '{' or '[':
+                    stack.Push((c, i));
+                    break;
+                case ')' or '}' or ']':
+                    var expected = c switch { ')' => '(', '}' => '{', _ => '[' };
+                    if (stack.Count > 0 && stack.Peek().Bracket == expected)
+                    {
+                        stack.Pop();
+                    }
+                    else
+                    {
+                        spans.Add(new ErrorSpan(i, 1, $"Unexpected '{c}' - no matching '{expected}'"));
+                    }
+                    break;
+            }
+        }
+
+        if (inString && !inMultiLineString)
+            spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal"));
+        else if (inString && inMultiLineString)
+            spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal (unclosed multi-line string)"));
+
+        foreach (var (bracket, offset) in stack)
+        {
+            var expectedClose = bracket switch { '(' => ')', '{' => '}', _ => ']' };
+            spans.Add(new ErrorSpan(offset, 1, $"'{bracket}' is never closed - missing '{expectedClose}'"));
+        }
+
+        // ---- Per-line passes: missing ';'/':' and misspelled keywords ----
+        var lines = documentText.Split('\n');
+        var lineStart = new int[lines.Length];
+        var offsetAcc = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            lineStart[i] = offsetAcc;
+            offsetAcc += lines[i].Length + 1;
+        }
+
+        var masked = new string[lines.Length];
+        for (var i = 0; i < lines.Length; i++)
+            masked[i] = TrailingLineComment.Replace(MaskStringLiterals(lines[i]), string.Empty);
+
+        // Self-detect statement style rather than hardcoding a language list: if the file
+        // already uses ';' to end statements, check for missing ones; otherwise, if it looks
+        // like a colon-block language (Python-style), check for missing trailing ':'.
+        var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
+        var looksSemicolonStyle = semicolonLines >= 3;
+        var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
+
+        var knownKeywords = languageExtension?.Keywords is { Length: > 0 } kw
+            ? new HashSet<string>(kw, StringComparer.Ordinal)
+            : null;
+
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = masked[i];
+            var trimmed = line.TrimEnd('\r');
+            var trimmedNoIndent = trimmed.TrimStart();
+
+            if (looksSemicolonStyle && trimmedNoIndent.Length > 0 &&
+                !StatementSafeLineEnd.IsMatch(trimmed) && !StatementExemptLine.IsMatch(trimmedNoIndent))
+            {
+                var contentLen = ContentLength(lines[i]);
+                if (contentLen > 0)
+                    spans.Add(new ErrorSpan(lineStart[i] + contentLen - 1, 1, "Missing ';'"));
+            }
+
+            if (looksColonStyle && BlockKeywordLine.IsMatch(trimmedNoIndent) &&
+                !trimmed.TrimEnd().EndsWith(':') && !trimmed.TrimEnd().EndsWith('\\') &&
+                trimmedNoIndent.Length > 0)
+            {
+                var contentLen = ContentLength(lines[i]);
+                if (contentLen > 0)
+                    spans.Add(new ErrorSpan(lineStart[i] + contentLen - 1, 1, "Missing ':'"));
+            }
+
+            // `Name =` with no value: flagged as its own error. Batch `set NAME=` is
+            // exempt (clearing a variable is legal there), and reserved words are never
+            // treated as assignment targets.
+            var emptyAssignMatch = EmptyAssignment.Match(trimmedNoIndent);
+            if (emptyAssignMatch.Success &&
+                !ReservedWords.Contains(emptyAssignMatch.Groups[1].Value) &&
+                !BatchSetDeclaration.IsMatch(trimmedNoIndent))
+            {
+                var contentLen = ContentLength(lines[i]);
+                if (contentLen > 0)
+                    spans.Add(new ErrorSpan(
+                        lineStart[i], contentLen,
+                        $"'{emptyAssignMatch.Groups[1].Value}' declares nothing - expected a value after '='"));
+            }
+
+            // Misspelled-keyword check: extension-driven, so it only runs for languages that
+            // supply a Keywords list (built-in fallback languages get no spellcheck here).
+            if (knownKeywords is not null)
+            {
+                var wordMatch = Regex.Match(trimmedNoIndent, @"^([A-Za-z_][A-Za-z0-9_]*)\b");
+                if (wordMatch.Success)
+                {
+                    var word = wordMatch.Groups[1].Value;
+                    if (word.Length >= 3 && !knownKeywords.Contains(word))
+                    {
+                        var closest = knownKeywords.FirstOrDefault(k => Math.Abs(k.Length - word.Length) <= 1 && LevenshteinDistance(word, k) == 1);
+                        if (closest is not null)
+                        {
+                            var wordOffsetInLine = trimmed.Length - trimmedNoIndent.Length;
+                            spans.Add(new ErrorSpan(
+                                lineStart[i] + wordOffsetInLine,
+                                word.Length,
+                                $"Possibly misspelled '{word}' - did you mean '{closest}'?"));
+                        }
+                    }
+                }
+            }
+        }
+
+        return spans;
+    }
+
+    private static bool MatchesAt(string text, int index, string token)
+    {
+        if (string.IsNullOrEmpty(token) || index + token.Length > text.Length)
+            return false;
+        for (var k = 0; k < token.Length; k++)
+            if (text[index + k] != token[k]) return false;
+        return true;
+    }
+
     public static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
     public static int FindWordStart(string documentText, int caretOffset)
@@ -712,13 +990,6 @@ public sealed class InsightEngine
             AddCandidates(languageExtension.Keywords, InsightKind.Keyword);
         }
 
-        // Drops any candidate whose full text already exactly matches what's typed -
-        // accepting a completion equal to the word already on screen is a no-op, so
-        // there's nothing left to "complete" for it. This is a dynamic check against
-        // whatever's actually been typed, not a hardcoded list of words to hide: "if"
-        // stops suggesting itself the moment it's fully typed, but "ifdef" (or any other
-        // longer candidate sharing that prefix) still shows up normally. Case-sensitive
-        // on purpose - "IF" typed against keyword "if" is still a useful case-correction.
         return results
             .Where(s => !string.Equals(s.Text, prefix, StringComparison.Ordinal))
             .OrderByDescending(s => s.Priority)

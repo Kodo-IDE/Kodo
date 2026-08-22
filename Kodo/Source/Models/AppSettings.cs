@@ -30,6 +30,9 @@ internal sealed class AppSettings
     // existing behavior is unchanged for users who already had Insight enabled.
     public bool InsightCodeSuggestionsEnabled { get; set; } = true;
     public bool InsightDeadCodeEnabled { get; set; } = true;
+    // Basic error detection: unmatched/unclosed brackets, unterminated strings, missing
+    // ';'/':' , and extension-driven misspelled-keyword flags. Defaults to true.
+    public bool InsightErrorDetectionEnabled { get; set; } = true;
     // Comma-separated file extensions (e.g. ".txt,.md") where Insight is disabled.
     public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
 
