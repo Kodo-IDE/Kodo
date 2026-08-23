@@ -17,6 +17,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.Platform.Storage;
 using Microsoft.Win32;
 using Kodo.Models;
 using System.Text.RegularExpressions;
@@ -1964,6 +1965,8 @@ public partial class MainWindow
     private readonly Dictionary<string, string> _customRunCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _customBuildCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _compilerOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _customBuildScripts = new(StringComparer.OrdinalIgnoreCase);
+    private const string CustomBuildScriptId = "custom:build-script";
 
     private string? _activeRunCommandLine;
     private string? _activeBuildCommandLine;
@@ -1999,13 +2002,27 @@ public partial class MainWindow
             if (_currentFilePath is null)
                 return "Open a file to run or build it.";
 
-            if (ActiveCompilerExtension is null)
+            var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+            var hasCustomBuild = !string.IsNullOrWhiteSpace(ext) && TryGetCustomBuildScript(ext, out var scriptPath);
+
+            if (ActiveCompilerExtension is null && !hasCustomBuild)
                 return "No compiler found for this file type. Install one from the Compilers marketplace, or set a command from the dropdown menu.";
+
+            if (hasCustomBuild)
+            {
+                var runPart = string.IsNullOrWhiteSpace(_activeRunCommandLine)
+                    ? null
+                    : $"{ActiveCompilerExtension?.Name ?? "Run"} · {_activeRunCommandLine}";
+                var buildPart = $"Custom Build Script · {_activeBuildCommandLine}";
+                if (runPart is not null)
+                    return $"{runPart}  |  {buildPart}";
+                return buildPart;
+            }
 
             var command = _activeRunCommandLine ?? _activeBuildCommandLine;
             return string.IsNullOrWhiteSpace(command)
-                ? $"{ActiveCompilerExtension.Name} - no command configured. Use the dropdown menu to set one."
-                : $"{ActiveCompilerExtension.Name} · {command}";
+                ? $"{ActiveCompilerExtension!.Name} - no command configured. Use the dropdown menu to set one."
+                : $"{ActiveCompilerExtension!.Name} · {command}";
         }
     }
 
@@ -2018,10 +2035,16 @@ public partial class MainWindow
         }
 
         ActiveCompilerExtension = ResolveActiveCompiler();
+        var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+
         _activeRunCommandLine = ActiveCompilerExtension is null
             ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: false);
-        _activeBuildCommandLine = ActiveCompilerExtension is null
-            ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
+
+        if (!string.IsNullOrWhiteSpace(ext) && TryGetCustomBuildScript(ext, out var scriptPath))
+            _activeBuildCommandLine = BuildCustomScriptDisplayCommand(scriptPath, extraArgs: null);
+        else
+            _activeBuildCommandLine = ActiveCompilerExtension is null
+                ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
 
         OnPropertyChanged(nameof(IsRunButtonEnabled));
         OnPropertyChanged(nameof(IsBuildButtonEnabled));
@@ -2061,6 +2084,90 @@ public partial class MainWindow
             .First().Compiler;
     }
 
+    private bool TryGetCustomBuildScript(string ext, out string scriptPath)
+    {
+        if (_customBuildScripts.TryGetValue(ext, out var stored) && !string.IsNullOrWhiteSpace(stored) && File.Exists(stored))
+        {
+            scriptPath = stored;
+            return true;
+        }
+
+        scriptPath = string.Empty;
+        return false;
+    }
+
+    private MarketplaceExtension BuildCustomBuildScriptExtension(string ext, string scriptPath)
+    {
+        var fileName = Path.GetFileName(scriptPath);
+        var extension = new MarketplaceExtension
+        {
+            Id = CustomBuildScriptId,
+            Name = "Custom Build Script",
+            Type = "compiler",
+            Author = "Local",
+            Description = scriptPath,
+            Version = string.IsNullOrWhiteSpace(fileName) ? "Local" : fileName,
+            DownloadUrl = string.Empty,
+            FileName = fileName,
+            IconUrl = string.Empty,
+            FileExtensions = [ext],
+            LanguageExtensionIds = [],
+            RunCommandTemplate = QuoteArgument(scriptPath),
+            BuildCommandTemplate = QuoteArgument(scriptPath),
+        };
+        extension.SetCompilerInstalledState("Local", DateTime.UtcNow, isUpdateAvailable: false);
+        return extension;
+    }
+
+    private string BuildCustomScriptDisplayCommand(string scriptPath, string? extraArgs)
+    {
+        var baseCmd = QuoteArgument(scriptPath);
+        var expanded = ExpandCommandTemplate(baseCmd, extraArgs);
+        return expanded;
+    }
+
+    private (string Exe, string Args) ResolveCustomScriptExecutable(string scriptPath, string? extraArgs)
+    {
+        var quotedPath = QuoteArgument(scriptPath);
+        var ext = Path.GetExtension(scriptPath).ToLowerInvariant();
+        var expandedExtra = ExpandExtraArgsPlaceholders(extraArgs);
+        var extra = string.IsNullOrWhiteSpace(expandedExtra) ? string.Empty : $" {expandedExtra.Trim()}";
+        var quotedFile = _currentFilePath is not null ? QuoteArgument(_currentFilePath) : string.Empty;
+        var alreadyHasFileArg = !string.IsNullOrWhiteSpace(expandedExtra) && !string.IsNullOrWhiteSpace(quotedFile) && expandedExtra.Contains(quotedFile, StringComparison.Ordinal);
+        var fileArg = !string.IsNullOrWhiteSpace(quotedFile) && !alreadyHasFileArg ? $" {quotedFile}" : string.Empty;
+        if (ext is ".bat" or ".cmd")
+            return ("cmd.exe", $"/c {quotedPath}{extra}{fileArg}");
+        if (ext is ".ps1")
+            return ("powershell.exe", $"-ExecutionPolicy Bypass -File {quotedPath}{extra}{fileArg}");
+        if (ext is ".sh")
+            return ("bash", $"{quotedPath}{extra}{fileArg}");
+        if (ext is ".py" or ".pyw")
+            return ("python", $"{quotedPath}{extra}{fileArg}");
+        // Generic executable/script: run directly; append file + extra args so {file} behaviour is preserved by default.
+        var args = fileArg.Length > 0 ? $"{expandedExtra.Trim()} {quotedFile}".Trim() : expandedExtra.Trim();
+        if (string.IsNullOrWhiteSpace(args) && !alreadyHasFileArg)
+            args = quotedFile;
+        return (scriptPath, args);
+    }
+
+    private string ExpandExtraArgsPlaceholders(string? extraArgs)
+    {
+        if (string.IsNullOrWhiteSpace(extraArgs))
+            return string.Empty;
+
+        var filePath = _currentFilePath ?? string.Empty;
+        var fileName = Path.GetFileName(filePath);
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        var folder = ResolveWorkingDirectory();
+
+        return extraArgs
+            .Replace("{fileName}", QuoteArgument(fileName))
+            .Replace("{file}", QuoteArgument(filePath))
+            .Replace("{name}", QuoteArgument(name))
+            .Replace("{folder}", QuoteArgument(folder))
+            .Replace("{args}", string.Empty);
+    }
+
     private MarketplaceExtension? FindCompilerByIdForOverride(string id) =>
         CompilerExtensions.FirstOrDefault(c => c.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
         ?? CompilerExtensions.Where(e => e.IsInstalled)
@@ -2090,6 +2197,13 @@ public partial class MainWindow
 
     private string? ResolveCommandTemplate(MarketplaceExtension compiler, bool isBuild, string ext)
     {
+        if (compiler.Id.Equals(CustomBuildScriptId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_customBuildScripts.TryGetValue(ext, out var scriptPath) && !string.IsNullOrWhiteSpace(scriptPath))
+                return QuoteArgument(scriptPath);
+            return null;
+        }
+
         var custom = isBuild ? _customBuildCommands : _customRunCommands;
         if (custom.TryGetValue(compiler.Id, out var customCommand) && !string.IsNullOrWhiteSpace(customCommand))
             return customCommand;
@@ -2118,6 +2232,13 @@ public partial class MainWindow
     private string? BuildCommandLineText(MarketplaceExtension compiler, bool isBuild)
     {
         var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+        if (compiler.Id.Equals(CustomBuildScriptId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_customBuildScripts.TryGetValue(ext, out var scriptPath) && !string.IsNullOrWhiteSpace(scriptPath))
+                return BuildCustomScriptDisplayCommand(scriptPath, extraArgs: null);
+            return null;
+        }
+
         var template = ResolveCommandTemplate(compiler, isBuild, ext);
         return template is null ? null : ExpandCommandTemplate(template, extraArgs: null);
     }
@@ -2211,22 +2332,53 @@ public partial class MainWindow
             return;
         }
 
-        if (_currentFilePath is null || ActiveCompilerExtension is null)
+        if (_currentFilePath is null)
+            return;
+
+        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
+
+        // Allow Build to proceed with a custom script even when no compiler is resolved for this extension.
+        if (ActiveCompilerExtension is null && !(isBuild && TryGetCustomBuildScript(ext, out _)))
             return;
 
         var compiler = ActiveCompilerExtension;
-        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
-        var template = ResolveCommandTemplate(compiler, isBuild, ext);
-        if (template is null)
-            return;
+        string commandLine;
+        string exe;
+        string args;
+        string toolLabel;
 
-        var commandLine = ExpandCommandTemplate(template, extraArgs);
-        var (exe, args) = SplitCommandLine(commandLine);
-        if (string.IsNullOrWhiteSpace(exe))
-            return;
+        if (isBuild && TryGetCustomBuildScript(ext, out var buildScriptPath))
+        {
+            commandLine = BuildCustomScriptDisplayCommand(buildScriptPath, extraArgs);
+            var resolved = ResolveCustomScriptExecutable(buildScriptPath, extraArgs);
+            exe = resolved.Exe;
+            args = resolved.Args;
+            toolLabel = Path.GetFileNameWithoutExtension(buildScriptPath);
+        }
+        else
+        {
+            // For Run, or Build without custom script, use the normal compiler flow.
+            // If ActiveCompilerExtension is null (no compiler) and this is a Build with no custom script, bail.
+            if (ActiveCompilerExtension is null)
+                return;
 
-        var resolvedExe = ResolveToolExecutable(exe) ?? exe;
-        var toolLabel = Path.GetFileName(exe);
+            // If this is a Build but we checked custom above and didn't take it, fall through to normal Build template.
+            // If this is a Run, ignore any custom Build script and use Run template.
+            var template = ResolveCommandTemplate(compiler, isBuild, ext);
+            if (template is null)
+                return;
+
+            commandLine = ExpandCommandTemplate(template, extraArgs);
+            var split = SplitCommandLine(commandLine);
+            if (string.IsNullOrWhiteSpace(split.Exe))
+                return;
+
+            var resolvedExe = ResolveToolExecutable(split.Exe) ?? split.Exe;
+            exe = resolvedExe;
+            args = split.Arguments;
+            toolLabel = Path.GetFileName(split.Exe);
+        }
+
         var workingDirectory = ResolveWorkingDirectory();
 
         var existing = isBuild ? _buildWindow : _runWindow;
@@ -2239,7 +2391,7 @@ public partial class MainWindow
         var window = new CompilerRunWindow(
             isBuild ? $"Kodo - Build ({toolLabel})" : $"Kodo - Run ({toolLabel})",
             commandLine,
-            resolvedExe,
+            exe,
             args,
             workingDirectory)
         {
@@ -2301,12 +2453,23 @@ public partial class MainWindow
 
         menu.Items.Add(new Separator());
 
-        if (compiler is not null)
+        if (compiler is not null || (isBuild && TryGetCustomBuildScript(Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant(), out _)))
         {
-            var commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
+            string? commandLine;
+            string summary;
+            if (isBuild && TryGetCustomBuildScript(Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant(), out var customScriptForSummary))
+            {
+                commandLine = _activeBuildCommandLine;
+                summary = $"Custom Build Script  ·  {commandLine}";
+            }
+            else
+            {
+                commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
+                var label = compiler?.Name ?? "Custom Build Script";
+                summary = $"{label}  ·  {commandLine}";
+            }
             if (!string.IsNullOrWhiteSpace(commandLine))
             {
-                var summary = $"{compiler.Name}  ·  {commandLine}";
                 var infoItem = new MenuItem
                 {
                     Header = BuildCompilerMenuHeader(summary),
@@ -2316,6 +2479,35 @@ public partial class MainWindow
                 menu.Items.Add(infoItem);
                 menu.Items.Add(new Separator());
             }
+        }
+
+        if (isBuild)
+        {
+            var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+            var hasCustomScript = TryGetCustomBuildScript(ext, out var existingScript);
+            if (!hasCustomScript)
+            {
+                var setScript = new MenuItem { Header = "Set Custom Build Script..." };
+                setScript.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+                menu.Items.Add(setScript);
+            }
+            else
+            {
+                var changeScript = new MenuItem { Header = $"Change Custom Build Script \u00b7 {Path.GetFileName(existingScript)}" };
+                ToolTip.SetTip(changeScript, existingScript);
+                changeScript.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+                menu.Items.Add(changeScript);
+
+                var removeScript = new MenuItem { Header = "Remove Custom Build Script" };
+                removeScript.Click += (_, _) =>
+                {
+                    _customBuildScripts.Remove(ext);
+                    SaveSettings();
+                    RefreshRunBuildState();
+                };
+                menu.Items.Add(removeScript);
+            }
+            menu.Items.Add(new Separator());
         }
 
         var custom = isBuild ? _customBuildCommands : _customRunCommands;
@@ -2379,6 +2571,7 @@ public partial class MainWindow
         automatic.Click += (_, _) =>
         {
             _compilerOverrides.Remove(ext);
+            _customBuildScripts.Remove(ext);
             SaveSettings();
             RefreshRunBuildState();
         };
@@ -2417,7 +2610,84 @@ public partial class MainWindow
         if (!anyAdded)
             menu.Items.Add(new MenuItem { Header = "No compilers available", IsEnabled = false });
 
+        menu.Items.Add(new Separator());
+
+        var hasCustomScript = TryGetCustomBuildScript(ext, out var existingScript);
+        var customLabel = hasCustomScript ? $"Custom Build Script \u00b7 {Path.GetFileName(existingScript)}" : "Custom Build Script...";
+        var customItem = new MenuItem
+        {
+            Header = BuildCompilerMenuHeader(customLabel),
+            IsChecked = hasCustomScript,
+            IsEnabled = !string.IsNullOrWhiteSpace(ext),
+        };
+        if (hasCustomScript)
+            ToolTip.SetTip(customItem, existingScript);
+        else if (string.IsNullOrWhiteSpace(ext))
+            ToolTip.SetTip(customItem, "Open a file with an extension to set a custom build script.");
+        else
+            ToolTip.SetTip(customItem, "Pick a .bat, .cmd, .ps1, .sh or any executable to use for this file type.");
+        customItem.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+        menu.Items.Add(customItem);
+
+        if (hasCustomScript)
+        {
+            var removeItem = new MenuItem { Header = "Remove Custom Build Script" };
+            removeItem.Click += (_, _) =>
+            {
+                _customBuildScripts.Remove(ext);
+                SaveSettings();
+                RefreshRunBuildState();
+            };
+            menu.Items.Add(removeItem);
+        }
+
         return menu;
+    }
+
+    private async Task PromptForCustomBuildScriptAsync(string ext)
+    {
+        if (string.IsNullOrWhiteSpace(ext))
+            return;
+
+        var options = new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = $"Select Custom Build Script for {ext}",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new Avalonia.Platform.Storage.FilePickerFileType("Build Scripts")
+                {
+                    Patterns = ["*.bat", "*.cmd", "*.ps1", "*.sh", "*.py", "*.exe", "*.bin", "*.command"],
+                },
+                new Avalonia.Platform.Storage.FilePickerFileType("All Files")
+                {
+                    Patterns = ["*"],
+                },
+            ],
+        };
+
+        IReadOnlyList<Avalonia.Platform.Storage.IStorageFile> picked;
+        try
+        {
+            picked = await StorageProvider.OpenFilePickerAsync(options);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Custom build script file picker failed.", ex);
+            return;
+        }
+
+        var file = picked.Count > 0 ? picked[0] : null;
+        if (file is null)
+            return;
+
+        var path = file.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return;
+
+        _customBuildScripts[ext] = path;
+        SaveSettings();
+        RefreshRunBuildState();
     }
 
     private static Control BuildCompilerMenuHeader(string text) => new TextBlock

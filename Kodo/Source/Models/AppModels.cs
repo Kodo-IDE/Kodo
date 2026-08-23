@@ -115,6 +115,10 @@ internal sealed class AppSettings
     // File extension (lowercased) -> compiler id. An explicit user choice made from the
     // compiler icon button; wins over automatic detection for that file type.
     public Dictionary<string, string> CompilerOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    // File extension (lowercased) -> absolute path of a custom build script (.bat,
+    // .cmd, .ps1, .sh, .py, ...). When set for an extension, it overrides the normal
+    // compiler resolution and appears as "Custom Build Script" in the compiler switcher.
+    public Dictionary<string, string> CustomBuildScripts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     // User-modified keybinds, keyed by the rebindable command id (see MainWindow's
     // KeybindDefinitions) with values serialized as "Modifiers|Key" (e.g. "Control|OemComma").

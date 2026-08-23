@@ -900,6 +900,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _customBuildCommands[pair.Key] = pair.Value;
         foreach (var pair in settings.CompilerOverrides)
             _compilerOverrides[pair.Key] = pair.Value;
+        foreach (var pair in settings.CustomBuildScripts)
+            _customBuildScripts[pair.Key] = pair.Value;
         RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
@@ -5121,6 +5123,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CustomRunCommands = new Dictionary<string, string>(_customRunCommands, StringComparer.OrdinalIgnoreCase),
             CustomBuildCommands = new Dictionary<string, string>(_customBuildCommands, StringComparer.OrdinalIgnoreCase),
             CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase),
+            CustomBuildScripts = new Dictionary<string, string>(_customBuildScripts, StringComparer.OrdinalIgnoreCase),
             CustomKeybinds = BuildCustomKeybindsSnapshot()
         };
     }
