@@ -1,0 +1,908 @@
+// Licensed under GPL-v3.0
+using System;
+using System.Reflection;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.IO.Compression;
+using System.Linq;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Runtime.CompilerServices;
+using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Globalization;
+using Microsoft.Win32;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data.Converters;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
+using Avalonia.Layout;
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
+using Avalonia.Platform.Storage;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Avalonia.Animation;
+using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Editing;
+using AvaloniaEdit.Highlighting;
+using AvaloniaEdit.Rendering;
+using DiscordAssetsModel = DiscordRPC.Assets;
+using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
+using DiscordRichPresenceModel = DiscordRPC.RichPresence;
+using Kodo.Models;
+
+namespace Kodo;
+
+public partial class MainWindow
+{
+
+    private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _editorStateRefreshTimer.Stop();
+        RefreshState(fullRefresh: _pendingFullStateRefresh);
+    }
+
+    private void QueueInsightRefresh()
+    {
+        _InsightRefreshTimer.Stop();
+        _InsightRefreshTimer.Start();
+    }
+
+    private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _InsightRefreshTimer.Stop();
+        UpdateInsight();
+        UpdateDeadCodeHighlighting();
+        UpdateErrorHighlighting();
+    }
+
+    private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _wordCountRefreshTimer.Stop();
+        RefreshWordCount();
+        OnPropertyChanged(nameof(IsWordCountVisible));
+    }
+
+    private void RefreshWordCount()
+    {
+        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
+        {
+            WordCountText = string.Empty;
+            return;
+        }
+
+        var text = EditorTextBox.Document.Text;
+        var wordCount = string.IsNullOrWhiteSpace(text)
+            ? 0
+            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        WordCountText = $"{wordCount} words";
+    }
+
+    private string? GetDocumentStatusText()
+    {
+        if (!HasDocumentOpen) return null;
+
+        if (IsAutoSaveEnabled && HasFileOpen)
+        {
+            if (!string.IsNullOrWhiteSpace(_autoSaveStatusMessage))
+                return _autoSaveStatusMessage;
+
+            if (_isSaving)
+                return AutoSaveSavingMessage;
+
+            if (_isDirty || _autoSaveTimer.IsEnabled)
+                return "Unsaved";
+        }
+
+        return _isDirty ? "Unsaved" : null;
+    }
+
+    private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        var textView = EditorTextBox.TextArea.TextView;
+        var position = e.GetPosition(textView);
+        var nowOverLink = IsPointerOverLink(position, textView);
+        var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
+        var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
+
+        // A line can carry both findings (unused variable + syntax error, rendered as
+        // grey/red stripes) - show both messages together in that case.
+        string? tooltipText = (errorReason, deadCodeReason) switch
+        {
+            (null, null)     => null,
+            (_, null)        => errorReason,
+            (null, _)        => $"{deadCodeReason}",
+            _                => $"{errorReason}{Environment.NewLine}--------------------{Environment.NewLine}{deadCodeReason}",
+        };
+
+        if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason && errorReason == _hoveredErrorReason)
+            return; // no state change - leave tooltip and cursor alone
+
+        _isPointerOverEditorLink = nowOverLink;
+        _hoveredDeadCodeReason = deadCodeReason;
+        _hoveredErrorReason = errorReason;
+
+        if (nowOverLink)
+        {
+            ToolTip.SetTip(textView, "Ctrl+click to open link");
+            ToolTip.SetShowDelay(textView, 400);
+            textView.Cursor = new Cursor(StandardCursorType.Hand);
+        }
+        else if (tooltipText is not null)
+        {
+            ToolTip.SetTip(textView, tooltipText);
+            ToolTip.SetShowDelay(textView, 400);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+        }
+        else
+        {
+            ToolTip.SetTip(textView, null);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+        }
+    }
+
+    private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    {
+        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled)
+            return null;
+
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return null;
+
+        try
+        {
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private string? GetDeadCodeReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    {
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled)
+            return null;
+
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return null;
+
+        try
+        {
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length); // Column is 1-based
+            return _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset);
+        }
+        catch
+        {
+            // Document may be null or line out of range during rapid edits - treat as no hit.
+            return null;
+        }
+    }
+
+    private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
+    {
+        _rainbowBracketColorizer.InvalidateCache();
+        if (_suppressDirtyTracking) return;
+        ClearAutoSaveStatus();
+        _isDirty = true;
+        if (ActiveEditorTab is not null)
+        {
+            ActiveEditorTab.Content = EditorTextBox.Document.Text;
+            ActiveEditorTab.IsDirty = true;
+        }
+        QueueRefreshState(fullRefresh: true);
+        QueueWordCountRefresh();
+        RestartAutoSaveTimerIfNeeded();
+        QueueInsightRefresh();
+        if (IsFindInFileSearchMode && IsSearchPanelVisible)
+            UpdateFindHighlights();
+    }
+
+    private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
+    {
+        if (!IsSmartSyntaxEnabled()) return;
+        if (IsMarkdownFile(_currentFilePath)) return;
+        if (string.IsNullOrEmpty(e.Text)) return;
+        var ch     = e.Text[0];
+        var caret  = EditorTextBox.TextArea.Caret;
+        var doc    = EditorTextBox.Document;
+        var offset = caret.Offset;
+        var selection = EditorTextBox.TextArea.Selection;
+
+        if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
+        {
+            var segment = selection.SurroundingSegment;
+            if (segment is not null)
+            {
+                var selectedText = selection.GetText();
+                doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
+                caret.Offset = segment.Offset + selectedText.Length + 2;
+                e.Handled = true;
+                return;
+            }
+        }
+
+        if (!ClosingChars.Contains(ch)) return;
+
+        if (ch == '}' && TryAlignClosingDelimiterBeforeInsert(doc, caret, '}'))
+            offset = caret.Offset;
+
+        if (offset >= doc.TextLength) return;
+        if (doc.GetCharAt(offset) != ch) return;
+
+        // Asymmetric pairs are always safe to skip; symmetric pairs only skip mid-pair.
+        bool skip = ch is ')' or ']' or '}' or '>';
+        if (!skip && (ch == '"' || ch == '\''))
+            skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
+
+        if (skip)
+        {
+            caret.Offset = offset + 1;
+            e.Handled = true;
+        }
+    }
+
+    private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
+    {
+        if (!IsSmartSyntaxEnabled()) return;
+        if (IsMarkdownFile(_currentFilePath)) return;
+        if (string.IsNullOrEmpty(e.Text)) return;
+        var ch = e.Text[0];
+
+        if (!BracketPairs.TryGetValue(ch, out var closing)) return;
+
+        var caret  = EditorTextBox.TextArea.Caret;
+        var doc    = EditorTextBox.Document;
+        var offset = caret.Offset;
+
+        // For symmetric pairs, don't auto-close when the next char is alphanumeric
+        // (avoids nuisance completions mid-word, e.g. typing " in  it's).
+        if (ch == '"' || ch == '\'' || ch == '`')
+        {
+            if (offset < doc.TextLength)
+            {
+                var next = doc.GetCharAt(offset);
+                if (char.IsLetterOrDigit(next) || next == ch) return;
+            }
+        }
+
+        // Insert the closer and explicitly restore the caret to the space between the pair.
+        doc.Insert(offset, closing.ToString());
+        caret.Offset = offset;
+    }
+
+    private void UpdateInsight()
+    {
+        if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        // Skips plain-text files and untitled (unsaved) tabs, which have no language to predict against.
+        if (ActiveEditorTab is null || ActiveEditorTab.IsUntitled || IsPlainTextFile(_currentFilePath))
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (IsInsightBlacklisted(_currentFilePath))
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        var doc = EditorTextBox.Document;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
+        var text = doc.Text;
+
+        var wordStart = InsightEngine.FindWordStart(text, offset);
+        var prefix = text[wordStart..offset];
+
+        // Require at least one word character already typed, so the popup doesn't pop
+        // up after whitespace, punctuation, or a fresh newline.
+        if (prefix.Length == 0)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        var fileKey = ActiveEditorTab?.Path ?? "untitled";
+        _InsightEngine.ScanDocument(fileKey, text);
+
+        // Keeps popup rows in sync with the active theme even if it changed
+        // while a suggestion list was already open.
+        InsightSuggestion.PanelForeground = PrimaryTextBrush;
+        InsightSuggestion.MutedForeground = MutedTextBrush;
+
+        var suggestions = _InsightEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension, text, offset);
+        if (suggestions.Count == 0)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (_completionWindow is null)
+        {
+            _completionWindow = CreateCompletionWindow();
+            _completionWindow.StartOffset = wordStart;
+            foreach (var suggestion in suggestions)
+                _completionWindow.CompletionList.CompletionData.Add(suggestion);
+            _completionWindow.Show();
+        }
+        else
+        {
+            _completionWindow.StartOffset = wordStart;
+            _completionWindow.CompletionList.CompletionData.Clear();
+            foreach (var suggestion in suggestions)
+                _completionWindow.CompletionList.CompletionData.Add(suggestion);
+        }
+    }
+
+    private void CloseCompletionWindow()
+    {
+        _completionWindow?.Close();
+        _completionWindow = null;
+    }
+
+    private void UpdateDeadCodeHighlighting()
+    {
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
+            EditorTextBox?.Document is null ||
+            ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
+            IsPlainTextFile(_currentFilePath) ||
+            IsInsightBlacklisted(_currentFilePath))
+        {
+            ClearDeadCodeHighlighting();
+            return;
+        }
+
+        var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        _deadCodeHighlightRenderer.SetSpans(spans);
+        _deadCodeTextBrightener.SetSpans(spans);
+        // Keep the combined grey/red stripe decision and the error-only text darkening
+        // in sync when dead-code spans change out from under a red highlight.
+        _errorHighlightRenderer.SetDeadCodeSpans(spans);
+        _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, spans);
+        // Redraw (not just InvalidateLayer) so the text-brightening LineTransformers also
+        // re-run - our spans changed independently of any document edit.
+        EditorTextBox.TextArea.TextView.Redraw();
+    }
+
+    private CompletionWindow CreateCompletionWindow()
+    {
+        var window = new CompletionWindow(EditorTextBox.TextArea)
+        {
+            MaxHeight = InsightRowHeight * InsightVisibleRows
+                + InsightListVerticalPadding + InsightBorderThickness,
+            MaxWidth = 460,
+            Width = 460,
+        };
+
+        // CompletionWindow itself is just a Popup (positioning only, no chrome) - the
+        // actual panel/border/font live on CompletionList, which it hosts as Child.
+        var panelBrush = CardBrush;
+        window.CompletionList.Background = panelBrush;
+        window.CompletionList.BorderBrush = SurfaceBorderBrush;
+        window.CompletionList.BorderThickness = new Thickness(1);
+        window.CompletionList.FontFamily = EditorTextBox.FontFamily;
+        window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        // Rounds the popup panel to match every other card/flyout in the app.
+        var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(8)));
+        window.Styles.Add(panelCornerStyle);
+
+        if (window.CompletionList.ListBox is { } listBox)
+        {
+            // Opaque background so editor text can't bleed through the gaps between rows.
+            listBox.Background = panelBrush;
+            listBox.Padding = new Thickness(0, 4);
+            listBox.Margin = new Thickness(0);
+            listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+        }
+
+        // Zeroes ListBoxItem's background transition so rows render instantly instead of crossfading.
+        var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
+        noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
+        window.Styles.Add(noTransitionStyle);
+
+        // Paints ListBoxItem's Background directly so each row's highlight stretches to the popup's full width.
+        var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
+        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, panelBrush));
+        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        window.Styles.Add(baseRowStyle);
+
+        // Selected row: Kodo's accent color at low opacity over the panel, same
+        // tinting pattern used for editor text selection - not a fixed VS Code blue.
+        var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
+            ? new SolidColorBrush(accentSolid.Color, 0.35)
+            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.35);
+        var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected"));
+        selectedRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
+        window.Styles.Add(selectedRowStyle);
+
+        // Hover row: reuses the app's own button-hover color instead of a hardcoded gray.
+        var hoverRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":pointerover"));
+        hoverRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, ButtonHoverBrush));
+        window.Styles.Add(hoverRowStyle);
+
+        var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
+        // A fixed MinHeight keeps every row the same height so the virtualizing panel positions them consistently.
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, InsightRowHeight));
+        window.Styles.Add(rowPaddingStyle);
+
+        window.Closed += (_, _) => _completionWindow = null;
+        return window;
+    }
+
+    private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        // Tab always accepts the top suggestion (the list is already sorted by priority -
+        // see GetSuggestions), regardless of whether the popup happens to have a different
+        // row highlighted. Handled explicitly here rather than left to the popup's own
+        // selection state, which isn't something we set ourselves.
+        if (_completionWindow is not null && e.Key == Key.Tab)
+        {
+            var firstSuggestion = _completionWindow.CompletionList.CompletionData
+                .OfType<InsightSuggestion>()
+                .FirstOrDefault();
+            if (firstSuggestion is not null && EditorTextBox?.Document is not null)
+            {
+                var segment = new TextSegment
+                {
+                    StartOffset = _completionWindow.StartOffset,
+                    EndOffset = EditorTextBox.TextArea.Caret.Offset,
+                };
+                firstSuggestion.Complete(EditorTextBox.TextArea, segment, EventArgs.Empty);
+            }
+            CloseCompletionWindow();
+            e.Handled = true;
+            return;
+        }
+
+        // Lets the open Insight popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
+        // Enter was missing here - accepting a suggestion with Enter would fall through to
+        // HandleSmartEnter below and insert an auto-indented newline on top of the completion,
+        // which is exactly what "finishing" a word felt like it was doing.
+        if (_completionWindow is not null && e.Key is Key.Escape or Key.Enter
+            or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
+        {
+            return;
+        }
+
+        // Doesn't intercept keys destined for the terminal.
+        // Uses the TopLevel FocusManager, not e.Source, for the true current focus owner.
+        if (IsTerminalVisible && ActiveTerminalSession is not null)
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
+            var isTerminalFocused = focused is not null &&
+                (ReferenceEquals(focused, TerminalHostControl) ||
+                 focused.GetSelfAndVisualAncestors().Any(v => ReferenceEquals(v, TerminalHostControl)));
+
+            if (isTerminalFocused)
+                return;
+        }
+
+        if (!IsEditorKeyEvent(e))
+            return;
+
+        if (EditorTextBox?.Document is null)
+            return;
+
+        var textArea = EditorTextBox.TextArea;
+        var caret = textArea.Caret;
+        var doc = EditorTextBox.Document;
+        // Swallow editor-local Find/Find-in-project so AvaloniaEdit doesn't open its own find UI,
+        // whatever gesture the user has them bound to.
+        if (MatchesKeybind(e, "FindInProject"))
+        {
+            OpenSearchPanel(SearchMode.ProjectSearch);
+            e.Handled = true;
+            return;
+        }
+        if (MatchesKeybind(e, "FindInFile"))
+        {
+            OpenSearchPanel(SearchMode.FindInFile);
+            e.Handled = true;
+            return;
+        }
+
+        switch (e.Key)
+        {
+            case Key.Enter when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
+                HandleSmartEnter(doc, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Shift:
+                HandleTabKey(() => HandleOutdent(doc, textArea.Selection, caret), doc, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.None:
+                HandleTabKey(() => HandleIndent(doc, textArea.Selection, caret), doc, caret);
+                e.Handled = true;
+                return;
+
+            case Key.Back when IsSmartSyntaxEnabled():
+                if (HandleSmartBackspace(doc, caret))
+                {
+                    e.Handled = true;
+                    return;
+                }
+                break;
+
+            case Key.V when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Control:
+                e.Handled = true;
+                _ = HandleSmartPasteAsync(doc, textArea, caret);
+                return;
+
+        }
+
+        if (IsSmartSyntaxEnabled() && MatchesKeybind(e, "ToggleLineComment"))
+        {
+            ToggleLineComment(doc, textArea, textArea.Selection, caret);
+            e.Handled = true;
+        }
+    }
+
+    private bool IsEditorKeyEvent(KeyEventArgs e)
+    {
+        if (EditorTextBox is null || e.Source is not Visual visual)
+            return false;
+
+        if (ReferenceEquals(visual, EditorTextBox) || ReferenceEquals(visual, EditorTextBox.TextArea))
+            return true;
+
+        return visual.GetSelfAndVisualAncestors().Any(v =>
+            ReferenceEquals(v, EditorTextBox) || ReferenceEquals(v, EditorTextBox.TextArea));
+    }
+
+    private void HandleTabKey(Action tabAction, AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
+        try
+        {
+            tabAction();
+        }
+        catch
+        {
+            // Keep Tab editor-local even if AvaloniaEdit reports an invalid selection snapshot.
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+        }
+    }
+
+    private void HandleSmartEnter(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
+        var offset = caret.Offset;
+        var line = doc.GetLineByOffset(offset);
+        var lineText = doc.GetText(line);
+        var caretColumnInLine = offset - line.Offset;
+        var textBeforeCaret = lineText[..Math.Min(caretColumnInLine, lineText.Length)];
+        var textAfterCaret = lineText[Math.Min(caretColumnInLine, lineText.Length)..];
+        var indent = GetLeadingWhitespace(textBeforeCaret);
+        var trimmedBeforeCaret = textBeforeCaret.TrimEnd();
+        var extraIndent = ShouldIncreaseIndentAfter(trimmedBeforeCaret) ? GetIndentUnit() : string.Empty;
+
+        if (ShouldInsertStructuredBlock(trimmedBeforeCaret, textAfterCaret))
+        {
+            var blockText = Environment.NewLine + indent + extraIndent + Environment.NewLine + indent;
+            doc.Insert(offset, blockText);
+            caret.Offset = offset + Environment.NewLine.Length + indent.Length + extraIndent.Length;
+            return;
+        }
+
+        var adjustedIndent = StartsWithClosingDelimiter(textAfterCaret)
+            ? RemoveOneIndentUnit(indent)
+            : indent;
+
+        var newLineText = Environment.NewLine + adjustedIndent + extraIndent;
+        doc.Insert(offset, newLineText);
+        caret.Offset = offset + newLineText.Length;
+    }
+
+    private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    {
+        var selection = EditorTextBox.TextArea.Selection;
+        if (selection is not null && !selection.IsEmpty)
+            return false;
+
+        var offset = caret.Offset;
+        if (offset <= 0 || offset >= doc.TextLength)
+            return false;
+
+        var opening = doc.GetCharAt(offset - 1);
+        if (!BracketPairs.TryGetValue(opening, out var closing))
+            return false;
+
+        if (doc.GetCharAt(offset) != closing)
+            return false;
+
+        doc.Remove(offset - 1, 2);
+        SetCaretOffsetSafely(caret, doc, offset - 1);
+        return true;
+    }
+
+    private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        if (selection is null || selection.IsEmpty)
+        {
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+            return;
+        }
+
+        var segment = selection.SurroundingSegment;
+        if (segment is null)
+        {
+            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+            doc.Insert(safeOffset, GetIndentUnit());
+            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+            return;
+        }
+
+        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+            doc.Insert(line.Offset, GetIndentUnit());
+
+        SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
+    }
+
+    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        if (selection is null || selection.IsEmpty)
+        {
+            var line = doc.GetLineByOffset(caret.Offset);
+            var lineText = doc.GetText(line);
+            var caretColumnInLine = caret.Offset - line.Offset;
+            var removable = GetOutdentLength(lineText, caretColumnInLine);
+            if (removable <= 0)
+                return;
+
+            doc.Remove(line.Offset, removable);
+            SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
+            return;
+        }
+
+        var segment = selection.SurroundingSegment;
+        if (segment is null)
+            return;
+
+        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
+        var removed = 0;
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+        {
+            var lineText = doc.GetText(line);
+            var removable = GetOutdentLength(lineText, lineText.Length);
+            if (removable <= 0)
+                continue;
+
+            doc.Remove(line.Offset, removable);
+            removed += removable;
+        }
+
+        SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - removed));
+    }
+
+    private static string GetLeadingWhitespace(string text)
+    {
+        var length = 0;
+        while (length < text.Length && char.IsWhiteSpace(text[length]) && text[length] != '\r' && text[length] != '\n')
+            length++;
+
+        return text[..length];
+    }
+
+    private static bool ShouldIncreaseIndentAfter(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return text.EndsWith(":", StringComparison.Ordinal) ||
+               text.EndsWith("{", StringComparison.Ordinal) ||
+               text.EndsWith("[", StringComparison.Ordinal) ||
+               text.EndsWith("(", StringComparison.Ordinal) ||
+               text.EndsWith("=>", StringComparison.Ordinal) ||
+               text.EndsWith(" then", StringComparison.OrdinalIgnoreCase) ||
+               text.EndsWith(" do", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool ShouldInsertStructuredBlock(string textBeforeCaret, string textAfterCaret)
+    {
+        var trimmedAfter = textAfterCaret.TrimStart();
+        if (string.IsNullOrEmpty(trimmedAfter))
+            return false;
+
+        if (!BracketPairs.TryGetValue(textBeforeCaret.LastOrDefault(), out var closing))
+            return false;
+
+        return trimmedAfter.Length > 0 && trimmedAfter[0] == closing && closing is ')' or ']' or '}';
+    }
+
+    private string ReindentPastedText(string text, AvaloniaEdit.Document.TextDocument doc, int offset)
+    {
+        var normalized = NormalizeLineEndings(text);
+        if (!normalized.Contains('\n'))
+            return text;
+
+        var line = doc.GetLineByOffset(Math.Clamp(offset, 0, doc.TextLength));
+        var lineText = doc.GetText(line);
+        var caretColumnInLine = Math.Clamp(offset - line.Offset, 0, lineText.Length);
+        var textBeforeCaret = lineText[..caretColumnInLine];
+        var baseIndent = GetLeadingWhitespace(textBeforeCaret);
+        var pasteLines = normalized.Split('\n');
+
+        if (pasteLines.Length <= 1)
+            return text;
+
+        var firstNonEmptyIndex = Array.FindIndex(pasteLines, static l => !string.IsNullOrWhiteSpace(l));
+        if (firstNonEmptyIndex < 0)
+            return text;
+
+        var commonIndent = GetLeadingWhitespace(pasteLines[firstNonEmptyIndex]);
+        for (var i = firstNonEmptyIndex + 1; i < pasteLines.Length; i++)
+        {
+            if (string.IsNullOrWhiteSpace(pasteLines[i]))
+                continue;
+
+            commonIndent = GetSharedIndent(commonIndent, GetLeadingWhitespace(pasteLines[i]));
+            if (commonIndent.Length == 0)
+                break;
+        }
+
+        for (var i = 1; i < pasteLines.Length; i++)
+        {
+            if (pasteLines[i].Length == 0)
+                continue;
+
+            var trimmedLine = pasteLines[i];
+            if (commonIndent.Length > 0 && trimmedLine.StartsWith(commonIndent, StringComparison.Ordinal))
+                trimmedLine = trimmedLine[commonIndent.Length..];
+
+            pasteLines[i] = baseIndent + trimmedLine;
+        }
+
+        return string.Join(Environment.NewLine, pasteLines);
+    }
+
+    private async Task HandleSmartPasteAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Caret caret)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null)
+            return;
+
+        var text = await clipboard.TryGetTextAsync();
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var insertionText = ReindentPastedText(text, doc, caret.Offset);
+        var selection = textArea.Selection;
+        if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+        {
+            var segment = selection.SurroundingSegment;
+            doc.Replace(segment, insertionText);
+            SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
+            return;
+        }
+
+        var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+        doc.Insert(safeOffset, insertionText);
+        SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
+    }
+
+    private void ToggleLineComment(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    {
+        var lineCommentToken = CurrentLanguageExtension?.CommentLine;
+        if (string.IsNullOrWhiteSpace(lineCommentToken))
+            return;
+
+        var startOffset = selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null
+            ? selection.SurroundingSegment.Offset
+            : caret.Offset;
+        var endOffset = selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null
+            ? selection.SurroundingSegment.EndOffset
+            : caret.Offset;
+
+        var lines = GetSelectedLines(doc, startOffset, endOffset);
+        if (lines.Count == 0)
+            return;
+
+        var shouldUncomment = lines
+            .Where(line => !string.IsNullOrWhiteSpace(doc.GetText(line)))
+            .All(line =>
+            {
+                var text = doc.GetText(line);
+                var indent = GetLeadingWhitespace(text);
+                return text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal);
+            });
+
+        var delta = 0;
+        foreach (var line in lines.OrderByDescending(l => l.Offset))
+        {
+            var text = doc.GetText(line);
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            var indent = GetLeadingWhitespace(text);
+            var commentOffset = line.Offset + indent.Length;
+            if (shouldUncomment)
+            {
+                if (text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal))
+                {
+                    var removedForLine = lineCommentToken.Length;
+                    doc.Remove(commentOffset, lineCommentToken.Length);
+                    if (text.Length > indent.Length + lineCommentToken.Length && text[indent.Length + lineCommentToken.Length] == ' ')
+                    {
+                        doc.Remove(commentOffset, 1);
+                        removedForLine++;
+                    }
+
+                    delta -= removedForLine;
+                }
+            }
+            else
+            {
+                doc.Insert(commentOffset, lineCommentToken + " ");
+                delta += lineCommentToken.Length + 1;
+            }
+        }
+
+        if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+        {
+            var segment = selection.SurroundingSegment;
+            var newEnd = Math.Max(segment.Offset, segment.EndOffset + delta);
+            textArea.Selection = AvaloniaEdit.Editing.Selection.Create(textArea, segment.Offset, newEnd);
+        }
+        else
+        {
+            SetCaretOffsetSafely(caret, doc, caret.Offset + delta);
+        }
+    }
+
+    private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
+    {
+        _autoSaveTimer.Stop();
+        if (!IsAutoSaveEnabled || !HasFileOpen || !_isDirty) return;
+        try
+        {
+            await SaveAsync(allowPromptForPath: false);
+        }
+        catch (Exception ex)
+        {
+            _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
+            OnPropertyChanged(nameof(FileSummaryText));
+            OnPropertyChanged(nameof(AutoSaveStatusText));
+            await ShowWarningDialogAsync("Auto-save", ex);
+        }
+    }
+
+}
