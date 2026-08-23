@@ -344,7 +344,7 @@ internal static class FuzzyMatch
 
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
-        // Fast path: exact substring match — high base score.
+        // Fast path: exact substring match - high base score.
         var exactIndex = value.IndexOf(query, comparison);
         if (exactIndex >= 0)
         {
@@ -487,6 +487,6 @@ public class SearchResultItem
     /// <summary>Character indices in <see cref="PreviewText"/> that matched the query (for highlighting).</summary>
     public IReadOnlyList<int> MatchedPreviewIndices { get; init; } = System.Array.Empty<int>();
 
-    /// <summary>Fuzzy match score — higher is better. Used for sorting File-by-name results.</summary>
+    /// <summary>Fuzzy match score - higher is better. Used for sorting File-by-name results.</summary>
     public int Score { get; init; }
 }

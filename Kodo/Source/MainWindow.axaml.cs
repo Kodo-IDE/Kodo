@@ -3278,7 +3278,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Clicking anywhere on the settings page background while the search box
         // is focused should defocus it. Some targets (cards, ScrollViewer) aren't
-        // focusable, so LostFocus wouldn't fire on its own — force a focus clear.
+        // focusable, so LostFocus wouldn't fire on its own - force a focus clear.
         var box = this.FindControl<TextBox>("SettingsSearchTextBox");
         if (box is null) return;
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();

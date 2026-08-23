@@ -81,7 +81,7 @@ public partial class MainWindow
 
     private void SettingsSearchTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
     {
-        // User clicked off the settings search bar — flush any debounced filtering
+        // User clicked off the settings search bar - flush any debounced filtering
         // immediately and stop the typing/debounce timer so the caret blink and
         // pending filter animation end at once.
         if (_searchFilterDebounceTimer.IsEnabled)
@@ -1142,7 +1142,7 @@ public partial class MainWindow
         if (pos < text.Length)
             sb.Append(text, pos, text.Length - pos);
 
-        // Single document operation — keeps the undo history clean.
+        // Single document operation - keeps the undo history clean.
         doc.Replace(0, text.Length, sb.ToString());
 
         SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
