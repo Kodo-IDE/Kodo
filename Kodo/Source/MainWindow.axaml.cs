@@ -114,6 +114,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Kodo",
         "news-cache.json");
+    private static readonly string LatestReleaseCachePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Kodo",
+        "whats-new-cache.json");
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
@@ -634,7 +638,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    _ = RefreshLatestReleaseAsync();
+                    _ = RefreshLatestReleaseAsync(forceNetwork: false);
                 }
             }
         }
@@ -680,7 +684,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (_newsDisabled)
                     _ = FetchAnnouncementsAsync(forceNetwork: false);
                 if (_whatsNewDisabled)
-                    _ = RefreshLatestReleaseAsync();
+                    _ = RefreshLatestReleaseAsync(forceNetwork: false);
                 FlushPendingSearchFilters();
             }
         }
@@ -1585,7 +1589,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task RefreshLatestReleaseAsync()
+    private async Task RefreshLatestReleaseAsync(bool forceNetwork = false)
     {
         if (_isRefreshingLatestRelease || IsWhatsNewDisabled)
             return;
@@ -1598,11 +1602,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
+            if (!forceNetwork && LoadCachedLatestRelease())
+            {
+                LatestReleaseStatusText = HasLatestRelease
+                    ? $"Latest release: {LatestReleaseDisplayName}"
+                    : "No releases found.";
+                return;
+            }
+
             LatestRelease = await FetchLatestReleaseInfoAsync();
 
             LatestReleaseStatusText = HasLatestRelease
                 ? $"Latest release: {LatestReleaseDisplayName}"
                 : "No releases found.";
+
+            if (HasLatestRelease)
+                SaveLatestReleaseCache();
         }
         catch (Exception ex)
         {
@@ -1734,6 +1749,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var json = JsonSerializer.Serialize(NewsItems.ToList());
             File.WriteAllText(NewsCachePath, json);
+        }
+        catch
+        {
+            // Best-effort cache only.
+        }
+    }
+
+    private bool LoadCachedLatestRelease()
+    {
+        try
+        {
+            if (!File.Exists(LatestReleaseCachePath))
+                return false;
+
+            var json = File.ReadAllText(LatestReleaseCachePath);
+            var cached = JsonSerializer.Deserialize<ReleaseInfo>(json);
+            if (cached is null ||
+                (string.IsNullOrWhiteSpace(cached.Name) &&
+                 string.IsNullOrWhiteSpace(cached.Tag) &&
+                 string.IsNullOrWhiteSpace(cached.Notes)))
+                return false;
+
+            LatestRelease = cached;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void SaveLatestReleaseCache()
+    {
+        try
+        {
+            if (LatestRelease is null)
+                return;
+
+            var dir = Path.GetDirectoryName(LatestReleaseCachePath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+
+            var json = JsonSerializer.Serialize(LatestRelease);
+            File.WriteAllText(LatestReleaseCachePath, json);
         }
         catch
         {
@@ -8265,7 +8324,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         _ = RefreshExtensionsAndAutoUpdateAsync();
-        _ = RefreshLatestReleaseAsync();
+        _ = RefreshLatestReleaseAsync(forceNetwork: false);
         _ = FetchAnnouncementsAsync(forceNetwork: false);
 
         // Exactly one of tutorial (first launch) or What's New splash (subsequent launches) shows per run.
@@ -9378,7 +9437,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         NavigateTo(Page.WhatsNew);
         IsWhatsNewExpanded = true;
-        _ = RefreshLatestReleaseAsync();
+        _ = RefreshLatestReleaseAsync(forceNetwork: false);
     }
 
     // Only reachable once any pending consent ask is resolved, so the splash can't be dismissed past an unanswered question.
@@ -9432,7 +9491,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void RefreshLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (IsWhatsNewDisabled) return;
-        await RefreshLatestReleaseAsync();
+        await RefreshLatestReleaseAsync(forceNetwork: true);
     }
 
     private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
