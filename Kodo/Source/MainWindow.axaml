@@ -1228,7 +1228,7 @@
                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                        TextTrimming="CharacterEllipsis">
                                                 <TextBlock.MaxWidth>
-                                                    <MultiBinding Converter="{x:Static kodo:ExplorerItemNameMaxWidthConverter.Instance}">
+                                                    <MultiBinding Converter="{x:Static kodoModels:ExplorerItemNameMaxWidthConverter.Instance}">
                                                         <Binding ElementName="RootWindow" Path="ExplorerPanelWidth" />
                                                         <Binding Path="IndentWidth" />
                                                     </MultiBinding>
@@ -2429,7 +2429,7 @@
                                                                                                FontSize="12"
                                                                                                LineHeight="19"
                                                                                                Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                                               FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
+                                                                                               FontWeight="{Binding IsBold, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}" />
                                                                                 </DataTemplate>
                                                                             </ItemsControl.ItemTemplate>
                                                                         </ItemsControl>
@@ -4300,7 +4300,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
                                         <Border Classes="extensiontile"
-                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
+                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
@@ -4472,7 +4472,7 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
                                         <Border Classes="extensiontile"
-                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodo:MarketplaceTileWidthConverter.Instance}}"
+                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
@@ -5981,7 +5981,7 @@
                                                                                    FontSize="13"
                                                                                    LineHeight="20"
                                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                                   FontWeight="{Binding IsBold, Converter={x:Static kodo:BoolToFontWeightConverter.Instance}}" />
+                                                                                   FontWeight="{Binding IsBold, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}" />
                                                                     </DataTemplate>
                                                                 </ItemsControl.ItemTemplate>
                                                             </ItemsControl>

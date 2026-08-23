@@ -50,24 +50,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-// Computes how much room a file-tree row's name TextBlock has to work with, so
-// long names truncate less (or not at all) as the user widens the explorer panel
-// via ExplorerPanelSplitter, instead of being capped at a fixed pixel width.
-internal sealed class ExplorerItemNameMaxWidthConverter : IMultiValueConverter
-{
-    public static readonly ExplorerItemNameMaxWidthConverter Instance = new();
-
-    private const double MinWidth = 40;
-
-    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (values.Count < 2 || values[0] is not double panelWidth || values[1] is not double indentWidth)
-            return MinWidth;
-
-        return Math.Max(MinWidth, panelWidth - indentWidth - MainWindow.FileTreeRowFixedOverhead);
-    }
-}
-
 public partial class MainWindow : Window, INotifyPropertyChanged
 {
     private const int MaxRecentFiles = 6;
@@ -1481,12 +1463,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 $"All {iconAttempts} marketplace icon fetch(es) failed; icons will show abbreviations.",
                 lastIconException);
         }
-    }
-
-    // Discriminated result from GetCachedIconAsync.
-    private readonly record struct IconResult(Bitmap? Bitmap, string? SvgData)
-    {
-        public bool HasValue => Bitmap is not null || SvgData is not null;
     }
 
     private static bool IsSvgContent(byte[] bytes)
@@ -2932,29 +2908,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return matches
             .Select(match => int.TryParse(match.Value, out var part) ? part : 0)
             .ToArray();
-    }
-
-    private sealed class VersionNumberSequenceComparer : IComparer<int[]>
-    {
-        public static VersionNumberSequenceComparer Instance { get; } = new();
-
-        public int Compare(int[]? left, int[]? right)
-        {
-            left ??= [0];
-            right ??= [0];
-
-            var maxLength = Math.Max(left.Length, right.Length);
-            for (var i = 0; i < maxLength; i++)
-            {
-                var leftPart = i < left.Length ? left[i] : 0;
-                var rightPart = i < right.Length ? right[i] : 0;
-                var comparison = leftPart.CompareTo(rightPart);
-                if (comparison != 0)
-                    return comparison;
-            }
-
-            return 0;
-        }
     }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
@@ -5539,13 +5492,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public static class InstalledContentFilters
-    {
-        public const string All = "All";
-        public const string Extensions = "Extensions";
-        public const string Compilers = "Compilers";
-    }
-
     public IReadOnlyList<string> InstalledContentFilterOptions { get; } =
     [
         InstalledContentFilters.All,
@@ -7064,7 +7010,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // (currently the terminal). Two bindings are considered a conflict only when they share
     // the same scope, so e.g. Ctrl+V can be "Paste" in the editor and "Paste" in the terminal
     // at the same time.
-    private sealed record KeybindDefinition(string Id, string Description, KeyGesture Default, string Category, bool IsContextLocal = false);
 
     private static readonly KeybindDefinition[] KeybindDefinitions =
     {
@@ -8054,7 +7999,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             // Force page state even if NavigateTo bails early due to no change
             _isHomePageVisible = false;
-            NavigateTo(Page.Editor);
+            NavigateTo(AppPage.Editor);
             RefreshState(fullRefresh: true);
             if (focusEditor)
                 FocusEditor();
@@ -8092,7 +8037,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Directly set the backing field before NavigateTo so the bail-early
         // check doesn't short-circuit when we're already on the editor page.
         _isHomePageVisible = false;
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
         RefreshState(fullRefresh: true);
 
         if (focusEditor)
@@ -8272,7 +8217,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         // Navigates away from Home before adding the tab (mirrors NewFile()).
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
 
         var tab = new EditorTab(path, Path.GetFileName(path), content);
         if (isCorrupted)
@@ -8390,7 +8335,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         // Navigate away from home BEFORE adding the tab, so the CollectionChanged
         // notification evaluates IsEditorTabsVisible with IsHomePageVisible already false.
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
 
         var tab = CreateUntitledTab();
         OpenTabs.Add(tab);
@@ -9002,7 +8947,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ToggleTerminalPanel(bool ensureVisible = false)
     {
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
 
         if (ensureVisible)
             IsTerminalVisible = true;
@@ -9195,20 +9140,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Event handlers
 
-    // Switches the visible page in one pass - sets all backing fields before firing
-    // any notifications, so the UI only re-renders once instead of once per property set.
-    private enum Page { Home, Editor, Settings, Extensions, Tutorial, WhatsNew }
-
-    // Modes for the unified search panel opened by Ctrl+F / Ctrl+Shift+F / the status bar.
-    private enum SearchMode { FindInFile, FileByName, ProjectSearch }
-
-    private void NavigateTo(Page page)
+    private void NavigateTo(AppPage page)
     {
-        var newHome       = page == Page.Home;
-        var newSettings   = page == Page.Settings;
-        var newExtensions = page == Page.Extensions;
-        var newTutorial   = page == Page.Tutorial;
-        var newWhatsNew   = page == Page.WhatsNew;
+        var newHome       = page == AppPage.Home;
+        var newSettings   = page == AppPage.Settings;
+        var newExtensions = page == AppPage.Extensions;
+        var newTutorial   = page == AppPage.Tutorial;
+        var newWhatsNew   = page == AppPage.WhatsNew;
 
         // Bail early if nothing actually changed
         if (_isHomePageVisible       == newHome       &&
@@ -9246,12 +9184,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
         FocusEditor();
     }
 
     private void HomeButton_OnClick(object? sender, RoutedEventArgs e) =>
-        NavigateTo(Page.Home);
+        NavigateTo(AppPage.Home);
 
     private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e) =>
         await OpenFileAsync();
@@ -9419,7 +9357,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        NavigateTo(Page.Settings);
+        NavigateTo(AppPage.Settings);
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -9467,12 +9405,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _tutorialOpenedFromSettings = true;
         TutorialStepIndex = 0;
-        NavigateTo(Page.Tutorial);
+        NavigateTo(AppPage.Tutorial);
     }
 
     private void OpenWhatsNewButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        NavigateTo(Page.WhatsNew);
+        NavigateTo(AppPage.WhatsNew);
         IsWhatsNewExpanded = true;
         _ = RefreshLatestReleaseAsync(forceNetwork: false);
     }
@@ -9521,7 +9459,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void BackToEditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        NavigateTo(Page.Editor);
+        NavigateTo(AppPage.Editor);
         FocusEditor();
     }
 
@@ -9555,7 +9493,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenExtensionsPage(bool showMarketplaceTab, bool forceRefresh)
     {
-        NavigateTo(Page.Extensions);
+        NavigateTo(AppPage.Extensions);
         if (showMarketplaceTab) IsLanguagesTabSelected = true;
         RefreshMarketplaceConnectivityState();
         _ = RefreshExtensionsDataAsync(force: forceRefresh);
@@ -11820,235 +11758,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return _searchFileCache.Value;
     }
 
-    // Built-in directory names that are always skipped during project search,
-    // regardless of .gitignore contents.
-    private static readonly HashSet<string> DefaultIgnoreDirectories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".git", "node_modules", "bin", "obj", "dist", ".vs",
-    };
 
-    /// <summary>
-    /// Minimal .gitignore parser. Collects patterns from .gitignore files and
-    /// answers whether a given path should be excluded from project search.
-    /// </summary>
-    private sealed class SearchIgnoreRules
-    {
-        private readonly List<(string Pattern, string Root, bool Negated)> _rules = new();
-        private readonly List<string> _includePatterns = new();
-        private readonly List<string> _excludePatterns = new();
-        public string IncludeFilterSnapshot { get; set; } = "";
-        public string ExcludeFilterSnapshot { get; set; } = "";
-
-        /// <summary>
-        /// Creates rules by walking from <paramref name="projectRoot"/> upward
-        /// to the filesystem root, loading every .gitignore encountered.
-        /// Optional user-defined include/exclude glob patterns are layered on top.
-        /// </summary>
-        public static SearchIgnoreRules Load(string projectRoot, string? includeFilter = null, string? excludeFilter = null)
-        {
-            var rules = new SearchIgnoreRules();
-            var dir = projectRoot;
-            while (!string.IsNullOrEmpty(dir))
-            {
-                var gitignore = Path.Combine(dir, ".gitignore");
-                if (File.Exists(gitignore))
-                    rules.LoadFile(gitignore, dir);
-
-                var parent = Path.GetDirectoryName(dir);
-                if (parent is null || parent == dir) break;
-                dir = parent;
-            }
-
-            // Parse comma-separated user include/exclude patterns.
-            if (!string.IsNullOrWhiteSpace(includeFilter))
-            {
-                foreach (var pat in includeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    rules._includePatterns.Add(pat);
-            }
-            if (!string.IsNullOrWhiteSpace(excludeFilter))
-            {
-                foreach (var pat in excludeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                    rules._excludePatterns.Add(pat);
-            }
-
-            return rules;
-        }
-
-        private void LoadFile(string gitignorePath, string rootDir)
-        {
-            try
-            {
-                foreach (var raw in File.ReadLines(gitignorePath))
-                {
-                    var line = raw.TrimEnd('\r');
-                    if (string.IsNullOrWhiteSpace(line) || line[0] == '#') continue;
-
-                    var negated = line[0] == '!';
-                    if (negated) line = line[1..];
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    // Strip leading slash (anchored to .gitignore directory).
-                    if (line[0] is '/' or '\\')
-                        line = line[1..];
-                    if (string.IsNullOrWhiteSpace(line)) continue;
-
-                    _rules.Add((line, rootDir, negated));
-                }
-            }
-            catch { /* unreadable .gitignore — skip */ }
-        }
-
-        /// <summary>
-        /// Returns true if the directory should be skipped entirely.
-        /// Checks default ignore names, .gitignore directory patterns, and
-        /// hidden/system file attributes.
-        /// </summary>
-        public bool ShouldSkipDirectory(string dirPath)
-        {
-            var name = Path.GetFileName(dirPath);
-            if (string.IsNullOrEmpty(name)) return false;
-
-            if (DefaultIgnoreDirectories.Contains(name)) return true;
-            if (IsHiddenOnDisk(dirPath)) return true;
-
-            foreach (var (pattern, root, negated) in _rules)
-            {
-                // Directory-only rule (trailing /)
-                if (pattern.Length > 0 && pattern[^1] == '/')
-                {
-                    var p = pattern[..^1];
-                    if (MatchesFileName(p, name))
-                        return !negated;
-                    continue;
-                }
-
-                if (MatchesAnyPathComponent(pattern, name))
-                    return !negated;
-            }
-
-            return false;
-        }
-
-        /// <summary>
-        /// Returns true if the file should be excluded from results.
-        /// Checks hidden/system attributes and .gitignore file patterns.
-        /// </summary>
-        public bool ShouldSkipFile(string filePath)
-        {
-            if (IsHiddenOnDisk(filePath)) return true;
-
-            var name = Path.GetFileName(filePath);
-            if (string.IsNullOrEmpty(name)) return false;
-
-            foreach (var (pattern, root, negated) in _rules)
-            {
-                if (MatchesFilePath(pattern, root, filePath))
-                    return !negated;
-            }
-
-            // User-defined exclude patterns: skip if file matches any.
-            if (_excludePatterns.Count > 0)
-            {
-                var relPath = Path.GetRelativePath(_excludePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
-                foreach (var pat in _excludePatterns)
-                {
-                    if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath.Replace('\\', '/')))
-                        return true;
-                }
-            }
-
-            // User-defined include patterns: skip if file matches NONE.
-            if (_includePatterns.Count > 0)
-            {
-                var relPath2 = Path.GetRelativePath(_includePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
-                var included = false;
-                foreach (var pat in _includePatterns)
-                {
-                    if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath2.Replace('\\', '/')))
-                    {
-                        included = true;
-                        break;
-                    }
-                }
-                if (!included) return true;
-            }
-
-            return false;
-        }
-
-        private static bool MatchesAnyPathComponent(string pattern, string componentName)
-        {
-            // Pattern without slash — match against a single path component.
-            if (!pattern.Contains('/') && !pattern.Contains('\\'))
-                return MatchesFileName(pattern, componentName);
-
-            return false;
-        }
-
-        private static bool MatchesFilePath(string pattern, string ruleRoot, string fullPath)
-        {
-            if (!pattern.Contains('/') && !pattern.Contains('\\'))
-            {
-                // Filename-only pattern — match against just the filename.
-                return MatchesFileName(pattern, Path.GetFileName(fullPath));
-            }
-
-            // Path pattern — match against relative path from the .gitignore root.
-            try
-            {
-                var relative = Path.GetRelativePath(ruleRoot, fullPath)
-                    .Replace('\\', '/');
-                return MatchesGlob(pattern, relative);
-            }
-            catch { return false; }
-        }
-
-        private static bool MatchesFileName(string pattern, string name) =>
-            MatchesGlob(pattern, name);
-
-        internal static bool MatchesGlob(string pattern, string value)
-        {
-            if (pattern == "*") return true;
-            if (!pattern.Contains('*') && !pattern.Contains('?'))
-                return string.Equals(pattern, value, StringComparison.OrdinalIgnoreCase);
-
-            return GlobMatch(pattern.AsSpan(), value.AsSpan());
-        }
-
-        private static bool GlobMatch(ReadOnlySpan<char> pattern, ReadOnlySpan<char> value)
-        {
-            var pi = 0;
-            var vi = 0;
-            var starPi = -1;
-            var starVi = -1;
-
-            while (vi < value.Length)
-            {
-                if (pi < pattern.Length && (pattern[pi] == '?' || char.ToUpperInvariant(pattern[pi]) == char.ToUpperInvariant(value[vi])))
-                {
-                    pi++;
-                    vi++;
-                }
-                else if (pi < pattern.Length && pattern[pi] == '*')
-                {
-                    starPi = pi++;
-                    starVi = vi;
-                }
-                else if (starPi >= 0)
-                {
-                    pi = starPi + 1;
-                    vi = ++starVi;
-                }
-                else
-                {
-                    return false;
-                }
-            }
-
-            while (pi < pattern.Length && pattern[pi] == '*') pi++;
-            return pi == pattern.Length;
-        }
-    }
 
     // Walks the open folder's whole tree, skipping ignored directories and
     // guarding against directory cycles (junction points etc.).
@@ -14113,7 +13823,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _hasCompletedTutorial = true;
         SaveSettings();
-        NavigateTo(Page.Home);
+        NavigateTo(AppPage.Home);
     }
 
     // Gates every path that can end the tutorial until consent is answered and the Privacy
@@ -14180,7 +13890,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)
             {
-                NavigateTo(Page.Editor);
+                NavigateTo(AppPage.Editor);
                 FocusEditor();
                 e.Handled = true;
             }
@@ -14198,25 +13908,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (MatchesKeybind(e, "GoEditor"))
         {
-            NavigateTo(Page.Editor);
+            NavigateTo(AppPage.Editor);
             FocusEditor();
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "OpenExtensions") || MatchesKeybind(e, "OpenExtensionsAlt"))
         {
-            NavigateTo(Page.Extensions);
+            NavigateTo(AppPage.Extensions);
             RefreshMarketplaceConnectivityState();
             _ = RefreshExtensionsDataAsync();
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "OpenSettings"))
         {
-            NavigateTo(Page.Settings);
+            NavigateTo(AppPage.Settings);
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "GoHome"))
         {
-            NavigateTo(Page.Home);
+            NavigateTo(AppPage.Home);
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "SaveAs"))
@@ -14465,7 +14175,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TutorialStepIndex = 0;
             if (!_hasAcceptedPrivacyPolicy)
                 ResetPrivacyPolicyScrollState();
-            NavigateTo(Page.Tutorial);
+            NavigateTo(AppPage.Tutorial);
         }
         catch
         {
@@ -14966,609 +14676,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // AppSettings and RecentFileEntry moved to Models/AppSettings.cs - both are pure
     // data (the persisted-settings schema), with no dependency on MainWindow itself.
 
-    private sealed record ExtensionScanResult(
-        List<LoadedExtension> Extensions,
-        List<string> LoadErrors);
-
-    private enum UnsavedTabAction
-    {
-        Save,
-        Discard,
-        Cancel
-    }
-
-    private sealed record TutorialStep(
-        string SectionTitle,
-        string Title,
-        string Body,
-        string Shortcut,
-        string SpotlightTitle,
-        string HighlightOne,
-        string HighlightTwo,
-        string HighlightThree);
 }
 
 
 
-public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
-{
-    public KnownLayer Layer => KnownLayer.Background;
-
-    public int TabSize { get; set; } = 4;
-
-    // Disabled for unsaved (untitled) files and plain-text files (.txt / .log / .text)
-    // so that smart visual features don't activate where no language context exists.
-    public bool IsEnabled { get; set; } = true;
-
-    public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
-
-    public void Draw(TextView textView, DrawingContext drawingContext)
-    {
-        if (!IsEnabled)
-            return;
-
-        if (!textView.VisualLinesValid || TabSize <= 0)
-            return;
-
-        var spaceWidth = textView.WideSpaceWidth;
-        if (spaceWidth <= 0)
-            return;
-
-        var document = textView.Document;
-        if (document is null || document.LineCount == 0)
-            return;
-
-        if (!textView.VisualLines.Any())
-            return;
-
-        // Pre-compute indent depth (in tab-stop levels) for every document line.
-        var totalLines = document.LineCount;
-        var lineDepths = new int[totalLines + 1]; // 1-based index
-
-        for (var i = 1; i <= totalLines; i++)
-        {
-            var docLine = document.GetLineByNumber(i);
-            var text    = document.GetText(docLine);
-            lineDepths[i] = string.IsNullOrWhiteSpace(text) ? -1 : GetIndentColumns(text) / TabSize;
-        }
-
-        // Fill blank lines from surrounding context so guides are continuous
-        for (var i = 1; i <= totalLines; i++)
-        {
-            if (lineDepths[i] != -1) continue;
-            var above = 0;
-            for (var a = i - 1; a >= 1; a--)
-                if (lineDepths[a] >= 0) { above = lineDepths[a]; break; }
-            var below = 0;
-            for (var b = i + 1; b <= totalLines; b++)
-                if (lineDepths[b] >= 0) { below = lineDepths[b]; break; }
-            lineDepths[i] = Math.Min(above, below);
-        }
-
-        // Measures true text-start X, subtracting ScrollOffset.
-        var scrollX = textView.ScrollOffset.X;
-        var scrollY = textView.ScrollOffset.Y;
-
-        var refLine = textView.VisualLines[0].FirstDocumentLine;
-        var originX = textView.GetVisualPosition(
-            new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
-            VisualYPosition.LineTop).X - scrollX;
-
-        // Dashed pen matching VS Code-style indent guides
-        var dashStyle = new DashStyle([2, 2], 0);
-        var pen = new Pen(GuideBrush, 1, dashStyle);
-
-        foreach (var visualLine in textView.VisualLines)
-        {
-            var lineNumber = visualLine.FirstDocumentLine.LineNumber;
-            var depth = lineDepths[lineNumber];
-            if (depth <= 0) continue;
-
-            // VisualTop is document-absolute; subtract scrollY for screen coords
-            var top    = visualLine.VisualTop - scrollY;
-            var bottom = top + visualLine.Height;
-
-            for (var level = 1; level <= depth; level++)
-            {
-                // Each guide sits at the first character of its indent level: column TabSize, 2*TabSize, etc.
-                var x = originX + (level * TabSize - 1) * spaceWidth;
-                if (x < 0 || x > textView.Bounds.Width) continue;
-
-                drawingContext.DrawLine(pen, new Point(x, top), new Point(x, bottom));
-            }
-        }
-    }
-
-    private int GetIndentColumns(string lineText)
-    {
-        var columns = 0;
-        foreach (var ch in lineText)
-        {
-            if      (ch == ' ')  columns++;
-            else if (ch == '\t') columns += TabSize - (columns % TabSize);
-            else break;
-        }
-        return columns;
-    }
-}
-
-/// <summary>
-/// Highlights all search matches in the editor when Find-in-file is active.
-/// </summary>
-// Whole-line/whole-section grey highlighting for Insight's dead code detection
-// (unused variables, unused functions, unreachable code). Deliberately muted rather
-// than alarm-red - dead code isn't an error, just something the editor thinks is inert.
-// Brightens the syntax-highlighted text sitting on top of a dead-code grey overlay, so it
-// stays readable instead of washing out against the highlight. Lightens whatever foreground
-// color the syntax colorizer already picked, rather than overriding it with a flat color, so
-// each token keeps its own hue - just brighter.
-internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
-{
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
-
-    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme. Unconditional
-    // override rather than lightening the existing brush - plain identifiers often carry no
-    // explicit brush at all (null, inherited from the editor default), so a "lighten if solid"
-    // check silently skipped them, which is why only accent-colored tokens (numbers, keywords)
-    // were changing while the rest of the line stayed dim.
-    public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
-
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
-
-    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
-
-    protected override void ColorizeLine(DocumentLine line)
-    {
-        if (_spans.Count == 0) return;
-
-        foreach (var span in _spans)
-        {
-            var start = Math.Max(span.StartOffset, line.Offset);
-            // DocumentLine.EndOffset already excludes the line delimiter - subtracting
-            // DelimiterLength again here was crushing "end" down near "start" for short
-            // lines, which is why only a sliver near the start of the line was affected.
-            var end = Math.Min(span.StartOffset + span.Length, line.EndOffset);
-            if (start >= end) continue;
-
-            ChangeLinePart(start, end, element =>
-            {
-                var properties = element.TextRunProperties.Clone();
-                properties.SetForegroundBrush(TextBrush);
-                SetTextRunPropertiesMethod?.Invoke(element, [properties]);
-            });
-        }
-    }
-}
-
-internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
-{
-    // Instance (not static/const) so ApplyThemeToEditor can swap it for a darker overlay
-    // in light themes, where a translucent mid-grey barely shows up against white.
-    public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
-
-    // Current spans, shared with ErrorLineHighlightRenderer so error lines covered by dead
-    // code can switch their whole-line highlight to grey/red stripes.
-    public IReadOnlyList<InsightEngine.DeadCodeSpan> Spans => _spans;
-
-    public KnownLayer Layer => KnownLayer.Background;
-
-    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
-
-    // Returns the reason string for the dead-code span containing the given document
-    // offset, or null if the offset isn't inside one - used to drive the hover tooltip.
-    public string? GetReasonAt(int offset)
-    {
-        foreach (var span in _spans)
-        {
-            if (offset >= span.StartOffset && offset <= span.StartOffset + span.Length)
-                return span.Reason;
-        }
-        return null;
-    }
-
-    public void Draw(TextView textView, DrawingContext drawingContext)
-    {
-        if (textView?.Document is null || !textView.VisualLinesValid || _spans.Count == 0)
-            return;
-
-        var visualLines = textView.VisualLines;
-        if (visualLines.Count == 0)
-            return;
-
-        var scrollY = textView.ScrollOffset.Y;
-        var width = textView.Bounds.Width;
-
-        // One full-width rectangle per visible line covered by a dead-code span. Manual
-        // rects reaching the viewport edge rather than BackgroundGeometryBuilder - its
-        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line, which
-        // left short lines highlighted just around their text.
-        foreach (var visualLine in visualLines)
-        {
-            if (!SpanCoversLine(visualLine.FirstDocumentLine))
-                continue;
-
-            var y1 = visualLine.VisualTop - scrollY;
-            var height = visualLine.Height;
-            if (height <= 0) continue;
-
-            drawingContext.DrawRectangle(HighlightBrush, null, new Rect(0, y1, width, height));
-        }
-    }
-
-    private bool SpanCoversLine(DocumentLine line)
-    {
-        foreach (var span in _spans)
-        {
-            if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
-                return true;
-        }
-        return false;
-    }
-}
-
-// Forces legible black text over error-only lines (red wash, no dead-code grey) in
-// light themes, where the default syntax colors become hard to read against the
-// translucent red background. Dead-code lines keep their own brighter text treatment.
-internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
-{
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
-
-    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme.
-    public IBrush TextBrush { get; set; } = Brushes.Black;
-
-    // Only darkens in light themes - in dark themes the red wash preserves contrast.
-    public bool IsLightTheme { get; set; }
-
-    private IReadOnlyList<InsightEngine.ErrorSpan> _errorSpans = Array.Empty<InsightEngine.ErrorSpan>();
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
-
-    public void SetSpans(
-        IReadOnlyList<InsightEngine.ErrorSpan> errorSpans,
-        IReadOnlyList<InsightEngine.DeadCodeSpan> deadCodeSpans)
-    {
-        _errorSpans = errorSpans;
-        _deadCodeSpans = deadCodeSpans;
-    }
-
-    protected override void ColorizeLine(DocumentLine line)
-    {
-        if (!IsLightTheme) return;
-        if (_errorSpans.Count == 0) return;
-
-        // Covered by dead-code? Skip - DeadCodeTextBrightener already handles it.
-        foreach (var deadSpan in _deadCodeSpans)
-        {
-            if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
-                return;
-        }
-
-        // Has any error span? Force black text (light theme only - see ApplyThemeToEditor).
-        foreach (var errorSpan in _errorSpans)
-        {
-            if (errorSpan.StartOffset < line.EndOffset && errorSpan.StartOffset + errorSpan.Length > line.Offset)
-            {
-                ChangeLinePart(line.Offset, line.EndOffset, element =>
-                {
-                    var properties = element.TextRunProperties.Clone();
-                    properties.SetForegroundBrush(TextBrush);
-                    SetTextRunPropertiesMethod?.Invoke(element, [properties]);
-                });
-                return;
-            }
-        }
-    }
-}
-
-// Whole-line red highlight for Insight's basic error detection (unmatched/unclosed
-// brackets, unterminated strings, missing ';'/':' , misspelled keywords). Each line
-// containing an error is washed with a translucent full-width red highlight; when such
-// a line is ALSO covered by a dead-code finding (e.g. an unused variable), the wash
-// becomes alternating grey/red vertical stripes spanning the whole line, so both
-// findings stay visible on the same row.
-internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
-{
-    // Whole-line wash behind error-only lines. Kept translucent so the syntax colors
-    // underneath stay readable.
-    public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.18);
-    // Red half of the stripes on error+dead-code lines. Stronger than the plain wash so
-    // it reads as clearly red next to the grey.
-    public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.40);
-    // Grey half of the stripes - themed to match DeadCodeHighlightRenderer.HighlightBrush
-    // (see ApplyThemeToEditor) so mixed lines tie back to pure dead-code lines.
-    public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
-
-    private const double StripeWidth = 8.0;
-
-    private IReadOnlyList<InsightEngine.ErrorSpan> _spans = Array.Empty<InsightEngine.ErrorSpan>();
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
-
-    public IReadOnlyList<InsightEngine.ErrorSpan> Spans => _spans;
-
-    public KnownLayer Layer => KnownLayer.Selection;
-
-    public void SetSpans(IReadOnlyList<InsightEngine.ErrorSpan> spans) => _spans = spans;
-
-    public void SetDeadCodeSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _deadCodeSpans = spans;
-
-    // All error messages whose spans touch the given line, newline-separated - drives the
-    // hover tooltip. Line-based (not offset-based) because highlighting is line-wide, so
-    // hovering anywhere on the line should surface its message(s).
-    public string? GetMessageForLine(int lineStart, int lineEnd)
-    {
-        List<string>? messages = null;
-        foreach (var span in _spans)
-        {
-            if (span.StartOffset < lineEnd && span.StartOffset + span.Length > lineStart)
-                (messages ??= []).Add(span.Message);
-        }
-        return messages is null ? null : string.Join(Environment.NewLine, messages);
-    }
-
-    // True when any dead-code span overlaps the line's content - switches the whole-line
-    // highlight from a solid red wash to grey/red stripes.
-    private bool LineOverlapsDeadCode(DocumentLine line)
-    {
-        foreach (var deadSpan in _deadCodeSpans)
-        {
-            if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
-                return true;
-        }
-        return false;
-    }
-
-    public void Draw(TextView textView, DrawingContext drawingContext)
-    {
-        if (textView?.Document is null || !textView.VisualLinesValid || _spans.Count == 0)
-            return;
-
-        var visualLines = textView.VisualLines;
-        if (visualLines.Count == 0)
-            return;
-
-        var scrollY = textView.ScrollOffset.Y;
-        var width = textView.Bounds.Width;
-
-        // One full-width rectangle per visible line touched by an error span: solid red
-        // wash normally, grey/red stripes when a dead-code finding covers the same line.
-        // Manual rects reaching the viewport edge - BackgroundGeometryBuilder's
-        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line.
-        foreach (var visualLine in visualLines)
-        {
-            var docLine = visualLine.FirstDocumentLine;
-            if (!SpanTouchesLine(docLine))
-                continue;
-
-            var y1 = visualLine.VisualTop - scrollY;
-            var height = visualLine.Height;
-            if (height <= 0) continue;
-
-            if (LineOverlapsDeadCode(docLine))
-                DrawStripes(drawingContext, y1, height, width);
-            else
-                drawingContext.DrawRectangle(LineHighlightBrush, null, new Rect(0, y1, width, height));
-        }
-    }
-
-    private bool SpanTouchesLine(DocumentLine line)
-    {
-        foreach (var span in _spans)
-        {
-            if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
-                return true;
-        }
-        return false;
-    }
-
-    // Alternating grey/red vertical bars spanning the full editor width of one line -
-    // the combined "dead code + error" treatment. Starts with grey so the pattern reads
-    // as a dead-code line first, then flags the error on top.
-    private void DrawStripes(DrawingContext drawingContext, double y, double height, double width)
-    {
-        var x = 0.0;
-        var index = 0;
-        while (x < width)
-        {
-            var stripeWidth = Math.Min(StripeWidth, width - x);
-            var brush = index % 2 == 0 ? StripeGreyBrush : StripeRedBrush;
-            drawingContext.DrawRectangle(brush, null, new Rect(x, y, stripeWidth, height));
-            x += stripeWidth;
-            index++;
-        }
-    }
-}
-
-internal sealed class FindHighlightRenderer : IBackgroundRenderer
-{
-    private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));
-    private readonly List<(int Offset, int Length)> _matches = new();
-
-    public KnownLayer Layer => KnownLayer.Background;
-
-    public void AddMatch(int offset, int length) => _matches.Add((offset, length));
-
-    public void Clear() => _matches.Clear();
-
-    public void Draw(TextView textView, DrawingContext drawingContext)
-    {
-        if (textView is null || !textView.VisualLinesValid || _matches.Count == 0)
-            return;
-
-        var visualLines = textView.VisualLines;
-        if (visualLines.Count == 0)
-            return;
-
-        var viewStart = visualLines[0].FirstDocumentLine.Offset;
-        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
-
-        var geoBuilder = new BackgroundGeometryBuilder
-        {
-            AlignToWholePixels = true,
-            CornerRadius = 2
-        };
-
-        foreach (var (offset, length) in _matches)
-        {
-            if (offset + length < viewStart || offset > viewEnd)
-                continue;
-            geoBuilder.AddSegment(textView, new SimpleSegment(offset, length));
-        }
-
-        var geometry = geoBuilder.CreateGeometry();
-        if (geometry is not null)
-            drawingContext.DrawGeometry(HighlightBrush, null, geometry);
-    }
-
-    private sealed class SimpleSegment : ISegment
-    {
-        public SimpleSegment(int offset, int length)
-        {
-            Offset = offset;
-            Length = length;
-        }
-
-        public int Offset { get; }
-        public int Length { get; }
-        public int EndOffset => Offset + Length;
-    }
-}
-
-// Replaces the default LinkElementGenerator: genuine URLs only, Ctrl+click to open.
-public sealed class StrictLinkElementGenerator : LinkElementGenerator
-{
-    private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
-    private const string HttpPrefix = "http";
-
-    private int _cachedLineNumber = -1;
-    private string _cachedLineText = string.Empty;
-    private List<(int Start, int Length)> _cachedSpans = [];
-
-    public StrictLinkElementGenerator()
-    {
-        RequireControlModifierForClick = true;
-    }
-
-    public override VisualLineElement? ConstructElement(int offset)
-    {
-        var line = CurrentContext.VisualLine;
-        var document = CurrentContext.Document;
-        var lineNumber = line.FirstDocumentLine.LineNumber;
-        var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
-
-        if (lineNumber != _cachedLineNumber || !string.Equals(lineText, _cachedLineText, StringComparison.Ordinal))
-        {
-            _cachedLineNumber = lineNumber;
-            _cachedLineText = lineText;
-            _cachedSpans = ParseUrlSpans(lineText);
-        }
-
-        var relativeOffset = offset - line.FirstDocumentLine.Offset;
-        foreach (var span in _cachedSpans)
-        {
-            if (relativeOffset != span.Start)
-                continue;
-
-            var url = lineText.Substring(span.Start, span.Length).TrimEnd(TrailingPunctuation);
-            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-                return null;
-
-            var linkText = new VisualLineLinkText(line, url.Length);
-            linkText.NavigateUri = uri;
-            linkText.RequireControlModifierForClick = RequireControlModifierForClick;
-            return linkText;
-        }
-
-        return null;
-    }
-
-    internal static bool TryGetLinkSpan(string lineText, int columnOffset, out int start, out int length)
-    {
-        foreach (var span in ParseUrlSpans(lineText))
-        {
-            if (columnOffset < span.Start || columnOffset >= span.Start + span.Length)
-                continue;
-
-            start = span.Start;
-            length = span.Length;
-            return true;
-        }
-
-        start = 0;
-        length = 0;
-        return false;
-    }
-
-    private static List<(int Start, int Length)> ParseUrlSpans(string lineText)
-    {
-        var spans = new List<(int Start, int Length)>();
-        if (string.IsNullOrWhiteSpace(lineText))
-            return spans;
-
-        var index = 0;
-        while (index < lineText.Length)
-        {
-            var httpIndex = lineText.IndexOf(HttpPrefix, index, StringComparison.OrdinalIgnoreCase);
-            if (httpIndex < 0)
-                break;
-
-            if (httpIndex > 0 && IsUrlChar(lineText[httpIndex - 1]))
-            {
-                index = httpIndex + 4;
-                continue;
-            }
-
-            var end = httpIndex;
-            while (end < lineText.Length && IsUrlChar(lineText[end]))
-                end++;
-
-            var url = lineText[httpIndex..end].TrimEnd(TrailingPunctuation);
-            if (Uri.TryCreate(url, UriKind.Absolute, out _))
-                spans.Add((httpIndex, url.Length));
-
-            index = Math.Max(end, httpIndex + 4);
-        }
-
-        return spans;
-    }
-
-    private static bool IsUrlChar(char ch) =>
-        !char.IsWhiteSpace(ch) &&
-        ch is not '<' and not '>' and not '"' and not '\'' and not '[' and not ']' and not '(' and not ')' and not '{' and not '}' and not '|' and not '\\' and not '^' and not '`';
-}
-
-// Converts bold flag to FontWeight for the release-notes run template.
-public sealed class BoolToFontWeightConverter : Avalonia.Data.Converters.IValueConverter
-{
-    public static readonly BoolToFontWeightConverter Instance = new();
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-        value is true ? FontWeight.SemiBold : FontWeight.Regular;
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-        throw new NotSupportedException();
-}
-
-public sealed class MarketplaceTileWidthConverter : Avalonia.Data.Converters.IValueConverter
-{
-    public static readonly MarketplaceTileWidthConverter Instance = new();
-
-    private const int    Columns           = 5;
-    private const double HorizontalPadding = 48; // ScrollViewer Padding="24" on each side
-    private const double ScrollbarGutter   = 20; // room for the vertical scrollbar when visible
-    private const double TileMargin        = 12; // Border.extensiontile Margin="6" on each side
-    private const double MinTileWidth      = 120; // floor so tiles never collapse to nothing
-
-    public object Convert(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture)
-    {
-        if (value is not double width) return MinTileWidth;
-
-        var available = width - HorizontalPadding - ScrollbarGutter;
-        var perColumn = available / Columns - TileMargin;
-        return Math.Max(MinTileWidth, perColumn);
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, System.Globalization.CultureInfo culture) =>
-        throw new NotSupportedException();
-}
