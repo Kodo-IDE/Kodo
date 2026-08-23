@@ -961,609 +961,48 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Extension loading
 
-    private void EnsureExtensionsFolder()
-    {
-        if (!Directory.Exists(ExtensionsFolderPath))
-            Directory.CreateDirectory(ExtensionsFolderPath);
-    }
-
-    private void SetupExtensionFolderWatchers()
-    {
-        DisposeExtensionFolderWatchers();
-        _extensionsFolderWatcher = CreateExtensionFolderWatcher(ExtensionsFolderPath);
-
-        if (Directory.Exists(ProjectExtensionsFolderPath) &&
-            !string.Equals(ProjectExtensionsFolderPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
-        {
-            _projectExtensionsFolderWatcher = CreateExtensionFolderWatcher(ProjectExtensionsFolderPath);
-        }
-    }
-
-    private FileSystemWatcher CreateExtensionFolderWatcher(string path)
-    {
-        var watcher = new FileSystemWatcher(path)
-        {
-            IncludeSubdirectories = false,
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.CreationTime
-        };
-
-        watcher.Created += ExtensionFolderWatcher_OnChanged;
-        watcher.Deleted += ExtensionFolderWatcher_OnChanged;
-        watcher.Renamed += ExtensionFolderWatcher_OnRenamed;
-        watcher.EnableRaisingEvents = true;
-        return watcher;
-    }
-
-    private void DisposeExtensionFolderWatchers()
-    {
-        DisposeExtensionFolderWatcher(_extensionsFolderWatcher);
-        DisposeExtensionFolderWatcher(_projectExtensionsFolderWatcher);
-        _extensionsFolderWatcher = null;
-        _projectExtensionsFolderWatcher = null;
-    }
-
-    private void DisposeExtensionFolderWatcher(FileSystemWatcher? watcher)
-    {
-        if (watcher is null)
-            return;
-
-        watcher.EnableRaisingEvents = false;
-        watcher.Created -= ExtensionFolderWatcher_OnChanged;
-        watcher.Deleted -= ExtensionFolderWatcher_OnChanged;
-        watcher.Renamed -= ExtensionFolderWatcher_OnRenamed;
-        watcher.Dispose();
-    }
-
-    private static bool IsExtensionFilePath(string path)
-    {
-        var extension = Path.GetExtension(path);
-        return extension.Equals(".kox", StringComparison.OrdinalIgnoreCase) ||
-               string.IsNullOrWhiteSpace(extension);
-    }
-
-    private void ExtensionFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
-    {
-        if (!IsExtensionFilePath(e.FullPath))
-            return;
-
-        QueueExtensionsRefresh();
-    }
-
-    private void ExtensionFolderWatcher_OnRenamed(object sender, RenamedEventArgs e)
-    {
-        if (!IsExtensionFilePath(e.OldFullPath) && !IsExtensionFilePath(e.FullPath))
-            return;
-
-        QueueExtensionsRefresh();
-    }
-
-    private void QueueExtensionsRefresh()
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            _extensionsRefreshDebounceTimer.Stop();
-            _extensionsRefreshDebounceTimer.Start();
-        });
-    }
-
-    private async void ExtensionsRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
-    {
-        _extensionsRefreshDebounceTimer.Stop();
-        await RefreshExtensionsDataAsync();
-    }
-
-    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
-    {
-        if (_isRefreshingExtensions)
-            return;
-
-        if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
-            return;
-
-        IsRefreshingExtensions = true;
-        ExtensionsStatusText = "Refreshing extensions...";
-
-        // Refresh watchdog: warns if the full refresh doesn't finish within GitHubOperationTimeout.
-        // suppressWatchdog=true when called from a step that already owns its own timeout handling.
-        using var watchdogCts = new CancellationTokenSource();
-        var watchdogToken = watchdogCts.Token;
-        if (!suppressWatchdog)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    await Task.Delay(GitHubOperationTimeout, watchdogToken);
-                }
-                catch (OperationCanceledException)
-                {
-                    // Work finished in time - nothing to do.
-                    return;
-                }
-
-                // Still refreshing after 7 s: build a descriptive TimeoutException
-                // and surface it through the standard Kodo warning dialog + log.
-                var timeoutEx = new TimeoutException(
-                    $"Marketplace refresh did not complete within " +
-                    $"{GitHubOperationTimeout.TotalSeconds:0} seconds. " +
-                    "This may indicate a slow or stalled network connection, " +
-                    "a slow disk scan, or a hung extension operation.");
-
-                KodoDiagnostics.LogWarning(
-                    source: "MainWindow.RefreshExtensionsDataAsync.Watchdog",
-                    exception: timeoutEx,
-                    operation: "Marketplace refresh watchdog");
-
-                await Dispatcher.UIThread.InvokeAsync(async () =>
-                {
-                    // Update status bar so the panel itself reflects the stall.
-                    ExtensionsStatusText = "Marketplace refresh is taking too long. Check your connection.";
-                    await ShowWarningDialogAsync("Marketplace refresh", timeoutEx);
-                });
-            }, watchdogToken);
-        }
-
-        try
-        {
-            // ScanInstalledExtensions runs off the UI thread; everything after is marshalled via InvokeAsync.
-            var extensionScan = await Task.Run(ScanInstalledExtensions);
-            await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
-            await LoadMarketplaceExtensionsAsync();
-            await LoadCompilerExtensionsAsync(forceResolve: force);
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
-                    (string.Equals(_requestedThemeName, "Light", StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(_requestedThemeName, "Dark", StringComparison.OrdinalIgnoreCase) ||
-                     ThemeExtensions.Any(t => string.Equals(t.ThemeDefinition!.ThemeId, _requestedThemeName, StringComparison.OrdinalIgnoreCase))))
-                {
-                    ApplyTheme(_requestedThemeName);
-                }
-                var updateCount = MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
-                var installedCount = VisibleLoadedExtensions.Count();
-                var marketplaceCount = MarketplaceExtensions.Count;
-                var installedWord = installedCount == 1 ? "extension" : "extensions";
-                var marketplaceWord = marketplaceCount == 1 ? "extension" : "extensions";
-                var updateWord = updateCount == 1 ? "update" : "updates";
-                ExtensionsStatusText = updateCount > 0
-                    ? $"Found {installedCount} installed {installedWord} and {marketplaceCount} in the marketplace. {updateCount} {updateWord} available."
-                    : $"Found {installedCount} installed {installedWord} and {marketplaceCount} in the marketplace.";
-                _lastExtensionsRefreshUtc = DateTime.UtcNow;
-            });
-        }
-        catch (Exception ex)
-        {
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Couldn't refresh extensions. Check your connection and try again.");
-            await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync("Marketplace fetch", ex));
-        }
-        finally
-        {
-            // Cancel the watchdog whether we succeeded, timed out, or threw - it
-            // must not fire after IsRefreshingExtensions has been cleared.
-            await watchdogCts.CancelAsync();
-            await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
-        }
-    }
-
-    private void LoadExtensions()
-    {
-        ApplyLoadedExtensionsResult(ScanInstalledExtensions());
-    }
-
-    private ExtensionScanResult ScanInstalledExtensions()
-    {
-        // Drops cached highlighting definitions on reload since old LoadedExtension instances are now orphaned.
-        var loadedExtensions = new List<LoadedExtension>();
-        var extensionLoadErrors = new List<string>();
-        var searchPaths = GetExtensionSearchPaths().ToList();
-
-        var anyFolderFound = false;
-        foreach (var searchPath in searchPaths)
-        {
-            if (!Directory.Exists(searchPath)) continue;
-            anyFolderFound = true;
-
-            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
-            {
-                try
-                {
-                    foreach (var ext in LoadExtensionsFromKox(koxFile))
-                    {
-                        AddOrReplaceLoadedExtension(loadedExtensions, ext);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Extensions] Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
-                    extensionLoadErrors.Add($"Failed to load '{Path.GetFileName(koxFile)}': {ex.Message}");
-                }
-            }
-
-            foreach (var dir in Directory.GetDirectories(searchPath))
-            {
-                try
-                {
-                    if (File.Exists(Path.Combine(dir, "manifest.json")))
-                    {
-                        foreach (var ext in LoadExtensionsFromFolder(dir))
-                        {
-                            AddOrReplaceLoadedExtension(loadedExtensions, ext);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[Extensions] Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
-                    extensionLoadErrors.Add($"Failed to load folder extension '{Path.GetFileName(dir)}': {ex.Message}");
-                }
-            }
-        }
-
-        if (!anyFolderFound)
-            extensionLoadErrors.Add($"Extensions folder not found. Expected: {ExtensionsFolderPath}");
-
-        return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
-    }
-
-    private void ApplyLoadedExtensionsResult(ExtensionScanResult result)
-    {
-        _highlightingCache.Clear();
-        _compiledSyntaxProfileCache.Clear();
-        _contentSniffCache.Clear();
-        SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
-        SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
-
-        // Decodes icon bitmaps on the UI thread, then clears the staged raw bytes.
-        foreach (var ext in LoadedExtensions)
-        {
-            if (ext.IconImage is null && ext.SvgData is null && ext.IconBytes is not null)
-            {
-                if (IsSvgContent(ext.IconBytes))
-                {
-                    try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
-                    catch { /* malformed SVG - leave icon absent */ }
-                }
-                else
-                {
-                    ext.IconImage = DecodeBitmapOnUiThread(ext.IconBytes);
-                }
-                ext.IconBytes = null;
-                ext.NotifyIconChanged();
-            }
-        }
-
-        // Re-stamps IsActiveTheme since new LoadedExtension instances may have joined since it was set.
-        foreach (var ext in ThemeExtensions)
-            ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
-
-        OnPropertyChanged(nameof(ExtensionLoadErrors));
-        OnPropertyChanged(nameof(VisibleLoadedExtensions));
-        NotifyExtensionFiltersChanged();
-        OnPropertyChanged(nameof(IsNoExtensionsVisible));
-        OnPropertyChanged(nameof(ThemeExtensions));
-        OnPropertyChanged(nameof(HasThemeExtensions));
-        OnPropertyChanged(nameof(GroupedThemeExtensions));
-        OnPropertyChanged(nameof(HasGroupedThemeExtensions));
-        RefreshExtensionTheme();
-        SyncMarketplaceInstallStates();
-        SyncActivePlugins();
-    }
-
-    private async Task LoadMarketplaceExtensionsAsync()
-    {
-        var marketplaceExtensions = new List<MarketplaceExtension>();
-        var extensionLoadErrors = new List<string>();
-
-        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
-
-        // Seeds the marketplace list from the disk cache so it appears immediately, before the network round-trip completes.
-        var diskJson = TryReadMarketplaceIndexCache();
-        if (diskJson is not null)
-            ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
-
-        try
-        {
-            // Sends If-None-Match so an unchanged index returns a free 304.
-            // Only attaches the conditional header when we already have marketplace data to fall back on.
-            _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
-            var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
-            foreach (var indexUrl in MarketplaceIndexUrls)
-            {
-                using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
-                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-                if (hasLocalDataToReuseOn304 && _marketplaceIndexETag is not null)
-                    indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
-
-                var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
-                    "Marketplace index fetch",
-                    async ct =>
-                    {
-                        using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest, ct);
-                        if ((int)indexResponse.StatusCode == 304)
-                            return (304, (string?)null, (string?)null);
-                        if (!indexResponse.IsSuccessStatusCode)
-                            return (0, (string?)null, (string?)null);
-                        var body = await indexResponse.Content.ReadAsStringAsync(ct);
-                        var etag = indexResponse.Headers.ETag?.Tag;
-                        return (200, body, etag);
-                    });
-
-                if (statusCode == 304)
-                {
-                    KodoDiagnostics.LogDebug("Marketplace index: 304 Not Modified - reusing cached data.");
-                    break;
-                }
-
-                if (remoteJson is null)
-                    continue;
-
-                var parsedExtensions = new List<MarketplaceExtension>();
-                var parsedErrors = new List<string>();
-                ParseAndApplyMarketplaceIndex(remoteJson, parsedExtensions, parsedErrors);
-
-                if (parsedExtensions.Count == 0)
-                {
-                    extensionLoadErrors.Add($"Marketplace index at {indexUrl} did not contain any extensions.");
-                    continue;
-                }
-
-                marketplaceExtensions.Clear();
-                extensionLoadErrors.Clear();
-                marketplaceExtensions.AddRange(parsedExtensions);
-                extensionLoadErrors.AddRange(parsedErrors);
-                TryWriteMarketplaceIndexCache(remoteJson);
-                if (newETag is not null)
-                {
-                    _marketplaceIndexETag = newETag;
-                    TryWriteMarketplaceIndexETag(newETag);
-                }
-                break;
-            }
-        }
-        catch (Exception ex)
-        {
-            if (diskJson is not null)
-            {
-                // Network failed but a cached copy exists - the marketplace was
-                // already seeded above, so stay usable.  Log without a dialog.
-                extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
-                KodoDiagnostics.LogDebug("Marketplace index fetch failed; using disk cache.", ex);
-                await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
-            }
-            else
-            {
-                // No cache at all - propagate so the caller shows the error dialog.
-                extensionLoadErrors.Add($"Failed to load remote marketplace index: {DescribeFetchFailure(ex)}");
-                await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
-                throw;
-            }
-        }
-
-        // All ObservableCollection mutations and PropertyChanged notifications must
-        // run on the UI thread - Avalonia's binding engine requires it.
-        Dictionary<string, string> marketplaceIconMap = [];
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            SyncMarketplaceExtensionCollection(MarketplaceExtensions, marketplaceExtensions);
-            SyncObservableCollection(
-                ExtensionLoadErrors,
-                ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
-                error => error);
-
-            SyncMarketplaceInstallStates();
-            OnPropertyChanged(nameof(ExtensionLoadErrors));
-            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
-            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
-            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
-            NotifyExtensionFiltersChanged();
-
-            marketplaceIconMap = MarketplaceExtensions
-                .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
-        });
-        _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
-        _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
-    }
-
-    private async Task FetchInstalledExtensionIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
-    {
-        var tasks = LoadedExtensions
-            .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
-            .Select(async pair =>
-            {
-                try
-                {
-                    var icon = await GetCachedIconAsync(pair.iconUrl);
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        if (icon.HasValue)
-                        {
-                            // Index icon fetched successfully - use it, replacing any kox icon.
-                            ReplaceLoadedExtensionIcon(pair.ext, icon);
-                        }
-                        // else: fetch returned nothing (bad URL, corrupt bytes, etc.) -
-                        // leave whatever the kox provided in place.
-                    });
-                }
-                catch (Exception ex)
-                {
-                    // Network failure for this icon - leave the kox icon (or abbreviation) in place.
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
-                }
-            });
-
-        await Task.WhenAll(tasks);
-    }
-    private async Task FetchMarketplaceIconsAsync(
-        IReadOnlyDictionary<string, string> marketplaceIconMap,
-        ObservableCollection<MarketplaceExtension>? targetCollection = null)
-    {
-        var entries = targetCollection ?? MarketplaceExtensions;
-
-        // Applies already-cached icon bytes synchronously, skipping an async round-trip.
-        await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            foreach (var entry in entries)
-            {
-                if (entry.IconImage is not null || entry.SvgData is not null)
-                    continue;
-
-                if (!marketplaceIconMap.TryGetValue(entry.Id, out var cachedUrl))
-                    continue;
-
-                if (!_marketplaceIconBytesCache.TryGetValue(cachedUrl, out var cachedBytes))
-                    continue;
-
-                var icon = DecodeCachedIconBytes(cachedBytes);
-                if (icon.HasValue)
-                    ReplaceMarketplaceIcon(entry, icon);
-            }
-        });
-
-        var iconFailures = 0;
-        var iconAttempts = 0;
-        Exception? lastIconException = null;
-
-        var tasks = entries
-            .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
-            .Select(async entry =>
-            {
-                Interlocked.Increment(ref iconAttempts);
-                try
-                {
-                    var icon = await GetCachedIconAsync(marketplaceIconMap[entry.Id]);
-                    if (!icon.HasValue)
-                    {
-                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}");
-                        Interlocked.Increment(ref iconFailures);
-                        return;
-                    }
-
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                    {
-                        ReplaceMarketplaceIcon(entry, icon);
-                    });
-                }
-                catch (Exception ex)
-                {
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}", ex);
-                    Interlocked.Increment(ref iconFailures);
-                    Interlocked.Exchange(ref lastIconException, ex);
-                }
-            });
-
-        await Task.WhenAll(tasks);
-
-        // Logs a warning if every icon fetch failed, but doesn't show a dialog since icons are purely decorative.
-        if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
-        {
-            KodoDiagnostics.LogDebug(
-                $"All {iconAttempts} marketplace icon fetch(es) failed; icons will show abbreviations.",
-                lastIconException);
-        }
-    }
-
-    private static bool IsSvgContent(byte[] bytes)
-    {
-        // SVG files start with either a UTF-8 BOM + '<' or directly with '<'.
-        // Check for the <?xml or <svg opening tag in the first 512 bytes.
-        var header = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 512));
-        return header.TrimStart().StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)
-            || header.TrimStart().StartsWith("<svg", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private async Task<IconResult> GetCachedIconAsync(string iconUrl)
-    {
-        if (string.IsNullOrWhiteSpace(iconUrl))
-            return default;
-
-        // Fast path: bytes already cached.
-        if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
-            return DecodeCachedIconBytes(bytes);
-
-        // Cache miss - fetch under semaphore to avoid duplicate requests.
-        await _iconFetchSemaphore.WaitAsync();
-        try
-        {
-            if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
-            {
-                // Per-request timeout (GitHubOperationTimeout) so one stalled icon fetch can't hold up the whole Task.WhenAll.
-                using var cts = new CancellationTokenSource(GitHubOperationTimeout);
-
-                // Kodo-hosted icon URLs go through the Contents API with the raw+json header; third-party URLs are plain GETs.
-                using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
-                if (IsGitHubContentsApiUrl(iconUrl))
-                    request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-
-                using var response = await MarketplaceHttpClient.SendAsync(request, cts.Token);
-                response.EnsureSuccessStatusCode();
-                bytes = await response.Content.ReadAsByteArrayAsync(cts.Token);
-                _marketplaceIconBytesCache[iconUrl] = bytes;
-            }
-        }
-        finally
-        {
-            _iconFetchSemaphore.Release();
-        }
-
-        return DecodeCachedIconBytes(bytes);
-    }
-
-    private static IconResult DecodeCachedIconBytes(byte[] bytes)
-    {
-        if (IsSvgContent(bytes))
-        {
-            try
-            {
-                return new IconResult(null, System.Text.Encoding.UTF8.GetString(bytes));
-            }
-            catch { return default; }
-        }
-
-        try
-        {
-            using var ms = new MemoryStream(bytes);
-            return new IconResult(new Bitmap(ms), null);
-        }
-        catch { return default; }
-    }
-
-    private static void ReplaceLoadedExtensionIcon(LoadedExtension extension, IconResult icon)
-    {
-        if (icon.Bitmap is not null)
-        {
-            if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            extension.IconImage?.Dispose();
-            extension.IconImage = icon.Bitmap;
-            extension.SvgData = null;
-        }
-        else if (icon.SvgData is not null)
-        {
-            extension.IconImage?.Dispose();
-            extension.IconImage = null;
-            extension.SvgData = icon.SvgData;
-        }
-        extension.NotifyIconChanged();
-    }
-
-    private static void ReplaceMarketplaceIcon(MarketplaceExtension extension, IconResult icon)
-    {
-        if (icon.Bitmap is not null)
-        {
-            if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            extension.IconImage?.Dispose();
-            extension.IconImage = icon.Bitmap;
-            extension.SvgData = null;
-        }
-        else if (icon.SvgData is not null)
-        {
-            extension.IconImage?.Dispose();
-            extension.IconImage = null;
-            extension.SvgData = icon.SvgData;
-        }
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     private async Task RefreshLatestReleaseAsync(bool forceNetwork = false)
     {
@@ -1937,564 +1376,59 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Extracts marketplace entries from raw JSON; shared by the disk-cache seed and live-fetch paths.
-    private static void ParseAndApplyMarketplaceIndex(
-        string json,
-        List<MarketplaceExtension> marketplaceExtensions,
-        List<string> extensionLoadErrors,
-        string rootPropertyName = "extensions")
-    {
-        var jsonOptions = new JsonDocumentOptions
-        {
-            AllowTrailingCommas = true,
-            CommentHandling = JsonCommentHandling.Skip
-        };
-        using var doc = JsonDocument.Parse(json, jsonOptions);
-        if (!doc.RootElement.TryGetProperty(rootPropertyName, out var extensionsElement) ||
-            extensionsElement.ValueKind != JsonValueKind.Array)
-            return;
-
-        foreach (var item in extensionsElement.EnumerateArray())
-        {
-            try
-            {
-                var entry = ParseMarketplaceExtension(item);
-                if (string.IsNullOrWhiteSpace(entry.Id) || marketplaceExtensions.Any(e => e.Id == entry.Id))
-                    continue;
-                marketplaceExtensions.Add(entry);
-            }
-            catch (Exception itemEx)
-            {
-                var entryId = item.TryGetProperty("id", out var idEl) ? idEl.GetString() ?? "?" : "?";
-                extensionLoadErrors.Add($"Skipped malformed marketplace entry '{entryId}': {itemEx.Message}");
-                KodoDiagnostics.LogDebug($"Skipped malformed marketplace entry '{entryId}'", itemEx);
-            }
-        }
-    }
 
 
-    private string? TryReadMarketplaceIndexCache()
-    {
-        try { return File.Exists(MarketplaceIndexCachePath) ? File.ReadAllText(MarketplaceIndexCachePath, System.Text.Encoding.UTF8) : null; }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not read marketplace index cache.", ex); return null; }
-    }
 
-    private void TryWriteMarketplaceIndexCache(string json)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexCachePath)!);
-            File.WriteAllText(MarketplaceIndexCachePath, json, System.Text.Encoding.UTF8);
-        }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write marketplace index cache.", ex); }
-    }
 
-    private string? TryReadMarketplaceIndexETag()
-    {
-        try { return File.Exists(MarketplaceIndexETagPath) ? File.ReadAllText(MarketplaceIndexETagPath).Trim() : null; }
-        catch { return null; }
-    }
 
-    private void TryWriteMarketplaceIndexETag(string etag)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(MarketplaceIndexETagPath)!);
-            File.WriteAllText(MarketplaceIndexETagPath, etag);
-        }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write marketplace index ETag.", ex); }
-    }
 
-    private static MarketplaceExtension ParseMarketplaceExtension(JsonElement item)
-    {
-        var id = item.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
-        var declaredVersion = item.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty;
-        var name = item.TryGetProperty("name", out var nameElement) ? nameElement.GetString() ?? string.Empty : string.Empty;
-        var type = item.TryGetProperty("type", out var typeElement) ? typeElement.GetString() ?? string.Empty : string.Empty;
-        var author = item.TryGetProperty("author", out var authorElement) ? authorElement.GetString() ?? string.Empty : string.Empty;
-        var description = item.TryGetProperty("description", out var descriptionElement) ? descriptionElement.GetString() ?? string.Empty : string.Empty;
-        var rawDownloadUrl = NormalizeGitHubBlobViewerUrl(
-            item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty);
-        var declaredFileName = item.TryGetProperty("fileName", out var fileNameElement) ? fileNameElement.GetString() ?? string.Empty : string.Empty;
-        var iconUrl = NormalizeGitHubUrl(
-            item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
-        var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
-        var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
-        // ^ declaredVersion is trusted as-is; declaredFileName/urlFileName only contribute if a
-        // v1.2.3-style version can be extracted from them (see GetHighestKnownExtensionVersion).
-        var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
-        var canonicalDownloadUrl = NormalizeMarketplaceDownloadUrl(rawDownloadUrl, canonicalFileName);
 
-        return new MarketplaceExtension
-        {
-            Id = id,
-            Version = bestKnownVersion,
-            Name = name,
-            Type = type,
-            Author = author,
-            Description = description,
-            DownloadUrl = canonicalDownloadUrl,
-            FileName = canonicalFileName,
-            IconUrl = iconUrl
-        };
-    }
 
-    private void SyncMarketplaceInstallStates()
-    {
-        foreach (var installedExtension in LoadedExtensions)
-            installedExtension.IsUpdateAvailable = false;
 
-        foreach (var entry in MarketplaceExtensions)
-        {
-            var localExt = GetPreferredLoadedExtension(entry.Id);
-            var isUpdateAvailable = localExt is not null && CompareExtensionVersions(entry.Version, localExt.Version) > 0;
 
-            entry.SetInstalledState(localExt, isUpdateAvailable);
-            if (localExt is not null)
-                localExt.IsUpdateAvailable = isUpdateAvailable;
-        }
 
-        OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
-        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
-        OnPropertyChanged(nameof(ExtensionUpdatesBannerText));
-        OnPropertyChanged(nameof(AutoUpdateExtensionsStatusText));
-        NotifyExtensionActionStateChanged();
-        NotifyExtensionFiltersChanged();
-    }
 
-    private void NotifyExtensionFiltersChanged()
-    {
-        OnPropertyChanged(nameof(FilteredInstalledExtensions));
-        OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
-        OnPropertyChanged(nameof(FilteredCompilerExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledCompilerExtensions));
-        OnPropertyChanged(nameof(IsNoExtensionsVisible));
-        OnPropertyChanged(nameof(IsInstalledSearchEmptyVisible));
-        OnPropertyChanged(nameof(IsMarketplaceSearchEmptyVisible));
-        OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
-        OnPropertyChanged(nameof(InstalledExtensionsCount));
-        OnPropertyChanged(nameof(InstalledCompilersCount));
-        OnPropertyChanged(nameof(MarketplaceEmptyStateText));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensions));
-        OnPropertyChanged(nameof(HasVisibleMarketplaceExtensions));
-        OnPropertyChanged(nameof(HasVisibleCompilerExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledCompilerExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsOrCompilers));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsAndCompilers));
-        OnPropertyChanged(nameof(IsInstalledCompilersEmptyStateVisible));
-    }
 
-    private void NotifyExtensionActionStateChanged()
-    {
-        OnPropertyChanged(nameof(CanUpdateAllExtensions));
-        OnPropertyChanged(nameof(UpdateAllExtensionsButtonText));
-    }
 
-    private MarketplaceExtension? GetMarketplaceExtensionForInstalled(LoadedExtension extension) =>
-        MarketplaceExtensions.FirstOrDefault(entry =>
-            entry.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
 
-    private void AddOrReplaceLoadedExtension(IList<LoadedExtension> extensions, LoadedExtension extension)
-    {
-        var existingIndex = extensions
-            .Select((item, index) => new { item, index })
-            .FirstOrDefault(x => x.item.Id.Equals(extension.Id, StringComparison.OrdinalIgnoreCase));
 
-        if (existingIndex is null)
-        {
-            extensions.Add(extension);
-            return;
-        }
 
-        if (ShouldReplaceLoadedExtension(existingIndex.item, extension))
-            extensions[existingIndex.index] = extension;
-    }
 
-    private static void SyncObservableCollection<T, TKey>(
-        ObservableCollection<T> target,
-        IList<T> source,
-        Func<T, TKey> keySelector)
-        where TKey : notnull
-    {
-        var sourceByKey = source.ToDictionary(keySelector);
 
-        for (var i = target.Count - 1; i >= 0; i--)
-        {
-            var key = keySelector(target[i]);
-            if (!sourceByKey.ContainsKey(key))
-                target.RemoveAt(i);
-        }
 
-        var targetIndexByKey = new Dictionary<TKey, int>();
-        for (var i = 0; i < target.Count; i++)
-            targetIndexByKey[keySelector(target[i])] = i;
 
-        for (var i = 0; i < source.Count; i++)
-        {
-            var item = source[i];
-            var key = keySelector(item);
-            var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
 
-            if (existingIndex == -1)
-            {
-                target.Insert(Math.Min(i, target.Count), item);
-                for (var j = i; j < target.Count; j++)
-                    targetIndexByKey[keySelector(target[j])] = j;
-                continue;
-            }
 
-            if (existingIndex != i)
-            {
-                target.Move(existingIndex, i);
-                var start = Math.Min(existingIndex, i);
-                for (var j = start; j < target.Count; j++)
-                    targetIndexByKey[keySelector(target[j])] = j;
-            }
 
-            if (!ReferenceEquals(target[i], item))
-            {
-                target[i] = item;
-                targetIndexByKey[key] = i;
-            }
-        }
-    }
 
     // Like SyncObservableCollection, but carries over the already-fetched icon bitmap.
-    private static void SyncMarketplaceExtensionCollection(
-        ObservableCollection<MarketplaceExtension> target,
-        IList<MarketplaceExtension> source)
-    {
-        var sourceByKey = source.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
-
-        for (var i = target.Count - 1; i >= 0; i--)
-        {
-            if (!sourceByKey.ContainsKey(target[i].Id))
-            {
-                target[i].IconImage?.Dispose();
-                target.RemoveAt(i);
-            }
-        }
-
-        var targetIndexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < target.Count; i++)
-            targetIndexByKey[target[i].Id] = i;
-
-        for (var i = 0; i < source.Count; i++)
-        {
-            var incoming = source[i];
-            var key = incoming.Id;
-            var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
-
-            if (existingIndex == -1)
-            {
-                target.Insert(Math.Min(i, target.Count), incoming);
-                for (var j = i; j < target.Count; j++)
-                    targetIndexByKey[target[j].Id] = j;
-                continue;
-            }
-
-            if (existingIndex != i)
-            {
-                target.Move(existingIndex, i);
-                var start = Math.Min(existingIndex, i);
-                for (var j = start; j < target.Count; j++)
-                    targetIndexByKey[target[j].Id] = j;
-            }
-
-            var existing = target[i];
-            if (!ReferenceEquals(existing, incoming))
-            {
-                // Transfer the already-decoded bitmap/SVG so the UI keeps showing the icon
-                // while the rest of the object is refreshed with updated metadata.
-                if (existing.IconImage is not null && incoming.IconImage is null)
-                    incoming.IconImage = existing.IconImage;
-                else
-                    existing.IconImage?.Dispose();
-
-                if (existing.SvgData is not null && incoming.SvgData is null)
-                    incoming.SvgData = existing.SvgData;
-
-                target[i] = incoming;
-                targetIndexByKey[key] = i;
-            }
-        }
-    }
-
-    private LoadedExtension? GetPreferredLoadedExtension(string extensionId) =>
-        LoadedExtensions
-            .Where(ext => ext.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(GetLoadedExtensionSourcePriority)
-            .ThenByDescending(ext => ParseVersionNumbers(ext.Version), VersionNumberSequenceComparer.Instance)
-            .FirstOrDefault();
-
-    private bool ShouldReplaceLoadedExtension(LoadedExtension current, LoadedExtension candidate)
-    {
-        var currentPriority = GetLoadedExtensionSourcePriority(current);
-        var candidatePriority = GetLoadedExtensionSourcePriority(candidate);
-        if (candidatePriority != currentPriority)
-            return candidatePriority > currentPriority;
-
-        return CompareExtensionVersions(candidate.Version, current.Version) > 0;
-    }
-
-    private int GetLoadedExtensionSourcePriority(LoadedExtension extension)
-    {
-        if (!string.IsNullOrWhiteSpace(extension.SourcePath))
-        {
-            var sourcePath = Path.GetFullPath(extension.SourcePath);
-            if (IsPathInsideDirectory(sourcePath, ExtensionsFolderPath))
-                return 2;
-
-            if (IsPathInsideDirectory(sourcePath, ProjectExtensionsFolderPath))
-                return 1;
-        }
-
-        return 0;
-    }
-
-    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
-    {
-        if (marketplaceExtension.IsInstalling || (marketplaceExtension.IsInstalled && !marketplaceExtension.IsUpdateAvailable))
-            return;
-
-        RefreshMarketplaceConnectivityState();
-        marketplaceExtension.IsInstalling = true;
-        NotifyExtensionActionStateChanged();
-        var action = marketplaceExtension.IsUpdateAvailable ? "Updating" : "Installing";
-        marketplaceExtension.InstallButtonText = $"{action}...";
-        ExtensionsStatusText = $"{action} {marketplaceExtension.Name}...";
-
-        try
-        {
-            EnsureExtensionsFolder();
-            var wasUpdate = marketplaceExtension.IsUpdateAvailable;
-            var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
-            var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
-
-            // Downloads the package under GitHubOperationTimeout so a stall can't silently block the install pipeline.
-            var bytes = await RunWithGitHubTimeoutAsync(
-                $"Extension download - {marketplaceExtension.Name}",
-                async ct =>
-                {
-                    var downloadUrls = BuildExtensionDownloadUrlCandidates(marketplaceExtension.DownloadUrl);
-                    foreach (var downloadUrl in downloadUrls)
-                    {
-
-                        using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-                        // Contents API URLs require raw+json to receive file bytes directly
-                        // instead of a base64-wrapped JSON envelope.
-                        if (IsGitHubContentsApiUrl(downloadUrl))
-                            downloadRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-
-                        using var downloadResponse = await MarketplaceHttpClient.SendAsync(
-                            downloadRequest, HttpCompletionOption.ResponseContentRead, ct);
-                        if (!downloadResponse.IsSuccessStatusCode)
-                            continue;
-
-                        return await downloadResponse.Content.ReadAsByteArrayAsync(ct);
-                    }
-
-                    throw new HttpRequestException($"Unable to download extension package from any known location for {marketplaceExtension.Name}.");
-                });
-
-            ValidateDownloadedExtensionPackage(marketplaceExtension, bytes);
-            DeleteInstalledExtensionSources(marketplaceExtension.Id, outputPath);
-            await File.WriteAllBytesAsync(outputPath, bytes);
-            NormalizeKoxManifestVersion(outputPath);
-
-            // suppressWatchdog=true: the download already has its own timeout guard.
-            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
-            ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
-        }
-        catch (Exception ex)
-        {
-            marketplaceExtension.SetInstalledState(
-                GetPreferredLoadedExtension(marketplaceExtension.Id),
-                marketplaceExtension.IsUpdateAvailable);
-            RefreshMarketplaceConnectivityState($"Extension install - {marketplaceExtension.Name}", ex);
-            ExtensionsStatusText = $"Failed to install {marketplaceExtension.Name}: {ex.Message}";
-            await ShowWarningDialogAsync($"Extension install - {marketplaceExtension.Name}", ex);
-        }
-        finally
-        {
-            marketplaceExtension.IsInstalling = false;
-            NotifyExtensionActionStateChanged();
-            SyncMarketplaceInstallStates();
-        }
-    }
-
-    private static void ValidateDownloadedExtensionPackage(MarketplaceExtension marketplaceExtension, byte[] packageBytes)
-    {
-        using var ms = new MemoryStream(packageBytes, writable: false);
-        using var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
-        var manifestEntry = archive.GetEntry("manifest.json")
-            ?? throw new InvalidDataException($"Downloaded package for {marketplaceExtension.Name} is missing manifest.json.");
-
-        using var manifestStream = manifestEntry.Open();
-        using var manifestDoc = JsonDocument.Parse(manifestStream);
-        var manifest = manifestDoc.RootElement;
-        var manifestId = manifest.TryGetProperty("id", out var idElement) ? idElement.GetString() ?? string.Empty : string.Empty;
-        var manifestVersion = manifest.TryGetProperty("version", out var versionElement) ? versionElement.GetString() ?? string.Empty : string.Empty;
-
-        if (!string.Equals(manifestId, marketplaceExtension.Id, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidDataException(
-                $"Downloaded package id '{manifestId}' does not match expected id '{marketplaceExtension.Id}'.");
-        }
-
-        if (CompareExtensionVersions(manifestVersion, marketplaceExtension.Version) < 0)
-        {
-            throw new InvalidDataException(
-                $"Downloaded package version '{manifestVersion}' is older than the marketplace version '{marketplaceExtension.Version}'.");
-        }
-    }
-
-    private static IEnumerable<string> BuildExtensionDownloadUrlCandidates(string downloadUrl)
-    {
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var candidates = new List<string>();
-
-        void Add(string? url)
-        {
-            if (string.IsNullOrWhiteSpace(url))
-                return;
-            if (seen.Add(url))
-                candidates.Add(url);
-        }
-
-        Add(downloadUrl);
-
-        if (TryParseGitHubContentsUrl(downloadUrl, out _, out _, out var path))
-        {
-            var suffix = GetExtensionPackageRelativePath(path);
-            Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-        }
-        else if (TryParseGitHubRawUrl(downloadUrl, out _, out _, out var rawPath))
-        {
-            var suffix = GetExtensionPackageRelativePath(rawPath);
-            Add(BuildGitHubContentsUrl("Kodo-IDE", "Kodo-Extensions", PrefixExtensionPath("Extensions", suffix)));
-        }
-
-        return candidates;
-    }
 
 
-    private static bool TryParseGitHubContentsUrl(string url, out string owner, out string repo, out string path)
-    {
-        owner = string.Empty;
-        repo = string.Empty;
-        path = string.Empty;
 
-        if (string.IsNullOrWhiteSpace(url))
-            return false;
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return false;
 
-        if (!uri.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase))
-            return false;
 
-        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-        if (segments.Length < 6 ||
-            !segments[0].Equals("repos", StringComparison.OrdinalIgnoreCase) ||
-            !segments[3].Equals("contents", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
 
-        owner = segments[1];
-        repo = segments[2];
-        path = string.Join("/", segments, 4, segments.Length - 4);
-        return true;
-    }
 
-    private static bool TryParseGitHubRawUrl(string url, out string owner, out string repo, out string path)
-    {
-        owner = string.Empty;
-        repo = string.Empty;
-        path = string.Empty;
 
-        if (string.IsNullOrWhiteSpace(url))
-            return false;
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return false;
 
-        if (!uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
-            return false;
 
-        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-        if (segments.Length < 3)
-            return false;
 
-        owner = segments[0];
-        repo = segments[1];
-        path = string.Join("/", segments, 2, segments.Length - 2);
-        return true;
-    }
 
-    private static string GetExtensionPackageRelativePath(string path)
-    {
-        var normalized = path.Replace('\\', '/').TrimStart('/');
-        var segments = normalized.Split('/', 2);
-        if (segments.Length == 2 &&
-            (segments[0].Equals("Extensions", StringComparison.OrdinalIgnoreCase) ||
-             segments[0].Equals("Official_Extensions", StringComparison.OrdinalIgnoreCase)))
-        {
-            return segments[1];
-        }
 
-        return normalized;
-    }
 
-    private static string PrefixExtensionPath(string folderName, string suffix)
-    {
-        suffix = suffix.Replace('\\', '/').TrimStart('/');
-        return string.IsNullOrWhiteSpace(suffix) ? folderName : $"{folderName}/{suffix}";
-    }
+
+
+
+
+
+
 
     private static string BuildGitHubContentsUrl(string owner, string repo, string path) =>
         $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
 
-    private async Task UninstallExtensionAsync(LoadedExtension extension)
-    {
-        if (string.IsNullOrWhiteSpace(extension.SourcePath))
-        {
-            ExtensionsStatusText = $"Cannot uninstall {extension.Name}: missing source path.";
-            return;
-        }
 
-        try
-        {
-            var resolvedPath = Path.GetFullPath(extension.SourcePath);
-            if (!IsPathInsideDirectory(resolvedPath, ExtensionsFolderPath) &&
-                !IsPathInsideDirectory(resolvedPath, ProjectExtensionsFolderPath))
-            {
-                ExtensionsStatusText = $"Cannot uninstall {extension.Name}: source is outside the Extensions folders.";
-                return;
-            }
-
-            if (extension.IsDirectorySource)
-            {
-                if (Directory.Exists(resolvedPath))
-                    Directory.Delete(resolvedPath, recursive: true);
-            }
-            else
-            {
-                if (File.Exists(resolvedPath))
-                    File.Delete(resolvedPath);
-            }
-
-            // suppressWatchdog: true - uninstall is a local disk operation with its
-            // own error handling above; the watchdog is not meaningful here.
-            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
-            ExtensionsStatusText = $"{extension.Name} uninstalled.";
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Failed to uninstall {extension.Name}: {ex.Message}";
-            await ShowWarningDialogAsync($"Extension uninstall - {extension.Name}", ex);
-        }
-    }
 
     private static bool IsPathInsideDirectory(string path, string directory)
     {
@@ -2504,88 +1438,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             || string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
-    private IEnumerable<string> GetExtensionSearchPaths()
-    {
-        yield return ExtensionsFolderPath;
 
-        // Also search the project source tree when running from the build output directory
-        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
-        if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
-            yield return srcPath;
-    }
 
-    private IEnumerable<(string Path, bool IsDirectory)> EnumerateInstalledExtensionSources(string extensionId)
-    {
-        foreach (var searchPath in GetExtensionSearchPaths())
-        {
-            if (!Directory.Exists(searchPath))
-                continue;
 
-            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
-            {
-                if (ExtensionSourceMatchesId(koxFile, extensionId, isDirectory: false))
-                    yield return (koxFile, false);
-            }
 
-            foreach (var dir in Directory.GetDirectories(searchPath))
-            {
-                if (ExtensionSourceMatchesId(dir, extensionId, isDirectory: true))
-                    yield return (dir, true);
-            }
-        }
-    }
 
-    private void DeleteInstalledExtensionSources(string extensionId, string? pathToKeep = null)
-    {
-        foreach (var source in EnumerateInstalledExtensionSources(extensionId))
-        {
-            var resolvedPath = Path.GetFullPath(source.Path);
-            if (!string.IsNullOrWhiteSpace(pathToKeep) &&
-                string.Equals(resolvedPath, Path.GetFullPath(pathToKeep), StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
 
-            if (!IsPathInsideDirectory(resolvedPath, ExtensionsFolderPath) &&
-                !IsPathInsideDirectory(resolvedPath, ProjectExtensionsFolderPath))
-            {
-                continue;
-            }
 
-            if (source.IsDirectory)
-            {
-                if (Directory.Exists(resolvedPath))
-                    Directory.Delete(resolvedPath, recursive: true);
-            }
-            else
-            {
-                if (File.Exists(resolvedPath))
-                    File.Delete(resolvedPath);
-            }
-        }
-    }
-
-    private string ResolveExtensionInstallPath(MarketplaceExtension marketplaceExtension, LoadedExtension? installedExtension)
-    {
-        if (installedExtension is not null &&
-            !installedExtension.IsDirectorySource &&
-            !string.IsNullOrWhiteSpace(installedExtension.SourcePath))
-        {
-            var sourcePath = Path.GetFullPath(installedExtension.SourcePath);
-            if (IsPathInsideDirectory(sourcePath, ExtensionsFolderPath) ||
-                IsPathInsideDirectory(sourcePath, ProjectExtensionsFolderPath))
-            {
-                return sourcePath;
-            }
-        }
-
-        var fileName = string.IsNullOrWhiteSpace(marketplaceExtension.FileName)
-            ? TryGetFileNameFromUrl(marketplaceExtension.DownloadUrl)
-            : marketplaceExtension.FileName;
-
-        return Path.Combine(ExtensionsFolderPath, fileName);
-    }
 
     private static string TryGetFileNameFromUrl(string url)
     {
@@ -2606,64 +1465,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // fileName like "dotnet-sdk-8.0.404-win-x64.exe" could out-compare "8.0.404" (its stray
     // digits, e.g. the "64" in "x64", made it look like a "higher" version) and get displayed
     // in place of the real version.
-    private static string GetHighestKnownExtensionVersion(string declaredVersion, params string[] fileNameCandidates)
-    {
-        var bestVersion = declaredVersion ?? string.Empty;
 
-        foreach (var candidate in fileNameCandidates)
-        {
-            var extractedVersion = ExtractVersionFromName(candidate);
-            if (string.IsNullOrWhiteSpace(extractedVersion))
-                continue;
 
-            if (CompareExtensionVersions(extractedVersion, bestVersion) > 0)
-                bestVersion = extractedVersion;
-        }
 
-        return bestVersion;
-    }
 
-    private static string GetCanonicalMarketplaceFileName(string declaredFileName, string urlFileName, string bestKnownVersion)
-    {
-        var baseFileName = !string.IsNullOrWhiteSpace(declaredFileName)
-            ? declaredFileName
-            : !string.IsNullOrWhiteSpace(urlFileName) && !string.Equals(urlFileName, "extension.kox", StringComparison.OrdinalIgnoreCase)
-                ? urlFileName
-                : string.Empty;
 
-        if (string.IsNullOrWhiteSpace(baseFileName))
-            return string.Empty;
-
-        if (string.IsNullOrWhiteSpace(bestKnownVersion))
-            return baseFileName;
-
-        var fileVersion = ExtractVersionFromName(baseFileName);
-        if (string.IsNullOrWhiteSpace(fileVersion))
-            return baseFileName;
-
-        return string.Equals(fileVersion, bestKnownVersion, StringComparison.OrdinalIgnoreCase)
-            ? baseFileName
-            : ReplaceVersionInValue(baseFileName, fileVersion, bestKnownVersion);
-    }
-
-    private static string NormalizeMarketplaceDownloadUrl(string rawDownloadUrl, string canonicalFileName)
-    {
-        if (string.IsNullOrWhiteSpace(rawDownloadUrl) || string.IsNullOrWhiteSpace(canonicalFileName))
-            return rawDownloadUrl;
-
-        if (!Uri.TryCreate(rawDownloadUrl, UriKind.Absolute, out var uri))
-            return rawDownloadUrl;
-
-        var absolutePath = uri.AbsolutePath;
-        var lastSlashIndex = absolutePath.LastIndexOf('/');
-        if (lastSlashIndex < 0)
-            return rawDownloadUrl;
-
-        var pathPrefix = absolutePath[..(lastSlashIndex + 1)];
-        var normalizedPath = pathPrefix + Uri.EscapeDataString(canonicalFileName);
-        var builder = new UriBuilder(uri) { Path = normalizedPath };
-        return builder.Uri.ToString();
-    }
 
     /// Converts a GitHub blob-viewer URL to the Contents API form for raw bytes.
     private static string NormalizeGitHubBlobViewerUrl(string url)
@@ -2703,54 +1509,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     /// Normalises GitHub URLs pointing at Kodo's own extensions repo to the Contents API form.
     /// URLs for any other owner/repo (third-party icons) are returned unchanged.
-    private static string NormalizeGitHubUrl(string url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-            return url;
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            return url;
 
-        // github.com/blob viewer URL
-        // /{owner}/{repo}/blob/{branch}/{...path} -> Contents API
-        if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
-        {
-            var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-            if (segments.Length >= 5 &&
-                segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase) &&
-                IsKodoExtensionsRepo(segments[0], segments[1]))
-            {
-                var owner = segments[0];
-                var repo  = segments[1];
-                var path  = string.Join("/", segments, 4, segments.Length - 4);
-                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
-            }
-            return url; // non-blob or third-party github.com URL - leave alone
-        }
 
-        // raw.githubusercontent.com CDN URL
-        // /{owner}/{repo}/{branch}/{...path} -> Contents API, but only for Kodo's own repo.
-        if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
-        {
-            var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-            if (segments.Length >= 4 && IsKodoExtensionsRepo(segments[0], segments[1]))
-            {
-                var owner = segments[0];
-                var repo  = segments[1];
-                // segments[2] is the branch - omitted from the Contents API path
-                var path  = string.Join("/", segments, 3, segments.Length - 3);
-                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
-            }
-            return url; // third-party raw.githubusercontent.com URL - already serves raw bytes, leave alone
-        }
-
-        // Already a Contents API URL or a non-GitHub third-party URL - leave unchanged.
-        return url;
-    }
-
-    private static bool IsKodoExtensionsRepo(string owner, string repo) =>
-        owner.Equals(KodoExtensionsOwner, StringComparison.OrdinalIgnoreCase) &&
-        repo.Equals(KodoExtensionsRepo, StringComparison.OrdinalIgnoreCase);
 
 
     /// True when the URL is a GitHub Contents API endpoint, used to decide whether to add the raw+json Accept header.
@@ -2777,28 +1538,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TimeSpan.FromMilliseconds(250));
     }
 
-    private static bool ExtensionSourceMatchesId(string path, string extensionId, bool isDirectory)
-    {
-        try
-        {
-            var manifest = isDirectory
-                ? ReadManifestFromFolder(path)
-                : ReadManifestFromKox(path);
 
-            return manifest.TryGetProperty("id", out var id) &&
-                   string.Equals(id.GetString(), extensionId, StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
-    private static JsonElement ReadManifestFromFolder(string folderPath)
-    {
-        using var manifestDoc = JsonDocument.Parse(File.ReadAllText(Path.Combine(folderPath, "manifest.json")));
-        return manifestDoc.RootElement.Clone();
-    }
+
 
     private static JsonElement ReadManifestFromKox(string koxPath)
     {
@@ -2851,35 +1593,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private static int CompareExtensionVersions(string left, string right)
-    {
-        var leftParts = ParseVersionNumbers(left);
-        var rightParts = ParseVersionNumbers(right);
-        return VersionNumberSequenceComparer.Instance.Compare(leftParts, rightParts);
-    }
 
-    private static string GetBestKnownExtensionVersion(string manifestVersion, string sourcePath)
-    {
-        var inferredVersion = ExtractVersionFromName(Path.GetFileName(sourcePath));
-        return CompareExtensionVersions(inferredVersion, manifestVersion) > 0
-            ? inferredVersion
-            : manifestVersion;
-    }
 
-    private static DateTime? GetExtensionSourceActivityUtc(string path, bool isDirectory)
-    {
-        try
-        {
-            var createdUtc = isDirectory ? Directory.GetCreationTimeUtc(path) : File.GetCreationTimeUtc(path);
-            var modifiedUtc = isDirectory ? Directory.GetLastWriteTimeUtc(path) : File.GetLastWriteTimeUtc(path);
-            var activityUtc = createdUtc > modifiedUtc ? createdUtc : modifiedUtc;
-            return activityUtc == DateTime.MinValue ? null : activityUtc;
-        }
-        catch
-        {
-            return null;
-        }
-    }
+
+
+
 
     private static string ExtractVersionFromName(string? name)
     {
@@ -2910,114 +1628,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToArray();
     }
 
-    private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
-    {
-        var manifestPath = Path.Combine(folderPath, "manifest.json");
-        if (!File.Exists(manifestPath)) yield break;
 
-        using var manifestDoc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-        var baseExt = ParseManifest(manifestDoc.RootElement);
-        baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, folderPath) };
-        baseExt.SourcePath = folderPath;
-        baseExt.IsDirectorySource = true;
-        baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(folderPath, isDirectory: true);
-        if (baseExt.PluginAssemblyFileName is not null &&
-            File.Exists(Path.Combine(folderPath, baseExt.PluginAssemblyFileName)))
-            baseExt.PluginFolderPath = folderPath;
-
-        foreach (var languageFileName in EnumerateLanguageProfileNames())
-        {
-            var langPath = Path.Combine(folderPath, languageFileName);
-            if (!File.Exists(langPath)) continue;
-
-            using var langDoc = JsonDocument.Parse(File.ReadAllText(langPath));
-            ParseLanguage(langDoc.RootElement, baseExt);
-        }
-
-        var iconPath = Path.Combine(folderPath, "icon.png");
-        if (File.Exists(iconPath))
-        {
-            using var iconStream = File.OpenRead(iconPath);
-            baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
-        }
-        else
-        {
-            var svgIconPath = Path.Combine(folderPath, "icon.svg");
-            if (File.Exists(svgIconPath))
-            {
-                using var iconStream = File.OpenRead(svgIconPath);
-                baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
-            }
-        }
-
-        var themePath = Path.Combine(folderPath, "theme.json");
-        if (!File.Exists(themePath))
-        {
-            // No theme file - yield the extension as-is (language extension, etc.)
-            yield return baseExt;
-            yield break;
-        }
-
-        using var themeDoc = JsonDocument.Parse(File.ReadAllText(themePath));
-        var root = themeDoc.RootElement;
-
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            // One LoadedExtension per theme entry in the array
-            var index = 0;
-            foreach (var themeElement in root.EnumerateArray())
-            {
-                var def = ParseTheme(themeElement, baseExt);
-                var entry = CloneBaseExtension(baseExt);
-                entry.ThemeDefinition = def;
-                // Make the Id unique so duplicate-checking works correctly.
-                // Mark index > 0 entries so they're hidden from the Installed list.
-                if (index > 0)
-                    entry = entry with { Id = $"{baseExt.Id}_{def.ThemeId}", IsThemeSubEntry = true };
-                yield return entry;
-                index++;
-            }
-        }
-        else
-        {
-            baseExt.ThemeDefinition = ParseTheme(root, baseExt);
-            yield return baseExt;
-        }
-    }
 
     // Shallow-clones a LoadedExtension so each theme entry gets its own object
-    private static LoadedExtension CloneBaseExtension(LoadedExtension src) => new()
-    {
-        Id                = src.Id,
-        Version           = src.Version,
-        Name              = src.Name,
-        Type              = src.Type,
-        Author            = src.Author,
-        Description       = src.Description,
-        Extensions        = src.Extensions,
-        Keywords          = src.Keywords,
-        Types             = src.Types,
-        Functions         = src.Functions,
-        Properties        = src.Properties,
-        Namespaces        = src.Namespaces,
-        Blacklist         = src.Blacklist,
-        DeadCodeIgnore    = src.DeadCodeIgnore,
-        DeadCodeEntryPoints = src.DeadCodeEntryPoints,
-        CommentLine       = src.CommentLine,
-        CommentBlockStart = src.CommentBlockStart,
-        CommentBlockEnd   = src.CommentBlockEnd,
-        StringDelimiters  = src.StringDelimiters.ToArray(),
-        MultiLineStringDelimiters = src.MultiLineStringDelimiters.ToArray(),
-        DisableSingleQuoteStrings = src.DisableSingleQuoteStrings,
-        ColorTokens       = new Dictionary<string, string>(src.ColorTokens),
-        SourcePath        = src.SourcePath,
-        IsDirectorySource = src.IsDirectorySource,
-        InstalledOnUtc    = src.InstalledOnUtc,
-        PluginAssemblyFileName = src.PluginAssemblyFileName,
-        PluginFolderPath  = src.PluginFolderPath,
-        IconImage         = src.IconImage,
-        IconBytes         = src.IconBytes,
-    };
+
 
     // Loads a PNG from a stream and scales it to 48x48 if it is square,
     // otherwise returns null so the text fallback is used.
@@ -3047,165 +1661,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return null; }
     }
 
-    private IEnumerable<LoadedExtension> LoadExtensionsFromKox(string koxPath)
-    {
-        using var archive = ZipFile.OpenRead(koxPath);
-        var manifestEntry = archive.GetEntry("manifest.json");
-        if (manifestEntry is null) yield break;
 
-        using var manifestStream = manifestEntry.Open();
-        using var manifestDoc = JsonDocument.Parse(manifestStream);
-        var baseExt = ParseManifest(manifestDoc.RootElement);
-        baseExt = baseExt with { Version = GetBestKnownExtensionVersion(baseExt.Version, koxPath) };
-        baseExt.SourcePath = koxPath;
-        baseExt.IsDirectorySource = false;
-        baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
-        if (baseExt.PluginAssemblyFileName is not null &&
-            archive.GetEntry(baseExt.PluginAssemblyFileName) is not null)
-            baseExt.PluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id, baseExt.Version);
 
-        foreach (var languageFileName in EnumerateLanguageProfileNames())
-        {
-            var langEntry = archive.GetEntry(languageFileName);
-            if (langEntry is null) continue;
 
-            using var langStream = langEntry.Open();
-            using var langDoc = JsonDocument.Parse(langStream);
-            ParseLanguage(langDoc.RootElement, baseExt);
-        }
 
-        var iconEntry = archive.GetEntry("icon.png") ?? archive.GetEntry("icon.svg");
-        if (iconEntry is not null)
-        {
-            using var iconStream = iconEntry.Open();
-            baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
-        }
 
-        var themeEntry = archive.GetEntry("theme.json");
-        if (themeEntry is null)
-        {
-            yield return baseExt;
-            yield break;
-        }
 
-        // ZipArchiveEntry streams are forward-only - read to memory first so we can
-        // enumerate the JSON array without the stream closing under us.
-        using var themeStream = themeEntry.Open();
-        using var ms = new MemoryStream();
-        themeStream.CopyTo(ms);
-        ms.Position = 0;
-        using var themeDoc = JsonDocument.Parse(ms);
-        var root = themeDoc.RootElement;
 
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            var index = 0;
-            foreach (var themeElement in root.EnumerateArray())
-            {
-                var def = ParseTheme(themeElement, baseExt);
-                var entry = CloneBaseExtension(baseExt);
-                entry.ThemeDefinition = def;
-                if (index > 0)
-                    entry = entry with { Id = $"{baseExt.Id}_{def.ThemeId}", IsThemeSubEntry = true };
-                yield return entry;
-                index++;
-            }
-        }
-        else
-        {
-            baseExt.ThemeDefinition = ParseTheme(root, baseExt);
-            yield return baseExt;
-        }
-    }
-    private static IEnumerable<string> EnumerateLanguageProfileNames()
-    {
-        yield return "language.json";
-        yield return "language1.json";
-        yield return "language2.json";
-        yield return "language3.json";
-        yield return "language4.json";
-        yield return "language5.json";
-    }
-    private static LoadedExtension ParseManifest(JsonElement manifest) => new()
-    {
-        Id          = manifest.TryGetProperty("id",          out var id)   ? id.GetString()   ?? "" : "",
-        Version     = manifest.TryGetProperty("version",     out var ver)  ? ver.GetString()  ?? "" : "",
-        Name        = manifest.TryGetProperty("name",        out var name) ? name.GetString() ?? "" : "",
-        Type        = manifest.TryGetProperty("type",        out var type) ? type.GetString() ?? "" : "",
-        Author      = manifest.TryGetProperty("author",      out var auth) ? auth.GetString() ?? "" : "",
-        Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
-        Extensions  = manifest.TryGetProperty("extensions",  out var exts)
-            ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
-            : [],
-        PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
-    };
 
-    private static void ParseLanguage(JsonElement lang, LoadedExtension ext)
-    {
-        var profile = ParseLanguageProfile(lang);
-        if (profile.Extensions.Length > 0)
-        {
-            ext.SyntaxProfiles.Add(profile);
-            return;
-        }
 
-        ApplyLanguageProfile(ext, profile);
-    }
-
-    private static LanguageSyntaxProfile ParseLanguageProfile(JsonElement lang)
-    {
-        var profile = new LanguageSyntaxProfile
-        {
-            Extensions = ReadStringArray(lang, "extensions"),
-            Keywords = ReadStringArray(lang, "keywords"),
-            Types = ReadStringArray(lang, "types"),
-            Functions = ReadStringArray(lang, "functions"),
-            Properties = ReadStringArray(lang, "properties"),
-            Namespaces = ReadStringArray(lang, "namespaces"),
-            Blacklist = ReadStringArray(lang, "blacklist"),
-            DeadCodeIgnore = ReadStringArray(lang, "deadCodeIgnore"),
-            DeadCodeEntryPoints = ReadStringArray(lang, "deadCodeEntryPoints"),
-            CommentLine = lang.TryGetProperty("commentLine", out var cl) ? NormalizeSyntaxToken(cl.GetString()) : null,
-            CommentBlockStart = lang.TryGetProperty("commentBlockStart", out var cbs) ? NormalizeSyntaxToken(cbs.GetString()) : null,
-            CommentBlockEnd = lang.TryGetProperty("commentBlockEnd", out var cbe) ? NormalizeSyntaxToken(cbe.GetString()) : null,
-            StringDelimiters = lang.TryGetProperty("stringDelimiters", out var sd) ? ReadStringArray(sd) : null,
-            MultiLineStringDelimiters = lang.TryGetProperty("multiLineStringDelimiters", out var msd) ? ReadStringArray(msd) : null,
-            DisableSingleQuoteStrings = lang.TryGetProperty("disableSingleQuoteStrings", out var dsqs) && dsqs.ValueKind is JsonValueKind.True or JsonValueKind.False
-                ? dsqs.GetBoolean()
-                : null,
-            ColorTokens = ReadColorTokens(lang)
-        };
-
-        return profile;
-    }
-
-    private static void ApplyLanguageProfile(LoadedExtension ext, LanguageSyntaxProfile profile)
-    {
-        ext.Keywords = ext.Keywords.Union(profile.Keywords).ToArray();
-        ext.Types = ext.Types.Union(profile.Types).ToArray();
-        ext.Functions = ext.Functions.Union(profile.Functions).ToArray();
-        ext.Properties = ext.Properties.Union(profile.Properties).ToArray();
-        ext.Namespaces = ext.Namespaces.Union(profile.Namespaces).ToArray();
-        ext.Blacklist = ext.Blacklist.Union(profile.Blacklist).ToArray();
-        ext.DeadCodeIgnore = ext.DeadCodeIgnore.Union(profile.DeadCodeIgnore).ToArray();
-        ext.DeadCodeEntryPoints = ext.DeadCodeEntryPoints.Union(profile.DeadCodeEntryPoints).ToArray();
-
-        if (profile.CommentLine is not null)
-            ext.CommentLine = profile.CommentLine;
-        if (profile.CommentBlockStart is not null)
-            ext.CommentBlockStart = profile.CommentBlockStart;
-        if (profile.CommentBlockEnd is not null)
-            ext.CommentBlockEnd = profile.CommentBlockEnd;
-        if (profile.StringDelimiters is not null)
-            ext.StringDelimiters = profile.StringDelimiters.ToArray();
-        if (profile.MultiLineStringDelimiters is not null)
-            ext.MultiLineStringDelimiters = profile.MultiLineStringDelimiters.ToArray();
-        if (profile.DisableSingleQuoteStrings.HasValue)
-            ext.DisableSingleQuoteStrings = profile.DisableSingleQuoteStrings.Value;
-
-        foreach (var (key, value) in profile.ColorTokens)
-            ext.ColorTokens[key] = value;
-    }
 
     private static string[] ReadStringArray(JsonElement root, string propertyName) =>
         root.TryGetProperty(propertyName, out var value) ? ReadStringArray(value) : [];
@@ -3233,142 +1697,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return colorTokens;
     }
 
-    private static ExtensionThemeDefinition ParseTheme(JsonElement theme, LoadedExtension ext) => new()
-    {
-        ThemeId = theme.TryGetProperty("themeId", out var themeId) ? themeId.GetString() ?? ext.Id : ext.Id,
-        DisplayName = theme.TryGetProperty("displayName", out var displayName) ? displayName.GetString() ?? ext.Name : ext.Name,
-        BaseTheme = theme.TryGetProperty("baseTheme", out var baseTheme) ? baseTheme.GetString() ?? "Dark" : "Dark",
-        WindowBackground = GetThemeColor(theme, "windowBackground", "#000000"),
-        TopBar = GetThemeColor(theme, "topBar", "#0E0E0E"),
-        Sidebar = GetThemeColor(theme, "sidebar", "#0E0E0E"),
-        Button = GetThemeColor(theme, "button", "#242424"),
-        ButtonHover = GetThemeColor(theme, "buttonHover", "#343434"),
-        EditorBackground = GetThemeColor(theme, "editorBackground", "#000000"),
-        Card = GetThemeColor(theme, "card", "#121212"),
-        PrimaryText = GetThemeColor(theme, "primaryText", "#FFFFFF"),
-        MutedText = GetThemeColor(theme, "mutedText", "#BDBDBD"),
-        SurfaceBorder = GetThemeColor(theme, "surfaceBorder", "#4A4A4A"),
-        Accent = GetThemeColor(theme, "accent", "#8C00FF"),
-        PreviewBackground = GetThemeColor(theme, "previewBackground", GetThemeColor(theme, "editorBackground", "#000000")),
-        PreviewBorder = GetThemeColor(theme, "previewBorder", GetThemeColor(theme, "surfaceBorder", "#4A4A4A"))
-    };
 
-    private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
-        theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
 
-    private void RefreshExtensionTheme()
-    {
-        foreach (var ext in LoadedExtensions)
-        {
-            ext.AccentBrush        = AccentBrush;
-            ext.CardBrush          = CardBrush;
-            ext.PrimaryTextBrush   = PrimaryTextBrush;
-            ext.SurfaceBorderBrush = SurfaceBorderBrush;
-            ext.MutedTextBrush     = MutedTextBrush;
-            ext.NotifyAllBrushesChanged();
-        }
 
-        // Keeps the active-theme dot in sync after brushes refresh, covering newly-added LoadedExtension instances.
-        foreach (var ext in ThemeExtensions)
-            ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
-    }
 
-    private LoadedExtension? GetLanguageExtension(string filePath)
-    {
-        if (IsPlainTextFile(filePath))
-            return null;
 
-        var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
-        var extension = LoadedExtensions.FirstOrDefault(e =>
-            e.Type == "language" &&
-            e.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)));
 
-        if (extension is null)
-        {
-            // No extension matched - try to detect the language from file content.
-            // Result is cached per path so we only read the file once per session.
-            if (!_contentSniffCache.TryGetValue(filePath, out var sniffed))
-            {
-                sniffed = TryDetectLanguageFromContent(filePath);
-                _contentSniffCache[filePath] = sniffed;
-            }
-            if (sniffed is null)
-                return null;
 
-            // Content-sniffed match: use the base extension as-is (no profile narrowing).
-            return sniffed;
-        }
-
-        var matchingProfiles = extension.SyntaxProfiles
-            .Where(profile => profile.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
-
-        if (matchingProfiles.Count == 0)
-            return extension;
-
-        var effectiveExtension = CloneBaseExtension(extension);
-        if (matchingProfiles.Any(profile => profile.Keywords.Length > 0))
-            effectiveExtension.Keywords = [];
-        if (matchingProfiles.Any(profile => profile.Types.Length > 0))
-            effectiveExtension.Types = [];
-        if (matchingProfiles.Any(profile => profile.Functions.Length > 0))
-            effectiveExtension.Functions = [];
-        if (matchingProfiles.Any(profile => profile.Properties.Length > 0))
-            effectiveExtension.Properties = [];
-        if (matchingProfiles.Any(profile => profile.Namespaces.Length > 0))
-            effectiveExtension.Namespaces = [];
-
-        foreach (var profile in matchingProfiles)
-            ApplyLanguageProfile(effectiveExtension, profile);
-
-        return effectiveExtension;
-    }
 
     // Peeks at the first line to match known XML/MSBuild root elements, so ambiguous files still get highlighting.
-    private LoadedExtension? TryDetectLanguageFromContent(string filePath)
-    {
-        try
-        {
-            string? firstLine = null;
-            using (var reader = new StreamReader(filePath, detectEncodingFromByteOrderMarks: true))
-            {
-                string? line;
-                while ((line = reader.ReadLine()) is not null)
-                {
-                    var trimmed = line.Trim();
-                    if (trimmed.Length > 0)
-                    {
-                        firstLine = trimmed;
-                        break;
-                    }
-                }
-            }
 
-            if (firstLine is null)
-                return null;
-
-            // Map root-element signatures to a representative extension that an installed
-            // language extension already claims, so we reuse the full profile lookup.
-            string? syntheticExt = null;
-
-            if (firstLine.StartsWith("<Project", StringComparison.OrdinalIgnoreCase))
-                syntheticExt = ".csproj";
-            else if (firstLine.StartsWith("<?xml", StringComparison.OrdinalIgnoreCase) ||
-                     firstLine.StartsWith("<", StringComparison.OrdinalIgnoreCase))
-                syntheticExt = ".xml";
-
-            if (syntheticExt is null)
-                return null;
-
-            return LoadedExtensions.FirstOrDefault(e =>
-                e.Type == "language" &&
-                e.Extensions.Any(ex => ex.Equals(syntheticExt, StringComparison.OrdinalIgnoreCase)));
-        }
-        catch
-        {
-            return null;
-        }
-    }
 
     private static bool IsPlainTextFile(string? filePath)
     {
@@ -3457,48 +1795,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Theme / editor appearance
 
-    private void ApplyThemeToEditor()
-    {
-        if (EditorTextBox is null) return;
-        EditorTextBox.Background = EditorBackgroundBrush;
-        EditorTextBox.Foreground = PrimaryTextBrush;
-        EditorTextBox.LineNumbersForeground = MutedTextBrush;
-        EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
-            ? new SolidColorBrush(b.Color, 0.3)
-            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
-        EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
-        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
-        EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
-        _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
-            ? new SolidColorBrush(mutedBrush.Color, 0.4)
-            : new SolidColorBrush(Color.Parse("#808080"), 0.4);
-        // A real grey rather than a near-black/near-white tint - those looked either
-        // invisible or (combined with unlit text) crushed contrast to nothing.
-        // The same grey also drives the error renderer's stripe half, so combined
-        // dead-code+error stripes stay visually tied to pure dead-code lines.
-        IBrush deadCodeGrey = IsLightThemeActive
-            ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
-            : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
-        _deadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
-        _errorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
-        // Force dead-code text to a fixed, theme-aware color instead of lightening whatever
-        // the syntax colorizer set - plain identifiers often have no explicit brush at all,
-        // so "lighten if present" silently left them dim while only accent tokens changed.
-        var basePrimary = PrimaryTextBrush.ToImmutable() is ISolidColorBrush primarySolid
-            ? primarySolid.Color
-            : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
-        _deadCodeTextBrightener.TextBrush = new SolidColorBrush(
-            PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
-        // Mirror dead-code's per-theme text fix: in light themes the red wash buries the
-        // syntax colors, so force pure-error lines to black for contrast (dead-code
-        // stripes keep their own brightened treatment).
-        _errorTextDarkener.IsLightTheme = IsLightThemeActive;
-        _errorTextDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
-        EditorTextBox.TextArea.TextView.Redraw();
 
-    }
 
     // Pushes a color further toward black or white, used to keep dead-code text reliably
     // readable against its grey overlay regardless of the active theme's exact palette.
@@ -3529,21 +1826,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     }
 
-    private void ApplySyntaxHighlighting(LoadedExtension ext)
-    {
-        if (EditorTextBox is null) return;
-        var syntaxProfile = ResolveCompiledSyntaxProfile(ext);
-        if (!_highlightingCache.TryGetValue(ext, out var definition))
-        {
-            definition = new KodoHighlightingDefinition(ext, syntaxProfile);
-            _highlightingCache[ext] = definition;
-        }
-        EditorTextBox.SyntaxHighlighting = definition;
-        ConfigureRainbowBrackets(ext);
-        ConfigureInterpolatedStrings(syntaxProfile);
-        ConfigureHtmlEmbeddedHighlighting(ext);
-        ConfigureMarkdownHighlighting(ext);
-    }
+
 
     private void RefreshCurrentFileSyntaxHighlighting()
     {
@@ -3607,27 +1890,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ConfigureMarkdownHighlighting(null);
     }
 
-    private CompiledSyntaxProfile ResolveCompiledSyntaxProfile(LoadedExtension extension)
-    {
-        if (_compiledSyntaxProfileCache.TryGetValue(extension, out var cached))
-            return cached;
 
-        var profile = CompiledSyntaxProfile.Create(extension);
-        _compiledSyntaxProfileCache[extension] = profile;
-        return profile;
-    }
 
-    private void ConfigureHtmlEmbeddedHighlighting(LoadedExtension? extension)
-    {
-        _htmlEmbeddedColorizer.UpdateSyntax(extension, ResolveHtmlEmbeddedSyntaxProfile);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
-    }
 
-    private void ConfigureMarkdownHighlighting(LoadedExtension? extension)
-    {
-        _markdownColorizer.UpdateSyntax(extension, ResolveFenceLanguageSyntaxProfile, ResolveInlineCodeLanguageExtension);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
-    }
+
+
 
     private CompiledSyntaxProfile? ResolveHtmlEmbeddedSyntaxProfile(string blockTag, string? typeAttribute)
     {
@@ -3671,14 +1938,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return null;
     }
 
-    private CompiledSyntaxProfile? FindLanguageSyntaxProfileForFileExtension(string extension)
-    {
-        var loadedExtension = LoadedExtensions.FirstOrDefault(loadedExtension =>
-            string.Equals(loadedExtension.Type, "language", StringComparison.OrdinalIgnoreCase) &&
-            loadedExtension.Extensions.Any(ext => string.Equals(ext, extension, StringComparison.OrdinalIgnoreCase)));
 
-        return loadedExtension is null ? null : ResolveCompiledSyntaxProfile(loadedExtension);
-    }
 
     private CompiledSyntaxProfile? ResolveFenceLanguageSyntaxProfile(string fenceLanguage)
     {
@@ -3686,107 +1946,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return extension is null ? null : ResolveCompiledSyntaxProfile(extension);
     }
 
-    private LoadedExtension? ResolveFenceLanguageExtension(string fenceLanguage)
-    {
-        if (string.IsNullOrWhiteSpace(fenceLanguage))
-            return null;
 
-        var token = fenceLanguage.Trim();
-        if (token.StartsWith("{", StringComparison.Ordinal) && token.EndsWith("}", StringComparison.Ordinal) && token.Length > 2)
-            token = token[1..^1];
 
-        token = token.Split([' ', '\t', ',', ';', ':'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? token;
-        if (string.IsNullOrWhiteSpace(token))
-            return null;
 
-        var normalized = token.Trim().TrimStart('.').ToLowerInvariant();
-        if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
-        {
-            if (string.IsNullOrEmpty(alias))
-                return null; // explicit plain-text marker - no syntax profile
-            normalized = alias;
-        }
-
-        var bestMatch = LoadedExtensions
-            .Where(extension =>
-                extension.Type == "language" &&
-                !KodoExtensionIds.IsMarkdown(extension.Id))
-            .Select(extension => new
-            {
-                Extension = extension,
-                Score = ScoreFenceLanguageMatch(extension, normalized, token)
-            })
-            .Where(result => result.Score > 0)
-            .OrderByDescending(result => result.Score)
-            .ThenBy(result => result.Extension.Name, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-
-        return bestMatch?.Extension;
-    }
-
-    private static int ScoreFenceLanguageMatch(LoadedExtension extension, string normalizedFenceLanguage, string rawFenceLanguage)
-    {
-        if (string.IsNullOrWhiteSpace(normalizedFenceLanguage))
-            return 0;
-
-        var score = 0;
-        var normalizedCompact = normalizedFenceLanguage.Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
-        var rawCompact = rawFenceLanguage.Trim().TrimStart('.').Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
-
-        if (extension.Extensions.Any(ext =>
-                ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
-        {
-            score = Math.Max(score, 100);
-        }
-
-        var normalizedId = extension.Id
-            .Replace("-kodo-extension", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("-language-support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
-        if (normalizedId.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
-            normalizedId.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
-        {
-            score = Math.Max(score, 90);
-        }
-
-        var compactName = extension.Name
-            .Replace("Language Support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("Support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Trim();
-        if (compactName.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
-            compactName.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
-        {
-            score = Math.Max(score, 80);
-        }
-
-        if (extension.SyntaxProfiles.Any(profile =>
-                profile.Extensions.Any(ext =>
-                    ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase))))
-        {
-            score = Math.Max(score, 70);
-        }
-
-        if (extension.Types.Any(type =>
-                type.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
-                type.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
-        {
-            score = Math.Max(score, 60);
-        }
-
-        if (extension.Keywords.Any(keyword =>
-                keyword.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
-                keyword.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
-        {
-            score = Math.Max(score, 40);
-        }
-
-        return score;
-    }
 
     // Inline-code language detection now lives in SyntaxColorEngine.cs; this just supplies the loaded extensions.
-    private LoadedExtension? ResolveInlineCodeLanguageExtension(string codeSnippet) =>
-        InlineCodeLanguageDetector.Resolve(LoadedExtensions, codeSnippet);
+
 
     // Sets the corrupted/unsupported state and fires all dependent property notifications.
     private void SetFileCorrupted(bool corrupted)
@@ -3801,14 +1966,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(CanShowSaveActions));
     }
 
-    private void ConfigureRainbowBrackets(LoadedExtension? ext)
-    {
-        // Rainbow brackets have no meaning in plain text or markdown prose.
-        // Markdown fenced code blocks are colourised by _markdownColorizer independently.
-        var isMarkdown = KodoExtensionIds.IsMarkdown(ext?.Id);
-        _rainbowBracketColorizer.UpdateSyntax(isMarkdown ? null : ext);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
-    }
+
 
     private void ConfigureInterpolatedStrings(CompiledSyntaxProfile? syntaxProfile)
     {
@@ -4019,53 +2177,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const double MinExplorerPanelWidth = 180;
     private const double MaxExplorerPanelWidth = 600;
 
-    private static double NormalizeExplorerPanelWidth(double value) =>
-        double.IsFinite(value)
-            ? Math.Clamp(value, MinExplorerPanelWidth, MaxExplorerPanelWidth)
-            : AppSettings.DefaultExplorerPanelWidth;
+
 
     // Manual drag handling, mirroring TerminalPanelSplitter_OnPointer* - the splitter
     // sits on the panel's right edge, so dragging right grows it.
-    private void ExplorerPanelSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        if (sender is not InputElement element) return;
-        if (!e.GetCurrentPoint(element).Properties.IsLeftButtonPressed) return;
 
-        _isResizingExplorerPanel = true;
-        _explorerPanelDragStartPointerX = e.GetPosition(this).X;
-        _explorerPanelDragStartWidth = ExplorerPanelWidth;
-        e.Pointer.Capture(element);
-        e.Handled = true;
-    }
 
-    private void ExplorerPanelSplitter_OnPointerMoved(object? sender, PointerEventArgs e)
-    {
-        if (!_isResizingExplorerPanel) return;
 
-        var deltaX = e.GetPosition(this).X - _explorerPanelDragStartPointerX;
-        ExplorerPanelWidth = _explorerPanelDragStartWidth + deltaX;
-        e.Handled = true;
-    }
 
-    private void ExplorerPanelSplitter_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
-    {
-        if (!_isResizingExplorerPanel) return;
 
-        _isResizingExplorerPanel = false;
-        e.Pointer.Capture(null);
-        // Flushes the final width immediately instead of waiting on the debounce timer, in case of a quick resize-then-close.
-        SaveSettings(immediate: true);
-        e.Handled = true;
-    }
 
     // Guards against a stray PointerCaptureLost leaving the panel stuck in resize mode.
-    private void ExplorerPanelSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
-    {
-        if (!_isResizingExplorerPanel) return;
 
-        _isResizingExplorerPanel = false;
-        SaveSettings(immediate: true);
-    }
 
     // Chevron (16) + its margin (2) + icon viewbox (32) + icon/name spacing (6) +
     // ItemsControl margin (8) + a little breathing room so text never touches the
@@ -4075,36 +2198,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Double-click the splitter to snap the panel to fit the widest currently-visible
     // entry, the way VS Code's sidebar splitter does.
-    private void ExplorerPanelSplitter_OnDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        ExplorerPanelWidth = ComputeAutoFitExplorerPanelWidth();
-        SaveSettings(immediate: true);
-        e.Handled = true;
-    }
 
-    private double ComputeAutoFitExplorerPanelWidth()
-    {
-        if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
-        var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Monospace");
-        var widest = 0.0;
 
-        foreach (var item in FileTreeItems)
-        {
-            var formatted = new FormattedText(
-                item.Name,
-                CultureInfo.CurrentCulture,
-                FlowDirection.LeftToRight,
-                typeface,
-                13,
-                Brushes.Black);
-
-            var total = item.IndentWidth + formatted.Width;
-            if (total > widest) widest = total;
-        }
-
-        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead);
-    }
 
     public bool IsFileExplorerVisible
     {
@@ -4217,19 +2313,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void SetSelectedExtensionsTab(string tab)
-    {
-        if (string.Equals(_selectedExtensionsTab, tab, StringComparison.Ordinal)) return;
-        _selectedExtensionsTab = tab;
-        OnPropertyChanged(nameof(IsInstalledTabSelected));
-        OnPropertyChanged(nameof(IsLanguagesTabSelected));
-        OnPropertyChanged(nameof(IsThemesTabSelected));
-        OnPropertyChanged(nameof(IsPluginsTabSelected));
-        OnPropertyChanged(nameof(IsCompilersTabSelected));
-        OnPropertyChanged(nameof(IsMarketplaceSectionTabSelected));
-        OnPropertyChanged(nameof(SelectedExtensionSort));
-        NotifyExtensionFiltersChanged();
-    }
+
 
     public bool IsInstalledTabSelected
     {
@@ -5182,42 +3266,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void RestartSearchFilterDebounce()
-    {
-        _searchFilterDebounceTimer.Stop();
-        _searchFilterDebounceTimer.Start();
-    }
 
-    private void SearchFilterDebounceTimer_OnTick(object? sender, EventArgs e)
-    {
-        _searchFilterDebounceTimer.Stop();
-        FlushPendingSearchFilters();
-    }
 
-    private void FlushPendingSearchFilters()
-    {
-        if (_extensionSearchPending)
-        {
-            _extensionSearchPending = false;
-            NotifyExtensionFiltersChanged();
-        }
-        if (_settingsSearchPending)
-        {
-            _settingsSearchPending = false;
-            NotifySettingsSearchChanged();
-        }
-    }
 
-    private void SettingsSearchTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
-    {
-        // User clicked off the settings search bar — flush any debounced filtering
-        // immediately and stop the typing/debounce timer so the caret blink and
-        // pending filter animation end at once.
-        if (_searchFilterDebounceTimer.IsEnabled)
-            _searchFilterDebounceTimer.Stop();
-        if (_settingsSearchPending)
-            FlushPendingSearchFilters();
-    }
+
+
+
+
 
     private void SettingsPage_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -5251,90 +3306,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // the same way a search engine indexes a page's rendered text rather than a
     // curated meta-keywords tag. New cards/controls are searchable automatically
     // as soon as they're named; nothing here needs to be updated for them.
-    private static void CollectSearchableText(StyledElement element, StringBuilder sb)
-    {
-        if (element is TextBlock { Text: { Length: > 0 } text })
-            sb.Append(text).Append(' ');
 
-        if (element is HeaderedContentControl { Header: string header } && !string.IsNullOrWhiteSpace(header))
-            sb.Append(header).Append(' ');
-
-        if (element is ContentControl { Content: string content } && !string.IsNullOrWhiteSpace(content))
-            sb.Append(content).Append(' ');
-
-        if (element is TextBox { PlaceholderText: { Length: > 0 } placeholder })
-            sb.Append(placeholder).Append(' ');
-
-        if (element is Control control && ToolTip.GetTip(control) is string tip && !string.IsNullOrWhiteSpace(tip))
-            sb.Append(tip).Append(' ');
-    }
 
     // Rebuilt on every call rather than cached, so status text that changes at
     // runtime (e.g. "Enable Insight" hints, version numbers) stays searchable -
     // these cards are small, so re-walking them per keystroke is cheap.
-    private static string GetSettingsCardSearchText(Control? card)
-    {
-        if (card is null)
-            return string.Empty;
 
-        var sb = new StringBuilder();
-        CollectSearchableText(card, sb);
-        foreach (var descendant in card.GetVisualDescendants())
-        {
-            if (descendant is StyledElement styled)
-                CollectSearchableText(styled, sb);
-        }
 
-        return sb.ToString();
-    }
 
-    private bool MatchesSettingsSearchCard(Control? card)
-    {
-        return string.IsNullOrWhiteSpace(_settingsSearchText) ||
-               GetSettingsCardSearchText(card).Contains(_settingsSearchText, StringComparison.OrdinalIgnoreCase);
-    }
 
     // Search active, but every card was filtered out - lets the empty-state
     // placeholder tell the difference from "Settings just hasn't loaded yet".
     private bool _isSettingsSearchEmpty;
     public bool IsSettingsSearchEmptyVisible => _isSettingsSearchEmpty;
-    private void NotifySettingsSearchChanged()
-    {
-        var cards = SettingsCardsPanel.Children
-            .OfType<Control>()
-            .Where(c => c.Name != "SettingsSearchEmptyPlaceholder" &&
-                        (c.Name is null || !c.Name.StartsWith("SectionHeader", StringComparison.Ordinal)))
-            .ToList();
-        var headers = SettingsCardsPanel.Children
-            .OfType<Control>()
-            .Where(c => c.Name?.StartsWith("SectionHeader", StringComparison.Ordinal) == true)
-            .ToList();
-        var groupVisible = cards
-            .GroupBy(SettingsCardGroupKey)
-            .ToDictionary(g => g.Key, g => g.Any(MatchesSettingsSearchCard));
 
-        var anyVisible = false;
-        foreach (var card in cards)
-        {
-            var visible = groupVisible[SettingsCardGroupKey(card)];
-            card.IsVisible = visible;
-            anyVisible |= visible;
-        }
-
-        foreach (var header in headers)
-        {
-            var sectionTag = header.Tag as string;
-            if (sectionTag is null)
-            {
-                header.IsVisible = true;
-                continue;
-            }
-            header.IsVisible = cards.Any(c => c.Tag as string == sectionTag && c.IsVisible);
-        }
-
-        _isSettingsSearchEmpty = !string.IsNullOrWhiteSpace(_settingsSearchText) && !anyVisible;
-        OnPropertyChanged(nameof(IsSettingsSearchEmptyVisible));
-    }
 
     private static object SettingsCardGroupKey(Control card) => card.Tag ?? (object)card;
 
@@ -5582,41 +3567,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private IEnumerable<LoadedExtension> SortInstalledExtensions(IEnumerable<LoadedExtension> source) =>
-        SelectedExtensionSort switch
-        {
-            ExtensionSortModes.ReverseAlphabetical => source.OrderByDescending(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            ExtensionSortModes.RecentlyInstalled => source
-                .OrderByDescending(e => e.InstalledOnUtc ?? DateTime.MinValue)
-                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            ExtensionSortModes.UpdatesAvailable => source
-                .OrderByDescending(e => e.IsUpdateAvailable)
-                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            _ => source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-        };
 
-    private IEnumerable<MarketplaceExtension> SortMarketplaceExtensions(IEnumerable<MarketplaceExtension> source) =>
-        SelectedExtensionSort switch
-        {
-            ExtensionSortModes.ReverseAlphabetical => source.OrderByDescending(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            ExtensionSortModes.RecentlyInstalled => source
-                .OrderByDescending(e => e.InstalledOnUtc.HasValue)
-                .ThenByDescending(e => e.InstalledOnUtc ?? DateTime.MinValue)
-                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            ExtensionSortModes.UpdatesAvailable => source
-                .OrderBy(GetMarketplaceUpdatePriority)
-                .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase),
-            _ => source.OrderBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-        };
 
-    private static int GetMarketplaceUpdatePriority(MarketplaceExtension extension)
-    {
-        if (extension.IsUpdateAvailable)
-            return 0;
-        if (!extension.IsInstalled)
-            return 1;
-        return 2;
-    }
+
+
+
 
     public bool IsSearchPanelVisible
     {
@@ -6410,34 +4365,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Returns Brushes.White or Brushes.Black depending on which gives better contrast
     // against the supplied brush, using the WCAG relative-luminance formula.
-    private static IBrush GetAccentForeground(IBrush accent)
-    {
-        if (accent.ToImmutable() is not ISolidColorBrush solid)
-            return Brushes.White;
-        return GetReadableForeground(solid.Color);
-    }
 
-    private static void SyncSystemAccentResources(IBrush accent)
-    {
-        if (accent.ToImmutable() is not ISolidColorBrush solid) return;
-        var resources = Application.Current?.Resources;
-        if (resources is null) return;
 
-        var c = solid.Color;
-        resources["SystemAccentColor"] = c;
-        resources["SystemAccentColorLight1"] = LightenColor(c, 0.15);
-        resources["SystemAccentColorLight2"] = LightenColor(c, 0.30);
-        resources["SystemAccentColorLight3"] = LightenColor(c, 0.45);
-        resources["SystemAccentColorDark1"]  = DarkenColor(c, 0.15);
-        resources["SystemAccentColorDark2"]  = DarkenColor(c, 0.30);
-        resources["SystemAccentColorDark3"]  = DarkenColor(c, 0.45);
-    }
 
-    private static Color LightenColor(Color c, double amount)
-    {
-        byte Adjust(byte ch) => (byte)Math.Clamp(ch + (255 - ch) * amount, 0, 255);
-        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
-    }
+
+
 
     private static Color DarkenColor(Color c, double amount)
     {
@@ -6467,48 +4399,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Returns whichever of white/black contrasts best against the given colour.
-    private static IBrush GetReadableForeground(Color background)
-    {
-        var L = GetRelativeLuminance(background);
-        return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05)
-            ? Brushes.White
-            : Brushes.Black;
-    }
+
 
     // Checks the candidate text color against every surface it's on, falls back to WCAG-safe black/white.
-    private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
-    {
-        const double MinimumReadableContrast = 4.5; // WCAG AA, normal text
 
-        if (candidate.ToImmutable() is not ISolidColorBrush candidateSolid)
-            return candidate;
-
-        var worstContrast = double.MaxValue;
-        Color worstBackground = default;
-        var foundSolidBackground = false;
-
-        foreach (var background in backgrounds)
-        {
-            if (background.ToImmutable() is not ISolidColorBrush backgroundSolid)
-                continue;
-            foundSolidBackground = true;
-            var contrast = GetContrastRatio(candidateSolid.Color, backgroundSolid.Color);
-            if (contrast < worstContrast)
-            {
-                worstContrast = contrast;
-                worstBackground = backgroundSolid.Color;
-            }
-        }
-
-        if (!foundSolidBackground || worstContrast >= MinimumReadableContrast)
-            return candidate;
-
-        KodoDiagnostics.LogDebug(
-            $"Theme text colour failed contrast check ({worstContrast:0.00}:1, needs {MinimumReadableContrast:0.0}:1) " +
-            "against its own background - falling back to a safe colour so text stays readable.");
-
-        return GetReadableForeground(worstBackground);
-    }
 
     // Always reflects the live Windows accent colour; used by the Windows blob
     // preview even when another accent mode is active.
@@ -6572,11 +4466,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
-    private void FileTreeItems_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-        if (!_suppressExplorerWidthRefresh)
-            OnPropertyChanged(nameof(ExplorerPanelWidth));
-    }
+
 
     private void TerminalSessions_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -7343,15 +5233,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
     }
 
-    private IBrush GetCachedBrush(string colorValue)
-    {
-        if (_brushCache.TryGetValue(colorValue, out var brush))
-            return brush;
 
-        brush = Brush.Parse(colorValue);
-        _brushCache[colorValue] = brush;
-        return brush;
-    }
 
     // Theme application
 
@@ -7359,797 +5241,51 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     /// Sets theme brushes and <see cref="Application.RequestedThemeVariant"/> without notifications, saves, or refresh.
     /// Call before <c>DataContext = this</c> so bindings read correct colors on first evaluation.
 
-    private void ApplyThemeBrushes(string themeName)
-    {
-        _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to Windows' current setting first.
-        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
-            ? ResolveSystemThemeName()
-            : themeName;
-        var extensionTheme = ThemeExtensions
-            .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
 
-        if (extensionTheme is not null)
-        {
-            CurrentThemeName = extensionTheme.ThemeId;
-            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
 
-            WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
-            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
-            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
-            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
-            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
-            EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
-            CardBrush             = GetCachedBrush(extensionTheme.Card);
-            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
-            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colors aren't guaranteed readable - verify and fall back to a safe color.
-            PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
-            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
-            _themeAccentHex       = extensionTheme.Accent;
-            _hasThemeAccent       = true;
-            _windowBackgroundHex  = extensionTheme.WindowBackground;
-            _hasWindowBackground  = true;
-            ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
-        }
-        else
-        {
-            CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
-            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
 
-            if (CurrentThemeName == "Light")
-            {
-                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
-                TopBarBrush           = GetCachedBrush("#FFFFFF");
-                SidebarBrush          = GetCachedBrush("#EFF2F7");
-                ButtonBrush           = GetCachedBrush("#E3E8F1");
-                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
-                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
-                CardBrush             = GetCachedBrush("#F7F9FC");
-                PrimaryTextBrush      = GetCachedBrush("#202124");
-                MutedTextBrush        = GetCachedBrush("#5F6B7A");
-                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#F3F3F3";
-            }
-            else
-            {
-                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
-                TopBarBrush           = GetCachedBrush("#181818");
-                SidebarBrush          = GetCachedBrush("#181818");
-                ButtonBrush           = GetCachedBrush("#252526");
-                ButtonHoverBrush      = GetCachedBrush("#313437");
-                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
-                CardBrush             = GetCachedBrush("#252526");
-                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
-                MutedTextBrush        = GetCachedBrush("#A0A0A0");
-                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#1E1E1E";
-            }
-            _hasThemeAccent         = false;
-            _hasWindowBackground    = false;
-            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
-        }
 
-        // Silently resolves the accent hex without the full ApplyAccentOverride().
-        // WindowsAccentPreviewBrush is initialised from the live registry here too.
-        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
-        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
 
-        var resolvedAccent = _accentColorMode switch
-        {
-            "theme"   => _themeAccentHex,
-            "windows" => windowsHex,
-            "custom"  => _customAccentHex,
-            _         => "#8C00FF"   // "kodo" - always the fixed Kodo purple
-        };
-        try { AccentBrush = GetCachedBrush(resolvedAccent); }
-        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
-        AccentForegroundBrush = GetAccentForeground(AccentBrush);
-        SyncSystemAccentResources(AccentBrush);
 
-        // Initialises the System Default preview from the registry now, not on the first poll tick.
-        RefreshSystemThemePreview();
-    }
 
-    private void ApplyTheme(string themeName)
-    {
-        _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to Windows' current reporting before the lookup below.
-        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
-            ? ResolveSystemThemeName()
-            : themeName;
-        var extensionTheme = ThemeExtensions
-            .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
-
-        if (extensionTheme is not null)
-        {
-            CurrentThemeName = extensionTheme.ThemeId;
-            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
-            WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
-            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
-            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
-            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
-            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
-            EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
-            CardBrush             = GetCachedBrush(extensionTheme.Card);
-            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
-            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colors aren't guaranteed readable against each other - verify and fall back to a safe color.
-            PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
-            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
-            _themeAccentHex       = extensionTheme.Accent;
-            _hasThemeAccent       = true;
-            _windowBackgroundHex  = extensionTheme.WindowBackground;
-            _hasWindowBackground  = true;
-            ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
-        }
-        else
-        {
-            CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
-            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
-            if (CurrentThemeName == "Light")
-            {
-                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
-                TopBarBrush           = GetCachedBrush("#FFFFFF");
-                SidebarBrush          = GetCachedBrush("#EFF2F7");
-                ButtonBrush           = GetCachedBrush("#E3E8F1");
-                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
-                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
-                CardBrush             = GetCachedBrush("#F7F9FC");
-                PrimaryTextBrush      = GetCachedBrush("#202124");
-                MutedTextBrush        = GetCachedBrush("#5F6B7A");
-                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#F3F3F3";
-            }
-            else
-            {
-                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
-                TopBarBrush           = GetCachedBrush("#181818");
-                SidebarBrush          = GetCachedBrush("#181818");
-                ButtonBrush           = GetCachedBrush("#252526");
-                ButtonHoverBrush      = GetCachedBrush("#313437");
-                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
-                CardBrush             = GetCachedBrush("#252526");
-                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
-                MutedTextBrush        = GetCachedBrush("#A0A0A0");
-                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#1E1E1E";
-            }
-            _hasThemeAccent         = false;
-            _hasWindowBackground    = false;
-            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
-        }
-
-        OnPropertyChanged(nameof(WindowBackgroundBrush));
-        OnPropertyChanged(nameof(TopBarBrush));
-        OnPropertyChanged(nameof(SidebarBrush));
-        OnPropertyChanged(nameof(ButtonBrush));
-        OnPropertyChanged(nameof(ButtonHoverBrush));
-        OnPropertyChanged(nameof(EditorBackgroundBrush));
-        OnPropertyChanged(nameof(CardBrush));
-        OnPropertyChanged(nameof(PrimaryTextBrush));
-        OnPropertyChanged(nameof(MutedTextBrush));
-        OnPropertyChanged(nameof(SurfaceBorderBrush));
-        OnPropertyChanged(nameof(HasThemeAccent));
-        OnPropertyChanged(nameof(IsAccentKodo));
-        OnPropertyChanged(nameof(IsAccentTheme));
-        OnPropertyChanged(nameof(ThemeAccentPreviewBrush));
-        OnPropertyChanged(nameof(IsSystemThemeActive));
-        OnPropertyChanged(nameof(IsDarkThemeActive));
-        OnPropertyChanged(nameof(IsLightThemeActive));
-        RefreshSystemThemePreview();
-        // Always runs ApplyAccentOverride: updates AccentBrush for all three modes and keeps WindowsAccentPreviewBrush live.
-        ApplyAccentOverride();
-        ApplyThemeToEditor();
-        SaveSettings();
-        RefreshState(fullRefresh: true);
-        RefreshExtensionTheme();
-    }
-
-    private void ApplyAccentOverride()
-    {
-        // Always keep the Windows preview brush current so the blob reflects
-        // the real system colour regardless of which mode is active.
-        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
-        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
-        OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
-
-        // In "kodo" mode, always use the fixed Kodo purple regardless of any active theme.
-        if (_accentColorMode == "kodo")
-        {
-            try { AccentBrush = GetCachedBrush("#8C00FF"); }
-            catch { AccentBrush = GetCachedBrush("#8C00FF"); }
-            AccentForegroundBrush = GetAccentForeground(AccentBrush);
-            SyncSystemAccentResources(AccentBrush);
-            OnPropertyChanged(nameof(AccentBrush));
-            OnPropertyChanged(nameof(AccentForegroundBrush));
-            ApplyThemeToEditor();
-            return;
-        }
-
-        var hex = _accentColorMode switch
-        {
-            "theme"   => _themeAccentHex,
-            "windows" => windowsHex,
-            "custom"  => _customAccentHex,
-            _         => "#8C00FF"
-        };
-        try { AccentBrush = GetCachedBrush(hex); }
-        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
-        AccentForegroundBrush = GetAccentForeground(AccentBrush);
-        SyncSystemAccentResources(AccentBrush);
-        OnPropertyChanged(nameof(AccentBrush));
-        OnPropertyChanged(nameof(AccentForegroundBrush));
-        ApplyThemeToEditor();
-    }
-
-    private static string? GetWindowsAccentColor()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
-            if (key?.GetValue("AccentColorMenu") is int raw)
-            {
-                // AccentColorMenu is stored as AABBGGRR
-                var r = (raw)       & 0xFF;
-                var g = (raw >> 8)  & 0xFF;
-                var b = (raw >> 16) & 0xFF;
-                return $"#{r:X2}{g:X2}{b:X2}";
-            }
-        }
-        catch { /* Registry unavailable */ }
-        return null;
-    }
 
     // Reads the same registry value Windows uses for light/dark chrome; null means unreadable, not a definite answer.
-    private static bool? GetWindowsAppsUseLightTheme()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            if (key?.GetValue("AppsUseLightTheme") is int raw)
-                return raw != 0;
-        }
-        catch { /* Registry unavailable */ }
-        return null;
-    }
+
 
     // Resolves "System" to the concrete Light/Dark theme Windows currently reports, falling back to Dark.
-    private static string ResolveSystemThemeName() =>
-        GetWindowsAppsUseLightTheme() == true ? "Light" : "Dark";
+
 
     // Keeps the System Default preview live regardless of the active theme mode.
-    private void RefreshSystemThemePreview()
-    {
-        var isLight = GetWindowsAppsUseLightTheme() == true;
-        SystemThemePreviewBackground = GetCachedBrush(isLight ? "#FFFFFF" : "#1E1E1E");
-        SystemThemePreviewBorder     = GetCachedBrush(isLight ? "#D7DCE5" : "#2B2B2B");
-        OnPropertyChanged(nameof(SystemThemePreviewBackground));
-        OnPropertyChanged(nameof(SystemThemePreviewBorder));
-    }
 
 
-    private async void AccentColorPickerButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        Window? dialog = null;
-        var confirmed = false;
 
-        var initialColor = Color.Parse("#8C00FF");
-        try { initialColor = Color.Parse(_customAccentHex); } catch { /* use fallback */ }
 
-        RgbToHsv(initialColor.R, initialColor.G, initialColor.B,
-            out var hue, out var sat, out var val);
-
-        // Hue strip
-        var hueCanvas = new Canvas { Width = 300, Height = 20 };
-        var hueGrad   = new LinearGradientBrush
-        {
-            StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
-        };
-        foreach (var (offset, h) in new (double, double)[]
-            { (0,0),(1/6d,60),(2/6d,120),(3/6d,180),(4/6d,240),(5/6d,300),(1,360) })
-        {
-            HsvToRgb(h, 1, 1, out var hr2, out var hg2, out var hb2);
-            hueGrad.GradientStops.Add(new GradientStop(Color.FromRgb(hr2, hg2, hb2), offset));
-        }
-        var hueRect = new Avalonia.Controls.Shapes.Rectangle
-            { Width = 300, Height = 20, Fill = hueGrad, RadiusX = 4, RadiusY = 4 };
-        hueCanvas.Children.Add(hueRect);
-
-        var hueCursor = new Avalonia.Controls.Shapes.Rectangle
-        {
-            Width = 4, Height = 24, Fill = Brushes.White, RadiusX = 2, RadiusY = 2,
-            Stroke = new SolidColorBrush(Colors.Black), StrokeThickness = 1,
-        };
-        Canvas.SetTop(hueCursor, -2);
-        Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
-        hueCanvas.Children.Add(hueCursor);
-
-        // SV square
-        const double svSize   = 300.0;
-        const double svHeight = 180.0;
-        var svCanvas = new Canvas { Width = svSize, Height = svHeight };
-
-        var svHueFill      = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
-        var svWhiteOverlay = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
-        var svBlackOverlay = new Avalonia.Controls.Shapes.Rectangle
-        {
-            Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4,
-            Fill  = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint   = new RelativePoint(0, 1, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(0,   0, 0, 0), 0),
-                    new GradientStop(Color.FromArgb(255, 0, 0, 0), 1),
-                },
-            },
-        };
-
-        void RefreshSvSquare()
-        {
-            HsvToRgb(hue, 1, 1, out var hr3, out var hg3, out var hb3);
-            svHueFill.Fill = new SolidColorBrush(Color.FromRgb(hr3, hg3, hb3));
-            svWhiteOverlay.Fill = new LinearGradientBrush
-            {
-                StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
-                GradientStops =
-                {
-                    new GradientStop(Color.FromArgb(255, 255, 255, 255), 0),
-                    new GradientStop(Color.FromArgb(0,   255, 255, 255), 1),
-                },
-            };
-        }
-        RefreshSvSquare();
-
-        svCanvas.Children.Add(svHueFill);
-        svCanvas.Children.Add(svWhiteOverlay);
-        svCanvas.Children.Add(svBlackOverlay);
-
-        var svCursor = new Avalonia.Controls.Shapes.Ellipse
-        {
-            Width = 12, Height = 12,
-            Stroke = Brushes.White, StrokeThickness = 2,
-            Fill   = new SolidColorBrush(Colors.Transparent),
-        };
-        Canvas.SetLeft(svCursor, sat * svSize   - 6);
-        Canvas.SetTop (svCursor, (1 - val) * svHeight - 6);
-        svCanvas.Children.Add(svCursor);
-
-        // Preview swatch + hex input
-        var previewBorder = new Border
-        {
-            Width = 36, Height = 36, CornerRadius = new CornerRadius(8),
-            BorderBrush = SurfaceBorderBrush, BorderThickness = new Thickness(1),
-        };
-
-        var hexInput = new TextBox
-        {
-            Text            = _customAccentHex,
-            PlaceholderText = "#RRGGBB",
-            MaxLength       = 7,
-            Foreground      = PrimaryTextBrush,
-            Background      = ButtonBrush,
-            BorderBrush     = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            Padding         = new Thickness(8, 6),
-            FontSize        = 13,
-            CaretBrush      = PrimaryTextBrush,
-            Width           = 110,
-        };
-
-        // Sync helpers
-        void UpdateAll()
-        {
-            HsvToRgb(hue, sat, val, out var r2, out var g2, out var b2);
-            var c = Color.FromRgb(r2, g2, b2);
-            previewBorder.Background = new SolidColorBrush(c);
-            hexInput.Text = $"#{r2:X2}{g2:X2}{b2:X2}";
-            Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
-            Canvas.SetLeft(svCursor,  sat * svSize   - 6);
-            Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
-            RefreshSvSquare();
-        }
-        UpdateAll();
-
-        // Hue drag
-        hueCanvas.PointerPressed  += (_, pe) =>
-        {
-            pe.Pointer.Capture(hueCanvas);
-            hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
-            UpdateAll();
-        };
-        hueCanvas.PointerMoved    += (_, pe) =>
-        {
-            if (pe.Pointer.Captured != hueCanvas) return;
-            hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
-            UpdateAll();
-        };
-        hueCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
-
-        // SV drag
-        svCanvas.PointerPressed  += (_, pe) =>
-        {
-            pe.Pointer.Capture(svCanvas);
-            var p = pe.GetPosition(svCanvas);
-            sat = Math.Clamp(p.X / svSize,        0, 1);
-            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
-            UpdateAll();
-        };
-        svCanvas.PointerMoved    += (_, pe) =>
-        {
-            if (pe.Pointer.Captured != svCanvas) return;
-            var p = pe.GetPosition(svCanvas);
-            sat = Math.Clamp(p.X / svSize,        0, 1);
-            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
-            UpdateAll();
-        };
-        svCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
-
-        // Hex sync
-        hexInput.TextChanged += (_, _) =>
-        {
-            try
-            {
-                var t = hexInput.Text?.Trim() ?? "";
-                if (!t.StartsWith('#')) t = "#" + t;
-                var c = Color.Parse(t);
-                RgbToHsv(c.R, c.G, c.B, out hue, out sat, out val);
-                previewBorder.Background = new SolidColorBrush(c);
-                Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
-                Canvas.SetLeft(svCursor,  sat * svSize   - 6);
-                Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
-                RefreshSvSquare();
-            }
-            catch { /* wait for valid hex */ }
-        };
-
-        hexInput.KeyDown += (_, ke) =>
-        {
-            if (ke.Key == Key.Enter)  { confirmed = true; dialog!.Close(); }
-            if (ke.Key == Key.Escape) { dialog!.Close(); }
-        };
-
-        dialog = new Window
-        {
-            Width                 = 340,
-            SizeToContent         = SizeToContent.Height,
-            CanResize             = false,
-            ShowInTaskbar         = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title                 = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
-            Background            = CardBrush,
-            Content = new Border
-            {
-                Padding = new Thickness(20),
-                Child   = new StackPanel
-                {
-                    Spacing  = 14,
-                    Children =
-                    {
-                        new TextBlock { Text = IsAmericanEnglish ? "Choose an accent color" : "Choose an accent colour", FontSize = 15,
-                            FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
-                        svCanvas,
-                        hueCanvas,
-                        new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing     = 10,
-                            Children    = { previewBorder, hexInput },
-                        },
-                        new StackPanel
-                        {
-                            Orientation         = Orientation.Horizontal,
-                            Spacing             = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children =
-                            {
-                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                                    () => dialog!.Close()),
-                                CreateDialogButton("Apply", AccentBrush, AccentBrush, AccentForegroundBrush,
-                                    () => { confirmed = true; dialog!.Close(); }),
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        dialog.Opened += (_, _) => { hexInput.Focus(); hexInput.SelectAll(); };
-        await dialog.ShowDialog(this);
-
-        if (!confirmed) return;
-        var hex = hexInput.Text?.Trim() ?? string.Empty;
-        if (!hex.StartsWith('#')) hex = "#" + hex;
-        try
-        {
-            Brush.Parse(hex);
-            _customAccentHex = hex;
-            CustomAccentHex  = hex;
-            AccentColorMode  = "custom";
-            ApplyAccentOverride();
-            SaveSettings();
-        }
-        catch { /* invalid hex - ignore */ }
-    }
 
     // Converts RGB (0–255) to HSV (H: 0–360, S/V: 0–1).
-    private static void RgbToHsv(byte r, byte g, byte b,
-        out double h, out double s, out double v)
-    {
-        var rf = r / 255.0; var gf = g / 255.0; var bf = b / 255.0;
-        var max = Math.Max(rf, Math.Max(gf, bf));
-        var min = Math.Min(rf, Math.Min(gf, bf));
-        var delta = max - min;
-        v = max;
-        s = max == 0 ? 0 : delta / max;
-        if (delta == 0) { h = 0; return; }
-        if      (max == rf) h = 60 * (((gf - bf) / delta) % 6);
-        else if (max == gf) h = 60 * (((bf - rf) / delta) + 2);
-        else                h = 60 * (((rf - gf) / delta) + 4);
-        if (h < 0) h += 360;
-    }
+
 
     // Converts HSV (H: 0–360, S/V: 0–1) to RGB (0–255).
-    private static void HsvToRgb(double h, double s, double v,
-        out byte r, out byte g, out byte b)
-    {
-        if (s == 0) { r = g = b = (byte)(v * 255); return; }
-        var i = (int)(h / 60) % 6;
-        var f = h / 60 - Math.Floor(h / 60);
-        var p = v * (1 - s); var q = v * (1 - f * s); var t = v * (1 - (1 - f) * s);
-        var (rf, gf, bf) = i switch
-        {
-            0 => (v, t, p), 1 => (q, v, p), 2 => (p, v, t),
-            3 => (p, q, v), 4 => (t, p, v), _ => (v, p, q),
-        };
-        r = (byte)(rf * 255); g = (byte)(gf * 255); b = (byte)(bf * 255);
-    }
 
-    private void AccentKodoButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        AccentColorMode = "kodo";
-        ApplyAccentOverride();
-        SaveSettings();
-    }
 
-    private void AccentThemeButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        AccentColorMode = "theme";
-        ApplyAccentOverride();
-        SaveSettings();
-    }
 
-    private void AccentWindowsButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        AccentColorMode = "windows";
-        ApplyAccentOverride();
-        SaveSettings();
-    }
+
+
+
+
 
     // File operations
 
-    private void SaveCurrentEditorStateIntoTab()
-    {
-        if (ActiveEditorTab is null || EditorTextBox?.Document is null)
-            return;
 
-        if (HasImagePreview)
-        {
-            ActiveEditorTab.IsDirty = false;
-            if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
-                ActiveEditorTab.Path = _currentFilePath;
-            return;
-        }
 
-        ActiveEditorTab.Content = EditorTextBox.Document.Text;
-        ActiveEditorTab.IsDirty = _isDirty;
-        var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
-        ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
-            scrollOffset.Y)?.LineNumber ?? 1;
-        // Also save the exact pixel offset so restoration is sub-line-accurate.
-        ActiveEditorTab.ScrollOffsetY = scrollOffset.Y;
-        ActiveEditorTab.CaretOffset = EditorTextBox.TextArea.Caret.Offset;
-        if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
-            ActiveEditorTab.Path = _currentFilePath;
-    }
 
-    private EditorTab CreateUntitledTab()
-    {
-        var displayName = $"untitled-{_nextUntitledTabNumber++}.txt";
-        return new EditorTab(displayName, displayName, string.Empty, isUntitled: true);
-    }
 
-    private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true)
-    {
-        if (ReferenceEquals(ActiveEditorTab, tab))
-        {
-            // Force page state even if NavigateTo bails early due to no change
-            _isHomePageVisible = false;
-            NavigateTo(AppPage.Editor);
-            RefreshState(fullRefresh: true);
-            if (focusEditor)
-                FocusEditor();
-            return;
-        }
 
-        CloseCompletionWindow();
-        if (preserveCurrentState)
-            SaveCurrentEditorStateIntoTab();
-        ActiveEditorTab = tab;
-        _currentFilePath = tab.IsUntitled ? null : tab.Path;
-        _hasUntitledDocument = tab.IsUntitled;
-        _isDirty = tab.IsDirty;
-        _autoSaveTimer.Stop();
-        ClearAutoSaveStatus();
-        SetFileCorrupted(_corruptedTabs.Contains(tab));
-        SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        // Restores this tab's caret position (clamped to the current document length).
-        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
-        // Restores scroll position: ScrollToLine first, then a pixel offset at Background priority.
-        EditorTextBox.ScrollToLine(tab.TopLineNumber);
-        var savedOffsetY = tab.ScrollOffsetY;
-        if (savedOffsetY > 0.0)
-        {
-            // Posts at Background priority so AvaloniaEdit finishes its layout pass before we reposition the viewport.
-            Dispatcher.UIThread.Post(() =>
-            {
-                var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
-                if (sv is not null)
-                    sv.Offset = new Vector(sv.Offset.X, savedOffsetY);
-            }, DispatcherPriority.Background);
-        }
-        UpdateCurrentDocumentPresentation();
 
-        // Directly set the backing field before NavigateTo so the bail-early
-        // check doesn't short-circuit when we're already on the editor page.
-        _isHomePageVisible = false;
-        NavigateTo(AppPage.Editor);
-        RefreshState(fullRefresh: true);
 
-        if (focusEditor)
-            FocusEditor();
-    }
 
-    private void CloseTab(EditorTab tab)
-    {
-        var closingActiveTab = ReferenceEquals(tab, ActiveEditorTab);
-        var index = OpenTabs.IndexOf(tab);
-        if (index < 0)
-            return;
 
-        if (closingActiveTab)
-            CloseCompletionWindow();
-        _InsightEngine.ForgetFile(tab.Path);
-        OpenTabs.RemoveAt(index);
-        _corruptedTabs.Remove(tab);
 
-        if (!closingActiveTab)
-        {
-            RefreshState(fullRefresh: true);
-            return;
-        }
 
-        if (OpenTabs.Count > 0)
-        {
-            var nextIndex = Math.Min(index, OpenTabs.Count - 1);
-            ActivateTab(OpenTabs[nextIndex], focusEditor: true, preserveCurrentState: false);
-            return;
-        }
-
-        ActiveEditorTab = null;
-        _currentFilePath = null;
-        _hasUntitledDocument = false;
-        _isDirty = false;
-        CurrentLanguageExtension = null;
-        CurrentImagePreview = null;
-        SetFileCorrupted(false);
-        EditorTextBox.SyntaxHighlighting = null;
-        ConfigureRainbowBrackets(null);
-        SetEditorContent(string.Empty);
-
-        // No tabs and no folder left open - the explorer would otherwise be
-        // stuck visible with nothing to show and no folder-gated toggle to
-        // close it (that toggle only appears when IsFolderOpen).
-        if (_currentFolderPath is null)
-            IsFileExplorerVisible = false;
-
-        RefreshState(fullRefresh: true);
-    }
-
-    private async Task<bool> RequestCloseTabAsync(EditorTab tab)
-    {
-        if (tab.IsDirty && IsConfirmBeforeClosingUnsavedTabsEnabled)
-        {
-            var originalActiveTab = ActiveEditorTab;
-            var action = await ShowUnsavedTabDialogAsync(tab);
-            switch (action)
-            {
-                case UnsavedTabAction.Cancel:
-                    return false;
-                case UnsavedTabAction.Save:
-                    if (!ReferenceEquals(tab, ActiveEditorTab))
-                    {
-                        ActivateTab(tab, focusEditor: false);
-                    }
-
-                    await SaveAsync();
-
-                    if (tab.IsDirty)
-                    {
-                        if (originalActiveTab is not null &&
-                            !ReferenceEquals(originalActiveTab, tab) &&
-                            OpenTabs.Contains(originalActiveTab))
-                        {
-                            ActivateTab(originalActiveTab, focusEditor: false);
-                        }
-
-                        return false;
-                    }
-
-                    if (originalActiveTab is not null &&
-                        !ReferenceEquals(originalActiveTab, tab) &&
-                        OpenTabs.Contains(originalActiveTab))
-                    {
-                        ActivateTab(originalActiveTab, focusEditor: false);
-                    }
-                    break;
-            }
-        }
-
-        CloseTab(tab);
-        return true;
-    }
-
-    private async Task OpenFileAsync()
-    {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-        {
-            Title = "Open File",
-            AllowMultiple = false
-        });
-
-        var file = files.Count > 0 ? files[0] : null;
-        if (file is null) return;
-
-        var path = file.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return;
-
-        await OpenFileFromPathAsync(path);
-    }
 
     // Invoked (via SingleInstance) when a second Kodo launch was redirected here instead
     // of opening its own window - e.g. double-clicking another file in Explorer while
@@ -8170,62 +5306,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     // Central method used by Open File, Open From Tree, and Open Recent
-    private async Task OpenFileFromPathAsync(string path)
-    {
-        EnsureCurrentDocumentHasTab();
 
-        var existingTab = OpenTabs.FirstOrDefault(tab =>
-            !tab.IsUntitled &&
-            string.Equals(tab.Path, path, StringComparison.OrdinalIgnoreCase));
-        if (existingTab is not null)
-        {
-            AddRecentFile(path);
-            ActivateTab(existingTab);
-            return;
-        }
-
-        string content;
-        bool isCorrupted;
-        try
-        {
-            if (IsImagePreviewFile(path))
-            {
-                content = string.Empty;
-                isCorrupted = false;
-                _currentFileEncoding = System.Text.Encoding.UTF8;
-            }
-            else
-            {
-                // Offload both the binary-sniff read and the encoding-BOM read to a
-                // thread-pool thread so the UI stays responsive on large or slow files.
-                var (encoding, corrupted) = await Task.Run(() =>
-                {
-                    if (IsBinaryContent(path))
-                        return (System.Text.Encoding.UTF8, true);
-                    return (DetectFileEncoding(path), false);
-                });
-
-                isCorrupted = corrupted;
-                _currentFileEncoding = encoding;
-                content = isCorrupted ? string.Empty : await File.ReadAllTextAsync(path, encoding);
-            }
-        }
-        catch (Exception ex)
-        {
-            await ShowWarningDialogAsync("Open file", ex);
-            return;
-        }
-
-        // Navigates away from Home before adding the tab (mirrors NewFile()).
-        NavigateTo(AppPage.Editor);
-
-        var tab = new EditorTab(path, Path.GetFileName(path), content);
-        if (isCorrupted)
-            _corruptedTabs.Add(tab);
-        OpenTabs.Add(tab);
-        AddRecentFile(path);
-        ActivateTab(tab);
-    }
 
     private void EnsureCurrentDocumentHasTab()
     {
@@ -8342,22 +5423,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ActivateTab(tab);
     }
 
-    private async Task OpenFolderAsync()
-    {
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Open Folder",
-            AllowMultiple = false
-        });
 
-        var folder = folders.Count > 0 ? folders[0] : null;
-        if (folder is null) return;
-
-        var path = folder.TryGetLocalPath();
-        if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
-
-        await OpenFolderFromPathAsync(path);
-    }
 
     // Shared by the folder picker and by startup tab restoration, so a folder
     // opened either way ends up in the same state (tree populated, watcher armed,
@@ -8475,156 +5541,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // File tree
 
-    private async Task PopulateFileTreeAsync(string folderPath)
-    {
-        var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
-        ReplaceFileTreeItems(items);
-    }
+
 
     // Starts (or restarts, if the folder changed) watching the open project
     // folder for external changes so the tree can refresh itself automatically.
-    private void SetupProjectFolderWatcher(string folderPath)
-    {
-        DisposeProjectFolderWatcher();
 
-        try
-        {
-            var watcher = new FileSystemWatcher(folderPath)
-            {
-                IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
-            };
 
-            watcher.Created += ProjectFolderWatcher_OnChanged;
-            watcher.Deleted += ProjectFolderWatcher_OnChanged;
-            watcher.Renamed += ProjectFolderWatcher_OnChanged;
-            watcher.Error   += ProjectFolderWatcher_OnError;
-            watcher.EnableRaisingEvents = true;
 
-            _projectFolderWatcher = watcher;
-        }
-        catch
-        {
-            // Some folders (network shares, permission-restricted directories, huge
-            // trees) can't be watched - the explorer just won't auto-refresh for them.
-        }
-    }
-
-    private void DisposeProjectFolderWatcher()
-    {
-        _fileTreeRefreshTimer.Stop();
-
-        if (_projectFolderWatcher is null) return;
-
-        _projectFolderWatcher.Created -= ProjectFolderWatcher_OnChanged;
-        _projectFolderWatcher.Deleted -= ProjectFolderWatcher_OnChanged;
-        _projectFolderWatcher.Renamed -= ProjectFolderWatcher_OnChanged;
-        _projectFolderWatcher.Error   -= ProjectFolderWatcher_OnError;
-        _projectFolderWatcher.Dispose();
-        _projectFolderWatcher = null;
-    }
 
     // Raised on the watcher's background thread - hop to the UI thread before
     // touching the DispatcherTimer or anything else.
-    private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e) =>
-        Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+
 
     private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
         // Internal buffer overflow or the watched folder became inaccessible -
         // fall back to a full refresh rather than trying to recover the watcher.
         Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
 
-    private void RestartFileTreeRefreshTimer()
-    {
-        _fileTreeRefreshTimer.Stop();
-        _fileTreeRefreshTimer.Start();
-    }
 
-    private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
-    {
-        _fileTreeRefreshTimer.Stop();
-        _searchFileCache = null;
-        await RefreshFileTreePreservingExpansionAsync();
-    }
+
+
 
     // Rebuilds the tree from disk, re-expanding whichever directories were
     // expanded beforehand so an external change doesn't collapse the user's view.
-    private async Task RefreshFileTreePreservingExpansionAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
-            return;
 
-        var expandedPaths = FileTreeItems
-            .Where(i => i.IsDirectory && i.IsExpanded)
-            .Select(i => i.FullPath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var items = await BuildFileTreeItemsAsync(_currentFolderPath, depth: 0, expandedPaths);
-        ReplaceFileTreeItems(items);
-    }
 
     // Like CreateFileTreeItemsAsync, but recurses into any directory whose path is
     // in expandedPaths so previously-expanded subtrees come back expanded.
-    private static async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
-        string dirPath, int depth, HashSet<string> expandedPaths)
-    {
-        var result = new List<FileTreeItem>();
-        foreach (var item in await CreateFileTreeItemsAsync(dirPath, depth))
-        {
-            result.Add(item);
-            if (item.IsDirectory && expandedPaths.Contains(item.FullPath))
-            {
-                item.IsExpanded = true;
-                result.AddRange(await BuildFileTreeItemsAsync(item.FullPath, depth + 1, expandedPaths));
-            }
-        }
-        return result;
-    }
 
-    private async Task AppendDirectoryContentsAsync(string dirPath, int depth, int insertAfterIndex = -1)
-    {
-        var items = await CreateFileTreeItemsAsync(dirPath, depth);
-        if (items.Count == 0) return;
 
-        var pos = insertAfterIndex + 1;
-        foreach (var item in items)
-        {
-            if (insertAfterIndex < 0)
-                FileTreeItems.Add(item);
-            else
-            {
-                FileTreeItems.Insert(pos, item);
-                pos++;
-            }
-        }
-    }
 
-    private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
-    {
-        _suppressExplorerWidthRefresh = true;
-        try
-        {
-            FileTreeItems.Clear();
-            foreach (var item in items)
-                FileTreeItems.Add(item);
-        }
-        finally
-        {
-            _suppressExplorerWidthRefresh = false;
-            OnPropertyChanged(nameof(ExplorerPanelWidth));
-        }
-    }
 
-    private static Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth) =>
-        Task.Run(() => GetSortedEntries(dirPath)
-            .Select(entry => new FileTreeItem
-            {
-                Name        = Path.GetFileName(entry),
-                FullPath    = entry,
-                IsDirectory = Directory.Exists(entry),
-                Depth       = depth,
-            })
-            .ToList());
+
+
+
 
     private static string[] GetSortedEntries(string dirPath)
     {
@@ -8661,158 +5611,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task ToggleDirectoryExpansionAsync(FileTreeItem dirItem)
-    {
-        var index = FileTreeItems.IndexOf(dirItem);
-        if (index < 0) return;
 
-        if (dirItem.IsExpanded)
-        {
-            dirItem.IsExpanded = false;
-            // Collect all descendants first, then remove in reverse index order
-            // so each removal doesn't shift the indices of subsequent items.
-            var toRemove = FileTreeItems
-                .Skip(index + 1)
-                .TakeWhile(i => i.Depth > dirItem.Depth)
-                .ToList();
-            for (var i = toRemove.Count - 1; i >= 0; i--)
-                FileTreeItems.Remove(toRemove[i]);
-        }
-        else
-        {
-            dirItem.IsExpanded = true;
-            await AppendDirectoryContentsAsync(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
-        }
-    }
 
     // Recent files
 
-    private void LoadRecentFiles(IEnumerable<RecentFileEntry>? recentFiles)
-    {
-        RecentFiles.Clear();
 
-        // Doesn't filter files under a recent folder's tree - only active-folder files collapse.
-        // Doesn't filter by File/Directory.Exists - unreachable paths should still reappear.
-        foreach (var entry in (recentFiles ?? [])
-            .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
-            .OrderByDescending(entry => entry.IsPinned)
-            .ThenByDescending(entry => entry.LastOpened))
-        {
-            RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened, entry.IsPinned));
-        }
-    }
 
-    private void AddRecentFile(string? path)
-    {
-        if (!string.IsNullOrWhiteSpace(path) &&
-            !string.IsNullOrWhiteSpace(_currentFolderPath) &&
-            IsPathInsideDirectory(path, _currentFolderPath))
-        {
-            AddRecentFolder(_currentFolderPath);
-            return;
-        }
 
-        AddRecentPath(path, isFolder: false);
-    }
 
-    private void AddRecentFolder(string? path) =>
-        AddRecentPath(path, isFolder: true);
 
-    private void AddRecentPath(string? path, bool isFolder)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return;
 
-        var existing = RecentFiles.FirstOrDefault(item =>
-            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
 
-        if (existing is not null)
-        {
-            RecentFiles.Remove(existing);
-            RecentFiles.Add(new RecentFileItem(path, isFolder, DateTime.Now, existing.IsPinned));
-        }
-        else
-        {
-            RecentFiles.Add(new RecentFileItem(path, isFolder, DateTime.Now));
-        }
 
-        ReorderRecentFiles();
-        SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
-    }
 
-    private void TogglePinnedRecentFile(string path)
-    {
-        var existing = RecentFiles.FirstOrDefault(item =>
-            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
-        if (existing is null) return;
 
-        existing.IsPinned = !existing.IsPinned;
-        ReorderRecentFiles();
-        SaveSettings();
-    }
 
-    private void RemoveRecentFile(string path)
-    {
-        var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
-        if (existing is null) return;
-        RecentFiles.Remove(existing);
-        SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
-    }
 
-    private void ReorderRecentFiles()
-    {
-        var ordered = RecentFiles
-            .OrderByDescending(item => item.IsPinned)
-            .ThenByDescending(item => item.LastOpened)
-            .ToList();
 
-        RecentFiles.Clear();
-        foreach (var item in ordered)
-            RecentFiles.Add(item);
 
-        while (RecentFiles.Count(item => !item.IsPinned) > MaxRecentFiles)
-        {
-            var removable = RecentFiles.LastOrDefault(item => !item.IsPinned);
-            if (removable is null)
-                break;
 
-            RecentFiles.Remove(removable);
-        }
-    }
 
-    private void ZoomInButton_OnClick(object? sender, RoutedEventArgs e)  => ZoomImageIn();
-    private void ZoomOutButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageOut();
-    private void ZoomResetButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageReset();
+
 
     // Image zoom helpers
 
-    private void ZoomImageIn()  => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel + ImageZoomStep);
-    private void ZoomImageOut() => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel - ImageZoomStep);
-    private void ZoomImageReset() => ImageZoomLevel = 1.0;
+
+
+
 
     // Snaps zoom to a clean percentage (0.25, 0.5, 0.75, 1.0, 1.25 …) to
     // avoid floating-point drift making levels like 0.9999999 appear.
-    private static double SnapToNiceZoom(double zoom)
-    {
-        var snapped = Math.Round(zoom / ImageZoomStep) * ImageZoomStep;
-        return Math.Clamp(snapped, ImageZoomMin, ImageZoomMax);
-    }
 
-    private void ImageScrollViewer_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
-    {
-        if (!HasImagePreview) return;
-        var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
-        if (!hasControl) return;
 
-        // Ctrl+wheel → zoom. Mark handled so the ScrollViewer does NOT also scroll.
-        if (e.Delta.Y > 0)
-            ZoomImageIn();
-        else if (e.Delta.Y < 0)
-            ZoomImageOut();
 
-        e.Handled = true;
-    }
 
     // Autosave helpers
 
@@ -9350,22 +6181,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
 
-    private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        // Only toggles panel visibility - previously wiped folder state via CloseFolder().
-        IsFileExplorerVisible = !IsFileExplorerVisible;
-    }
+
 
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
         NavigateTo(AppPage.Settings);
 
-    private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        OpenExtensionsPage(showMarketplaceTab: false, forceRefresh: false);
-    }
 
-    private async void RefreshExtensionsButton_OnClick(object? sender, RoutedEventArgs e) =>
-        await RefreshExtensionsDataAsync(force: true);
+
+
 
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsInstalledTabSelected = true;
@@ -9375,25 +6198,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void LanguagesTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenMarketplaceTab(ExtensionsTabModes.Languages);
 
-    private void ThemesTabButton_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenMarketplaceTab(ExtensionsTabModes.Themes);
+
 
     private void PluginsTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenMarketplaceTab(ExtensionsTabModes.Plugins);
 
-    private void OpenMarketplaceTab(string tab)
-    {
-        SetSelectedExtensionsTab(tab);
-        RefreshMarketplaceConnectivityState();
-        _ = RefreshExtensionsDataAsync();
-    }
+
 
     // Used by the "Visit Marketplace" button on the home screen -
     // opens the Extensions page AND switches to the Marketplace tab
-    private void OpenMarketplaceButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: true);
-    }
+
 
     private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -9478,26 +6292,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsAppUpdateAvailable));
     }
 
-    private void DismissExtensionUpdateBanner_OnClick(object? sender, RoutedEventArgs e)
-    {
-        _extensionUpdateBannerDismissed = true;
-        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
-    }
 
-    private void OpenMarketplaceFromBannerButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        _extensionUpdateBannerDismissed = true;
-        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
-        OpenExtensionsPage(showMarketplaceTab: true, forceRefresh: false);
-    }
 
-    private void OpenExtensionsPage(bool showMarketplaceTab, bool forceRefresh)
-    {
-        NavigateTo(AppPage.Extensions);
-        if (showMarketplaceTab) IsLanguagesTabSelected = true;
-        RefreshMarketplaceConnectivityState();
-        _ = RefreshExtensionsDataAsync(force: forceRefresh);
-    }
+
+
+
 
     private async void CheckForUpdatesButton_OnClick(object? sender, RoutedEventArgs e) =>
         await CheckForUpdatesManuallyAsync();
@@ -10042,25 +6841,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void OpenExtensionsFolderButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            if (!Directory.Exists(ExtensionsFolderPath))
-                Directory.CreateDirectory(ExtensionsFolderPath);
 
-            Process.Start(new ProcessStartInfo
-            {
-                FileName        = ExtensionsFolderPath,
-                UseShellExecute = true
-            });
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Could not open extensions folder: {ex.Message}";
-            await ShowWarningDialogAsync("Open extensions folder", ex);
-        }
-    }
 
     private async void CopyDiagnosticInfoButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10214,81 +6995,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { Tag: string themeName })
-            ApplyTheme(themeName);
-    }
 
-    private void ThemeGroupHeader_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Control { DataContext: ThemeExtensionGroup group })
-            group.IsExpanded = !group.IsExpanded;
-    }
+
+
 
     // Convenience handlers used by the tutorial setup step's theme buttons.
-    private void ThemeDarkButton_OnClick(object? sender, RoutedEventArgs e)  => ApplyTheme("Dark");
-    private void ThemeLightButton_OnClick(object? sender, RoutedEventArgs e) => ApplyTheme("Light");
 
-    private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: FileTreeItem item })
-        {
-            if (item.IsDirectory)
-                await ToggleDirectoryExpansionAsync(item);
-            else
-                await OpenFileFromPathAsync(item.FullPath);
-        }
-    }
 
-    private async void RecentFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: RecentFileItem item }) return;
 
-        if (item.IsFolder)
-        {
-            if (!Directory.Exists(item.Path))
-            {
-                await ShowNotFoundDialogAsync(item.Path, isFolder: true);
-                return;
-            }
-            _currentFolderPath = item.Path;
-            _searchFileCache = null;
-            AddRecentFolder(item.Path);
-            await PopulateFileTreeAsync(item.Path);
-            SetupProjectFolderWatcher(item.Path);
-            IsFileExplorerVisible = true;
-            RefreshState(fullRefresh: true);
-        }
-        else
-        {
-            if (!File.Exists(item.Path))
-            {
-                await ShowNotFoundDialogAsync(item.Path, isFolder: false);
-                return;
-            }
-            await OpenFileFromPathAsync(item.Path);
-        }
-    }
 
-    private void TogglePinnedRecentFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: string path }) return;
-        TogglePinnedRecentFile(path);
-        e.Handled = true;
-    }
 
-    private void OpenEditorTabButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: EditorTab tab })
-            ActivateTab(tab);
-    }
 
-    private async void CloseEditorTabButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<EditorTab>(sender) is { } tab)
-            await RequestCloseTabAsync(tab);
-    }
+
+
+
+
+
+
 
     private async void CloseOtherTabsButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10319,60 +7042,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _ => null
         };
 
-    private string GetRelativePathOrFullPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(_currentFolderPath))
-            return path;
 
-        try
-        {
-            return Path.GetRelativePath(_currentFolderPath, path);
-        }
-        catch
-        {
-            return path;
-        }
-    }
 
-    private string GetExplorerTargetDirectory(FileTreeItem item) =>
-        item.IsDirectory
-            ? item.FullPath
-            : Path.GetDirectoryName(item.FullPath) ?? _currentFolderPath ?? item.FullPath;
 
-    private string GetExplorerRootDirectory()
-    {
-        if (string.IsNullOrWhiteSpace(_currentFolderPath))
-            throw new InvalidOperationException("No folder is currently open in the explorer.");
 
-        return _currentFolderPath;
-    }
 
-    private static string CreateUniqueSiblingPath(string path, bool isDirectory)
-    {
-        var directory = Path.GetDirectoryName(path) ?? string.Empty;
-        var fileName = Path.GetFileName(path);
-        string extension;
-        string baseName;
 
-        if (isDirectory || (fileName.StartsWith('.') && fileName.Count(ch => ch == '.') == 1))
-        {
-            extension = string.Empty;
-            baseName = fileName;
-        }
-        else
-        {
-            extension = Path.GetExtension(fileName);
-            baseName = Path.GetFileNameWithoutExtension(fileName);
-        }
 
-        for (var index = 1; ; index++)
-        {
-            var suffix = index == 1 ? " - Copy" : $" - Copy ({index})";
-            var candidate = Path.Combine(directory, $"{baseName}{suffix}{extension}");
-            if (!File.Exists(candidate) && !Directory.Exists(candidate))
-                return candidate;
-        }
-    }
 
     private static string CreateUniqueChildPath(string directory, string baseName, string extension = "")
     {
@@ -10385,126 +7061,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private static void CopyDirectoryRecursive(string sourceDirectory, string destinationDirectory)
-    {
-        Directory.CreateDirectory(destinationDirectory);
 
-        foreach (var file in Directory.GetFiles(sourceDirectory))
-        {
-            var destinationFile = Path.Combine(destinationDirectory, Path.GetFileName(file));
-            File.Copy(file, destinationFile, overwrite: false);
-        }
 
-        foreach (var directory in Directory.GetDirectories(sourceDirectory))
-        {
-            var destinationChild = Path.Combine(destinationDirectory, Path.GetFileName(directory));
-            CopyDirectoryRecursive(directory, destinationChild);
-        }
-    }
 
-    private async Task OpenPathInSystemExplorer(string path, bool selectItem)
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                var startInfo = selectItem && File.Exists(path)
-                    ? new ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = $"/select,\"{path}\"",
-                        UseShellExecute = true
-                    }
-                    : new ProcessStartInfo
-                    {
-                        FileName = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path,
-                        UseShellExecute = true
-                    };
 
-                Process.Start(startInfo);
-                return;
-            }
 
-            if (OperatingSystem.IsMacOS())
-            {
-                // `open -R <path>` reveals and selects the item in Finder.
-                // Falls back to opening the parent directory if path doesn't exist.
-                var target = selectItem && (File.Exists(path) || Directory.Exists(path)) ? path
-                    : Directory.Exists(path) ? path
-                    : Path.GetDirectoryName(path) ?? path;
-
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "open",
-                    Arguments = $"-R \"{target}\"",
-                    UseShellExecute = false
-                });
-                return;
-            }
-
-            // Linux: try common file managers that support --select / reveal flags,
-            // then fall back to opening the parent directory via xdg-open.
-            if (OperatingSystem.IsLinux() && selectItem && File.Exists(path))
-            {
-                var fileManagers = new[]
-                {
-                    ("nautilus", $"--select \"{path}\""),   // GNOME
-                    ("dolphin",  $"--select \"{path}\""),   // KDE
-                    ("nemo",     $"\"{path}\""),             // Cinnamon
-                    ("thunar",   $"\"{Path.GetDirectoryName(path)}\""), // XFCE (no select)
-                };
-
-                foreach (var (binary, args) in fileManagers)
-                {
-                    // Check the binary exists before trying to launch it.
-                    var which = Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "which",
-                        Arguments = binary,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true
-                    });
-                    which?.WaitForExit();
-                    if (which?.ExitCode != 0) continue;
-
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = binary,
-                        Arguments = args,
-                        UseShellExecute = false
-                    });
-                    return;
-                }
-            }
-
-            // Universal fallback: open the containing directory.
-            var fallbackDir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
-            Process.Start(new ProcessStartInfo { FileName = fallbackDir, UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Could not open path: {ex.Message}";
-            await ShowWarningDialogAsync("Open in system explorer", ex);
-        }
-    }
-
-    private async Task RefreshExplorerTreeAsync()
-    {
-        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
-        {
-            // Snapshot which directories are expanded before wiping the tree,
-            // then restore them afterward so the user's expansion state is preserved.
-            var expandedPaths = FileTreeItems
-                .Where(i => i.IsDirectory && i.IsExpanded)
-                .Select(i => i.FullPath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            await PopulateFileTreeAsync(_currentFolderPath);
-
-            if (expandedPaths.Count > 0)
-                await RestoreExpandedPathsAsync(expandedPaths);
-        }
-    }
 
     // Re-expands directories that were open before a tree refresh.
     // Works top-down: a parent must be expanded before its children are visible.
@@ -10529,22 +7090,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         while (anyExpanded);
     }
 
-    private async Task<bool> CloseTabsForPathAsync(string path, bool isDirectory)
-    {
-        var matchingTabs = OpenTabs
-            .Where(tab => !tab.IsUntitled && (
-                string.Equals(tab.Path, path, StringComparison.OrdinalIgnoreCase) ||
-                (isDirectory && tab.Path.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))))
-            .ToList();
 
-        foreach (var tab in matchingTabs)
-        {
-            if (!await RequestCloseTabAsync(tab))
-                return false;
-        }
-
-        return true;
-    }
 
     private async Task<bool> EnsureTabsReadyForDeletionAsync(List<EditorTab> tabs)
     {
@@ -10580,11 +7126,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return true;
     }
 
-    private void CloseTabsWithoutPrompt(IEnumerable<EditorTab> tabs)
-    {
-        foreach (var tab in tabs.ToList())
-            CloseTab(tab);
-    }
+
 
 
     /// After a rename or move, updates every open tab under <paramref name="oldPath"/> to the new location,
@@ -10621,80 +7163,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
     /// Shows a small modal asking for a new name; returns the trimmed input, or null if cancelled/empty.
-    private async Task<string?> ShowRenameDialogAsync(string currentName)
-    {
-        string? result = null;
-        Window? dialog = null;
 
-        var inputBox = new TextBox
-        {
-            Text             = currentName,
-            Background       = ButtonBrush,
-            Foreground       = PrimaryTextBrush,
-            BorderBrush      = SurfaceBorderBrush,
-            Padding          = new Thickness(8, 6),
-            FontSize         = 14,
-            CaretBrush       = PrimaryTextBrush,
-        };
-
-        var confirmButton = CreateDialogButton("Rename", AccentBrush, AccentBrush, AccentForegroundBrush, () =>
-        {
-            result = inputBox.Text?.Trim();
-            dialog!.Close();
-        });
-
-        inputBox.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)  { result = inputBox.Text?.Trim(); dialog!.Close(); }
-            if (e.Key == Key.Escape) { dialog!.Close(); }
-        };
-
-        dialog = new Window
-        {
-            Width                   = 380,
-            Height                  = 160,
-            CanResize               = false,
-            ShowInTaskbar           = false,
-            WindowStartupLocation   = WindowStartupLocation.CenterOwner,
-            Title                   = "Rename",
-            Background              = CardBrush,
-            Content = new Border
-            {
-                Padding = new Thickness(20),
-                Child   = new StackPanel
-                {
-                    Spacing  = 14,
-                    Children =
-                    {
-                        new TextBlock { Text = "Enter a new name:", FontSize = 15,
-                            FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
-                        inputBox,
-                        new StackPanel
-                        {
-                            Orientation         = Orientation.Horizontal,
-                            Spacing             = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children =
-                            {
-                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                                    () => dialog!.Close()),
-                                confirmButton
-                            }
-                        }
-                    }
-                }
-            }
-        };
-
-        dialog.Opened += (_, _) =>
-        {
-            inputBox.Focus();
-            inputBox.SelectAll();
-        };
-
-        await dialog.ShowDialog(this);
-        return string.IsNullOrWhiteSpace(result) ? null : result;
-    }
 
     private async Task ActivateEditorTabForMenuActionAsync(EditorTab tab)
     {
@@ -10739,25 +7208,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Closes every open tab positioned after the clicked one, mirroring
     // Close Others' pattern but scoped to one side of the tab strip.
-    private async void CloseTabsToTheRightMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<EditorTab>(sender) is not { } pivotTab) return;
-        var pivotIndex = OpenTabs.IndexOf(pivotTab);
-        if (pivotIndex < 0) return;
 
-        var toClose = OpenTabs.Skip(pivotIndex + 1).ToList();
-        foreach (var tab in toClose)
-        {
-            if (!await RequestCloseTabAsync(tab))
-                break;
-        }
-    }
 
-    private async void RevealEditorTabInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
-        await OpenPathInSystemExplorer(tab.Path, selectItem: true);
-    }
+
 
     private async void CollapseAllTreeButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10777,134 +7230,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void NewFileInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        try
-        {
-            var directory = GetExplorerTargetDirectory(item);
-            var newFilePath = CreateUniqueChildPath(directory, "new-file", ".txt");
-            await File.WriteAllTextAsync(newFilePath, string.Empty);
-            await RefreshExplorerTreeAsync();
-            await OpenFileFromPathAsync(newFilePath);
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New file failed: {ex.Message}";
-            await ShowWarningDialogAsync("New file in explorer", ex);
-        }
-    }
 
-    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var directory = GetExplorerRootDirectory();
-            var newFilePath = CreateUniqueChildPath(directory, "new-file", ".txt");
-            await File.WriteAllTextAsync(newFilePath, string.Empty);
-            await RefreshExplorerTreeAsync();
-            await OpenFileFromPathAsync(newFilePath);
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New file failed: {ex.Message}";
-            await ShowWarningDialogAsync("New file in explorer", ex);
-        }
-    }
 
-    private async void NewFolderInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        try
-        {
-            var directory = GetExplorerTargetDirectory(item);
-            var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
-            Directory.CreateDirectory(newFolderPath);
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New folder failed: {ex.Message}";
-            await ShowWarningDialogAsync("New folder in explorer", ex);
-        }
-    }
 
-    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var directory = GetExplorerRootDirectory();
-            var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
-            Directory.CreateDirectory(newFolderPath);
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New folder failed: {ex.Message}";
-            await ShowWarningDialogAsync("New folder in explorer", ex);
-        }
-    }
 
-    private async void OpenExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        if (item.IsDirectory)
-            await ToggleDirectoryExpansionAsync(item);
-        else
-            await OpenFileFromPathAsync(item.FullPath);
-    }
 
-    private async void RevealExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        await OpenPathInSystemExplorer(item.FullPath, selectItem: !item.IsDirectory);
-    }
 
-    private void SearchInFolderMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        if (_currentFolderPath is null) return;
 
-        // Compute relative path from project root to the selected item.
-        var relativePath = GetRelativePathOrName(_currentFolderPath, item.FullPath);
-        if (!string.IsNullOrEmpty(relativePath))
-        {
-            // If it's a directory, append /** glob; if it's a file, just use the filename.
-            SearchIncludeFilter = item.IsDirectory
-                ? relativePath.Replace('\\', '/') + "/**"
-                : relativePath.Replace('\\', '/');
-        }
 
-        OpenSearchPanel(SearchMode.ProjectSearch);
-    }
+
+
 
     // Opens a new terminal session rooted at the clicked item's own directory
     // (or its containing folder, for a file) instead of the usual
     // ResolveTerminalWorkingDirectory() fallback chain.
-    private void OpenExplorerItemInTerminalMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        var directory = item.IsDirectory ? item.FullPath : Path.GetDirectoryName(item.FullPath);
-        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
 
-        CreateTerminalSession(workingDirectoryOverride: directory);
-    }
 
-    private void CopyFileNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(item.Name);
-    }
 
-    private void CopyFilePathMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is { } item)
-            TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(item.FullPath);
-    }
+
 
     private void CopyRelativeFilePathMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -10912,66 +7259,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(GetRelativePathOrFullPath(item.FullPath));
     }
 
-    private async void DuplicateExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        try
-        {
-            var duplicatePath = CreateUniqueSiblingPath(item.FullPath, item.IsDirectory);
-            if (item.IsDirectory)
-                CopyDirectoryRecursive(item.FullPath, duplicatePath);
-            else
-                File.Copy(item.FullPath, duplicatePath, overwrite: false);
 
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Duplicate failed: {ex.Message}";
-            await ShowWarningDialogAsync("Duplicate file", ex);
-        }
-    }
 
-    private async void DeleteFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        try
-        {
-            var kind = item.IsDirectory ? "folder" : "file";
-            var confirmed = await ShowConfirmationDialogAsync(
-                $"Delete {kind}?",
-                item.IsDirectory
-                    ? $"This permanently deletes '{item.Name}' and everything inside it from disk. This can't be undone."
-                    : $"This permanently deletes '{item.Name}' from disk. This can't be undone.",
-                confirmLabel: "Delete",
-                isDestructive: true);
-
-            if (!confirmed) return;
-
-            var matchingTabs = OpenTabs
-                .Where(tab => !tab.IsUntitled && (
-                    string.Equals(tab.Path, item.FullPath, StringComparison.OrdinalIgnoreCase) ||
-                    (item.IsDirectory && tab.Path.StartsWith(item.FullPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))))
-                .ToList();
-
-            if (!await EnsureTabsReadyForDeletionAsync(matchingTabs))
-                return;
-
-            if (item.IsDirectory)
-                Directory.Delete(item.FullPath, recursive: true);
-            else
-                File.Delete(item.FullPath);
-
-            CloseTabsWithoutPrompt(matchingTabs);
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Delete failed: {ex.Message}";
-            await ShowWarningDialogAsync("Delete file", ex);
-        }
-    }
 
     private async void RenameFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -11014,938 +7304,120 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void CutFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        _clipboardItemPath        = item.FullPath;
-        _clipboardItemIsDirectory = item.IsDirectory;
-        _clipboardIsCut           = true;
-        ExtensionsStatusText      = $"Cut: {item.Name}";
-    }
 
-    private void CopyFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        _clipboardItemPath        = item.FullPath;
-        _clipboardItemIsDirectory = item.IsDirectory;
-        _clipboardIsCut           = false;
-        ExtensionsStatusText      = $"Copied: {item.Name}";
-    }
 
-    private async void PasteFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (_clipboardItemPath is null) return;
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } target) return;
 
-        // Paste destination is the target's directory (or the target itself if it's a folder)
-        var destDir = target.IsDirectory ? target.FullPath : Path.GetDirectoryName(target.FullPath)!;
-        var itemName = Path.GetFileName(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar));
-        var destPath = CreateUniqueSiblingPath(Path.Combine(destDir, itemName), _clipboardItemIsDirectory);
 
-        try
-        {
-            if (_clipboardIsCut)
-            {
-                if (_clipboardItemIsDirectory)
-                    Directory.Move(_clipboardItemPath, destPath);
-                else
-                    File.Move(_clipboardItemPath, destPath);
 
-                RetargetTabPaths(_clipboardItemPath, destPath, _clipboardItemIsDirectory);
-                _clipboardItemPath = null; // cut is consumed
-            }
-            else
-            {
-                if (_clipboardItemIsDirectory)
-                    CopyDirectoryRecursive(_clipboardItemPath, destPath);
-                else
-                    File.Copy(_clipboardItemPath, destPath, overwrite: false);
-            }
 
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"Paste failed: {ex.Message}";
-            await ShowWarningDialogAsync("Paste file", ex);
-        }
-    }
 
-    private void OpenSearchMenu_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenSearchPanel(SearchMode.FindInFile);
 
-    private void SearchModeFindInFileButton_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenSearchPanel(SearchMode.FindInFile);
 
-    private void SearchModeFileByNameButton_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenSearchPanel(SearchMode.FileByName);
 
-    private void SearchModeProjectButton_OnClick(object? sender, RoutedEventArgs e) =>
-        OpenSearchPanel(SearchMode.ProjectSearch);
 
-    private void SearchMatchCaseButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        IsSearchMatchCaseEnabled = !IsSearchMatchCaseEnabled;
-        if (IsFindInFileSearchMode)
-        {
-            UpdateFindHighlights();
-            FocusSearchInput();
-        }
-        else if (IsSearchPanelActive)
-            RestartSearchDebounce();
-    }
 
-    private void SearchWholeWordButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        IsSearchWholeWordEnabled = !IsSearchWholeWordEnabled;
-        if (IsFindInFileSearchMode)
-        {
-            UpdateFindHighlights();
-            FocusSearchInput();
-        }
-        else if (IsSearchPanelActive)
-            RestartSearchDebounce();
-    }
 
-    private void SearchRegexButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        IsSearchRegexEnabled = !IsSearchRegexEnabled;
-        if (IsFindInFileSearchMode)
-        {
-            UpdateFindHighlights();
-            FocusSearchInput();
-        }
-        else if (IsSearchPanelActive)
-            RestartSearchDebounce();
-    }
 
-    private void SearchFilterButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        IsFilterRowVisible = !IsFilterRowVisible;
-        OnPropertyChanged(nameof(IsFilterRowSupported));
-        if (IsFilterRowVisible && IsProjectSearchMode)
-            RestartSearchDebounce();
-    }
 
-    private void ReplaceButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        ReplaceCurrentMatch();
-    }
 
-    private async void ReplaceAllButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return;
 
-        var count = CountCurrentMatches();
-        if (count == 0)
-        {
-            SearchStatusText = "No matches to replace.";
-            return;
-        }
 
-        var matchWord = count == 1 ? "match" : "matches";
-        var confirmed = await ShowConfirmationDialogAsync(
-            "Replace All?",
-            $"This will replace {count} {matchWord} in the current file. This action can be undone with Ctrl+Z.",
-            confirmLabel: "Replace All");
 
-        if (confirmed)
-            ReplaceAllMatches();
-    }
 
-    private int CountCurrentMatches()
-    {
-        if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return 0;
 
-        var text = EditorTextBox.Document.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        var count = 0;
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
-        {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0) break;
-            count++;
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break;
-        }
-        return count;
-    }
 
-    private void CloseSearchPanel_OnClick(object? sender, RoutedEventArgs e)
-    {
-        IsSearchPanelVisible = false;
-        FocusEditor();
-    }
 
-    private void SearchResultsListBox_OnKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (sender is not ListBox listBox) return;
 
-        if (e.Key == Key.Enter)
-        {
-            if (listBox.SelectedItem is SearchDisplayItem { IsGroupHeader: true, Group: { } group })
-                ToggleGroup(group);
-            else
-                OpenSelectedSearchResult();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Escape)
-        {
-            IsSearchPanelVisible = false;
-            FocusEditor();
-            e.Handled = true;
-        }
-        else if (e.Key is Key.Up or Key.Down)
-        {
-            int nextIndex = FindNextResultIndex(listBox.SelectedIndex, e.Key == Key.Down ? 1 : -1);
-            if (nextIndex >= 0)
-            {
-                listBox.SelectedIndex = nextIndex;
-                e.Handled = true;
-            }
-            else
-            {
-                FocusSearchInput();
-                ResetHistoryIndex();
-                e.Handled = true;
-            }
-        }
-    }
 
-    private int FindNextResultIndex(int current, int direction)
-    {
-        var items = SearchDisplayItems;
-        var next = current + direction;
-        while (next >= 0 && next < items.Count)
-        {
-            if (!items[next].IsGroupHeader)
-                return next;
-            next += direction;
-        }
-        return -1;
-    }
 
-    private void SearchResultsListBox_OnDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        OpenSelectedSearchResult();
-    }
 
-    private void SearchResultsListBox_OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
-    {
-        if (SearchResultsListBox?.SelectedItem is SearchDisplayItem { IsGroupHeader: false, Result: { } item } displayItem)
-        {
-            var index = SearchDisplayItems.IndexOf(displayItem);
-            if (index >= 0)
-                SearchResultsListBox.ScrollIntoView(index);
-        }
-    }
 
-    private void SearchGroupHeader_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: SearchFileGroup group })
-            ToggleGroup(group);
-    }
 
-    private void OpenSelectedSearchResult()
-    {
-        if (SearchResultsListBox?.SelectedItem is not SearchDisplayItem { IsGroupHeader: false, Result: { } result })
-            return;
 
-        OpenSearchResult(result);
-    }
 
-    private async void OpenSearchResult(SearchResultItem result)
-    {
-        await OpenFileFromPathAsync(result.Path);
 
-        if (result.LineNumber > 0 && EditorTextBox?.Document is { } doc)
-        {
-            var lineNumber = Math.Clamp(result.LineNumber, 1, doc.LineCount);
-            var line = doc.GetLineByNumber(lineNumber);
-            var matchOffset = string.IsNullOrEmpty(FindText)
-                ? -1
-                : doc.GetText(line.Offset, line.Length).IndexOf(FindText, StringComparison.OrdinalIgnoreCase);
 
-            Dispatcher.UIThread.Post(() =>
-            {
-                var caretOffset = matchOffset >= 0 ? line.Offset + matchOffset : line.Offset;
-                EditorTextBox.TextArea.Caret.Offset = caretOffset;
-                if (matchOffset >= 0 && !string.IsNullOrEmpty(FindText))
-                {
-                    EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(
-                        EditorTextBox.TextArea, caretOffset, caretOffset + FindText.Length);
-                }
-                else
-                {
-                    EditorTextBox.TextArea.ClearSelection();
-                }
-                EditorTextBox.ScrollToLine(lineNumber);
-                FocusEditor();
-            }, DispatcherPriority.Background);
-        }
-    }
 
-    private void OpenSearchResultMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
-        OpenSearchResult(result);
-    }
 
-    private void CopySearchResultPathMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
-        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(result.Path);
-    }
 
-    private void CopySearchResultRelativePathMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
-        TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(GetRelativePathOrFullPath(result.Path));
-    }
 
-    private async void RevealSearchResultInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<SearchResultItem>(sender) is not { } result) return;
-        await OpenPathInSystemExplorer(result.Path, selectItem: true);
-    }
 
-    private void OpenSearchPanel(SearchMode mode)
-    {
-        if (!CanShowSearchPanelForMode(mode))
-            return;
 
-        _searchMode = mode;
-        NotifySearchModeChanged();
-        IsSearchPanelVisible = true;
-        _searchResults.Clear();
-        _searchDisplayItems.Clear();
-        SearchResultsListBox!.SelectedIndex = -1;
-        SearchStatusText = string.Empty;
-        if (mode == SearchMode.FindInFile)
-            UpdateFindHighlights();
-        else
-            _ = RunActiveSearchAsync();
-        FocusSearchInput();
-    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     // Ctrl+F and the search button both route through the same menu now.
     // Picking a mode opens the panel directly.
-    private void ToggleSearchPanel(SearchMode mode)
-    {
-        if (IsSearchPanelVisible && _searchMode == mode)
-        {
-            IsSearchPanelVisible = false;
-            FocusEditor();
-            return;
-        }
 
-        OpenSearchPanel(mode);
-    }
 
     // Clicking a mode tab inside the panel. Unlike ToggleSearchPanel this never
     // closes the panel - it just switches the active mode (and shows a hint if
     // the chosen mode can't run yet, e.g. Project search with no folder open).
-    private void SwitchSearchMode(SearchMode mode)
-    {
-        ResetHistoryIndex();
-        _searchMode = mode;
-        NotifySearchModeChanged();
 
-        if (!CanShowSearchPanelForMode(mode))
-        {
-            _searchCancellation?.Cancel();
-            _searchResults.Clear();
-            _searchDisplayItems.Clear();
-            SearchResultsListBox!.SelectedIndex = -1;
-            SearchStatusText = GetModeUnavailableMessage(mode);
-            return;
-        }
 
-        SearchStatusText = string.Empty;
-        _searchResults.Clear();
-        _searchDisplayItems.Clear();
-        SearchResultsListBox!.SelectedIndex = -1;
-        if (mode == SearchMode.FindInFile)
-            UpdateFindHighlights();
-        else
-            _ = RunActiveSearchAsync();
-        FocusSearchInput();
-    }
 
-    private bool CanShowSearchPanelForMode(SearchMode mode) => mode switch
-    {
-        SearchMode.FindInFile => CanShowFindInFile,
-        SearchMode.FileByName => IsFolderOpen,
-        SearchMode.ProjectSearch => IsFolderOpen,
-        _ => false,
-    };
 
-    private static string GetModeUnavailableMessage(SearchMode mode) => mode switch
-    {
-        SearchMode.FileByName => "Open a folder to search files by name.",
-        SearchMode.ProjectSearch => "Open a folder to search the project.",
-        _ => string.Empty,
-    };
 
-    private void NotifySearchModeChanged()
-    {
-        OnPropertyChanged(nameof(IsFindInFileSearchMode));
-        OnPropertyChanged(nameof(IsFileByNameSearchMode));
-        OnPropertyChanged(nameof(IsProjectSearchMode));
-        OnPropertyChanged(nameof(IsSearchResultsVisible));
-        OnPropertyChanged(nameof(SearchPlaceholderText));
-        OnPropertyChanged(nameof(IsSearchPanelActive));
-    }
 
-    private void FocusSearchInput()
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            var searchTextBox = this.FindControl<TextBox>("SearchTextBox");
-            if (searchTextBox is null) return;
-            searchTextBox.Focus();
-            searchTextBox.SelectAll();
-        }, DispatcherPriority.Background);
-    }
 
-    private void SearchTextBox_OnKeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key == Key.Escape)
-        {
-            IsSearchPanelVisible = false;
-            FocusEditor();
-            ResetHistoryIndex();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Enter)
-        {
-            if (_searchMode == SearchMode.FindInFile)
-            {
-                if (!string.IsNullOrEmpty(FindText))
-                    AddToHistory(FindText);
-                FindInEditor(forward: true);
-            }
-            else
-            {
-                OpenSelectedSearchResult();
-            }
-            ResetHistoryIndex();
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Up)
-        {
-            CycleHistory(-1);
-            e.Handled = true;
-        }
-        else if (e.Key == Key.Down)
-        {
-            if (IsSearchResultsVisible && SearchDisplayItems.Count > 0)
-            {
-                SearchResultsListBox?.Focus();
-                ResetHistoryIndex();
-            }
-            else
-            {
-                CycleHistory(1);
-            }
-            e.Handled = true;
-        }
-        else
-        {
-            // Any regular keypress resets MRU cycling state.
-            ResetHistoryIndex();
-        }
-    }
+
+
+
+
 
     // Unified search: debounced execution for Files/Project modes.
 
-    private void RestartSearchDebounce()
-    {
-        _searchDebounceTimer.Stop();
-        _searchDebounceTimer.Start();
-    }
 
-    private void SearchDebounceTimer_OnTick(object? sender, EventArgs e)
-    {
-        _searchDebounceTimer.Stop();
-        _ = RunActiveSearchAsync();
-    }
+
+
 
     // MRU query history helpers.
 
-    private List<string> GetCurrentHistory() => _searchMode switch
-    {
-        SearchMode.FindInFile => _findInFileHistory,
-        SearchMode.FileByName => _fileByNameHistory,
-        SearchMode.ProjectSearch => _projectSearchHistory,
-        _ => _findInFileHistory,
-    };
 
-    private void AddToHistory(string query)
-    {
-        if (string.IsNullOrWhiteSpace(query)) return;
-        var history = GetCurrentHistory();
-        history.Remove(query);
-        history.Insert(0, query);
-        if (history.Count > 10)
-            history.RemoveRange(10, history.Count - 10);
-    }
 
-    private void ResetHistoryIndex()
-    {
-        _historyIndex = -1;
-        _savedFindText = string.Empty;
-    }
 
-    private void CycleHistory(int direction)
-    {
-        var history = GetCurrentHistory();
-        if (history.Count == 0) return;
 
-        if (_historyIndex < 0)
-        {
-            _savedFindText = FindText ?? string.Empty;
-            _historyIndex = direction < 0 ? 0 : history.Count - 1;
-        }
-        else
-        {
-            _historyIndex += direction;
-        }
 
-        if (_historyIndex < 0)
-        {
-            FindText = _savedFindText;
-            ResetHistoryIndex();
-        }
-        else if (_historyIndex >= history.Count)
-        {
-            FindText = _savedFindText;
-            ResetHistoryIndex();
-        }
-        else
-        {
-            FindText = history[_historyIndex];
-        }
-    }
+
+
 
     // Search result display grouping.
 
-    private void RebuildDisplayItems()
-    {
-        _searchDisplayItems.Clear();
 
-        // In FindInFile mode or FileByName mode: no grouping, flat list.
-        if (_searchMode != SearchMode.ProjectSearch)
-        {
-            foreach (var item in _searchResults)
-                _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
-            UpdateSearchPanelMinWidth();
-            return;
-        }
 
-        // Project search: group by file path.
-        // Preserve each group's expanded/collapsed state across rebuilds - new
-        // SearchFileGroup instances are constructed below, so without this the
-        // state set by ToggleGroup() would be discarded on every call.
-        var previousExpansion = _fileGroups
-            .ToDictionary(g => g.FilePath, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
 
-        _fileGroups.Clear();
-        var grouped = _searchResults
-            .GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new SearchFileGroup
-            {
-                FilePath = g.Key,
-                FileName = Path.GetFileName(g.Key),
-                RelativePath = g.First().RelativePath,
-                MatchCount = g.Count(),
-                IsExpanded = previousExpansion.TryGetValue(g.Key, out var wasExpanded) && wasExpanded,
-            })
-            .ToList();
 
-        foreach (var group in grouped)
-        {
-            _fileGroups.Add(group);
-            _searchDisplayItems.Add(new SearchDisplayItem { IsGroupHeader = true, Group = group });
-            if (group.IsExpanded)
-            {
-                foreach (var item in _searchResults.Where(r =>
-                    string.Equals(r.Path, group.FilePath, StringComparison.OrdinalIgnoreCase)))
-                {
-                    _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
-                }
-            }
-        }
 
-        UpdateSearchPanelMinWidth();
-    }
 
-    private void UpdateSearchPanelMinWidth()
-    {
-        if (_searchResults.Count == 0)
-        {
-            SearchPanelBorder.MinWidth = 0;
-            return;
-        }
 
-        double maxWidth = 0;
-        const double charWidth12 = 7.2;
-        const double charWidth11 = 6.4;
-        const double iconWidth = 22;
-        const double chevronWidth = 12;
-        const double paddingAndMargins = 56;
 
-        // Individual result row: Icon(22) + DisplayName(12px) + gap(8) + RelativePath(11px, star column)
-        // The star column fills remaining space so we only need the auto columns.
-        // Group header row: Chevron(12) + FileName(12px) + gap(8) + RelativePath(11px) + gap + MatchCount(11px)
-        foreach (var item in _searchResults)
-        {
-            // Individual result width (auto columns only)
-            double resultWidth = iconWidth + item.DisplayName.Length * charWidth12;
-            if (resultWidth > maxWidth) maxWidth = resultWidth;
-        }
 
-        foreach (var group in _fileGroups)
-        {
-            // Group header width (all auto columns)
-            double groupWidth = chevronWidth
-                               + group.FileName.Length * charWidth12
-                               + 8
-                               + group.RelativePath.Length * charWidth11
-                               + 8
-                               + (group.MatchCount.ToString().Length + 9) * charWidth11; // "N matches"
-            if (groupWidth > maxWidth) maxWidth = groupWidth;
-        }
 
-        SearchPanelBorder.MinWidth = Math.Min(maxWidth + paddingAndMargins, 560);
-    }
 
-    private void ToggleGroup(SearchFileGroup group)
-    {
-        group.IsExpanded = !group.IsExpanded;
-        RebuildDisplayItems();
-    }
-
-    private async Task RunActiveSearchAsync()
-    {
-        if (!IsSearchPanelVisible)
-            return;
-
-        if (_searchMode == SearchMode.FindInFile)
-        {
-            _searchResults.Clear();
-            _searchDisplayItems.Clear();
-            UpdateFindHighlights();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(FindText))
-        {
-            _searchCancellation?.Cancel();
-            _searchResults.Clear();
-            _searchDisplayItems.Clear();
-            SearchStatusText = _searchMode == SearchMode.FileByName
-                ? "Type a file name to find files."
-                : "Type text to search the project.";
-            return;
-        }
-
-        if (!CanShowSearchPanelForMode(_searchMode))
-        {
-            _searchCancellation?.Cancel();
-            _searchResults.Clear();
-            _searchDisplayItems.Clear();
-            SearchStatusText = GetModeUnavailableMessage(_searchMode);
-            return;
-        }
-
-        var mode = _searchMode;
-        _searchCancellation?.Cancel();
-        _searchCancellation?.Dispose();
-        var cts = new CancellationTokenSource();
-        _searchCancellation = cts;
-        var token = cts.Token;
-
-        IsSearchBusy = true;
-        SearchStatusText = "Searching...";
-
-        var matchCase = IsSearchMatchCaseEnabled;
-        var wholeWord = IsSearchWholeWordEnabled;
-        var useRegex = IsSearchRegexEnabled;
-        var includeFilter = IsProjectSearchMode ? SearchIncludeFilter : null;
-        var excludeFilter = IsProjectSearchMode ? SearchExcludeFilter : null;
-        var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-        var sw = Stopwatch.StartNew();
-
-        List<SearchResultItem> results;
-        bool truncated = false;
-        try
-        {
-            if (mode == SearchMode.FileByName)
-            {
-                results = await Task.Run(() => SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token), token);
-            }
-            else
-            {
-                var (projectResults, wasTruncated) = await Task.Run(() => SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token), token);
-                results = projectResults;
-                truncated = wasTruncated;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // A newer search superseded this one (or the panel closed mid-search).
-            IsSearchBusy = false;
-            return;
-        }
-
-        if (token.IsCancellationRequested || !IsSearchPanelVisible || _searchMode != mode)
-        {
-            IsSearchBusy = false;
-            return;
-        }
-
-        sw.Stop();
-        _searchResults.Clear();
-        foreach (var item in results)
-            _searchResults.Add(item);
-        RebuildDisplayItems();
-        AddToHistory(FindText);
-        SearchStatusText = BuildSearchStatusText(results.Count, truncated, sw.Elapsed);
-        IsSearchBusy = false;
-    }
-
-    private string BuildSearchStatusText(int resultCount, bool truncated = false, TimeSpan elapsed = default)
-    {
-        var countText = resultCount.ToString("N0");
-        var text = _searchMode switch
-        {
-            SearchMode.FileByName => resultCount == 0
-                ? "No files found."
-                : resultCount == 1 ? "1 file found." : $"{countText} files found.",
-            SearchMode.ProjectSearch => resultCount == 0
-                ? "No matches found."
-                : resultCount == 1 ? "1 match found." : $"{countText} matches found.",
-            _ => string.Empty,
-        };
-        if (truncated)
-            text += " (showing first 2,000)";
-        if (elapsed.TotalMilliseconds >= 1)
-            text += $" ({elapsed.TotalMilliseconds:F0}ms)";
-        return text;
-    }
-
-    private (List<string> Files, SearchIgnoreRules Rules) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
-    {
-        // Invalidate cache if filters changed.
-        if (_searchFileCache is { } cached &&
-            string.Equals(cached.Rules.IncludeFilterSnapshot, includeFilter ?? "", StringComparison.Ordinal) &&
-            string.Equals(cached.Rules.ExcludeFilterSnapshot, excludeFilter ?? "", StringComparison.Ordinal))
-        {
-            return cached;
-        }
-
-        var rules = SearchIgnoreRules.Load(root, includeFilter, excludeFilter);
-        rules.IncludeFilterSnapshot = includeFilter ?? "";
-        rules.ExcludeFilterSnapshot = excludeFilter ?? "";
-        var files = new List<string>();
-        EnumerateProjectFiles(root, files, rules);
-        _searchFileCache = (files, rules);
-        return _searchFileCache.Value;
-    }
 
 
 
     // Walks the open folder's whole tree, skipping ignored directories and
     // guarding against directory cycles (junction points etc.).
-    private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null)
-    {
-        visited ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-            if (!visited.Add(normalized))
-                return;
 
-            foreach (var dir in Directory.GetDirectories(root))
-            {
-                if (ignoreRules.ShouldSkipDirectory(dir)) continue;
-                EnumerateProjectFiles(dir, files, ignoreRules, visited);
-            }
-            foreach (var file in Directory.GetFiles(root))
-            {
-                if (ignoreRules.ShouldSkipFile(file)) continue;
-                files.Add(file);
-            }
-        }
-        catch
-        {
-            // Unreadable directory - skip it and keep going elsewhere.
-        }
-    }
 
-    private static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
-    {
-        Regex? regex = null;
-        if (useRegex)
-        {
-            try
-            {
-                var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
-                regex = new Regex(query, options | RegexOptions.Compiled);
-            }
-            catch
-            {
-                return new List<SearchResultItem>();
-            }
-        }
 
-        var scoredResults = new List<(SearchResultItem Item, int Score)>();
-        foreach (var file in files)
-        {
-            token.ThrowIfCancellationRequested();
-            var name = Path.GetFileName(file);
 
-            if (regex is not null)
-            {
-                var match = regex.Match(name);
-                if (!match.Success) continue;
 
-                var matchIndices = new List<int>();
-                foreach (Group g in match.Groups)
-                    foreach (Capture c in g.Captures)
-                        for (var i = 0; i < c.Length; i++)
-                            matchIndices.Add(c.Index + i);
 
-                scoredResults.Add((new SearchResultItem
-                {
-                    Path = file,
-                    DisplayName = name,
-                    RelativePath = GetRelativePathOrName(root, file),
-                    Icon = FileTreeItem.GetFileIcon(name),
-                    MatchedIndices = matchIndices,
-                    Score = match.Index == 0 ? 2000 : 1000,
-                }, match.Index == 0 ? 2000 : 1000));
-            }
-            else
-            {
-                var (score, indices) = FuzzyMatch.Match(query, name, matchCase);
-                if (score < 0) continue;
 
-                scoredResults.Add((new SearchResultItem
-                {
-                    Path = file,
-                    DisplayName = name,
-                    RelativePath = GetRelativePathOrName(root, file),
-                    Icon = FileTreeItem.GetFileIcon(name),
-                    MatchedIndices = indices,
-                    Score = score,
-                }, score));
-            }
-        }
-
-        scoredResults.Sort((a, b) => b.Score.CompareTo(a.Score));
-        return scoredResults.Select(r => r.Item).ToList();
-    }
-
-    private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
-    {
-        const int maxResults = 2000;
-        var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        Regex? regex = null;
-        if (useRegex)
-        {
-            try
-            {
-                var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
-                regex = new Regex(query, options | RegexOptions.Compiled);
-            }
-            catch
-            {
-                return (new List<SearchResultItem>(), false);
-            }
-        }
-
-        var results = new List<SearchResultItem>();
-        var truncated = false;
-        foreach (var file in files)
-        {
-            token.ThrowIfCancellationRequested();
-            if (IsImagePreviewFile(file) || IsBinaryContent(file)) continue;
-
-            try
-            {
-                var lineNumber = 0;
-                foreach (var line in File.ReadLines(file))
-                {
-                    lineNumber++;
-
-                    bool matched;
-                    List<int>? matchIndices = null;
-                    if (regex is not null)
-                    {
-                        var m = regex.Match(line);
-                        matched = m.Success;
-                        if (matched)
-                        {
-                            matchIndices = new List<int>();
-                            foreach (Group g in m.Groups)
-                                foreach (Capture c in g.Captures)
-                                    for (var i = 0; i < c.Length; i++)
-                                        matchIndices.Add(c.Index + i);
-                        }
-                    }
-                    else
-                    {
-                        matched = line.Contains(query, comparison);
-                        if (matched && wholeWord && !LineContainsWholeWord(line, query, comparison))
-                            matched = false;
-                    }
-
-                    if (!matched) continue;
-
-                    results.Add(new SearchResultItem
-                    {
-                        Path = file,
-                        DisplayName = Path.GetFileName(file),
-                        RelativePath = GetRelativePathOrName(root, file),
-                        LineNumber = lineNumber,
-                        PreviewText = $"{lineNumber}: {TrimSearchPreview(line)}",
-                        Icon = FileTreeItem.GetFileIcon(file),
-                        MatchedPreviewIndices = matchIndices is not null ? matchIndices.ToArray() : System.Array.Empty<int>(),
-                    });
-                    if (results.Count >= maxResults)
-                    {
-                        truncated = true;
-                        return (results, truncated);
-                    }
-                }
-            }
-            catch
-            {
-                // Unreadable or locked file - skip it.
-            }
-        }
-        return (results, truncated);
-    }
-
-    private static bool LineContainsWholeWord(string line, string needle, StringComparison comparison)
-    {
-        var idx = 0;
-        while (idx <= line.Length - needle.Length)
-        {
-            idx = line.IndexOf(needle, idx, comparison);
-            if (idx < 0) return false;
-            if (IsWholeWordMatch(line, idx, needle.Length))
-                return true;
-            idx += Math.Max(1, needle.Length);
-        }
-        return false;
-    }
 
     private static string GetRelativePathOrName(string root, string path)
     {
@@ -11960,42 +7432,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private static string TrimSearchPreview(string line)
-    {
-        var trimmed = line.Trim();
-        return trimmed.Length <= 140 ? trimmed : trimmed[..140];
-    }
+
 
     // Encoding detection & change
 
 
     /// Detects a file's encoding from its BOM, falling back to UTF-8 (no BOM).
 
-    private static System.Text.Encoding DetectFileEncoding(string path)
-    {
-        try
-        {
-            Span<byte> bom = stackalloc byte[4];
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var read = fs.Read(bom);
 
-            if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-                return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);   // UTF-8 BOM
-            if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
-                return System.Text.Encoding.Unicode;          // UTF-16 LE
-            if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
-                return System.Text.Encoding.BigEndianUnicode; // UTF-16 BE
-            if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
-                return System.Text.Encoding.UTF32;
-
-            // No BOM - default to UTF-8 without BOM
-            return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        }
-        catch
-        {
-            return System.Text.Encoding.UTF8;
-        }
-    }
 
 
     /// Shows an encoding picker and immediately re-saves the file if a different encoding is chosen.
@@ -12119,74 +7563,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void FindNextButton_OnClick(object? sender, RoutedEventArgs e) =>
-        FindInEditor(forward: true);
 
-    private void FindPrevButton_OnClick(object? sender, RoutedEventArgs e) =>
-        FindInEditor(forward: false);
 
-    private void ReplaceCurrentMatch()
-    {
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return;
 
-        var doc = EditorTextBox.Document.Text;
-        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        var match = FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
-        if (match.Offset < 0)
-            return;
 
-        EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
-        FindInEditor(forward: true);
-    }
 
-    private void ReplaceAllMatches()
-    {
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return;
 
-        var doc = EditorTextBox.Document;
-        var text = doc.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var replacement = ReplaceText ?? string.Empty;
-        var regex = BuildFindRegex();
 
-        // Collect all match offsets in a single pass over the original text.
-        var matches = new List<(int Offset, int Length)>();
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
-        {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0)
-                break;
-            matches.Add(m);
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break; // prevent infinite loop on zero-length regex matches
-        }
-
-        if (matches.Count == 0)
-            return;
-
-        // Build the replacement string by copying unchanged segments and inserting replacements.
-        var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - FindText.Length));
-        var pos = 0;
-        foreach (var match in matches)
-        {
-            if (match.Offset > pos)
-                sb.Append(text, pos, match.Offset - pos);
-            sb.Append(replacement);
-            pos = match.Offset + match.Length;
-        }
-        if (pos < text.Length)
-            sb.Append(text, pos, text.Length - pos);
-
-        // Single document operation — keeps the undo history clean.
-        doc.Replace(0, text.Length, sb.ToString());
-
-        SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
-    }
 
     // Editor context menu (right-click)
 
@@ -12205,15 +7588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // drops it into Find, and opens the Find panel with every match
     // highlighted (via UpdateFindHighlights, triggered by the FindText set
     // below) - no jump to Replace, unlike Change All Occurrences.
-    private void EditorFindAllOccurrencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
-        var selectedText = sel.GetText();
-        if (string.IsNullOrEmpty(selectedText)) return;
 
-        FindText = selectedText;
-        OpenSearchPanel(SearchMode.FindInFile);
-    }
 
     // Mirrors VS Code's "Change All Occurrences": grabs the current selection,
     // drops it into Find, and opens the Find/Replace panel so the user can
@@ -12262,173 +7637,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             textArea.Selection.ReplaceSelectionWithText(text);
     }
 
-    private void FindInEditor(bool forward)
-    {
-        if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null) return;
-        var doc = EditorTextBox.Document.Text;
-        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        (int Offset, int Length) match;
-        if (forward)
-        {
-            match = FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (match.Offset < 0)
-                match = FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-        }
-        else
-        {
-            var searchTo = Math.Max(0, caretOffset - 1);
-            match = FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
-            if (match.Offset < 0)
-                match = FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
-        }
 
-        if (match.Offset < 0) return;
-        EditorTextBox.TextArea.Caret.Offset = match.Offset;
-        EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
-        EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
 
-        // Track which match we're on for the "X of Y" status display.
-        if (_findMatchOffsets.Count > 0)
-        {
-            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = ~_currentFindMatchIndex - 1;
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = _findMatchOffsets.Count - 1;
-            UpdateFindStatusText();
-        }
-    }
 
-    private static (int Offset, int Length) FindNextMatch(string text, string needle, int startIndex, bool forward, StringComparison comparison, bool wholeWord, Regex? regex = null)
-    {
-        if (regex is not null)
-        {
-            if (forward)
-            {
-                var m = regex.Match(text, startIndex);
-                return m.Success ? (m.Index, m.Length) : (-1, 0);
-            }
-            else
-            {
-                // For backward regex search, scan all matches up to startIndex and return the last one before it.
-                (int Offset, int Length) last = (-1, 0);
-                foreach (Match m in regex.Matches(text))
-                {
-                    if (m.Index > startIndex) break;
-                    last = (m.Index, m.Length);
-                }
-                return last;
-            }
-        }
 
-        if (string.IsNullOrEmpty(needle))
-            return (-1, 0);
 
-        if (forward)
-        {
-            var index = Math.Max(0, startIndex);
-            while (index <= text.Length - needle.Length)
-            {
-                index = text.IndexOf(needle, index, comparison);
-                if (index < 0) return (-1, 0);
-                if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
-                    return (index, needle.Length);
-                index += Math.Max(1, needle.Length);
-            }
 
-            return (-1, 0);
-        }
 
-        var searchTo = Math.Min(Math.Max(0, startIndex), text.Length - 1);
-        while (searchTo >= 0)
-        {
-            var index = text.LastIndexOf(needle, searchTo, comparison);
-            if (index < 0) return (-1, 0);
-            if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
-                return (index, needle.Length);
-            searchTo = index - 1;
-        }
 
-        return (-1, 0);
-    }
 
-    private static bool IsWholeWordMatch(string text, int index, int length)
-    {
-        static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-        var beforeOk = index == 0 || !IsWordChar(text[index - 1]);
-        var afterIndex = index + length;
-        var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
-        return beforeOk && afterOk;
-    }
 
-    private void UpdateFindHighlights()
-    {
-        if (EditorTextBox?.Document is null) return;
-
-        _findHighlightRenderer.Clear();
-        _findMatchOffsets.Clear();
-        _currentFindMatchIndex = -1;
-
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText))
-        {
-            SearchStatusText = string.Empty;
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-            return;
-        }
-
-        var text = EditorTextBox.Document.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
-        {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0) break;
-            _findMatchOffsets.Add(m.Offset);
-            _findHighlightRenderer.AddMatch(m.Offset, m.Length);
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break;
-        }
-
-        // Determine which match the caret is on.
-        if (_findMatchOffsets.Count > 0)
-        {
-            var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(caretOffset);
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
-        }
-
-        UpdateFindStatusText();
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-    }
-
-    private Regex? BuildFindRegex()
-    {
-        if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText)) return null;
-        try
-        {
-            var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;
-            return new Regex(FindText, options | RegexOptions.Compiled);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private void UpdateFindStatusText()
-    {
-        if (!IsFindInFileSearchMode) return;
-        var total = _findMatchOffsets.Count;
-        if (total == 0)
-            SearchStatusText = string.IsNullOrEmpty(FindText) ? string.Empty : "No matches.";
-        else
-            SearchStatusText = $"{_currentFindMatchIndex + 1} of {total}";
-    }
 
     private void IncreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>
         EditorFontSize = Math.Min(32, EditorFontSize + 1);
@@ -12436,210 +7655,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DecreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>
         EditorFontSize = Math.Max(8, EditorFontSize - 1);
 
-    private async void ClearRecentFilesButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (!HasRecentFiles) return;
 
-        // "Clear Recent Files" only removes non-pinned entries.
-        var clearable = RecentFiles.Where(f => !f.IsPinned).ToList();
-        if (clearable.Count == 0) return;
 
-        var confirmed = await ShowConfirmationDialogAsync(
-            "Clear Recent Files?",
-            "This removes every non-pinned entry from your Recent Files list. Pinned entries are kept. The files themselves aren't touched - only the list of shortcuts to them. This can't be undone.",
-            confirmLabel: "Clear",
-            isDestructive: true);
 
-        if (!confirmed) return;
 
-        foreach (var item in clearable)
-            RecentFiles.Remove(item);
 
-        SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
-    }
-
-    private async void InstallMarketplaceExtensionButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: MarketplaceExtension marketplaceExtension })
-            await InstallMarketplaceExtensionAsync(marketplaceExtension);
-    }
-
-    private async void UpdateAllMarketplaceExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (IsUpdatingAllExtensions || _isAutoUpdatingExtensions)
-            return;
-
-        var pendingUpdateIds = MarketplaceExtensions
-            .Where(extension => extension.IsUpdateAvailable && extension.IsInstallEnabled)
-            .Select(extension => extension.Id)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (pendingUpdateIds.Count == 0)
-        {
-            ExtensionsStatusText = "All extensions are up to date.";
-            return;
-        }
-
-        IsUpdatingAllExtensions = true;
-        var successfulUpdates = 0;
-        var failedUpdates = 0;
-
-        try
-        {
-            for (var index = 0; index < pendingUpdateIds.Count; index++)
-            {
-                var extensionId = pendingUpdateIds[index];
-                var marketplaceExtension = MarketplaceExtensions.FirstOrDefault(entry =>
-                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
-
-                if (marketplaceExtension is null || !marketplaceExtension.IsUpdateAvailable)
-                    continue;
-
-                ExtensionsStatusText = $"Updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
-                await InstallMarketplaceExtensionAsync(marketplaceExtension);
-
-                var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
-                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
-
-                if (refreshedExtension is not null && refreshedExtension.IsInstalled && !refreshedExtension.IsUpdateAvailable)
-                    successfulUpdates++;
-                else
-                    failedUpdates++;
-            }
-
-            ExtensionsStatusText = failedUpdates == 0
-                ? $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
-                : $"Updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} couldn't be updated.";
-        }
-        finally
-        {
-            IsUpdatingAllExtensions = false;
-        }
-    }
 
     // Starts/stops the extension auto-update timer to match IsAutoUpdateExtensionsEnabled; called at startup and on toggle.
-    private void UpdateExtensionAutoUpdateLifecycle()
-    {
-        _extensionAutoUpdateTimer.Stop();
-        if (IsAutoUpdateExtensionsEnabled)
-            _extensionAutoUpdateTimer.Start();
-    }
+
 
     // The app auto-updater's timer and tick handler now live in AppUpdateScheduler (Updater.cs).
 
     // Fires every few hours while Kodo is open and the setting is enabled, so
     // extensions published mid-session aren't only picked up on next launch.
-    private async void ExtensionAutoUpdateTimer_OnTick(object? sender, EventArgs e)
-    {
-        if (!IsAutoUpdateExtensionsEnabled)
-            return;
 
-        // suppressWatchdog=true: this is a silent background check, so a stall shouldn't pop a timeout dialog.
-        await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
-        await AutoUpdateExtensionsIfEnabledAsync();
-    }
 
     // Fires hourly to keep the Marketplace tab current, even with auto-update off.
-    private async void MarketplaceRefreshTimer_OnTick(object? sender, EventArgs e)
-    {
-        // suppressWatchdog=true for the same reason as the extension sweep - a silent hourly refresh shouldn't pop a dialog.
-        await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
-    }
+
 
     // Used on startup: refreshes extensions/marketplace first, then silently installs pending updates if opted in.
-    private async Task RefreshExtensionsAndAutoUpdateAsync()
-    {
-        await RefreshExtensionsDataAsync();
-        await AutoUpdateExtensionsIfEnabledAsync();
-    }
+
 
     // Silently installs pending updates when opted in; guards against overlap.
-    private async Task AutoUpdateExtensionsIfEnabledAsync()
-    {
-        if (!IsAutoUpdateExtensionsEnabled || _isAutoUpdatingExtensions || IsUpdatingAllExtensions)
-            return;
 
-        var pendingUpdateIds = MarketplaceExtensions
-            .Where(extension => extension.IsUpdateAvailable && extension.IsInstallEnabled)
-            .Select(extension => extension.Id)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
 
-        if (pendingUpdateIds.Count == 0)
-            return;
 
-        _isAutoUpdatingExtensions = true;
-        var successfulUpdates = 0;
-        var failedUpdates = 0;
 
-        try
-        {
-            for (var index = 0; index < pendingUpdateIds.Count; index++)
-            {
-                var extensionId = pendingUpdateIds[index];
-                var marketplaceExtension = MarketplaceExtensions.FirstOrDefault(entry =>
-                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
 
-                if (marketplaceExtension is null || !marketplaceExtension.IsUpdateAvailable || marketplaceExtension.IsInstalling)
-                    continue;
-
-                if (!IsAutoUpdateExtensionsInBackgroundEnabled)
-                    ExtensionsStatusText = $"Auto-updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
-                await InstallMarketplaceExtensionAsync(marketplaceExtension);
-
-                var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
-                    entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
-
-                if (refreshedExtension is not null && refreshedExtension.IsInstalled && !refreshedExtension.IsUpdateAvailable)
-                    successfulUpdates++;
-                else
-                    failedUpdates++;
-            }
-
-            if ((successfulUpdates > 0 || failedUpdates > 0) && !IsAutoUpdateExtensionsInBackgroundEnabled)
-            {
-                ExtensionsStatusText = failedUpdates == 0
-                    ? $"Automatically updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}."
-                    : $"Automatically updated {successfulUpdates} extension{(successfulUpdates == 1 ? string.Empty : "s")}. {failedUpdates} couldn't be updated.";
-            }
-        }
-        finally
-        {
-            _isAutoUpdatingExtensions = false;
-        }
-    }
-
-    private async void UpdateInstalledExtensionButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: LoadedExtension extension })
-            return;
-
-        var marketplaceExtension = GetMarketplaceExtensionForInstalled(extension);
-        if (marketplaceExtension is null)
-        {
-            ExtensionsStatusText = $"Couldn't find an update source for {extension.Name}.";
-            return;
-        }
-
-        await InstallMarketplaceExtensionAsync(marketplaceExtension);
-    }
-
-    private async void UninstallExtensionButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: LoadedExtension extension }) return;
-
-        var confirmed = await ShowConfirmationDialogAsync(
-            "Uninstall extension?",
-            $"This removes '{extension.Name}' from disk and disables it immediately. This can't be undone.",
-            confirmLabel: "Uninstall",
-            isDestructive: true);
-
-        if (!confirmed) return;
-
-        await UninstallExtensionAsync(extension);
-    }
 
     // Shows a Ctrl+click tooltip and hand cursor over URLs, or the dead-code reason when
     // hovering a greyed-out span; only fires on state transitions, not every pixel of movement.
@@ -13713,29 +8755,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Runs on the UI thread every 2 s; re-applies the accent only when the
     // registry value has actually changed, so there's no unnecessary work.
-    private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
-    {
-        var current = GetWindowsAccentColor() ?? string.Empty;
-        if (current == _lastSeenWindowsAccentHex) return;
-        _lastSeenWindowsAccentHex = current;
-        ApplyAccentOverride();
-        if (_accentColorMode == "windows")
-        {
-            ApplyThemeToEditor();
-            RefreshExtensionTheme();
-        }
-    }
+
 
     // Runs every 2s; refreshes the System Default preview on a Windows theme change.
-    private void WindowsThemePollTimer_OnTick(object? sender, EventArgs e)
-    {
-        var current = ResolveSystemThemeName();
-        if (current == _lastSeenWindowsThemeName) return;
-        _lastSeenWindowsThemeName = current;
-        RefreshSystemThemePreview();
-        if (IsSystemThemeActive)
-            ApplyTheme("System");
-    }
+
 
     private void NetworkChange_OnNetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
         Dispatcher.UIThread.Post(() => RefreshMarketplaceConnectivityState());
@@ -13765,35 +8788,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "GitHub's API rate limit was hit. Wait a few minutes, then try again."
             : exception.Message;
 
-    private void RefreshMarketplaceConnectivityState(string? operation = null, Exception? exception = null)
-    {
-        var hasWirelessConnection = HasActiveWirelessConnection();
-        var hasInternetConnection = HasActiveInternetConnection();
 
-        string message = string.Empty;
-
-        if (!hasInternetConnection)
-        {
-            message = hasWirelessConnection
-                ? "No internet connection. Marketplace installs and updates won't work until you're back online."
-                : "No Wi-Fi or internet detected. Marketplace installs and updates won't work until you're back online.";
-        }
-        else if (exception is not null)
-        {
-            // Shows a message for any exception when online, not just connectivity failures.
-            message = IsGitHubRateLimitException(exception)
-                ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
-                : hasWirelessConnection
-                    ? "Couldn't reach the marketplace. Your connection may be unstable - try again in a moment."
-                    : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
-        }
-
-        if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
-            message = $"{message} (Last issue: {operation})";
-
-        MarketplaceConnectivityMessage = message;
-        IsMarketplaceConnectivityWarningVisible = !string.IsNullOrWhiteSpace(message);
-    }
 
     private TutorialStep CurrentTutorialStep => TutorialSteps[TutorialStepIndex];
 
