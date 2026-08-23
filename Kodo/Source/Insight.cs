@@ -742,7 +742,7 @@ public sealed class InsightEngine
         foreach (var (bracket, offset) in stack)
         {
             var expectedClose = bracket switch { '(' => ')', '{' => '}', _ => ']' };
-            spans.Add(new ErrorSpan(offset, 1, $"'{bracket}' is never closed - missing '{expectedClose}'"));
+            spans.Add(new ErrorSpan(offset, 1, $"'{bracket}' is never closed it's missing a '{expectedClose}'"));
         }
 
         // ---- Per-line passes: missing ';'/':' and misspelled keywords ----
@@ -805,7 +805,7 @@ public sealed class InsightEngine
                 if (contentLen > 0)
                     spans.Add(new ErrorSpan(
                         lineStart[i], contentLen,
-                        $"'{emptyAssignMatch.Groups[1].Value}' declares nothing - expected a value after '='"));
+                        $"'{emptyAssignMatch.Groups[1].Value}' declares nothing, expected a value after '='"));
             }
 
             // Misspelled-keyword check: extension-driven, so it only runs for languages that
@@ -825,7 +825,7 @@ public sealed class InsightEngine
                             spans.Add(new ErrorSpan(
                                 lineStart[i] + wordOffsetInLine,
                                 word.Length,
-                                $"Possibly misspelled '{word}' - did you mean '{closest}'?"));
+                                $"Possibly misspelled '{word}', did you mean '{closest}'?"));
                         }
                     }
                 }

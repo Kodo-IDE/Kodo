@@ -12851,8 +12851,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             (null, null)     => null,
             (_, null)        => errorReason,
-            (null, _)        => $"Dead code: {deadCodeReason}",
-            _                => $"{errorReason}{Environment.NewLine}Dead code: {deadCodeReason}",
+            (null, _)        => $"{deadCodeReason}",
+            _                => $"{errorReason}{Environment.NewLine}--------------------{Environment.NewLine}{deadCodeReason}",
         };
 
         if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason && errorReason == _hoveredErrorReason)
