@@ -201,6 +201,8 @@ public partial class MainWindow
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _rainbowBracketColorizer.InvalidateCache();
+        _markdownColorizer.InvalidateCache();
+        _htmlEmbeddedColorizer.InvalidateCache();
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
         _isDirty = true;

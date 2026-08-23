@@ -1967,6 +1967,8 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; private set; }
 
+    public void InvalidateCache() => _snapshot = null;
+
     public void UpdateSyntax(LoadedExtension? extension, Func<string, CompiledSyntaxProfile?>? languageResolver, Func<string, LoadedExtension?>? inlineLanguageResolver)
     {
         _snapshot = null;
@@ -2711,6 +2713,8 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; private set; }
 
+    public void InvalidateCache() => _snapshot = null;
+
     public void UpdateSyntax(LoadedExtension? extension, Func<string, string?, CompiledSyntaxProfile?>? languageResolver)
     {
         _snapshot = null;
@@ -3095,16 +3099,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Added before the generic comment-line span so #-headings get keywordColor, not commentColor.
         if (isMarkdown)
         {
-            // Fenced code blocks are added first, taking priority over inline rules.
-            mainRuleSet.Spans.Add(new HighlightingSpan
-            {
-                StartExpression        = new Regex(@"^(?:`{3,}|~{3,})[^\r\n]*$", RegexOptions.Compiled | RegexOptions.Multiline),
-                EndExpression          = new Regex(@"^(?:`{3,}|~{3,})\s*$",      RegexOptions.Compiled | RegexOptions.Multiline),
-                SpanColor              = new HighlightingColor { Foreground = new SimpleHighlightingBrush(Color.Parse("#F4F4F4")) },
-                SpanColorIncludesStart = true,
-                SpanColorIncludesEnd   = true,
-                RuleSet                = emptyRuleSet
-            });
+            // Fenced code blocks are NOT handled here - MarkdownColorizer (BuildSnapshot/TryParseFenceOpening/Closing)
+            // owns fence state with correct indent (0-3 spaces), marker char, and length >= opening checks.
+            // The old loose Regex @"^(?:`{3,}|~{3,})" allowed ~~~ to close ``` and missed indented fences,
+            // causing Highlighting vs Colorizer divergence that persists to EOF in long files.
 
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
@@ -3168,6 +3166,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         if (ext.DisableSingleQuoteStrings)
             stringDelimiters.RemoveAll(d => d == "'");
+
+        // Markdown inline code (`...`) is owned by MarkdownColorizer (InlineCodeRegex + language detection).
+        // A generic string span for "`" with allowEndOfLineFallback:true would paint an unclosed ` to EOL
+        // and clash with that logic, causing flicker in long files.
+        if (isMarkdown)
+            stringDelimiters.RemoveAll(d => d == "`");
 
         foreach (var delimiter in stringDelimiters)
             mainRuleSet.Spans.Add(CreateStringSpan(delimiter, stringColor, emptyRuleSet, allowEndOfLineFallback: true));
