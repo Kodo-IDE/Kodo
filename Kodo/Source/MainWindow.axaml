@@ -4607,10 +4607,12 @@
                 </ScrollViewer>
             </Grid>
 
-            <Grid IsVisible="{Binding IsSettingsPageVisible}"
+            <Grid x:Name="SettingsPageGrid"
+                  IsVisible="{Binding IsSettingsPageVisible}"
                   IsHitTestVisible="{Binding IsSettingsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
-                  RowDefinitions="Auto,*">
+                  RowDefinitions="Auto,*"
+                  PointerPressed="SettingsPage_OnPointerPressed">
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4628,7 +4630,8 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <TextBox Grid.Column="1"
+                        <TextBox x:Name="SettingsSearchTextBox"
+                                 Grid.Column="1"
                                  Width="260"
                                  VerticalAlignment="Center"
                                  Text="{Binding SettingsSearchText, Mode=TwoWay}"
@@ -4639,7 +4642,8 @@
                                  CornerRadius="10"
                                  Height="36"
                                  Padding="12,0"
-                                 VerticalContentAlignment="Center" />
+                                 VerticalContentAlignment="Center"
+                                 LostFocus="SettingsSearchTextBox_OnLostFocus" />
                     </Grid>
                 </Border>
 

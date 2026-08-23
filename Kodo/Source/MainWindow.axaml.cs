@@ -5255,6 +5255,43 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private void SettingsSearchTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        // User clicked off the settings search bar — flush any debounced filtering
+        // immediately and stop the typing/debounce timer so the caret blink and
+        // pending filter animation end at once.
+        if (_searchFilterDebounceTimer.IsEnabled)
+            _searchFilterDebounceTimer.Stop();
+        if (_settingsSearchPending)
+            FlushPendingSearchFilters();
+    }
+
+    private void SettingsPage_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // Clicking anywhere on the settings page background while the search box
+        // is focused should defocus it. Some targets (cards, ScrollViewer) aren't
+        // focusable, so LostFocus wouldn't fire on its own — force a focus clear.
+        var box = this.FindControl<TextBox>("SettingsSearchTextBox");
+        if (box is null) return;
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+        if (!ReferenceEquals(focused, box)) return;
+        // Don't steal focus if the click was inside the TextBox itself.
+        if (e.Source is Visual v && (v == box || v.GetVisualAncestors().Contains(box)))
+            return;
+        // Steal focus to the parent grid (Avalonia stops caret blink automatically on LostFocus).
+        var grid = this.FindControl<Grid>("SettingsPageGrid");
+        if (grid is not null)
+        {
+            grid.Focusable = true;
+            grid.Focus();
+        }
+        // Fallback flush in case focus change doesn't trigger LostFocus (non-focusable click target).
+        if (_searchFilterDebounceTimer.IsEnabled)
+            _searchFilterDebounceTimer.Stop();
+        if (_settingsSearchPending)
+            FlushPendingSearchFilters();
+    }
+
     // Automatic settings search: instead of a hand-maintained keyword list per
     // card, we walk each card's live visual tree and pull out every bit of text
     // a user could actually read (labels, content, headers, tooltips, watermarks) -
