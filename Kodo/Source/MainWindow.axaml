@@ -1586,20 +1586,26 @@
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
                     <Popup x:Name="DiagnosticPopup"
-                            Placement="Pointer"
+                            Placement="AnchorAndGravity"
+                            PlacementAnchor="TopLeft"
+                            PlacementGravity="BottomRight"
                             HorizontalOffset="0"
-                            VerticalOffset="6"
+                            VerticalOffset="0"
                             IsLightDismissEnabled="False"
-                            WindowManagerAddShadowHint="False">
-                        <Border x:Name="DiagnosticPopupBorder"
-                                Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="6"
-                                Padding="10,8"
-                                MaxWidth="450"
+                            WindowManagerAddShadowHint="True">
+                        <Border x:Name="DiagnosticPopupHitBorder"
+                                Background="Transparent"
+                                Padding="12"
                                 PointerEntered="DiagnosticPopup_OnPointerEntered"
                                 PointerExited="DiagnosticPopup_OnPointerExited">
+                            <Border x:Name="DiagnosticPopupBorder"
+                                    Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="11,9"
+                                    MaxWidth="420"
+                                    BoxShadow="0 12 28 0 #55000000, 0 2 8 0 #33000000">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                 <TextBlock x:Name="DiagnosticPopupText"
                                             Foreground="{Binding PrimaryTextBrush}"
@@ -1619,6 +1625,7 @@
                                         VerticalAlignment="Center"
                                         HorizontalAlignment="Center" />
                             </Grid>
+                        </Border>
                         </Border>
                     </Popup>
                     <Grid IsVisible="{Binding IsImagePreviewVisible}"

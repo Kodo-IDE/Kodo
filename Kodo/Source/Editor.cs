@@ -174,6 +174,29 @@ public partial class MainWindow
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             DiagnosticPopupText.Text = diagnosticMessage;
             DiagnosticPopup.PlacementTarget = textView;
+            // Lenient placement: anchor just below the hovered line, near cursor X, so gap is ~4px (easy to reach)
+            try
+            {
+                var floor = textView.GetPositionFloor(position + textView.ScrollOffset);
+                if (floor is not null)
+                {
+                    var y = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(floor.Value.Line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y - textView.ScrollOffset.Y;
+                    if (double.IsNaN(y) || double.IsInfinity(y)) y = position.Y;
+                    // Right on cursor: place popup directly at cursor tip
+                    DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, Math.Max(8, textView.Bounds.Width - 430));
+                    DiagnosticPopup.VerticalOffset = Math.Clamp(y, 4, Math.Max(4, textView.Bounds.Height - 100));
+                }
+                else
+                {
+                    DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, 300);
+                    DiagnosticPopup.VerticalOffset = Math.Clamp(position.Y, 4, 300);
+                }
+            }
+            catch
+            {
+                DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, 300);
+                DiagnosticPopup.VerticalOffset = Math.Clamp(position.Y, 4, 300);
+            }
             DiagnosticPopup.IsOpen = true;
         }
         else
@@ -225,29 +248,51 @@ public partial class MainWindow
 
     private void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Dismiss the currently shown diagnostic (if any)
-        if (_hoveredDiagnosticMessage is not null && _hoveredDiagnosticLineText is not null)
+        var lineText = _hoveredDiagnosticLineText;
+        var filePath = _currentFilePath;
+        var didDismiss = false;
+
+        // Use raw reasons (without "Error: "/"Dead Code: " prefix) so signatures match FilterDismissed* checks
+        if (lineText is not null)
         {
-            DismissDiagnostic(_currentFilePath, _hoveredDiagnosticLineText, _hoveredDiagnosticMessage);
+            if (_hoveredErrorReason is not null)
+            {
+                DismissDiagnostic(filePath, lineText, _hoveredErrorReason);
+                didDismiss = true;
+            }
+            if (_hoveredDeadCodeReason is not null)
+            {
+                DismissDiagnostic(filePath, lineText, _hoveredDeadCodeReason);
+                didDismiss = true;
+            }
         }
 
-        // If popup text contains combined reasons, also dismiss the separate parts
-        if (DiagnosticPopupText.Text is not null)
+        // Fallback: if hovered reasons were null (e.g., stale), try to parse raw messages from popup text
+        if (!didDismiss && lineText is not null && DiagnosticPopupText.Text is not null)
         {
-            // Split combinedReason which uses "--------------------" separator
             var parts = DiagnosticPopupText.Text.Split(new[] { "--------------------" }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var p in parts)
             {
                 var msg = p.Trim();
-                if (!string.IsNullOrWhiteSpace(msg) && _hoveredDiagnosticLineText is not null)
+                if (string.IsNullOrWhiteSpace(msg)) continue;
+                // Strip "Error: " / "Dead Code: " prefixes for signature match
+                if (msg.StartsWith("Error: ", StringComparison.Ordinal))
+                    msg = msg.Substring("Error: ".Length);
+                else if (msg.StartsWith("Dead Code: ", StringComparison.Ordinal))
+                    msg = msg.Substring("Dead Code: ".Length);
+                if (!string.IsNullOrWhiteSpace(msg))
                 {
-                    DismissDiagnostic(_currentFilePath, _hoveredDiagnosticLineText, msg);
+                    DismissDiagnostic(filePath, lineText, msg);
                 }
             }
         }
 
         DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(EditorTextBox.TextArea.TextView, null);
+
+        // Force immediate unhighlight instead of waiting for debounce timer
+        UpdateErrorHighlighting();
+        UpdateDeadCodeHighlighting();
 
         // Clear all hovered state
         _hoveredDiagnosticLineText = null;
@@ -266,8 +311,20 @@ public partial class MainWindow
 
         try
         {
-            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
-            return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+            // Lenient: check hovered line and ±2 neighbors so cursor near line still counts
+            var doc = EditorTextBox.Document;
+            for (var d = 0; d <= 2; d++)
+            {
+                var candidates = d == 0 ? new[] { pos.Value.Line } : new[] { pos.Value.Line - d, pos.Value.Line + d };
+                foreach (var ln in candidates)
+                {
+                    if (ln < 1 || ln > doc.LineCount) continue;
+                    var line = doc.GetLineByNumber(ln);
+                    var msg = _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+                    if (msg is not null) return msg;
+                }
+            }
+            return null;
         }
         catch
         {
@@ -285,9 +342,32 @@ public partial class MainWindow
 
         try
         {
-            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
-            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length); // Column is 1-based
-            return _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset);
+            // Lenient: ±2 lines, exact column then whole-line fallback
+            var doc = EditorTextBox.Document;
+            for (var d = 0; d <= 2; d++)
+            {
+                var candidates = d == 0 ? new[] { pos.Value.Line } : new[] { pos.Value.Line - d, pos.Value.Line + d };
+                foreach (var ln in candidates)
+                {
+                    if (ln < 1 || ln > doc.LineCount) continue;
+                    var line = doc.GetLineByNumber(ln);
+                    var colOffset = d == 0 ? Math.Clamp(pos.Value.Column - 1, 0, line.Length) : 0;
+                    var reason = d == 0
+                        ? _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset)
+                        : _deadCodeHighlightRenderer.GetReasonAt(line.Offset);
+                    if (reason is null && d != 0)
+                    {
+                        var end = line.Offset + line.Length;
+                        for (var c = line.Offset; c < end; c++)
+                        {
+                            reason = _deadCodeHighlightRenderer.GetReasonAt(c);
+                            if (reason is not null) break;
+                        }
+                    }
+                    if (reason is not null) return reason;
+                }
+            }
+            return null;
         }
         catch
         {

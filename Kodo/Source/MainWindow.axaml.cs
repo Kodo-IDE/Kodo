@@ -114,7 +114,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(260) };
+    private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
@@ -7324,7 +7324,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
         if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
-        // Lenient hover: give 260ms to reach tooltip across the 12px gap before closing
+        // Lenient: 650ms + 14px transparent hit border to comfortably reach tooltip
         _diagnosticPopupHideTimer.Stop();
         _diagnosticPopupHideTimer.Start();
     }
@@ -7341,7 +7341,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _diagnosticPopupHideTimer.Stop();
         var textView = EditorTextBox.TextArea.TextView;
-        if (textView.IsPointerOver || DiagnosticPopup.IsPointerOver || DiagnosticPopupBorder.IsPointerOver) return;
+        if (textView.IsPointerOver || DiagnosticPopup.IsPointerOver || DiagnosticPopupBorder.IsPointerOver || DiagnosticPopupHitBorder.IsPointerOver) return;
         if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
