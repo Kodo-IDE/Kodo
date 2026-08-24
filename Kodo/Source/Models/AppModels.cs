@@ -80,6 +80,10 @@ internal sealed class AppSettings
     public Dictionary<string, string> CustomBuildScripts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public Dictionary<string, string> CustomKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    // Persisted set of dismissed diagnostics: each entry is `message|lineText` or `file|message|line`
+    // Used to implement "decline an error and it will never show again".
+    public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class RecentFileEntry

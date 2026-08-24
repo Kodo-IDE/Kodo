@@ -119,7 +119,22 @@ public partial class MainWindow
         return _isDirty ? "Unsaved" : null;
     }
 
-    // Show link or diagnostic tooltip on hover
+    private string? _hoveredDiagnosticLineText;
+    private string? _hoveredDiagnosticMessage;
+
+    private void HideDiagnosticPopup()
+    {
+        if (DiagnosticPopup.IsOpen)
+            DiagnosticPopup.IsOpen = false;
+        // Keep hovered diagnostics until next PointerMoved so X click can still dismiss,
+        // but hide visually on any interaction (scroll / type / caret move).
+        // Caller that wants a full reset should clear hovered fields explicitly.
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (textView is not null)
+            ToolTip.SetTip(textView, null);
+    }
+
+    // Show link or diagnostic popup on hover (with X to dismiss)
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         var textView = EditorTextBox.TextArea.TextView;
@@ -128,38 +143,113 @@ public partial class MainWindow
         var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
 
-        string? tooltipText = (errorReason, deadCodeReason) switch
-        {
-            (null, null)     => null,
-            (_, null)        => errorReason,
-            (null, _)        => $"{deadCodeReason}",
-            _                => $"{errorReason}{Environment.NewLine}--------------------{Environment.NewLine}{deadCodeReason}",
-        };
+        // Build a clean, formatted diagnostic message
+        string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason);
+        string? primaryReason = errorReason ?? deadCodeReason;
 
-        if (nowOverLink == _isPointerOverEditorLink && deadCodeReason == _hoveredDeadCodeReason && errorReason == _hoveredErrorReason)
-            return; // no state change - leave tooltip and cursor alone
+        if (nowOverLink == _isPointerOverEditorLink &&
+            (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason))
+            return; // no state change
 
         _isPointerOverEditorLink = nowOverLink;
         _hoveredDeadCodeReason = deadCodeReason;
         _hoveredErrorReason = errorReason;
 
+        // Determine the line text for persistence
+        _hoveredDiagnosticLineText = nowOverLink ? null : GetLineTextAt(position);
+        _hoveredDiagnosticMessage = diagnosticMessage;
+
         if (nowOverLink)
         {
+            DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, "Ctrl+click to open link");
             ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Hand);
         }
-        else if (tooltipText is not null)
+        else if (diagnosticMessage is not null)
         {
-            ToolTip.SetTip(textView, tooltipText);
-            ToolTip.SetShowDelay(textView, 400);
-            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+            ToolTip.SetTip(textView, null);
+            DiagnosticPopupText.Text = diagnosticMessage;
+            DiagnosticPopup.PlacementTarget = textView;
+            DiagnosticPopup.IsOpen = true;
         }
         else
         {
+            DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
-            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
+    }
+
+    /// <summary>
+    /// Builds a clean, formatted diagnostic message combining error and dead code reasons.
+    /// Format: "[Error/Dead Code] <message>" or combined when both present.
+    /// </summary>
+    private static string? BuildDiagnosticMessage(string? errorReason, string? deadCodeReason)
+    {
+        if (errorReason is null && deadCodeReason is null) return null;
+
+        var parts = new List<string>();
+        if (errorReason is not null) parts.Add($"Error: {errorReason}");
+        if (deadCodeReason is not null) parts.Add($"Dead Code: {deadCodeReason}");
+
+        return parts.Count switch
+        {
+            1 => parts[0],
+            2 => $"{parts[0]}{Environment.NewLine}--------------------{Environment.NewLine}{parts[1]}",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Gets the line text at the pointer position for diagnostic persistence.
+    /// </summary>
+    private string? GetLineTextAt(Point position)
+    {
+        try
+        {
+            var textView = EditorTextBox.TextArea.TextView;
+            var pos = textView.GetPositionFloor(position + textView.ScrollOffset);
+            if (pos is null) return null;
+            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
+            return EditorTextBox.Document.GetText(line.Offset, line.Length);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
+    {
+        // Dismiss the currently shown diagnostic (if any)
+        if (_hoveredDiagnosticMessage is not null && _hoveredDiagnosticLineText is not null)
+        {
+            DismissDiagnostic(_currentFilePath, _hoveredDiagnosticLineText, _hoveredDiagnosticMessage);
+        }
+
+        // If popup text contains combined reasons, also dismiss the separate parts
+        if (DiagnosticPopupText.Text is not null)
+        {
+            // Split combinedReason which uses "--------------------" separator
+            var parts = DiagnosticPopupText.Text.Split(new[] { "--------------------" }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var p in parts)
+            {
+                var msg = p.Trim();
+                if (!string.IsNullOrWhiteSpace(msg) && _hoveredDiagnosticLineText is not null)
+                {
+                    DismissDiagnostic(_currentFilePath, _hoveredDiagnosticLineText, msg);
+                }
+            }
+        }
+
+        DiagnosticPopup.IsOpen = false;
+        ToolTip.SetTip(EditorTextBox.TextArea.TextView, null);
+
+        // Clear all hovered state
+        _hoveredDiagnosticLineText = null;
+        _hoveredDiagnosticMessage = null;
+        _hoveredDeadCodeReason = null;
+        _hoveredErrorReason = null;
     }
 
     private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
@@ -205,6 +295,7 @@ public partial class MainWindow
     // Mark dirty, queue saves and Insight
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
+        HideDiagnosticPopup();
         _rainbowBracketColorizer.InvalidateCache();
         _markdownColorizer.InvalidateCache();
         _htmlEmbeddedColorizer.InvalidateCache();
@@ -382,15 +473,38 @@ public partial class MainWindow
             IsInsightBlacklisted(_currentFilePath))
         {
             ClearDeadCodeHighlighting();
+            HideDiagnosticPopup();
             return;
         }
 
-        var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        var rawSpans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension, _currentFolderPath, _currentFilePath);
+        var spans = FilterDismissedDeadCodeSpans(rawSpans, EditorTextBox.Document, _currentFilePath);
         _deadCodeHighlightRenderer.SetSpans(spans);
         _deadCodeTextBrightener.SetSpans(spans);
         _errorHighlightRenderer.SetDeadCodeSpans(spans);
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, spans);
+        if (spans.Count != rawSpans.Count)
+            HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.Redraw();
+    }
+
+    private List<InsightEngine.DeadCodeSpan> FilterDismissedDeadCodeSpans(List<InsightEngine.DeadCodeSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
+    {
+        if (_dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
+        var filtered = new List<InsightEngine.DeadCodeSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            try
+            {
+                var line = doc.GetLineByOffset(Math.Clamp(span.StartOffset, 0, doc.TextLength));
+                var lineText = doc.GetText(line.Offset, line.Length);
+                if (IsDiagnosticDismissed(filePath, lineText, span.Reason))
+                    continue;
+            }
+            catch { }
+            filtered.Add(span);
+        }
+        return filtered;
     }
 
     // Build themed completion popup
@@ -458,6 +572,10 @@ public partial class MainWindow
     // Handle smart keys and search shortcuts
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Any editor interaction should hide the diagnostic popup - don't require X click
+        if (DiagnosticPopup.IsOpen && IsEditorKeyEvent(e))
+            HideDiagnosticPopup();
+
         if (_completionWindow is not null && e.Key == Key.Tab)
         {
             var firstSuggestion = _completionWindow.CompletionList.CompletionData

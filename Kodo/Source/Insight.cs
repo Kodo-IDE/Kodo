@@ -295,6 +295,289 @@ public sealed class InsightEngine
         return new string(chars);
     }
 
+    // Build a version of the document where every character that lives inside a
+    // line comment, block comment or string literal is replaced with a space
+    // (newlines preserved). Delimiters themselves are kept for strings so that
+    // `x = "hi"` does not look like an empty assignment, while comment markers
+    // themselves are blanked. This is the single source of truth for "ignore
+    // anything inside comments" for all error/dead-code checks.
+    private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
+    {
+        if (string.IsNullOrEmpty(documentText))
+            return documentText;
+
+        var commentLine = extension?.CommentLine is { Length: > 0 } cl ? cl : "//";
+        var blockStart = extension?.CommentBlockStart is { Length: > 0 } bs ? bs : "/*";
+        var blockEnd = extension?.CommentBlockEnd is { Length: > 0 } be ? be : "*/";
+        var multiDelims = extension?.MultiLineStringDelimiters is { Length: > 0 } mls ? mls : Array.Empty<string>();
+        var disableSingle = extension?.DisableSingleQuoteStrings ?? false;
+
+        var chars = documentText.ToCharArray();
+        var masked = new char[chars.Length];
+        for (var i = 0; i < chars.Length; i++) masked[i] = chars[i];
+
+        var inLineComment = false;
+        var inBlockComment = false;
+        var inString = false;
+        var inMulti = false;
+        char delim = '\0';
+        var isInterpolated = false;
+        var inInterpolationCode = false;
+        var interpolationDepth = 0;
+
+        for (var i = 0; i < chars.Length; i++)
+        {
+            var c = chars[i];
+
+            if (inLineComment)
+            {
+                if (c == '\n')
+                {
+                    inLineComment = false;
+                }
+                else if (c != '\r')
+                {
+                    masked[i] = ' ';
+                }
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (MatchesAt(documentText, i, blockEnd))
+                {
+                    for (var k = 0; k < blockEnd.Length && i + k < chars.Length; k++)
+                        if (masked[i + k] != '\n' && masked[i + k] != '\r')
+                            masked[i + k] = ' ';
+                    inBlockComment = false;
+                    i += blockEnd.Length - 1;
+                }
+                else
+                {
+                    if (c != '\n' && c != '\r')
+                        masked[i] = ' ';
+                }
+                continue;
+            }
+
+            if (inString)
+            {
+                // Interpolated string: code inside { } is real code, not string
+                if (isInterpolated)
+                {
+                    if (inInterpolationCode)
+                    {
+                        if (c == '{' && i + 1 < chars.Length && chars[i + 1] == '{')
+                        {
+                            masked[i] = ' ';
+                            masked[i + 1] = ' ';
+                            i++;
+                            continue;
+                        }
+                        if (c == '}' && i + 1 < chars.Length && chars[i + 1] == '}')
+                        {
+                            masked[i] = ' ';
+                            masked[i + 1] = ' ';
+                            i++;
+                            continue;
+                        }
+                        if (c == '{')
+                        {
+                            interpolationDepth++;
+                            continue;
+                        }
+                        if (c == '}')
+                        {
+                            interpolationDepth--;
+                            if (interpolationDepth <= 0)
+                            {
+                                inInterpolationCode = false;
+                                interpolationDepth = 0;
+                            }
+                            continue;
+                        }
+                        // Inside interpolation code: keep as-is (do not mask) so variables like `ext` in $"{ext}" are counted
+                        // Handle strings inside interpolation code (e.g., $"{x} \"hi\"")
+                        if (c == '"' && !inMulti)
+                        {
+                            // nested string inside interpolation - treat as start of string inside code?
+                            // For simplicity, keep and continue; will be handled as not masked
+                            continue;
+                        }
+                        continue;
+                    }
+                    else
+                    {
+                        if (c == '{' && i + 1 < chars.Length && chars[i + 1] == '{')
+                        {
+                            masked[i] = ' ';
+                            masked[i + 1] = ' ';
+                            i++;
+                            continue;
+                        }
+                        if (c == '}' && i + 1 < chars.Length && chars[i + 1] == '}')
+                        {
+                            masked[i] = ' ';
+                            masked[i + 1] = ' ';
+                            i++;
+                            continue;
+                        }
+                        if (c == '{')
+                        {
+                            inInterpolationCode = true;
+                            interpolationDepth = 1;
+                            continue;
+                        }
+                    }
+                }
+
+                if (c == '\\' && !inMulti && !isInterpolated)
+                {
+                    // escaped char - blank both (verbatim interpolated uses "" not \ )
+                    masked[i] = ' ';
+                    if (i + 1 < chars.Length && chars[i + 1] != '\n' && chars[i + 1] != '\r')
+                    {
+                        masked[i + 1] = ' ';
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (c == '\n' && !inMulti)
+                {
+                    // unterminated single-line string - treat newline as terminator for masking
+                    inString = false;
+                    inMulti = false;
+                    isInterpolated = false;
+                    inInterpolationCode = false;
+                    continue;
+                }
+
+                string? closing = null;
+                if (inMulti)
+                    closing = multiDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
+                else if (delim != '\0' && MatchesAt(documentText, i, delim.ToString()))
+                    closing = delim.ToString();
+
+                if (closing is not null)
+                {
+                    // keep closing delimiters as-is (so `x = "a"` still has quotes)
+                    inString = false;
+                    inMulti = false;
+                    isInterpolated = false;
+                    inInterpolationCode = false;
+                    i += closing.Length - 1;
+                    continue;
+                }
+
+                if (c != '\n' && c != '\r')
+                    masked[i] = ' ';
+                continue;
+            }
+
+            // not inside anything - check for comment/string starts
+            if (MatchesAt(documentText, i, commentLine))
+            {
+                for (var k = 0; k < commentLine.Length && i + k < chars.Length; k++)
+                    if (masked[i + k] != '\n' && masked[i + k] != '\r')
+                        masked[i + k] = ' ';
+                inLineComment = true;
+                i += commentLine.Length - 1;
+                continue;
+            }
+
+            if (MatchesAt(documentText, i, blockStart))
+            {
+                for (var k = 0; k < blockStart.Length && i + k < chars.Length; k++)
+                    if (masked[i + k] != '\n' && masked[i + k] != '\r')
+                        masked[i + k] = ' ';
+                inBlockComment = true;
+                i += blockStart.Length - 1;
+                continue;
+            }
+
+            var multi = multiDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
+            if (multi is not null)
+            {
+                inString = true;
+                inMulti = true;
+                isInterpolated = false;
+                // check if this multi-line delimiter is interpolated (e.g., $""" )
+                if (i > 0 && chars[i - 1] == '$')
+                    isInterpolated = true;
+                else if (i > 1 && chars[i - 2] == '$' && chars[i - 1] == '@')
+                    isInterpolated = true;
+                // keep opening delimiter
+                i += multi.Length - 1;
+                continue;
+            }
+
+            if (c == '"' || (c == '\'' && !disableSingle))
+            {
+                // check for interpolated prefix: $", $@", @$"
+                var interpolated = false;
+                if (i > 0 && chars[i - 1] == '$')
+                    interpolated = true;
+                else if (i > 1 && ((chars[i - 2] == '$' && chars[i - 1] == '@') || (chars[i - 2] == '@' && chars[i - 1] == '$')))
+                    interpolated = true;
+
+                inString = true;
+                inMulti = false;
+                delim = c;
+                isInterpolated = interpolated;
+                inInterpolationCode = false;
+                interpolationDepth = 0;
+                // keep opening delimiter
+                continue;
+            }
+        }
+
+        return new string(masked);
+    }
+
+    private static string? BuildFolderMaskedText(string folderPath, string currentFilePath, LoadedExtension? ext)
+    {
+        try
+        {
+            var currentExt = System.IO.Path.GetExtension(currentFilePath);
+            var files = System.IO.Directory.EnumerateFiles(folderPath, "*", System.IO.SearchOption.AllDirectories)
+                .Where(f => !f.Equals(currentFilePath, StringComparison.OrdinalIgnoreCase))
+                .Where(f => string.IsNullOrWhiteSpace(currentExt) || System.IO.Path.GetExtension(f).Equals(currentExt, StringComparison.OrdinalIgnoreCase))
+                .Where(f =>
+                {
+                    var lower = f.ToLowerInvariant();
+                    return !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}.git{System.IO.Path.DirectorySeparatorChar}") &&
+                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}bin{System.IO.Path.DirectorySeparatorChar}") &&
+                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}") &&
+                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}node_modules{System.IO.Path.DirectorySeparatorChar}") &&
+                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}.vs{System.IO.Path.DirectorySeparatorChar}");
+                })
+                .Take(400);
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var f in files)
+            {
+                try
+                {
+                    var info = new System.IO.FileInfo(f);
+                    if (info.Length > 1_500_000) continue;
+                    // quick binary check - skip files with NUL bytes
+                    var text = System.IO.File.ReadAllText(f);
+                    if (text.IndexOf('\0') >= 0) continue;
+                    var masked = BuildMaskedDocument(text, ext);
+                    sb.AppendLine(masked);
+                }
+                catch { }
+            }
+
+            return sb.Length > 0 ? sb.ToString() : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // Find variable names declared on line
     public static IEnumerable<string> IdentifyVariableInitializations(string lineText)
     {
@@ -404,7 +687,10 @@ public sealed class InsightEngine
     }
 
     // Find unused vars, funcs, unreachable code
-    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null)
+    // When a folder is open, `folderPath` + `currentFilePath` enable cross-file
+    // usage checks so a variable used in another file in the same folder is not
+    // flagged as dead. `folderPath` comes from MainWindow._currentFolderPath.
+    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null)
     {
         var spans = new List<DeadCodeSpan>();
         if (string.IsNullOrEmpty(documentText))
@@ -426,23 +712,72 @@ public sealed class InsightEngine
             offset += lines[i].Length + 1; // +1 accounts for the '\n' consumed by Split.
         }
 
-        var masked = new string[lines.Length];
+        // Any code inside comments or string literals must be invisible to dead-code
+        // analysis - see BuildMaskedDocument. This replaces the old per-line
+        // TrailingLineComment + MaskStringLiterals logic which missed block comments
+        // and language-specific line comments.
+        var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
+        var masked = maskedDoc.Split('\n');
+
+        // Folder-wide usage: when a folder is open, a symbol used in any other file
+        // in that folder is not dead. Build a single masked blob for the rest of the
+        // folder (excluding the current file) so CountWholeWord can include it.
+        string? folderMaskedText = null;
+        if (!string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(currentFilePath) && System.IO.Directory.Exists(folderPath))
+            folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
+
+        int CountWholeWord(string name)
+        {
+            var count = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
+            if (folderMaskedText is not null)
+                count += Regex.Matches(folderMaskedText, $@"\b{Regex.Escape(name)}\b").Count;
+            return count;
+        }
+
+        int CountCallSites(string name)
+        {
+            var count = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\s*\(").Count;
+            if (folderMaskedText is not null)
+                count += Regex.Matches(folderMaskedText, $@"\b{Regex.Escape(name)}\s*\(").Count;
+            return count;
+        }
+
+        // Depth for property-vs-variable distinction: properties like `Child =` or
+        // `FileName =` inside `new Foo { ... }` are at depth >0 and start with
+        // uppercase. They are not variables and must not be flagged as "Unused variable".
+        var depthAtLine = new int[lines.Length];
+        var curDepthForVar = 0;
         for (var i = 0; i < lines.Length; i++)
         {
-            var isBatchSetLine = BatchSetDeclaration.IsMatch(lines[i].TrimStart());
-            masked[i] = TrailingLineComment.Replace(isBatchSetLine ? lines[i] : MaskStringLiterals(lines[i]), string.Empty);
+            depthAtLine[i] = curDepthForVar;
+            curDepthForVar += CountChar(masked[i], '{') - CountChar(masked[i], '}');
         }
-        var maskedDoc = string.Join("\n", masked);
-
-        int CountWholeWord(string name) => Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
 
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < lines.Length; i++)
         {
-            foreach (var name in IdentifyVariableInitializations(lines[i]))
+            // Use the comment-masked line so variables declared inside
+            // `//`, `#`, `/* */` etc are never considered.
+            foreach (var name in IdentifyVariableInitializations(masked[i]))
             {
                 if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
                 if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
+
+                // Skip PascalCase property assignments inside object initializers:
+                // `Child = new TextBlock`, `FileName = updaterPath,` etc. are not variables.
+                var trimmedForProp = masked[i].Trim();
+                if (depthAtLine[i] > 0 && trimmedForProp.Length > 0 && char.IsUpper(trimmedForProp[0]) &&
+                    trimmedForProp.Contains("="))
+                {
+                    // If it looks like `Prop =` and is inside a brace block, treat as property
+                    // Also check that the line is not a variable declaration with `var`/`Type`
+                    var isVarDecl = trimmedForProp.StartsWith("var ", StringComparison.Ordinal) ||
+                                    trimmedForProp.StartsWith("let ", StringComparison.Ordinal) ||
+                                    trimmedForProp.StartsWith("const ", StringComparison.Ordinal);
+                    if (!isVarDecl)
+                        continue;
+                }
+
                 if (CountWholeWord(name) <= 1)
                     spans.Add(new DeadCodeSpan(lineStart[i], ContentLength(lines[i]), "Unused variable"));
             }
@@ -469,7 +804,7 @@ public sealed class InsightEngine
             if (entryPoints is not null && entryPoints.Contains(name)) continue;
             if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
-            var callSites = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\s*\(").Count;
+            var callSites = CountCallSites(name);
             if (callSites > 1) continue;
 
             var endLine = i;
@@ -493,6 +828,8 @@ public sealed class InsightEngine
         for (var i = 0; i < lines.Length; i++)
         {
             if (!BlockTerminatorStatement.IsMatch(masked[i]))
+                continue;
+            if (IsConditionalTerminator(masked, i))
                 continue;
 
             var depth = 0;
@@ -553,13 +890,121 @@ public sealed class InsightEngine
         RegexOptions.Compiled);
 
     private static readonly Regex StatementSafeLineEnd = new(
-        @"[;{}:,\\+\-*/%&|^~<>=!\[(]$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
+        @"[;{}:,\\+\-*/%&|^~<>=!\[(]\s*$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
         RegexOptions.Compiled);
 
     // Preprocessor / attribute / label lines that never take a trailing ';'.
     private static readonly Regex StatementExemptLine = new(
         @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
         RegexOptions.Compiled);
+
+    // Headers that legitimately end without ';' - type/method declarations and
+    // control-flow blocks like if/else/try/catch. Used to suppress the "Missing ';'"
+    // false positives seen for `public partial class App : Application` and
+    // `public override void Initialize()` etc.
+    private static readonly Regex NoSemicolonControlHeader = new(
+        @"^\s*(?:if|else|else\s+if|for|foreach|while|do|try|catch|finally|using|lock|switch|case|default)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex NoSemicolonTypeHeader = new(
+        @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly|const|volatile|new)\s+)*(?:class|struct|interface|enum|record|namespace|void)\b",
+        RegexOptions.Compiled);
+
+    // Method declaration like `public override void Initialize()` or `private static int Foo<T>(int x)`
+    private static readonly Regex NoSemicolonMethodHeader = new(
+        @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly)\s+)*(?:\w+(?:<[^>]+>)?\s+)+\w+\s*\(.*\)\s*$",
+        RegexOptions.Compiled);
+
+    private static string? GetNextNonEmptyLine(string[] maskedLines, int lineIndex)
+    {
+        for (var j = lineIndex + 1; j < maskedLines.Length; j++)
+        {
+            var next = maskedLines[j].Trim();
+            if (next.Length == 0) continue;
+            return next;
+        }
+        return null;
+    }
+
+    private static bool IsNoSemicolonNeeded(string trimmedEnd, string trimmedNoIndent, int lineIndex, string[] maskedLines)
+    {
+        // Continuation lines starting with `?`, `:`, `.`, `+`, `,` are part of a
+        // multi-line expression (ternary, member access, concatenation) - never
+        // require a `;` on their own.
+        if (trimmedNoIndent.StartsWith("?") || trimmedNoIndent.StartsWith(":") ||
+            trimmedNoIndent.StartsWith(".") || trimmedNoIndent.StartsWith("+") ||
+            trimmedNoIndent.StartsWith(","))
+            return true;
+
+        if (NoSemicolonControlHeader.IsMatch(trimmedNoIndent) || NoSemicolonTypeHeader.IsMatch(trimmedNoIndent))
+            return true;
+        if (NoSemicolonMethodHeader.IsMatch(trimmedEnd))
+            return true;
+
+        var next = GetNextNonEmptyLine(maskedLines, lineIndex);
+        if (next is not null)
+        {
+            // `var x = new TextBlock` + `{`  or `Child = new TextBlock` + `{`  or `Children =` + `{`
+            if (next.StartsWith("{") && trimmedEnd.Contains("= new"))
+                return true;
+            if (next.StartsWith("{") && trimmedEnd.TrimEnd().EndsWith("=", StringComparison.Ordinal))
+                return true;
+            // Generic initializer header: `var titleText = new TextBlock` without `;` followed by `{`
+            if (next.StartsWith("{") && trimmedEnd.Contains("=") && !trimmedEnd.Contains(";") && trimmedEnd.Contains("new"))
+                return true;
+            // Ternary continuation: `Text = isTerminating` + `? "..."` or `? "..."` + `:`
+            if ((next.StartsWith("?") || next.StartsWith(":") || next.StartsWith(".")) && trimmedEnd.Contains("="))
+                return true;
+            // Chained call / concatenation: `Uri.EscapeDataString(...)` + `.Replace` or `+`
+            if ((next.StartsWith(".") || next.StartsWith("+")) && !trimmedEnd.EndsWith(";", StringComparison.Ordinal) && !trimmedEnd.EndsWith("{", StringComparison.Ordinal))
+                return true;
+            // Header like `public partial class App : Application` + `{`
+            if (next.StartsWith("{") && (trimmedNoIndent.Contains("class") || trimmedNoIndent.Contains("struct") ||
+                trimmedNoIndent.Contains("interface") || trimmedNoIndent.Contains("enum") ||
+                trimmedNoIndent.Contains("record") || trimmedNoIndent.Contains("namespace")))
+                return true;
+            // Control header with `)` + `{` like `if (x)` + `{` or `void Foo()` + `{`
+            if (trimmedEnd.EndsWith(")", StringComparison.Ordinal) && next.StartsWith("{"))
+                return true;
+            // Fallback: any `class`/`struct` etc without `=`/`;` before `{`
+            if (next.StartsWith("{") && !trimmedEnd.Contains("=") && !trimmedEnd.Contains(";"))
+                return true;
+            // Multi-line expression: current line is `? "..."` and next is `:`
+            if (trimmedNoIndent.StartsWith("?") && next.StartsWith(":"))
+                return true;
+            if (trimmedNoIndent.StartsWith(":") && (next.StartsWith(",") || next.StartsWith("}")))
+                return true;
+        }
+
+        // Line itself ends with `=` (e.g. `Children =`) – continuation, not missing `;`
+        if (trimmedEnd.EndsWith("=", StringComparison.Ordinal))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsConditionalTerminator(string[] masked, int terminatorIndex)
+    {
+        var line = masked[terminatorIndex].Trim();
+        // `if (cond) return;` or `if (cond) throw;` on one line - next line is else-branch, not unreachable
+        if (Regex.IsMatch(line, @"\bif\s*\(.*\)\s*(?:return|throw|break|continue)\b"))
+            return true;
+        if (Regex.IsMatch(line, @"\belse\b.*\b(?:return|throw|break|continue)\b"))
+            return true;
+        // `if (cond)` on previous line and `return;` on this line without `{`
+        for (var k = terminatorIndex - 1; k >= 0; k--)
+        {
+            var prev = masked[k].Trim();
+            if (prev.Length == 0) continue;
+            if (Regex.IsMatch(prev, @"\bif\s*\(.*\)\s*$") || Regex.IsMatch(prev, @"\belse\b\s*$"))
+            {
+                if (Regex.IsMatch(line, @"^\s*(?:return|throw|break|continue)\b") && !prev.Contains("{"))
+                    return true;
+            }
+            break;
+        }
+        return false;
+    }
 
     private static readonly Regex EmptyAssignment = new(
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
@@ -702,9 +1147,12 @@ public sealed class InsightEngine
             offsetAcc += lines[i].Length + 1;
         }
 
-        var masked = new string[lines.Length];
-        for (var i = 0; i < lines.Length; i++)
-            masked[i] = TrailingLineComment.Replace(MaskStringLiterals(lines[i]), string.Empty);
+        // Mask everything inside comments/strings so that missing-semicolon,
+        // missing-colon, empty-assignment and typo checks never fire inside
+        // `//`, `#`, `/* */` etc. Replaces the old TrailingLineComment logic
+        // which only handled `//`/`#` trailing comments.
+        var maskedDocForLines = BuildMaskedDocument(documentText, languageExtension);
+        var masked = maskedDocForLines.Split('\n');
 
         var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
         var looksSemicolonStyle = semicolonLines >= 3;
@@ -714,14 +1162,30 @@ public sealed class InsightEngine
             ? new HashSet<string>(kw, StringComparer.Ordinal)
             : null;
 
+        // Collect variable names declared in this file (masked, so comments/strings ignored)
+        // so we don't flag `batch` as a typo of `catch` when `batch` is a real variable.
+        var variableNamesInFile = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ml in masked)
+        {
+            foreach (var v in IdentifyVariableInitializations(ml))
+                variableNamesInFile.Add(v);
+        }
+        // Also collect simple assignments like `batch.Add` is not a declaration, but
+        // `var batch =` is. To also capture `batch` when it's a field like
+        // `private List<X> batch;`, we scan for word boundaries in declarations.
+        // For now, also add any word that appears as `word.` or `word(` at start of line
+        // as a potential variable to avoid false typo flagging.
+
         for (var i = 0; i < lines.Length; i++)
         {
             var line = masked[i];
             var trimmed = line.TrimEnd('\r');
-            var trimmedNoIndent = trimmed.TrimStart();
+            var trimmedEnd = trimmed.TrimEnd();
+            var trimmedNoIndent = trimmedEnd.TrimStart();
 
             if (looksSemicolonStyle && trimmedNoIndent.Length > 0 &&
-                !StatementSafeLineEnd.IsMatch(trimmed) && !StatementExemptLine.IsMatch(trimmedNoIndent))
+                !StatementSafeLineEnd.IsMatch(trimmedEnd) && !StatementExemptLine.IsMatch(trimmedNoIndent) &&
+                !IsNoSemicolonNeeded(trimmedEnd, trimmedNoIndent, i, masked))
             {
                 var contentLen = ContentLength(lines[i]);
                 if (contentLen > 0)
@@ -742,11 +1206,24 @@ public sealed class InsightEngine
                 !ReservedWords.Contains(emptyAssignMatch.Groups[1].Value) &&
                 !BatchSetDeclaration.IsMatch(trimmedNoIndent))
             {
-                var contentLen = ContentLength(lines[i]);
-                if (contentLen > 0)
-                    spans.Add(new ErrorSpan(
-                        lineStart[i], contentLen,
-                        $"'{emptyAssignMatch.Groups[1].Value}' declares nothing, expected a value after '='"));
+                // `Children =` with value on next line (`{` / `?` / `new` / `"` etc.) is a
+                // multi-line initializer, not an empty assignment like `x =`
+                var nextForEmpty = GetNextNonEmptyLine(masked, i);
+                if (nextForEmpty is not null &&
+                    (nextForEmpty.StartsWith("{") || nextForEmpty.StartsWith("?") || nextForEmpty.StartsWith(":") ||
+                     nextForEmpty.StartsWith("\"") || nextForEmpty.StartsWith("'") || nextForEmpty.StartsWith("new", StringComparison.Ordinal) ||
+                     nextForEmpty.StartsWith("(") || nextForEmpty.StartsWith("[")))
+                {
+                    // do not flag
+                }
+                else
+                {
+                    var contentLen = ContentLength(lines[i]);
+                    if (contentLen > 0)
+                        spans.Add(new ErrorSpan(
+                            lineStart[i], contentLen,
+                            $"'{emptyAssignMatch.Groups[1].Value}' declares nothing, expected a value after '='"));
+                }
             }
 
             if (knownKeywords is not null)
@@ -755,16 +1232,27 @@ public sealed class InsightEngine
                 if (wordMatch.Success)
                 {
                     var word = wordMatch.Groups[1].Value;
-                    if (word.Length >= 3 && !knownKeywords.Contains(word))
+                    if (word.Length >= 3 && !knownKeywords.Contains(word) && !variableNamesInFile.Contains(word))
                     {
-                        var closest = knownKeywords.FirstOrDefault(k => Math.Abs(k.Length - word.Length) <= 1 && LevenshteinDistance(word, k) == 1);
-                        if (closest is not null)
+                        // Don't flag if the word is clearly an identifier usage like `batch.Add` or `batch(`
+                        // or named argument `Props:` – next non-space char after word is `.`/`(`/`:`/`=`
+                        var afterIdx = wordMatch.Index + word.Length;
+                        var afterWord = afterIdx < trimmedNoIndent.Length ? trimmedNoIndent.Substring(afterIdx).TrimStart() : string.Empty;
+                        if (afterWord.StartsWith(".") || afterWord.StartsWith("(") || afterWord.StartsWith(":") || afterWord.StartsWith("="))
                         {
-                            var wordOffsetInLine = trimmed.Length - trimmedNoIndent.Length;
-                            spans.Add(new ErrorSpan(
-                                lineStart[i] + wordOffsetInLine,
-                                word.Length,
-                                $"Possibly misspelled '{word}', did you mean '{closest}'?"));
+                            // likely a variable/method/property, not a misspelled keyword
+                        }
+                        else
+                        {
+                            var closest = knownKeywords.FirstOrDefault(k => Math.Abs(k.Length - word.Length) <= 1 && LevenshteinDistance(word, k) == 1);
+                            if (closest is not null)
+                            {
+                                var wordOffsetInLine = trimmed.Length - trimmedNoIndent.Length;
+                                spans.Add(new ErrorSpan(
+                                    lineStart[i] + wordOffsetInLine,
+                                    word.Length,
+                                    $"Possibly misspelled '{word}', did you mean '{closest}'?"));
+                            }
                         }
                     }
                 }

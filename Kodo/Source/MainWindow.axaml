@@ -1561,26 +1561,62 @@
                         <avaloniaEdit:TextEditor.ContextMenu>
                             <ContextMenu Opening="EditorContextMenu_Opening">
                                 <MenuItem Name="EditorCutMenuItem"
-                                          Header="Cut"
-                                          InputGesture="Ctrl+X"
-                                          Click="EditorCutMenuItem_OnClick" />
+                                           Header="Cut"
+                                           InputGesture="Ctrl+X"
+                                           Click="EditorCutMenuItem_OnClick" />
                                 <MenuItem Name="EditorCopyMenuItem"
-                                          Header="Copy"
-                                          InputGesture="Ctrl+C"
-                                          Click="EditorCopyMenuItem_OnClick" />
+                                           Header="Copy"
+                                           InputGesture="Ctrl+C"
+                                           Click="EditorCopyMenuItem_OnClick" />
                                 <MenuItem Header="Paste"
-                                          InputGesture="Ctrl+V"
-                                          Click="EditorPasteMenuItem_OnClick" />
+                                           InputGesture="Ctrl+V"
+                                           Click="EditorPasteMenuItem_OnClick" />
                                 <Separator />
                                 <MenuItem Name="EditorFindAllOccurrencesMenuItem"
-                                          Header="Find All Occurrences"
-                                          Click="EditorFindAllOccurrencesMenuItem_OnClick" />
+                                           Header="Find All Occurrences"
+                                           Click="EditorFindAllOccurrencesMenuItem_OnClick" />
                                 <MenuItem Name="EditorChangeAllOccurrencesMenuItem"
-                                          Header="Change All Occurrences"
-                                          Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
+                                           Header="Change All Occurrences"
+                                           Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
+                                <Separator />
+                                <MenuItem Name="EditorDismissDiagnosticMenuItem"
+                                           Header="Dismiss Diagnostic"
+                                           Click="EditorDismissDiagnosticMenuItem_OnClick" />
                             </ContextMenu>
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
+                    <Popup x:Name="DiagnosticPopup"
+                            Placement="Pointer"
+                            IsLightDismissEnabled="True"
+                            OverlayDismissEventPassThrough="True"
+                            WindowManagerAddShadowHint="False">
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10,8"
+                                MaxWidth="450">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <TextBlock x:Name="DiagnosticPopupText"
+                                            Foreground="{Binding PrimaryTextBrush}"
+                                            TextWrapping="Wrap"
+                                            VerticalAlignment="Center"
+                                            FontFamily="Consolas" />
+                                <Button Grid.Column="1"
+                                        Content="✕"
+                                        Width="24"
+                                        Height="24"
+                                        Padding="0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        Classes="chrome"
+                                        Click="DiagnosticPopupDismiss_OnClick"
+                                        ToolTip.Tip="Dismiss this diagnostic (never show again)"
+                                        VerticalAlignment="Center"
+                                        HorizontalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </Popup>
                     <Grid IsVisible="{Binding IsImagePreviewVisible}"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
@@ -5002,21 +5038,38 @@
                                           ToolTip.Tip="Master switch for Insight's code suggestions and dead code highlighting"
                                           Content="Enable Insight" />
                                 <StackPanel Spacing="10"
-                                            Margin="24,0,0,0"
-                                            IsVisible="{Binding IsInsightEnabled}">
-                                    <CheckBox IsChecked="{Binding IsInsightCodeSuggestionsEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              ToolTip.Tip="Predictive code completion as you type"
-                                              Content="Code Suggestions" />
-                                    <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code"
-                                              Content="Dead Code" />
-                                    <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords"
-                                              Content="Error Detection" />
-                                </StackPanel>
+                                             Margin="24,0,0,0"
+                                             IsVisible="{Binding IsInsightEnabled}">
+                                     <CheckBox IsChecked="{Binding IsInsightCodeSuggestionsEnabled, Mode=TwoWay}"
+                                                Foreground="{Binding PrimaryTextBrush}"
+                                                ToolTip.Tip="Predictive code completion as you type"
+                                                Content="Code Suggestions" />
+                                     <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
+                                                Foreground="{Binding PrimaryTextBrush}"
+                                                ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code. Experimental, please always double-check if it is correct"
+                                                Content="Dead Code (Experimental)" />
+                                     <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
+                                                Foreground="{Binding PrimaryTextBrush}"
+                                                ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
+                                                Content="Error Detection (Experimental)" />
+                                     <Border Background="#33FFA500"
+                                              BorderBrush="#55FFA500"
+                                              BorderThickness="1"
+                                              CornerRadius="6"
+                                              Padding="10,8"
+                                              IsVisible="{Binding IsInsightEnabled}">
+                                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                             <TextBlock Text="⚠"
+                                                         FontSize="14"
+                                                         VerticalAlignment="Center" />
+                                             <TextBlock FontSize="11"
+                                                         Foreground="{Binding PrimaryTextBrush}"
+                                                         TextWrapping="Wrap"
+                                                         VerticalAlignment="Center"
+                                                         Text="Error Detection and Dead Code are experimental. Please always double-check if they are correct." />
+                                         </StackPanel>
+                                     </Border>
+                                 </StackPanel>
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="12"
                                                Foreground="{Binding MutedTextBrush}"

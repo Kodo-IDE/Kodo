@@ -176,6 +176,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isInsightErrorDetectionEnabled = true;
     private string _insightBlacklistExtensions = ".txt,.md";
     private HashSet<string> _insightBlacklistSet = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
+    private HashSet<string> _dismissedDiagnostics = new(StringComparer.Ordinal);
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
@@ -726,6 +727,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(_colorSwatchGenerator);
         EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
+        EditorTextBox.TextArea.TextView.PointerPressed += (_, _) => HideDiagnosticPopup();
+        EditorTextBox.TextArea.TextView.PointerWheelChanged += (_, _) => HideDiagnosticPopup();
+        EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) => HideDiagnosticPopup(), RoutingStrategies.Bubble);
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
@@ -735,7 +739,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
+        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => { HideDiagnosticPopup(); QueueRefreshState(); };
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
         Activated += (_, _) => QueueInsightRefresh();
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
@@ -763,6 +767,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isInsightErrorDetectionEnabled = settings.InsightErrorDetectionEnabled;
         _insightBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightBlacklistExtensions) ? ".txt,.md" : settings.InsightBlacklistExtensions;
         RebuildInsightBlacklist();
+        _dismissedDiagnostics = new HashSet<string>(settings.DismissedDiagnostics ?? new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
@@ -2970,6 +2975,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return !string.IsNullOrEmpty(ext) && _insightBlacklistSet.Contains(ext);
     }
 
+    private string GetDiagnosticSignature(string? filePath, string lineText, string message) =>
+        $"{filePath ?? string.Empty}|{lineText.Trim()}|{message}";
+
+    public bool IsDiagnosticDismissed(string? filePath, string lineText, string message) =>
+        _dismissedDiagnostics.Contains(GetDiagnosticSignature(filePath, lineText, message));
+
+    public void DismissDiagnostic(string? filePath, string lineText, string message)
+    {
+        var sig = GetDiagnosticSignature(filePath, lineText, message);
+        if (_dismissedDiagnostics.Add(sig))
+        {
+            SaveSettings();
+            QueueInsightRefresh();
+        }
+    }
+
+    public void ClearDismissedDiagnostics()
+    {
+        if (_dismissedDiagnostics.Count == 0) return;
+        _dismissedDiagnostics.Clear();
+        SaveSettings();
+        QueueInsightRefresh();
+    }
+
     public bool IsPSReadLinePredictionEnabled
     {
         get => _isPSReadLinePredictionEnabled;
@@ -4781,6 +4810,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             InsightDeadCodeEnabled                = IsInsightDeadCodeEnabled,
             InsightErrorDetectionEnabled          = IsInsightErrorDetectionEnabled,
             InsightBlacklistExtensions           = InsightBlacklistExtensions,
+            DismissedDiagnostics                 = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
             TabSize                                = TabSize,
             EditorFontSize                         = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
@@ -7137,7 +7167,69 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorFindAllOccurrencesMenuItem" or "EditorChangeAllOccurrencesMenuItem")
                 item.IsEnabled = hasSelection;
+            if (item.Name == "EditorDismissDiagnosticMenuItem")
+            {
+                var diag = GetDiagnosticAtCaret();
+                var hasDiagnostic = diag is not null;
+                item.IsEnabled = hasDiagnostic;
+                item.Header = hasDiagnostic ? $"Dismiss: {diag?.message ?? "Diagnostic"}" : "Dismiss Diagnostic";
+            }
         }
+    }
+
+    private (string? filePath, string lineText, string message, int offset, int length)? GetDiagnosticAtCaret()
+    {
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return null;
+        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var docText = EditorTextBox.Document.Text;
+        var lines = docText.Split('\n');
+        // Check error spans
+        foreach (var err in _errorHighlightRenderer.Spans)
+        {
+            if (caretOffset >= err.StartOffset && caretOffset < err.StartOffset + err.Length)
+            {
+                var lineIdx = docText.Substring(0, err.StartOffset).Count(c => c == '\n');
+                var lineText = lineIdx < lines.Length ? lines[lineIdx] : string.Empty;
+                return (_currentFilePath, lineText, err.Message, err.StartOffset, err.Length);
+            }
+        }
+        foreach (var dead in _deadCodeHighlightRenderer.Spans)
+        {
+            if (caretOffset >= dead.StartOffset && caretOffset < dead.StartOffset + dead.Length)
+            {
+                var lineIdx = docText.Substring(0, dead.StartOffset).Count(c => c == '\n');
+                var lineText = lineIdx < lines.Length ? lines[lineIdx] : string.Empty;
+                return (_currentFilePath, lineText, dead.Reason, dead.StartOffset, dead.Length);
+            }
+        }
+        // Fallback: check if caret line has any diagnostic (even if offset not exactly inside span)
+        var caretLine = EditorTextBox.Document.GetLineByOffset(caretOffset);
+        var caretLineText = EditorTextBox.Document.GetText(caretLine.Offset, caretLine.Length);
+        foreach (var err in _errorHighlightRenderer.Spans)
+        {
+            var errLine = docText.Substring(0, err.StartOffset).Count(c => c == '\n');
+            if (errLine == docText.Substring(0, caretOffset).Count(c => c == '\n'))
+            {
+                return (_currentFilePath, caretLineText, err.Message, err.StartOffset, err.Length);
+            }
+        }
+        foreach (var dead in _deadCodeHighlightRenderer.Spans)
+        {
+            var deadLine = docText.Substring(0, dead.StartOffset).Count(c => c == '\n');
+            if (deadLine == docText.Substring(0, caretOffset).Count(c => c == '\n'))
+            {
+                return (_currentFilePath, caretLineText, dead.Reason, dead.StartOffset, dead.Length);
+            }
+        }
+        return null;
+    }
+
+    private void EditorDismissDiagnosticMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var diag = GetDiagnosticAtCaret();
+        if (diag is null) return;
+        var (filePath, lineText, message, _, _) = diag.Value;
+        DismissDiagnostic(filePath, lineText, message);
     }
 
 
@@ -7232,9 +7324,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
         _hoveredErrorReason = null;
+        _hoveredDiagnosticLineText = null;
+        _hoveredDiagnosticMessage = null;
         var textView = EditorTextBox.TextArea.TextView;
+        DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(textView, null);
-        textView.Cursor = new Cursor(StandardCursorType.Ibeam);
     }
 
 
@@ -7299,15 +7393,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             IsInsightBlacklisted(_currentFilePath))
         {
             ClearErrorHighlighting();
+            HideDiagnosticPopup();
             return;
         }
 
-        var spans = _InsightEngine.FindErrors(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        var rawSpans = _InsightEngine.FindErrors(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        var spans = FilterDismissedErrorSpans(rawSpans, EditorTextBox.Document, _currentFilePath);
         _errorHighlightRenderer.SetSpans(spans);
         _errorHighlightRenderer.SetDeadCodeSpans(_deadCodeHighlightRenderer.Spans);
         _errorTextDarkener.SetSpans(spans, _deadCodeHighlightRenderer.Spans);
+        if (spans.Count != rawSpans.Count)
+            HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
         EditorTextBox.TextArea.TextView.Redraw();
+    }
+
+    private List<InsightEngine.ErrorSpan> FilterDismissedErrorSpans(List<InsightEngine.ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
+    {
+        if (_dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
+        var filtered = new List<InsightEngine.ErrorSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            try
+            {
+                var line = doc.GetLineByOffset(Math.Clamp(span.StartOffset, 0, doc.TextLength));
+                var lineText = doc.GetText(line.Offset, line.Length);
+                if (IsDiagnosticDismissed(filePath, lineText, span.Message))
+                    continue;
+            }
+            catch { }
+            filtered.Add(span);
+        }
+        return filtered;
     }
 
     private void ClearErrorHighlighting()

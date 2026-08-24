@@ -3101,19 +3101,32 @@ public partial class MainWindow
         };
 
         if (compiler.IconImage is not null)
+        {
             icon.Children.Add(new Image { Source = compiler.IconImage, Width = 18, Height = 18, Stretch = Stretch.Uniform });
+            return icon;
+        }
 
-        if (icon.Children.Count == 0)
-            icon.Children.Add(new TextBlock
+        if (!string.IsNullOrWhiteSpace(compiler.SvgData))
+        {
+            try
             {
-                Text = compiler.NameAbbreviation,
-                FontSize = 10,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = Brushes.White,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            });
+                var svg = new Avalonia.Svg.Skia.Svg(new Uri("https://kodo.local/"))
+                {
+                    Source = compiler.SvgData,
+                    Width = 18,
+                    Height = 18,
+                    Stretch = Avalonia.Media.Stretch.Uniform
+                };
+                icon.Children.Add(svg);
+                return icon;
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"BuildCompilerMenuIcon SVG failed for '{compiler.Id}'.", ex);
+            }
+        }
 
+        // No icon loaded yet — return empty placeholder instead of abbreviation
         return icon;
     }
 
