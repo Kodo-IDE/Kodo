@@ -1476,8 +1476,7 @@ public partial class MainWindow
 
             if (located is null)
             {
-                ExtensionsStatusText = $"Couldn't find an uninstaller for {compilerExtension.Name} " +
-                    "in the registry or Program Files; it may already be removed. Forgetting it in Kodo.";
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
                 ForgetLocalCompilerRecord(compilerExtension);
                 return;
             }
@@ -1536,8 +1535,31 @@ public partial class MainWindow
                     "Try Uninstall again, or remove it manually from Program Files.";
             }
         }
+        catch (Exception ex) when (ex is DirectoryNotFoundException || ex is FileNotFoundException || (ex is System.ComponentModel.Win32Exception win32 && win32.NativeErrorCode == 2))
+        {
+            // Folder/exe already gone - treat as cancelled install, clean up the Installed tab.
+            ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+            ForgetLocalCompilerRecord(compilerExtension);
+        }
         catch (Exception ex)
         {
+            // If the install folder is already gone, don't error out - just forget it.
+            var folder = FindCompilerUninstaller(compilerExtension.Name)?.InstallFolder;
+            if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
+            {
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found at {folder}. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ForgetLocalCompilerRecord(compilerExtension);
+                return;
+            }
+            if (ex.Message.Contains("cannot find the file", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("The system cannot find", StringComparison.OrdinalIgnoreCase))
+            {
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ForgetLocalCompilerRecord(compilerExtension);
+                return;
+            }
+
             ExtensionsStatusText = $"Failed to uninstall {compilerExtension.Name}: {ex.Message}";
             await ShowWarningDialogAsync($"Compiler uninstall - {compilerExtension.Name}", ex);
         }
