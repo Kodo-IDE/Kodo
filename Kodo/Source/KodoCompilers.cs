@@ -2062,7 +2062,12 @@ public partial class MainWindow
 
         var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
         if (string.IsNullOrEmpty(ext))
+        {
+            var emptyFolder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(emptyFolder) && TryGetProjectFallbackExtension(emptyFolder, ext, out var emptyFallback))
+                return emptyFallback;
             return null;
+        }
 
         if (_compilerOverrides.TryGetValue(ext, out var overrideId))
         {
@@ -2075,13 +2080,149 @@ public partial class MainWindow
             .Where(c => c.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)))
             .ToList();
         if (candidates.Count == 0)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var fallback))
+                return fallback;
             return null;
+        }
 
         return candidates
             .Select(c => (Compiler: c, Score: ScoreCompilerForExtension(c, ext)))
             .OrderByDescending(x => x.Score)
             .ThenBy(x => candidates.IndexOf(x.Compiler))
             .First().Compiler;
+    }
+
+    private bool TryGetProjectFallbackExtension(string folder, string forExt, out MarketplaceExtension fallback)
+    {
+        fallback = null!;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            return false;
+
+        // .NET: *.csproj, *.fsproj, *.vbproj, *.sln, *.slnx
+        if (HasDotnetProject(folder))
+        {
+            fallback = BuildProjectFallbackExtension(
+                id: "project:dotnet",
+                name: ".NET Project",
+                author: "Project",
+                run: "dotnet run",
+                build: "dotnet build",
+                iconSourceId: "dotnet-sdk",
+                forExt: forExt,
+                folder: folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "Cargo.toml")))
+        {
+            fallback = BuildProjectFallbackExtension("project:cargo", "Cargo Project", "Project", "cargo run", "cargo build", "rust-rustup", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "go.mod")))
+        {
+            fallback = BuildProjectFallbackExtension("project:go", "Go Module", "Project", "go run .", "go build ./...", "go", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "package.json")))
+        {
+            fallback = BuildProjectFallbackExtension("project:node", "Node Project", "Project", "npm start", "npm run build", "nodejs", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "pom.xml")))
+        {
+            fallback = BuildProjectFallbackExtension("project:maven", "Maven Project", "Project", "mvn exec:java", "mvn package", "temurin-jdk", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "build.gradle")) || File.Exists(Path.Combine(folder, "build.gradle.kts")))
+        {
+            fallback = BuildProjectFallbackExtension("project:gradle", "Gradle Project", "Project", "gradle run", "gradle build", "temurin-jdk", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "CMakeLists.txt")))
+        {
+            fallback = BuildProjectFallbackExtension("project:cmake", "CMake Project", "Project", null, "cmake --build build", "llvm-clang", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "Makefile")) || File.Exists(Path.Combine(folder, "makefile")) || File.Exists(Path.Combine(folder, "GNUmakefile")))
+        {
+            fallback = BuildProjectFallbackExtension("project:make", "Make Project", "Project", "make run", "make", "msys2-mingw", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "pyproject.toml")) || File.Exists(Path.Combine(folder, "requirements.txt")) || File.Exists(Path.Combine(folder, "setup.py")) || File.Exists(Path.Combine(folder, "Pipfile")))
+        {
+            fallback = BuildProjectFallbackExtension("project:python", "Python Project", "Project", "python {file}", null, "python", forExt, folder);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool HasDotnetProject(string folder)
+    {
+        try
+        {
+            if (Directory.EnumerateFiles(folder, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.slnx", SearchOption.TopDirectoryOnly).Any()) return true;
+
+            // One level deep (common for src/MyApp.csproj)
+            foreach (var sub in Directory.EnumerateDirectories(folder))
+            {
+                var name = Path.GetFileName(sub);
+                if (name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("packages", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (Directory.EnumerateFiles(sub, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private MarketplaceExtension BuildProjectFallbackExtension(string id, string name, string author, string? run, string? build, string iconSourceId, string forExt, string folder)
+    {
+        var iconUrl = CompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(iconUrl))
+        {
+            // Try manual compilers for icon fallback
+            iconUrl = ManualCompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
+        }
+
+        var ext = new MarketplaceExtension
+        {
+            Id = id,
+            Name = name,
+            Type = "compiler",
+            Author = author,
+            Description = folder,
+            Version = "Project",
+            DownloadUrl = string.Empty,
+            FileName = string.Empty,
+            IconUrl = iconUrl,
+            FileExtensions = string.IsNullOrWhiteSpace(forExt) ? [] : [forExt],
+            LanguageExtensionIds = [],
+            RunCommandTemplate = run,
+            BuildCommandTemplate = build,
+        };
+        ext.SetCompilerInstalledState("Project", DateTime.UtcNow, isUpdateAvailable: false);
+        return ext;
     }
 
     private bool TryGetCustomBuildScript(string ext, out string scriptPath)
@@ -2364,7 +2505,7 @@ public partial class MainWindow
 
             // If this is a Build but we checked custom above and didn't take it, fall through to normal Build template.
             // If this is a Run, ignore any custom Build script and use Run template.
-            var template = ResolveCommandTemplate(compiler, isBuild, ext);
+            var template = ResolveCommandTemplate(compiler!, isBuild, ext);
             if (template is null)
                 return;
 
@@ -2605,6 +2746,30 @@ public partial class MainWindow
                 RefreshRunBuildState();
             };
             menu.Items.Add(item);
+        }
+
+        // Project fallback when no compiler matches but a project file exists (e.g., .csproj in folder)
+        if (!anyAdded)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))
+            {
+                var projItem = new MenuItem
+                {
+                    Header = BuildCompilerMenuHeader(projectFallback.Name),
+                    Icon = BuildCompilerMenuIcon(projectFallback),
+                    IsChecked = ActiveCompilerExtension is { } active && active.Id.Equals(projectFallback.Id, StringComparison.OrdinalIgnoreCase),
+                };
+                ToolTip.SetTip(projItem, projectFallback.Description);
+                projItem.Click += (_, _) =>
+                {
+                    _compilerOverrides.Remove(ext);
+                    SaveSettings();
+                    RefreshRunBuildState();
+                };
+                menu.Items.Add(projItem);
+                anyAdded = true;
+            }
         }
 
         if (!anyAdded)
