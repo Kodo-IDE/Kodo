@@ -6015,14 +6015,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Shift+Enter / Shift+F3", "Previous search match (in terminal)"),
         };
 
-        // Header
+        // Polished header — accent badge + title, hint underneath, divider
+        var iconBadge = new Border
+        {
+            Background        = AccentBrush,
+            CornerRadius      = new CornerRadius(8),
+            Width             = 36,
+            Height            = 36,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text                = "⌨",
+                FontSize            = 16,
+                Foreground          = AccentForegroundBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center,
+                Margin              = new Thickness(0, -1, 0, 0),
+            },
+        };
+
         var titleText = new TextBlock
         {
-            Text         = "Keyboard Shortcuts",
-            FontSize     = 16,
-            FontWeight   = FontWeight.SemiBold,
-            Foreground   = PrimaryTextBrush,
-            TextWrapping = TextWrapping.Wrap,
+            Text              = "Keyboard Shortcuts",
+            FontSize          = 17,
+            FontWeight        = FontWeight.SemiBold,
+            Foreground        = PrimaryTextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        var headerRow = new StackPanel
+        {
+            Orientation       = Orientation.Horizontal,
+            Spacing           = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children          = { iconBadge, titleText },
         };
 
         var hintText = new TextBlock
@@ -6031,24 +6057,70 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             FontSize     = 12,
             Foreground   = MutedTextBrush,
             TextWrapping = TextWrapping.Wrap,
+            Opacity      = 0.92,
         };
 
-        var editableHeader = new TextBlock
+        var headerDivider = new Border
         {
-            Text       = "Editable",
-            FontSize   = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = MutedTextBrush,
-            Margin     = new Thickness(0, 4, 0, 0),
+            Height     = 1,
+            Background = SurfaceBorderBrush,
+            Opacity    = 0.9,
+            Margin     = new Thickness(0, 2),
         };
 
-        var otherHeader = new TextBlock
+        var editableHeader = new StackPanel
         {
-            Text       = "Other",
-            FontSize   = 12,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = MutedTextBrush,
-            Margin     = new Thickness(0, 4, 0, 0),
+            Orientation = Orientation.Horizontal,
+            Spacing     = 8,
+            Margin      = new Thickness(0, 0, 0, 2),
+            Children =
+            {
+                new Border
+                {
+                    Width             = 3,
+                    Height            = 14,
+                    Background        = AccentBrush,
+                    CornerRadius      = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+                new TextBlock
+                {
+                    Text              = "Editable",
+                    FontSize          = 11,
+                    FontWeight        = FontWeight.SemiBold,
+                    Foreground        = MutedTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    LetterSpacing     = 0.3,
+                },
+            },
+        };
+
+        var otherHeader = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing     = 8,
+            Margin      = new Thickness(0, 8, 0, 2),
+            Children =
+            {
+                new Border
+                {
+                    Width             = 3,
+                    Height            = 14,
+                    Background        = AccentBrush,
+                    CornerRadius      = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Opacity           = 0.55,
+                },
+                new TextBlock
+                {
+                    Text              = "Other",
+                    FontSize          = 11,
+                    FontWeight        = FontWeight.SemiBold,
+                    Foreground        = MutedTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    LetterSpacing     = 0.3,
+                },
+            },
         };
 
         // Editable (rebindable) grid - one row per KeybindDefinition
@@ -6074,9 +6146,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Background      = CardBrush,
                 BorderBrush     = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(5),
-                Padding         = new Thickness(8, 3),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(8, 4),
                 Margin          = new Thickness(0, 0, 0, 6),
+                VerticalAlignment = VerticalAlignment.Center,
                 Child           = new TextBlock
                 {
                     Text       = gesture,
@@ -6114,6 +6187,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             IsVisible    = false,
         };
 
+        var statusBorder = new Border
+        {
+            Background      = new SolidColorBrush(Color.Parse("#E5484D"), 0.08),
+            BorderBrush     = new SolidColorBrush(Color.Parse("#E5484D"), 0.22),
+            BorderThickness = new Thickness(1),
+            CornerRadius    = new CornerRadius(6),
+            Padding         = new Thickness(10, 7),
+            IsVisible       = false,
+            Child           = statusText,
+        };
+
         // Only one row can be "listening" for a new key combo at a time.
         string? capturingId = null;
         var gestureTextBlocks = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
@@ -6130,13 +6214,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 rb.IsVisible = isCustom;
         }
 
+        void UpdateStatus(string? message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                statusText.Text      = string.Empty;
+                statusText.IsVisible = false;
+                statusBorder.IsVisible = false;
+            }
+            else
+            {
+                statusText.Text      = message;
+                statusText.IsVisible = true;
+                statusBorder.IsVisible = true;
+            }
+        }
+
         void CancelCapture()
         {
             if (capturingId is null) return;
             if (editButtons.TryGetValue(capturingId, out var btn))
                 btn.Content = "Edit";
             capturingId = null;
-            statusText.IsVisible = false;
+            UpdateStatus(null);
         }
 
         for (var i = 0; i < KeybindDefinitions.Length; i++)
@@ -6148,9 +6248,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Background      = CardBrush,
                 BorderBrush     = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(5),
-                Padding         = new Thickness(8, 3),
+                CornerRadius    = new CornerRadius(6),
+                Padding         = new Thickness(8, 4),
                 Margin          = new Thickness(0, 0, 0, 6),
+                VerticalAlignment = VerticalAlignment.Center,
             };
             var gestureText = new TextBlock
             {
@@ -6208,8 +6309,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 CancelCapture();
                 capturingId = def.Id;
-                editButton.Content = "Press keys\u2026";
-                statusText.IsVisible = false;
+                editButton.Content = "Press keys…";
+                UpdateStatus(null);
             };
 
             resetButton.Click += (_, _) =>
@@ -6235,19 +6336,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             editableGrid.Children.Add(resetButton);
         }
 
-        var scroll = new ScrollViewer
+        var sectionDivider = new Border
         {
-            Content = new StackPanel
-            {
-                Spacing  = 6,
-                Children = { editableHeader, editableGrid, otherHeader, fixedGrid },
-            },
-            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            MaxHeight                     = 460,
+            Height     = 1,
+            Background = SurfaceBorderBrush,
+            Opacity    = 0.85,
+            Margin     = new Thickness(0, 4),
         };
 
-        // Dismiss button
+        var innerStack = new StackPanel
+        {
+            Spacing  = 2,
+            Children = { editableHeader, editableGrid, sectionDivider, otherHeader, fixedGrid },
+        };
+
+        var scroll = new ScrollViewer
+        {
+            Content = innerStack,
+            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            MaxHeight                     = 380,
+        };
+
+        var scrollBorder = new Border
+        {
+            Background      = WindowBackgroundBrush,
+            BorderBrush     = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius    = new CornerRadius(8),
+            Padding         = new Thickness(12, 10),
+            Child           = scroll,
+        };
+
+        // Footer
         var dismissButton = new Button
         {
             Content             = "Close",
@@ -6259,25 +6380,57 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CornerRadius        = new CornerRadius(8),
         };
 
+        var footerHint = new TextBlock
+        {
+            Text              = "Changes save automatically",
+            FontSize          = 11,
+            Foreground        = MutedTextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            Opacity           = 0.75,
+        };
+
+        var footerDivider = new Border
+        {
+            Height     = 1,
+            Background = SurfaceBorderBrush,
+            Opacity    = 0.9,
+            Margin     = new Thickness(0, 4, 0, 0),
+        };
+
+        var footerRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children          = { footerHint, dismissButton },
+        };
+        Grid.SetColumn(dismissButton, 1);
+
         var content = new StackPanel
         {
-            Spacing  = 16,
-            Margin   = new Thickness(20),
-            Children = { titleText, hintText, scroll, statusText, dismissButton },
+            Spacing  = 12,
+            Children = { headerRow, hintText, headerDivider, scrollBorder, statusBorder, footerDivider, footerRow },
         };
 
         Window? dialog = null;
         dialog = new Window
         {
             Title                 = "Kodo - Keyboard Shortcuts",
-            Width                 = 520,
+            Width                 = 560,
             SizeToContent         = SizeToContent.Height,
-            MinWidth              = 400,
-            MaxHeight             = 680,
+            MinWidth              = 440,
+            MaxHeight             = 720,
             CanResize             = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background            = CardBrush,
-            Content               = content,
+            Background            = WindowBackgroundBrush,
+            Content = new Border
+            {
+                Background      = CardBrush,
+                BorderBrush     = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius    = new CornerRadius(12),
+                Padding         = new Thickness(20),
+                Margin          = new Thickness(16),
+                Child           = content,
+            },
         };
 
         dialog.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
@@ -6303,8 +6456,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (!IsValidKeybindGesture(newGesture))
             {
-                statusText.Text = "Shortcuts need at least one modifier key (Ctrl, Alt, Shift, or Win), unless it's a function key.";
-                statusText.IsVisible = true;
+                UpdateStatus("Shortcuts need at least one modifier key (Ctrl, Alt, Shift, or Win), unless it's a function key.");
                 return;
             }
 
@@ -6317,8 +6469,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (conflict is not null)
             {
-                statusText.Text = $"{FormatGesture(newGesture)} is already used by \"{conflict.Description}\".";
-                statusText.IsVisible = true;
+                UpdateStatus($"{FormatGesture(newGesture)} is already used by \"{conflict.Description}\".");
                 return;
             }
 
@@ -6330,7 +6481,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (editButtons.TryGetValue(id, out var btn))
                 btn.Content = "Edit";
             capturingId = null;
-            statusText.IsVisible = false;
+            UpdateStatus(null);
         }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         dismissButton.Click += (_, _) => dialog!.Close();
