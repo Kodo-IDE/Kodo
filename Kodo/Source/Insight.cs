@@ -766,11 +766,15 @@ public sealed class InsightEngine
         // `FileName =` inside `new Foo { ... }` are at depth >0 and start with
         // uppercase. They are not variables and must not be flagged as "Unused variable".
         var depthAtLine = new int[lines.Length];
+        var parenDepthAtLine = new int[lines.Length];
         var curDepthForVar = 0;
+        var curParenDepthForVar = 0;
         for (var i = 0; i < lines.Length; i++)
         {
             depthAtLine[i] = curDepthForVar;
+            parenDepthAtLine[i] = curParenDepthForVar;
             curDepthForVar += CountChar(masked[i], '{') - CountChar(masked[i], '}');
+            curParenDepthForVar += CountChar(masked[i], '(') - CountChar(masked[i], ')');
         }
 
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
@@ -783,9 +787,24 @@ public sealed class InsightEngine
                 if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
                 if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
+                // `_`, `_unused`, etc. are a widely-used convention (Python, Rust, Go, JS
+                // linters) for a deliberately discarded/unused binding - never flag these.
+                if (name == "_" || name.StartsWith('_')) continue;
+
+                var trimmedForProp = masked[i].Trim();
+
+                // Keyword arguments in a multi-line function call, e.g.
+                //   foo(
+                //       width = 5,
+                //       height = 10,
+                //   )
+                // look identical to a bare assignment but are not variable declarations
+                // at all - only relevant when we're inside an unclosed paren list.
+                if (parenDepthAtLine[i] > 0)
+                    continue;
+
                 // Skip PascalCase property assignments inside object initializers:
                 // `Child = new TextBlock`, `FileName = updaterPath,` etc. are not variables.
-                var trimmedForProp = masked[i].Trim();
                 if (depthAtLine[i] > 0 && trimmedForProp.Length > 0 && char.IsUpper(trimmedForProp[0]) &&
                     trimmedForProp.Contains("="))
                 {
