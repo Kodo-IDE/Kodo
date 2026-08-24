@@ -25,7 +25,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="12,8" />
         </Style>
 
@@ -51,7 +51,7 @@
 
         <!-- Run / Build split buttons in the editor header -->
         <Style Selector="Border.runbuildgroup">
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="12" />
             <Setter Property="ClipToBounds" Value="True" />
         </Style>
 
@@ -354,8 +354,8 @@
         </Style>
 
         <Style Selector="Border.extensiontile">
-            <Setter Property="CornerRadius" Value="16" />
-            <Setter Property="Padding" Value="18,16" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="Padding" Value="16,14" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Margin" Value="6" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -371,7 +371,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="4,2" />
-            <Setter Property="Height" Value="48" />
+            <Setter Property="Height" Value="44" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -435,7 +435,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="6,2" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Template">
@@ -521,7 +521,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="6" />
             <Setter Property="Width" Value="30" />
             <Setter Property="Height" Value="28" />
@@ -549,7 +549,7 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="8" />
         </Style>
         <Style Selector="ListBox.searchresults ListBoxItem:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
@@ -674,10 +674,10 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="0" />
+            <Setter Property="Padding" Value="6,2" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="CornerRadius" Value="6" />
         </Style>
 
         <Style Selector="Button.fileitem:pointerover">
@@ -1055,7 +1055,7 @@
                                 <Button Classes="fileitem"
                                         Tag="{Binding}"
                                         Click="FileTreeItem_OnClick"
-                                        Margin="0,1">
+                                        Margin="0,0.5">
                                     <ToolTip.Tip>
                                         <StackPanel Spacing="2">
                                             <TextBlock Text="{Binding Name}"
@@ -1138,7 +1138,7 @@
                                         <StackPanel Grid.Column="2"
                                                     Orientation="Horizontal"
                                                     Spacing="6"
-                                                    Margin="0,4">
+                                                    Margin="0,1">
                                             
                                             <Viewbox Width="32" Height="15"
                                                      VerticalAlignment="Center"
@@ -1602,21 +1602,25 @@
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="11,9"
-                                    MaxWidth="420"
+                                    CornerRadius="12"
+                                    Padding="16"
+                                    MaxWidth="460"
+                                    MaxHeight="260"
                                     BoxShadow="0 12 28 0 #55000000, 0 2 8 0 #33000000">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBlock x:Name="DiagnosticPopupText"
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <SelectableTextBlock x:Name="DiagnosticPopupText"
+                                            Grid.Column="1"
                                             Foreground="{Binding PrimaryTextBrush}"
                                             TextWrapping="Wrap"
                                             VerticalAlignment="Center"
                                             FontFamily="Consolas" />
-                                <Button Grid.Column="1"
+                                <Button Grid.Column="2"
                                         Content="✕"
-                                        Width="24"
-                                        Height="24"
+                                        Width="28"
+                                        Height="28"
                                         Padding="0"
+                                        CornerRadius="8"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         Classes="chrome"
@@ -1987,12 +1991,13 @@
 
                                     <!-- Recently Edited card -->
                                     
-                                    <Border Padding="24"
-                                            Height="308"
+                                    <Border Padding="20"
+                                            MinHeight="280"
+                                            MaxHeight="348"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="16">
+                                            CornerRadius="12">
                                         <Grid RowDefinitions="Auto,*">
                                             <!-- Header row -->
                                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
@@ -2463,7 +2468,9 @@
                         IsVisible="{Binding IsTerminalVisible}"
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,1,0,1"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Margin="8"
                         MinHeight="120"
                         MaxHeight="420"
                         Height="{Binding TerminalPanelHeight}">
@@ -2472,7 +2479,7 @@
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="0,0,0,1"
-                                Padding="12,10">
+                                Padding="16,12">
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Orientation="Horizontal"
                                             Spacing="8"
@@ -4810,7 +4817,6 @@
                                 Margin="32,28,32,36"
                                 Spacing="16"
                                 MaxWidth="760"
-                                Width="760"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Top">
 

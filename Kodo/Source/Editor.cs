@@ -570,8 +570,9 @@ public partial class MainWindow
         {
             MaxHeight = InsightRowHeight * InsightVisibleRows
                 + InsightListVerticalPadding + InsightBorderThickness,
-            MaxWidth = 460,
-            Width = 460,
+            MaxWidth = 560,
+            Width = 560,
+            WindowManagerAddShadowHint = true,
         };
 
         var panelBrush = CardBrush;
@@ -583,7 +584,8 @@ public partial class MainWindow
 
         // Rounds the popup panel to match every other card/flyout in the app.
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
-        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(8)));
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(12)));
+        panelCornerStyle.Setters.Add(new Setter(Border.BoxShadowProperty, new BoxShadows(new BoxShadow { OffsetX = 0, OffsetY = 8, Blur = 32, Spread = 0, Color = Color.FromArgb(64, 0, 0, 0) })));
         window.Styles.Add(panelCornerStyle);
 
         if (window.CompletionList.ListBox is { } listBox)
@@ -605,8 +607,8 @@ public partial class MainWindow
         window.Styles.Add(baseRowStyle);
 
         var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
-            ? new SolidColorBrush(accentSolid.Color, 0.35)
-            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.35);
+            ? new SolidColorBrush(accentSolid.Color, 0.28)
+            : AccentBrush;
         var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected"));
         selectedRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
         window.Styles.Add(selectedRowStyle);
@@ -617,8 +619,8 @@ public partial class MainWindow
         window.Styles.Add(hoverRowStyle);
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, InsightRowHeight));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(10, 6)));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 28));
         window.Styles.Add(rowPaddingStyle);
 
         window.Closed += (_, _) => _completionWindow = null;

@@ -88,13 +88,14 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         var currentV = initialV;
         var currentA = initialColor.A;
 
+        // Theme-aware swatch border
         var swatchBorder = new Border
         {
             Width = 12,
             Height = 12,
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(6),
             Background = new SolidColorBrush(initialColor),
-            BorderBrush = Brushes.Gray,
+            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
             BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 3, 1),
@@ -105,7 +106,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         const double svHeight = 130;
         const double hueBarWidth = 18;
 
-        var svBase = new Border { Width = svWidth, Height = svHeight, CornerRadius = new CornerRadius(4), IsHitTestVisible = false };
+        var svBase = new Border { Width = svWidth, Height = svHeight, CornerRadius = new CornerRadius(8), IsHitTestVisible = false };
         var svWhiteOverlay = new Rectangle
         {
             Width = svWidth,
@@ -164,7 +165,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = hueBarWidth,
             Height = svHeight,
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(8),
             Background = hueGradient,
             IsHitTestVisible = false
         };
@@ -185,9 +186,9 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = 40,
             Height = 24,
-            CornerRadius = new CornerRadius(4),
+            CornerRadius = new CornerRadius(6),
             Background = new SolidColorBrush(initialColor),
-            BorderBrush = Brushes.Gray,
+            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
             BorderThickness = new Thickness(1)
         };
 
@@ -311,18 +312,34 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         var pickerChildren = new List<Control> { previewBorder, hexBox, pickerRow };
         if (alphaRow is not null) pickerChildren.Add(alphaRow);
 
+        var pickerHeader = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border { Width = 3, Height = 14, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Color.Parse("#8C00FF")), VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = "Color", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+            }
+        };
+        var pickerDivider = new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#3A3A3A")), Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var pickerDivider2 = new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#3A3A3A")), Opacity = 0.9, Margin = new Thickness(0, 4) };
         var picker = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#252526")),
-            BorderBrush = Brushes.Gray,
+            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(10),
-            Child = new StackPanel { Spacing = 8 }
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            BoxShadow = new BoxShadows(new BoxShadow { OffsetX = 0, OffsetY = 12, Blur = 28, Spread = 0, Color = Color.FromArgb(120, 0, 0, 0) }),
+            Child = new StackPanel { Spacing = 10 }
         };
         var pickerStack = (StackPanel)picker.Child!;
+        pickerStack.Children.Add(pickerHeader);
+        pickerStack.Children.Add(pickerDivider);
         foreach (var child in pickerChildren)
             pickerStack.Children.Add(child);
+        pickerStack.Children.Add(pickerDivider2);
 
         var popup = new Popup
         {
