@@ -17,6 +17,7 @@ using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Avalonia.Platform.Storage;
 using Microsoft.Win32;
 using Kodo.Models;
 using System.Text.RegularExpressions;
@@ -1179,7 +1180,15 @@ public partial class MainWindow
 
             await File.WriteAllBytesAsync(outputPath, bytes);
 
-            Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+            // MSYS2 is a meta-installer: base MSYS2 has no g++. One-click should end with a working g++.
+            if (compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleMsys2MingwInstallAsync(outputPath, compilerExtension);
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+            }
 
             _installedCompilers[compilerExtension.Id] = new InstalledCompilerRecord
             {
@@ -1190,9 +1199,11 @@ public partial class MainWindow
             SaveInstalledCompilerRegistry();
             SyncCompilerInstallStates();
 
-            await InstallPairedLanguageExtensionsAsync(compilerExtension);
-
-            ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
+            if (!compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
+            {
+                await InstallPairedLanguageExtensionsAsync(compilerExtension);
+                ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
+            }
         }
         catch (Exception ex)
         {
@@ -1208,6 +1219,118 @@ public partial class MainWindow
             compilerExtension.IsInstalling = false;
             NotifyExtensionActionStateChanged();
             SyncCompilerInstallStates();
+        }
+    }
+
+    private async Task HandleMsys2MingwInstallAsync(string installerPath, MarketplaceExtension compilerExtension)
+    {
+        ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Completing setup will auto-install g++...";
+        try
+        {
+            var msysRoots = new[] { @"C:\msys64", @"C:\msys32", @"C:\tools\msys64", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "msys64") };
+            string? bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+
+            // If MSYS2 not yet installed, launch the base installer and wait for the wizard to finish.
+            if (bashPath is null)
+            {
+                try
+                {
+                    using var installerProc = Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
+                    if (installerProc is not null)
+                        await installerProc.WaitForExitAsync();
+                    else
+                        await Task.Delay(TimeSpan.FromSeconds(3));
+                }
+                catch { /* user may have cancelled */ }
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+                if (bashPath is null)
+                {
+                    // Fallback: installer may have used default C:\msys64 but we missed it, try again with delay
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+                }
+            }
+
+            if (bashPath is null || !File.Exists(bashPath))
+            {
+                ExtensionsStatusText = $"{compilerExtension.Name} base installed. Please complete the MSYS2 wizard, then click Install again to finish g++ setup.";
+                await ShowWarningDialogAsync($"{compilerExtension.Name} - next step",
+                    new InvalidOperationException("MSYS2 base installed but bash.exe not found. Finish the wizard (use default C:\\msys64), then click Install again. Kodo will then auto-run pacman to get g++."));
+                return;
+            }
+
+            var msysRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(bashPath)!, "..", ".."));
+            var mingwBin = Path.Combine(msysRoot, @"mingw64\bin");
+            var ucrtBin = Path.Combine(msysRoot, @"ucrt64\bin");
+
+            ExtensionsStatusText = $"Installing g++ via pacman (this may take a minute)...";
+            // -Sy to refresh DB, then install toolchain. --noconfirm avoids interactive prompt.
+            // Use bash -lc so pacman runs in MSYS2 env.
+            var pacmanCmd = "pacman --noconfirm -Sy && pacman --noconfirm -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb mingw-w64-x86_64-make";
+            using var pacmanProc = Process.Start(new ProcessStartInfo(bashPath, $"-lc \"{pacmanCmd}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (pacmanProc is not null)
+            {
+                var output = await pacmanProc.StandardOutput.ReadToEndAsync();
+                var error = await pacmanProc.StandardError.ReadToEndAsync();
+                await pacmanProc.WaitForExitAsync();
+                KodoDiagnostics.LogDebug($"pacman g++ install exit {pacmanProc.ExitCode}\n{output}\n{error}");
+                if (pacmanProc.ExitCode != 0)
+                {
+                    ExtensionsStatusText = $"pacman finished with code {pacmanProc.ExitCode}. Check %AppData%\\Kodo\\kodo.log.";
+                    await ShowWarningDialogAsync("MSYS2 pacman",
+                        new InvalidOperationException($"pacman exit {pacmanProc.ExitCode}. Output:\n{output}\n{error}\n\nTry in MSYS2 shell: {pacmanCmd}"));
+                }
+            }
+
+            // Add mingw bin to user PATH so where.exe g++ works without restart
+            try
+            {
+                var binToAdd = Directory.Exists(mingwBin) ? mingwBin : Directory.Exists(ucrtBin) ? ucrtBin : null;
+                if (binToAdd is not null)
+                {
+                    var currentUserPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? string.Empty;
+                    if (!currentUserPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var newUserPath = string.IsNullOrWhiteSpace(currentUserPath) ? binToAdd : currentUserPath + Path.PathSeparator + binToAdd;
+                        Environment.SetEnvironmentVariable("PATH", newUserPath, EnvironmentVariableTarget.User);
+                        // Also for current process
+                        var procPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? string.Empty;
+                        if (!procPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
+                            Environment.SetEnvironmentVariable("PATH", procPath + Path.PathSeparator + binToAdd, EnvironmentVariableTarget.Process);
+                    }
+                    // Also try to add via manual compiler tracking so Kodo sees it immediately
+                    var gppPath = Path.Combine(binToAdd, "g++.exe");
+                    if (File.Exists(gppPath))
+                    {
+                        AddOrUpdateManualCompiler(gppPath, autoDetected: false, displayName: "G++ (MSYS2)", author: "MSYS2", canonicalCompilerId: "msys2-mingw");
+                        RefreshManualCompilerExtensions();
+                    }
+                }
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("Failed to update PATH for MSYS2", ex); }
+
+            await InstallPairedLanguageExtensionsAsync(compilerExtension);
+            ExtensionsStatusText = $"{compilerExtension.Name} ready - g++ installed. Switched to GCC for .cpp.";
+            // Auto-switch .cpp to GCC so Build no longer tries clang++
+            _compilerOverrides[".cpp"] = compilerExtension.Id;
+            _compilerOverrides[".c"] = compilerExtension.Id;
+            _compilerOverrides[".cc"] = compilerExtension.Id;
+            SaveSettings();
+            RefreshRunBuildState();
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("HandleMsys2MingwInstallAsync failed", ex);
+            ExtensionsStatusText = $"MSYS2 setup incomplete: {ex.Message}";
+            await ShowWarningDialogAsync("MSYS2 setup", ex);
         }
     }
 
@@ -1353,8 +1476,7 @@ public partial class MainWindow
 
             if (located is null)
             {
-                ExtensionsStatusText = $"Couldn't find an uninstaller for {compilerExtension.Name} " +
-                    "in the registry or Program Files; it may already be removed. Forgetting it in Kodo.";
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
                 ForgetLocalCompilerRecord(compilerExtension);
                 return;
             }
@@ -1413,8 +1535,31 @@ public partial class MainWindow
                     "Try Uninstall again, or remove it manually from Program Files.";
             }
         }
+        catch (Exception ex) when (ex is DirectoryNotFoundException || ex is FileNotFoundException || (ex is System.ComponentModel.Win32Exception win32 && win32.NativeErrorCode == 2))
+        {
+            // Folder/exe already gone - treat as cancelled install, clean up the Installed tab.
+            ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+            ForgetLocalCompilerRecord(compilerExtension);
+        }
         catch (Exception ex)
         {
+            // If the install folder is already gone, don't error out - just forget it.
+            var folder = FindCompilerUninstaller(compilerExtension.Name)?.InstallFolder;
+            if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
+            {
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found at {folder}. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ForgetLocalCompilerRecord(compilerExtension);
+                return;
+            }
+            if (ex.Message.Contains("cannot find the file", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("The system cannot find", StringComparison.OrdinalIgnoreCase))
+            {
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ForgetLocalCompilerRecord(compilerExtension);
+                return;
+            }
+
             ExtensionsStatusText = $"Failed to uninstall {compilerExtension.Name}: {ex.Message}";
             await ShowWarningDialogAsync($"Compiler uninstall - {compilerExtension.Name}", ex);
         }
@@ -1964,6 +2109,8 @@ public partial class MainWindow
     private readonly Dictionary<string, string> _customRunCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _customBuildCommands = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _compilerOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _customBuildScripts = new(StringComparer.OrdinalIgnoreCase);
+    private const string CustomBuildScriptId = "custom:build-script";
 
     private string? _activeRunCommandLine;
     private string? _activeBuildCommandLine;
@@ -1999,13 +2146,27 @@ public partial class MainWindow
             if (_currentFilePath is null)
                 return "Open a file to run or build it.";
 
-            if (ActiveCompilerExtension is null)
+            var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+            var hasCustomBuild = !string.IsNullOrWhiteSpace(ext) && TryGetCustomBuildScript(ext, out var scriptPath);
+
+            if (ActiveCompilerExtension is null && !hasCustomBuild)
                 return "No compiler found for this file type. Install one from the Compilers marketplace, or set a command from the dropdown menu.";
+
+            if (hasCustomBuild)
+            {
+                var runPart = string.IsNullOrWhiteSpace(_activeRunCommandLine)
+                    ? null
+                    : $"{ActiveCompilerExtension?.Name ?? "Run"} · {_activeRunCommandLine}";
+                var buildPart = $"Custom Build Script · {_activeBuildCommandLine}";
+                if (runPart is not null)
+                    return $"{runPart}  |  {buildPart}";
+                return buildPart;
+            }
 
             var command = _activeRunCommandLine ?? _activeBuildCommandLine;
             return string.IsNullOrWhiteSpace(command)
-                ? $"{ActiveCompilerExtension.Name} - no command configured. Use the dropdown menu to set one."
-                : $"{ActiveCompilerExtension.Name} · {command}";
+                ? $"{ActiveCompilerExtension!.Name} - no command configured. Use the dropdown menu to set one."
+                : $"{ActiveCompilerExtension!.Name} · {command}";
         }
     }
 
@@ -2018,10 +2179,16 @@ public partial class MainWindow
         }
 
         ActiveCompilerExtension = ResolveActiveCompiler();
+        var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+
         _activeRunCommandLine = ActiveCompilerExtension is null
             ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: false);
-        _activeBuildCommandLine = ActiveCompilerExtension is null
-            ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
+
+        if (!string.IsNullOrWhiteSpace(ext) && TryGetCustomBuildScript(ext, out var scriptPath))
+            _activeBuildCommandLine = BuildCustomScriptDisplayCommand(scriptPath, extraArgs: null);
+        else
+            _activeBuildCommandLine = ActiveCompilerExtension is null
+                ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
 
         OnPropertyChanged(nameof(IsRunButtonEnabled));
         OnPropertyChanged(nameof(IsBuildButtonEnabled));
@@ -2039,7 +2206,12 @@ public partial class MainWindow
 
         var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
         if (string.IsNullOrEmpty(ext))
+        {
+            var emptyFolder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(emptyFolder) && TryGetProjectFallbackExtension(emptyFolder, ext, out var emptyFallback))
+                return emptyFallback;
             return null;
+        }
 
         if (_compilerOverrides.TryGetValue(ext, out var overrideId))
         {
@@ -2052,13 +2224,242 @@ public partial class MainWindow
             .Where(c => c.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)))
             .ToList();
         if (candidates.Count == 0)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var fallback))
+                return fallback;
             return null;
+        }
 
-        return candidates
+        var scored = candidates
             .Select(c => (Compiler: c, Score: ScoreCompilerForExtension(c, ext)))
             .OrderByDescending(x => x.Score)
             .ThenBy(x => candidates.IndexOf(x.Compiler))
-            .First().Compiler;
+            .ToList();
+        var best = scored.FirstOrDefault();
+        if (best.Compiler is null || best.Score <= 0)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var fallbackScoreZero))
+                return fallbackScoreZero;
+            return null;
+        }
+        return best.Compiler;
+    }
+
+    private bool TryGetProjectFallbackExtension(string folder, string forExt, out MarketplaceExtension fallback)
+    {
+        fallback = null!;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            return false;
+
+        // .NET: *.csproj, *.fsproj, *.vbproj, *.sln, *.slnx
+        if (HasDotnetProject(folder))
+        {
+            fallback = BuildProjectFallbackExtension(
+                id: "project:dotnet",
+                name: ".NET Project",
+                author: "Project",
+                run: "dotnet run",
+                build: "dotnet build",
+                iconSourceId: "dotnet-sdk",
+                forExt: forExt,
+                folder: folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "Cargo.toml")))
+        {
+            fallback = BuildProjectFallbackExtension("project:cargo", "Cargo Project", "Project", "cargo run", "cargo build", "rust-rustup", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "go.mod")))
+        {
+            fallback = BuildProjectFallbackExtension("project:go", "Go Module", "Project", "go run .", "go build ./...", "go", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "package.json")))
+        {
+            fallback = BuildProjectFallbackExtension("project:node", "Node Project", "Project", "npm start", "npm run build", "nodejs", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "pom.xml")))
+        {
+            fallback = BuildProjectFallbackExtension("project:maven", "Maven Project", "Project", "mvn exec:java", "mvn package", "temurin-jdk", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "build.gradle")) || File.Exists(Path.Combine(folder, "build.gradle.kts")))
+        {
+            fallback = BuildProjectFallbackExtension("project:gradle", "Gradle Project", "Project", "gradle run", "gradle build", "temurin-jdk", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "CMakeLists.txt")))
+        {
+            fallback = BuildProjectFallbackExtension("project:cmake", "CMake Project", "Project", null, "cmake --build build", "llvm-clang", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "Makefile")) || File.Exists(Path.Combine(folder, "makefile")) || File.Exists(Path.Combine(folder, "GNUmakefile")))
+        {
+            fallback = BuildProjectFallbackExtension("project:make", "Make Project", "Project", "make run", "make", "msys2-mingw", forExt, folder);
+            return true;
+        }
+
+        if (File.Exists(Path.Combine(folder, "pyproject.toml")) || File.Exists(Path.Combine(folder, "requirements.txt")) || File.Exists(Path.Combine(folder, "setup.py")) || File.Exists(Path.Combine(folder, "Pipfile")))
+        {
+            fallback = BuildProjectFallbackExtension("project:python", "Python Project", "Project", "python {file}", null, "python", forExt, folder);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool HasDotnetProject(string folder)
+    {
+        try
+        {
+            if (Directory.EnumerateFiles(folder, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (Directory.EnumerateFiles(folder, "*.slnx", SearchOption.TopDirectoryOnly).Any()) return true;
+
+            // One level deep (common for src/MyApp.csproj)
+            foreach (var sub in Directory.EnumerateDirectories(folder))
+            {
+                var name = Path.GetFileName(sub);
+                if (name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("packages", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (Directory.EnumerateFiles(sub, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (Directory.EnumerateFiles(sub, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private MarketplaceExtension BuildProjectFallbackExtension(string id, string name, string author, string? run, string? build, string iconSourceId, string forExt, string folder)
+    {
+        var iconUrl = CompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(iconUrl))
+        {
+            // Try manual compilers for icon fallback
+            iconUrl = ManualCompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
+        }
+
+        var ext = new MarketplaceExtension
+        {
+            Id = id,
+            Name = name,
+            Type = "compiler",
+            Author = author,
+            Description = folder,
+            Version = "Project",
+            DownloadUrl = string.Empty,
+            FileName = string.Empty,
+            IconUrl = iconUrl,
+            FileExtensions = string.IsNullOrWhiteSpace(forExt) ? [] : [forExt],
+            LanguageExtensionIds = [],
+            RunCommandTemplate = run,
+            BuildCommandTemplate = build,
+        };
+        ext.SetCompilerInstalledState("Project", DateTime.UtcNow, isUpdateAvailable: false);
+        return ext;
+    }
+
+    private bool TryGetCustomBuildScript(string ext, out string scriptPath)
+    {
+        if (_customBuildScripts.TryGetValue(ext, out var stored) && !string.IsNullOrWhiteSpace(stored) && File.Exists(stored))
+        {
+            scriptPath = stored;
+            return true;
+        }
+
+        scriptPath = string.Empty;
+        return false;
+    }
+
+    private MarketplaceExtension BuildCustomBuildScriptExtension(string ext, string scriptPath)
+    {
+        var fileName = Path.GetFileName(scriptPath);
+        var extension = new MarketplaceExtension
+        {
+            Id = CustomBuildScriptId,
+            Name = "Custom Build Script",
+            Type = "compiler",
+            Author = "Local",
+            Description = scriptPath,
+            Version = string.IsNullOrWhiteSpace(fileName) ? "Local" : fileName,
+            DownloadUrl = string.Empty,
+            FileName = fileName,
+            IconUrl = string.Empty,
+            FileExtensions = [ext],
+            LanguageExtensionIds = [],
+            RunCommandTemplate = QuoteArgument(scriptPath),
+            BuildCommandTemplate = QuoteArgument(scriptPath),
+        };
+        extension.SetCompilerInstalledState("Local", DateTime.UtcNow, isUpdateAvailable: false);
+        return extension;
+    }
+
+    private string BuildCustomScriptDisplayCommand(string scriptPath, string? extraArgs)
+    {
+        var baseCmd = QuoteArgument(scriptPath);
+        var expanded = ExpandCommandTemplate(baseCmd, extraArgs);
+        return expanded;
+    }
+
+    private (string Exe, string Args) ResolveCustomScriptExecutable(string scriptPath, string? extraArgs)
+    {
+        var quotedPath = QuoteArgument(scriptPath);
+        var ext = Path.GetExtension(scriptPath).ToLowerInvariant();
+        var expandedExtra = ExpandExtraArgsPlaceholders(extraArgs);
+        var extra = string.IsNullOrWhiteSpace(expandedExtra) ? string.Empty : $" {expandedExtra.Trim()}";
+        var quotedFile = _currentFilePath is not null ? QuoteArgument(_currentFilePath) : string.Empty;
+        var alreadyHasFileArg = !string.IsNullOrWhiteSpace(expandedExtra) && !string.IsNullOrWhiteSpace(quotedFile) && expandedExtra.Contains(quotedFile, StringComparison.Ordinal);
+        var fileArg = !string.IsNullOrWhiteSpace(quotedFile) && !alreadyHasFileArg ? $" {quotedFile}" : string.Empty;
+        if (ext is ".bat" or ".cmd")
+            return ("cmd.exe", $"/c {quotedPath}{extra}{fileArg}");
+        if (ext is ".ps1")
+            return ("powershell.exe", $"-ExecutionPolicy Bypass -File {quotedPath}{extra}{fileArg}");
+        if (ext is ".sh")
+            return ("bash", $"{quotedPath}{extra}{fileArg}");
+        if (ext is ".py" or ".pyw")
+            return ("python", $"{quotedPath}{extra}{fileArg}");
+        // Generic executable/script: run directly; append file + extra args so {file} behaviour is preserved by default.
+        var args = fileArg.Length > 0 ? $"{expandedExtra.Trim()} {quotedFile}".Trim() : expandedExtra.Trim();
+        if (string.IsNullOrWhiteSpace(args) && !alreadyHasFileArg)
+            args = quotedFile;
+        return (scriptPath, args);
+    }
+
+    private string ExpandExtraArgsPlaceholders(string? extraArgs)
+    {
+        if (string.IsNullOrWhiteSpace(extraArgs))
+            return string.Empty;
+
+        var filePath = _currentFilePath ?? string.Empty;
+        var fileName = Path.GetFileName(filePath);
+        var name = Path.GetFileNameWithoutExtension(filePath);
+        var folder = ResolveWorkingDirectory();
+
+        return extraArgs
+            .Replace("{fileName}", QuoteArgument(fileName))
+            .Replace("{file}", QuoteArgument(filePath))
+            .Replace("{name}", QuoteArgument(name))
+            .Replace("{folder}", QuoteArgument(folder))
+            .Replace("{args}", string.Empty);
     }
 
     private MarketplaceExtension? FindCompilerByIdForOverride(string id) =>
@@ -2078,6 +2479,10 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(exe))
             return 0;
 
+        // Installed via Kodo marketplace should be considered available even if not yet on PATH for this session
+        if (compiler.IsInstalled)
+            return 1;
+
         var exeName = NormalizeExeName(Path.GetFileName(exe));
         foreach (var record in _manualCompilers.Values)
         {
@@ -2090,6 +2495,13 @@ public partial class MainWindow
 
     private string? ResolveCommandTemplate(MarketplaceExtension compiler, bool isBuild, string ext)
     {
+        if (compiler.Id.Equals(CustomBuildScriptId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_customBuildScripts.TryGetValue(ext, out var scriptPath) && !string.IsNullOrWhiteSpace(scriptPath))
+                return QuoteArgument(scriptPath);
+            return null;
+        }
+
         var custom = isBuild ? _customBuildCommands : _customRunCommands;
         if (custom.TryGetValue(compiler.Id, out var customCommand) && !string.IsNullOrWhiteSpace(customCommand))
             return customCommand;
@@ -2118,6 +2530,13 @@ public partial class MainWindow
     private string? BuildCommandLineText(MarketplaceExtension compiler, bool isBuild)
     {
         var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+        if (compiler.Id.Equals(CustomBuildScriptId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_customBuildScripts.TryGetValue(ext, out var scriptPath) && !string.IsNullOrWhiteSpace(scriptPath))
+                return BuildCustomScriptDisplayCommand(scriptPath, extraArgs: null);
+            return null;
+        }
+
         var template = ResolveCommandTemplate(compiler, isBuild, ext);
         return template is null ? null : ExpandCommandTemplate(template, extraArgs: null);
     }
@@ -2170,6 +2589,17 @@ public partial class MainWindow
                 return sibling;
         }
 
+        // Check common install locations for Go even if not on PATH yet (needs restart)
+        if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", "go.exe");
+            if (File.Exists(goPath)) return goPath;
+            goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Go", "bin", "go.exe");
+            if (File.Exists(goPath)) return goPath;
+            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", "go.exe");
+            if (File.Exists(localGo)) return localGo;
+        }
+
         return TryFindOnPath(exeName) ?? TryFindOnPath(toolName);
     }
 
@@ -2202,6 +2632,63 @@ public partial class MainWindow
         return value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
     }
 
+    private async Task EnsureGoModExistsAsync(string workingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+            return;
+        // Check working dir and parents (go searches upwards)
+        var current = workingDirectory;
+        for (var i = 0; i < 4; i++)
+        {
+            if (File.Exists(Path.Combine(current, "go.mod")))
+                return;
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent) || parent.Equals(current, StringComparison.OrdinalIgnoreCase))
+                break;
+            current = parent;
+        }
+        var moduleName = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(moduleName) || moduleName.Length < 2)
+            moduleName = "hello";
+        moduleName = System.Text.RegularExpressions.Regex.Replace(moduleName, @"[^a-zA-Z0-9\.\-_]", "").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(moduleName))
+            moduleName = "hello";
+        moduleName = $"example.com/{moduleName}";
+        var goExe = ResolveToolExecutable("go") ?? "go";
+        try
+        {
+            using var initProc = Process.Start(new ProcessStartInfo(goExe, $"mod init {moduleName}")
+            {
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (initProc is not null)
+            {
+                await initProc.WaitForExitAsync();
+                // Best-effort tidy, ignore failure (no deps yet)
+                try
+                {
+                    using var tidyProc = Process.Start(new ProcessStartInfo(goExe, "mod tidy")
+                    {
+                        WorkingDirectory = workingDirectory,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    });
+                    if (tidyProc is not null)
+                        await tidyProc.WaitForExitAsync();
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("EnsureGoModExistsAsync failed", ex);
+        }
+    }
+
     private async Task ExecuteCurrentCommandAsync(bool isBuild, string? extraArgs)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -2211,23 +2698,62 @@ public partial class MainWindow
             return;
         }
 
-        if (_currentFilePath is null || ActiveCompilerExtension is null)
+        if (_currentFilePath is null)
+            return;
+
+        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
+
+        // Allow Build to proceed with a custom script even when no compiler is resolved for this extension.
+        if (ActiveCompilerExtension is null && !(isBuild && TryGetCustomBuildScript(ext, out _)))
             return;
 
         var compiler = ActiveCompilerExtension;
-        var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
-        var template = ResolveCommandTemplate(compiler, isBuild, ext);
-        if (template is null)
-            return;
+        string commandLine;
+        string exe;
+        string args;
+        string toolLabel;
 
-        var commandLine = ExpandCommandTemplate(template, extraArgs);
-        var (exe, args) = SplitCommandLine(commandLine);
-        if (string.IsNullOrWhiteSpace(exe))
-            return;
+        if (isBuild && TryGetCustomBuildScript(ext, out var buildScriptPath))
+        {
+            commandLine = BuildCustomScriptDisplayCommand(buildScriptPath, extraArgs);
+            var resolved = ResolveCustomScriptExecutable(buildScriptPath, extraArgs);
+            exe = resolved.Exe;
+            args = resolved.Args;
+            toolLabel = Path.GetFileNameWithoutExtension(buildScriptPath);
+        }
+        else
+        {
+            // For Run, or Build without custom script, use the normal compiler flow.
+            // If ActiveCompilerExtension is null (no compiler) and this is a Build with no custom script, bail.
+            if (ActiveCompilerExtension is null)
+                return;
 
-        var resolvedExe = ResolveToolExecutable(exe) ?? exe;
-        var toolLabel = Path.GetFileName(exe);
+            // If this is a Build but we checked custom above and didn't take it, fall through to normal Build template.
+            // If this is a Run, ignore any custom Build script and use Run template.
+            var template = ResolveCommandTemplate(compiler!, isBuild, ext);
+            if (template is null)
+                return;
+
+            commandLine = ExpandCommandTemplate(template, extraArgs);
+            var split = SplitCommandLine(commandLine);
+            if (string.IsNullOrWhiteSpace(split.Exe))
+                return;
+
+            var resolvedExe = ResolveToolExecutable(split.Exe) ?? split.Exe;
+            exe = resolvedExe;
+            args = split.Arguments;
+            toolLabel = Path.GetFileName(split.Exe);
+        }
+
         var workingDirectory = ResolveWorkingDirectory();
+
+        // Auto-init go.mod for Go single-file runs (go run {file} requires a module with GO111MODULE=on)
+        if (ext.Equals(".go", StringComparison.OrdinalIgnoreCase) &&
+            compiler is not null &&
+            (compiler.Id.Equals("go", StringComparison.OrdinalIgnoreCase) || compiler.Id.Equals("project:go", StringComparison.OrdinalIgnoreCase)))
+        {
+            await EnsureGoModExistsAsync(workingDirectory);
+        }
 
         var existing = isBuild ? _buildWindow : _runWindow;
         if (existing is { IsVisible: true })
@@ -2239,7 +2765,7 @@ public partial class MainWindow
         var window = new CompilerRunWindow(
             isBuild ? $"Kodo - Build ({toolLabel})" : $"Kodo - Run ({toolLabel})",
             commandLine,
-            resolvedExe,
+            exe,
             args,
             workingDirectory)
         {
@@ -2301,12 +2827,23 @@ public partial class MainWindow
 
         menu.Items.Add(new Separator());
 
-        if (compiler is not null)
+        if (compiler is not null || (isBuild && TryGetCustomBuildScript(Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant(), out _)))
         {
-            var commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
+            string? commandLine;
+            string summary;
+            if (isBuild && TryGetCustomBuildScript(Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant(), out var customScriptForSummary))
+            {
+                commandLine = _activeBuildCommandLine;
+                summary = $"Custom Build Script  ·  {commandLine}";
+            }
+            else
+            {
+                commandLine = isBuild ? _activeBuildCommandLine : _activeRunCommandLine;
+                var label = compiler?.Name ?? "Custom Build Script";
+                summary = $"{label}  ·  {commandLine}";
+            }
             if (!string.IsNullOrWhiteSpace(commandLine))
             {
-                var summary = $"{compiler.Name}  ·  {commandLine}";
                 var infoItem = new MenuItem
                 {
                     Header = BuildCompilerMenuHeader(summary),
@@ -2316,6 +2853,35 @@ public partial class MainWindow
                 menu.Items.Add(infoItem);
                 menu.Items.Add(new Separator());
             }
+        }
+
+        if (isBuild)
+        {
+            var ext = Path.GetExtension(_currentFilePath ?? string.Empty).ToLowerInvariant();
+            var hasCustomScript = TryGetCustomBuildScript(ext, out var existingScript);
+            if (!hasCustomScript)
+            {
+                var setScript = new MenuItem { Header = "Set Custom Build Script..." };
+                setScript.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+                menu.Items.Add(setScript);
+            }
+            else
+            {
+                var changeScript = new MenuItem { Header = $"Change Custom Build Script \u00b7 {Path.GetFileName(existingScript)}" };
+                ToolTip.SetTip(changeScript, existingScript);
+                changeScript.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+                menu.Items.Add(changeScript);
+
+                var removeScript = new MenuItem { Header = "Remove Custom Build Script" };
+                removeScript.Click += (_, _) =>
+                {
+                    _customBuildScripts.Remove(ext);
+                    SaveSettings();
+                    RefreshRunBuildState();
+                };
+                menu.Items.Add(removeScript);
+            }
+            menu.Items.Add(new Separator());
         }
 
         var custom = isBuild ? _customBuildCommands : _customRunCommands;
@@ -2379,6 +2945,7 @@ public partial class MainWindow
         automatic.Click += (_, _) =>
         {
             _compilerOverrides.Remove(ext);
+            _customBuildScripts.Remove(ext);
             SaveSettings();
             RefreshRunBuildState();
         };
@@ -2414,10 +2981,111 @@ public partial class MainWindow
             menu.Items.Add(item);
         }
 
+        // Project fallback when no compiler matches but a project file exists (e.g., .csproj in folder)
+        if (!anyAdded)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))
+            {
+                var projItem = new MenuItem
+                {
+                    Header = BuildCompilerMenuHeader(projectFallback.Name),
+                    Icon = BuildCompilerMenuIcon(projectFallback),
+                    IsChecked = ActiveCompilerExtension is { } active && active.Id.Equals(projectFallback.Id, StringComparison.OrdinalIgnoreCase),
+                };
+                ToolTip.SetTip(projItem, projectFallback.Description);
+                projItem.Click += (_, _) =>
+                {
+                    _compilerOverrides.Remove(ext);
+                    SaveSettings();
+                    RefreshRunBuildState();
+                };
+                menu.Items.Add(projItem);
+                anyAdded = true;
+            }
+        }
+
         if (!anyAdded)
             menu.Items.Add(new MenuItem { Header = "No compilers available", IsEnabled = false });
 
+        menu.Items.Add(new Separator());
+
+        var hasCustomScript = TryGetCustomBuildScript(ext, out var existingScript);
+        var customLabel = hasCustomScript ? $"Custom Build Script \u00b7 {Path.GetFileName(existingScript)}" : "Custom Build Script...";
+        var customItem = new MenuItem
+        {
+            Header = BuildCompilerMenuHeader(customLabel),
+            IsChecked = hasCustomScript,
+            IsEnabled = !string.IsNullOrWhiteSpace(ext),
+        };
+        if (hasCustomScript)
+            ToolTip.SetTip(customItem, existingScript);
+        else if (string.IsNullOrWhiteSpace(ext))
+            ToolTip.SetTip(customItem, "Open a file with an extension to set a custom build script.");
+        else
+            ToolTip.SetTip(customItem, "Pick a .bat, .cmd, .ps1, .sh or any executable to use for this file type.");
+        customItem.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
+        menu.Items.Add(customItem);
+
+        if (hasCustomScript)
+        {
+            var removeItem = new MenuItem { Header = "Remove Custom Build Script" };
+            removeItem.Click += (_, _) =>
+            {
+                _customBuildScripts.Remove(ext);
+                SaveSettings();
+                RefreshRunBuildState();
+            };
+            menu.Items.Add(removeItem);
+        }
+
         return menu;
+    }
+
+    private async Task PromptForCustomBuildScriptAsync(string ext)
+    {
+        if (string.IsNullOrWhiteSpace(ext))
+            return;
+
+        var options = new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = $"Select Custom Build Script for {ext}",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new Avalonia.Platform.Storage.FilePickerFileType("Build Scripts")
+                {
+                    Patterns = ["*.bat", "*.cmd", "*.ps1", "*.sh", "*.py", "*.exe", "*.bin", "*.command"],
+                },
+                new Avalonia.Platform.Storage.FilePickerFileType("All Files")
+                {
+                    Patterns = ["*"],
+                },
+            ],
+        };
+
+        IReadOnlyList<Avalonia.Platform.Storage.IStorageFile> picked;
+        try
+        {
+            picked = await StorageProvider.OpenFilePickerAsync(options);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Custom build script file picker failed.", ex);
+            return;
+        }
+
+        var file = picked.Count > 0 ? picked[0] : null;
+        if (file is null)
+            return;
+
+        var path = file.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return;
+
+        _customBuildScripts[ext] = path;
+        SaveSettings();
+        RefreshRunBuildState();
     }
 
     private static Control BuildCompilerMenuHeader(string text) => new TextBlock
