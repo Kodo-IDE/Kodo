@@ -1180,7 +1180,15 @@ public partial class MainWindow
 
             await File.WriteAllBytesAsync(outputPath, bytes);
 
-            Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+            // MSYS2 is a meta-installer: base MSYS2 has no g++. One-click should end with a working g++.
+            if (compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
+            {
+                await HandleMsys2MingwInstallAsync(outputPath, compilerExtension);
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo(outputPath) { UseShellExecute = true });
+            }
 
             _installedCompilers[compilerExtension.Id] = new InstalledCompilerRecord
             {
@@ -1191,9 +1199,11 @@ public partial class MainWindow
             SaveInstalledCompilerRegistry();
             SyncCompilerInstallStates();
 
-            await InstallPairedLanguageExtensionsAsync(compilerExtension);
-
-            ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
+            if (!compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
+            {
+                await InstallPairedLanguageExtensionsAsync(compilerExtension);
+                ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
+            }
         }
         catch (Exception ex)
         {
@@ -1209,6 +1219,118 @@ public partial class MainWindow
             compilerExtension.IsInstalling = false;
             NotifyExtensionActionStateChanged();
             SyncCompilerInstallStates();
+        }
+    }
+
+    private async Task HandleMsys2MingwInstallAsync(string installerPath, MarketplaceExtension compilerExtension)
+    {
+        ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Completing setup will auto-install g++...";
+        try
+        {
+            var msysRoots = new[] { @"C:\msys64", @"C:\msys32", @"C:\tools\msys64", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "msys64") };
+            string? bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+
+            // If MSYS2 not yet installed, launch the base installer and wait for the wizard to finish.
+            if (bashPath is null)
+            {
+                try
+                {
+                    using var installerProc = Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
+                    if (installerProc is not null)
+                        await installerProc.WaitForExitAsync();
+                    else
+                        await Task.Delay(TimeSpan.FromSeconds(3));
+                }
+                catch { /* user may have cancelled */ }
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+                bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+                if (bashPath is null)
+                {
+                    // Fallback: installer may have used default C:\msys64 but we missed it, try again with delay
+                    await Task.Delay(TimeSpan.FromSeconds(2));
+                    bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
+                }
+            }
+
+            if (bashPath is null || !File.Exists(bashPath))
+            {
+                ExtensionsStatusText = $"{compilerExtension.Name} base installed. Please complete the MSYS2 wizard, then click Install again to finish g++ setup.";
+                await ShowWarningDialogAsync($"{compilerExtension.Name} - next step",
+                    new InvalidOperationException("MSYS2 base installed but bash.exe not found. Finish the wizard (use default C:\\msys64), then click Install again. Kodo will then auto-run pacman to get g++."));
+                return;
+            }
+
+            var msysRoot = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(bashPath)!, "..", ".."));
+            var mingwBin = Path.Combine(msysRoot, @"mingw64\bin");
+            var ucrtBin = Path.Combine(msysRoot, @"ucrt64\bin");
+
+            ExtensionsStatusText = $"Installing g++ via pacman (this may take a minute)...";
+            // -Sy to refresh DB, then install toolchain. --noconfirm avoids interactive prompt.
+            // Use bash -lc so pacman runs in MSYS2 env.
+            var pacmanCmd = "pacman --noconfirm -Sy && pacman --noconfirm -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb mingw-w64-x86_64-make";
+            using var pacmanProc = Process.Start(new ProcessStartInfo(bashPath, $"-lc \"{pacmanCmd}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (pacmanProc is not null)
+            {
+                var output = await pacmanProc.StandardOutput.ReadToEndAsync();
+                var error = await pacmanProc.StandardError.ReadToEndAsync();
+                await pacmanProc.WaitForExitAsync();
+                KodoDiagnostics.LogDebug($"pacman g++ install exit {pacmanProc.ExitCode}\n{output}\n{error}");
+                if (pacmanProc.ExitCode != 0)
+                {
+                    ExtensionsStatusText = $"pacman finished with code {pacmanProc.ExitCode}. Check %AppData%\\Kodo\\kodo.log.";
+                    await ShowWarningDialogAsync("MSYS2 pacman",
+                        new InvalidOperationException($"pacman exit {pacmanProc.ExitCode}. Output:\n{output}\n{error}\n\nTry in MSYS2 shell: {pacmanCmd}"));
+                }
+            }
+
+            // Add mingw bin to user PATH so where.exe g++ works without restart
+            try
+            {
+                var binToAdd = Directory.Exists(mingwBin) ? mingwBin : Directory.Exists(ucrtBin) ? ucrtBin : null;
+                if (binToAdd is not null)
+                {
+                    var currentUserPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User) ?? string.Empty;
+                    if (!currentUserPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        var newUserPath = string.IsNullOrWhiteSpace(currentUserPath) ? binToAdd : currentUserPath + Path.PathSeparator + binToAdd;
+                        Environment.SetEnvironmentVariable("PATH", newUserPath, EnvironmentVariableTarget.User);
+                        // Also for current process
+                        var procPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? string.Empty;
+                        if (!procPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
+                            Environment.SetEnvironmentVariable("PATH", procPath + Path.PathSeparator + binToAdd, EnvironmentVariableTarget.Process);
+                    }
+                    // Also try to add via manual compiler tracking so Kodo sees it immediately
+                    var gppPath = Path.Combine(binToAdd, "g++.exe");
+                    if (File.Exists(gppPath))
+                    {
+                        AddOrUpdateManualCompiler(gppPath, autoDetected: false, displayName: "G++ (MSYS2)", author: "MSYS2", canonicalCompilerId: "msys2-mingw");
+                        RefreshManualCompilerExtensions();
+                    }
+                }
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("Failed to update PATH for MSYS2", ex); }
+
+            await InstallPairedLanguageExtensionsAsync(compilerExtension);
+            ExtensionsStatusText = $"{compilerExtension.Name} ready - g++ installed. Switched to GCC for .cpp.";
+            // Auto-switch .cpp to GCC so Build no longer tries clang++
+            _compilerOverrides[".cpp"] = compilerExtension.Id;
+            _compilerOverrides[".c"] = compilerExtension.Id;
+            _compilerOverrides[".cc"] = compilerExtension.Id;
+            SaveSettings();
+            RefreshRunBuildState();
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("HandleMsys2MingwInstallAsync failed", ex);
+            ExtensionsStatusText = $"MSYS2 setup incomplete: {ex.Message}";
+            await ShowWarningDialogAsync("MSYS2 setup", ex);
         }
     }
 
