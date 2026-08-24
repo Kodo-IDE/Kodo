@@ -502,6 +502,13 @@ public partial class MainWindow
                 if (_manualCompilers.ContainsKey(resolvedId) || _autoDetectDismissedIds.Contains(resolvedId))
                     continue;
 
+                // Don't create a local proxy for a compiler already installed via the
+                // marketplace registry — the Installed tab collapses them into one row,
+                // so auto-detecting a duplicate would be immediately hidden anyway and
+                // only clutters manual-compilers.json.
+                if (canonicalCompilerId is not null && _installedCompilers.ContainsKey(canonicalCompilerId))
+                    continue;
+
                 AddOrUpdateManualCompiler(path, autoDetected: true, displayName: name, author: author, id: resolvedId, canonicalCompilerId: canonicalCompilerId);
                 addedAny = true;
             }
@@ -1306,9 +1313,12 @@ public partial class MainWindow
                         if (!procPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
                             Environment.SetEnvironmentVariable("PATH", procPath + Path.PathSeparator + binToAdd, EnvironmentVariableTarget.Process);
                     }
-                    // Also try to add via manual compiler tracking so Kodo sees it immediately
+                    // Also try to add via manual compiler tracking so Kodo sees it immediately.
+                    // When msys2-mingw is already managed-installed the Installed tab collapses
+                    // the manual proxy into the managed row (see FilteredInstalledCompilerExtensions),
+                    // so skip the insert to avoid a hidden duplicate in manual-compilers.json.
                     var gppPath = Path.Combine(binToAdd, "g++.exe");
-                    if (File.Exists(gppPath))
+                    if (File.Exists(gppPath) && !_installedCompilers.ContainsKey("msys2-mingw"))
                     {
                         AddOrUpdateManualCompiler(gppPath, autoDetected: false, displayName: "G++ (MSYS2)", author: "MSYS2", canonicalCompilerId: "msys2-mingw");
                         RefreshManualCompilerExtensions();

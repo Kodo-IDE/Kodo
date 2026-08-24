@@ -2266,10 +2266,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         !VisibleLoadedExtensions.Any() && string.IsNullOrWhiteSpace(_extensionSearchText);
 
     public int InstalledExtensionsCount => VisibleLoadedExtensions.Count();
+    private IEnumerable<MarketplaceExtension> GetDeduplicatedInstalledCompilerSourceNoFilter()
+    {
+        var managedIds = new HashSet<string>(_installedCompilers.Keys, StringComparer.OrdinalIgnoreCase);
+        var installedCanonical = CompilerExtensions.Where(e => e.IsInstalled);
+        var dedupedCanonical = installedCanonical.Where(c =>
+        {
+            if (managedIds.Contains(c.Id)) return true;
+            var hasManualProxy = _manualCompilers.Values.Any(r =>
+                string.Equals(r.CanonicalCompilerId, c.Id, StringComparison.OrdinalIgnoreCase));
+            return !hasManualProxy;
+        });
+        var dedupedManuals = ManualCompilerExtensions.Where(m =>
+        {
+            if (!_manualCompilers.TryGetValue(m.Id, out var rec)) return true;
+            var canonical = rec.CanonicalCompilerId;
+            if (string.IsNullOrWhiteSpace(canonical)) return true;
+            return !managedIds.Contains(canonical);
+        });
+        return dedupedCanonical.Concat(dedupedManuals);
+    }
+
     // Installed compilers use their own registry (installed-compilers.json) rather than
-    // LoadedExtension records - see SyncCompilerInstallStates - so this counts CompilerExtensions
-    // flagged IsInstalled instead of reusing InstalledExtensionsCount.
-    public int InstalledCompilersCount => CompilerExtensions.Count(e => e.IsInstalled) + ManualCompilerExtensions.Count;
+    // LoadedExtension records - see SyncCompilerInstallStates. Count is deduplicated the same
+    // way as FilteredInstalledCompilerExtensions so managed + local for the same canonical
+    // (e.g. Go + local go.exe) counts as one. Search text is intentionally ignored here so the
+    // tab badge stays stable while typing.
+    public int InstalledCompilersCount => GetDeduplicatedInstalledCompilerSourceNoFilter().Count();
     // Drives whether the Installed/Marketplace list cards render at all, so an
     // empty result (no installed extensions yet, or a search with zero matches)
     // doesn't leave a hollow, padded card floating above the empty-state message.
@@ -3522,7 +3545,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Installed compilers, surfaced in the Installed tab alongside LoadedExtensions -
     // filtered by SelectedInstalledContentFilter (All / Extensions / Compilers) and search text.
     // Combines index-installed compilers with manually-added/auto-detected ones (see
-    // ManualCompilerExtensions) into one list.
+    // ManualCompilerExtensions) into one deduplicated list: when a compiler is installed
+    // via the marketplace (installed-compilers.json) and a local/auto-detected counterpart
+    // exists with the same CanonicalCompilerId, they are collapsed into a single row so the
+    // Installed tab shows "one Go" / "one Python" instead of two identical cards.
     public IEnumerable<MarketplaceExtension> FilteredInstalledCompilerExtensions
     {
         get
@@ -3530,8 +3556,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_selectedInstalledContentFilter == InstalledContentFilters.Extensions)
                 return [];
 
-            IEnumerable<MarketplaceExtension> source = CompilerExtensions.Where(e => e.IsInstalled)
-                .Concat(ManualCompilerExtensions);
+            IEnumerable<MarketplaceExtension> source = GetDeduplicatedInstalledCompilerSourceNoFilter();
 
             if (!string.IsNullOrWhiteSpace(_extensionSearchText))
             {
