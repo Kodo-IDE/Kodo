@@ -7289,16 +7289,48 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? accentSolid.Color
             : Color.Parse("#8C00FF");
 
-        var panel = new StackPanel { Spacing = 6, Margin = new Thickness(16) };
-
-        panel.Children.Add(new TextBlock
+        var headerRow = new StackPanel
         {
-            Text = "Save file with encoding:",
-            FontSize = 13,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = Brushes.White,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Save file with encoding:",
+                    FontSize = 13,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
+
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
+
+        var listPanel = new StackPanel { Spacing = 6 };
 
         foreach (var (label, enc) in encodings)
         {
@@ -7311,11 +7343,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 HorizontalContentAlignment = HorizontalAlignment.Left,
                 Background = isCurrent
                     ? new SolidColorBrush(accentColor, 0.18)
-                    : new SolidColorBrush(Color.Parse("#252526")),
+                    : ButtonBrush,
                 Foreground = isCurrent
                     ? new SolidColorBrush(accentColor)
-                    : Brushes.White,
-                BorderBrush = new SolidColorBrush(DialogPalette.Border),
+                    : PrimaryTextBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(12, 7),
@@ -7326,27 +7358,62 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 chosen = capturedEnc;
                 dialog?.Close();
             };
-            panel.Children.Add(btn);
+            listPanel.Children.Add(btn);
         }
 
-        panel.Children.Add(new TextBlock
+        var listBorder = new Border
         {
-            Text = "The file will be re-saved immediately with the chosen encoding.",
-            FontSize = 11,
-            Foreground = new SolidColorBrush(DialogPalette.TextDim),
-            Margin = new Thickness(0, 8, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-        });
+            Background = WindowBackgroundBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Child = listPanel
+        };
+
+        var panel = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                headerRow,
+                new TextBlock { Text = "Choose an encoding for this file:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                headerDivider,
+                listBorder,
+                new TextBlock
+                {
+                    Text = "The file will be re-saved immediately with the chosen encoding.",
+                    FontSize = 11,
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.85
+                },
+                footerDivider
+            }
+        };
+
+        var outer = new Border
+        {
+            Background = CardBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(16),
+            Child = panel
+        };
 
         dialog = new Window
         {
             Title = "Change File Encoding",
-            Width = 280,
+            Width = 320,
             SizeToContent = SizeToContent.Height,
+            MinWidth = 300,
+            MaxHeight = 560,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(DialogPalette.Surface),
-            Content = panel,
+            Background = WindowBackgroundBrush,
+            Content = outer,
         };
 
         await dialog.ShowDialog(this);

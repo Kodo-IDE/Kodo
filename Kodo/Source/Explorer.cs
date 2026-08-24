@@ -965,40 +965,83 @@ public partial class MainWindow
             if (e.Key == Key.Escape) { dialog!.Close(); }
         };
 
+        var headerRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Rename",
+                    FontSize = 15,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
+
+        var divider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
+        var inner = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                headerRow,
+                new TextBlock { Text = "Enter a new name:", FontSize = 13, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap },
+                inputBox,
+                divider,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Children =
+                    {
+                        CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
+                            () => dialog!.Close()),
+                        confirmButton
+                    }
+                }
+            }
+        };
+
         dialog = new Window
         {
-            Width                   = 380,
-            Height                  = 160,
+            Width                   = 400,
+            SizeToContent           = SizeToContent.Height,
+            MinWidth                = 360,
+            MaxHeight               = 340,
             CanResize               = false,
             ShowInTaskbar           = false,
             WindowStartupLocation   = WindowStartupLocation.CenterOwner,
             Title                   = "Rename",
-            Background              = CardBrush,
+            Background              = WindowBackgroundBrush,
             Content = new Border
             {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(20),
-                Child   = new StackPanel
-                {
-                    Spacing  = 14,
-                    Children =
-                    {
-                        new TextBlock { Text = "Enter a new name:", FontSize = 15,
-                            FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
-                        inputBox,
-                        new StackPanel
-                        {
-                            Orientation         = Orientation.Horizontal,
-                            Spacing             = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children =
-                            {
-                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                                    () => dialog!.Close()),
-                                confirmButton
-                            }
-                        }
-                    }
-                }
+                Margin = new Thickness(16),
+                Child = inner
             }
         };
 

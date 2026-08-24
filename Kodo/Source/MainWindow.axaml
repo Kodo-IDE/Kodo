@@ -2166,8 +2166,8 @@
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="16"
-                                            Height="348">
+                                            CornerRadius="12"
+                                            MaxHeight="348">
                                         <Grid RowDefinitions="Auto,*">
 
                                             <!-- News panel header -->
@@ -2313,8 +2313,8 @@
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="16"
-                                            Height="329">
+                                            CornerRadius="12"
+                                            MaxHeight="329">
                                         <Grid RowDefinitions="Auto,*">
 
                                             <!-- Header: accent pill + version + action buttons -->
@@ -3126,9 +3126,9 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="20"
-                                Padding="28"
-                                Margin="0,0,20,0">
+                                CornerRadius="12"
+                                Padding="20"
+                                Margin="0,0,16,0">
                             <StackPanel Spacing="18">
                             <Panel>
                                 <!-- Normal step content - hidden on setup step -->

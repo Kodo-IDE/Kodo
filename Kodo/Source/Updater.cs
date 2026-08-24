@@ -548,15 +548,33 @@ internal sealed class UpdateDialog : Window
         Grid.SetColumn(_primaryButton, 1);
         buttonRow.Children.Add(_primaryButton);
 
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(_palette.Border),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(_palette.Border),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
         _content = new StackPanel
         {
-            Spacing = 14,
+            Spacing = 12,
             Children =
             {
                 headerRow,
+                headerDivider,
                 _statusText,
                 notesLink,
                 _progressBar,
+                footerDivider,
                 buttonRow,
             },
         };
@@ -566,8 +584,8 @@ internal sealed class UpdateDialog : Window
             Background      = new SolidColorBrush(_palette.SurfaceDeep),
             BorderBrush     = new SolidColorBrush(_palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius    = new CornerRadius(20),
-            Padding         = new Thickness(22),
+            CornerRadius    = new CornerRadius(12),
+            Padding         = new Thickness(20),
             Margin          = new Thickness(16),
             Child           = _content,
         };

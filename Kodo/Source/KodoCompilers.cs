@@ -3158,45 +3158,90 @@ public partial class MainWindow
             if (e.Key == Key.Escape) { dialog!.Close(); }
         };
 
+        var headerRow2 = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = title,
+                    FontSize = 15,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextWrapping = TextWrapping.Wrap
+                }
+            }
+        };
+
+        var divider2 = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
+        var inner2 = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                headerRow2,
+                new TextBlock
+                {
+                    Text = prompt,
+                    FontSize = 13,
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                },
+                inputBox,
+                divider2,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Children =
+                    {
+                        CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, () => dialog!.Close()),
+                        confirmButton,
+                    },
+                },
+            },
+        };
+
         dialog = new Window
         {
             Width = 460,
-            Height = 210,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 380,
+            MaxHeight = 360,
             CanResize = false,
             ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = title,
-            Background = CardBrush,
+            Background = WindowBackgroundBrush,
             Content = new Border
             {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
                 Padding = new Thickness(20),
-                Child = new StackPanel
-                {
-                    Spacing = 14,
-                    Children =
-                    {
-                        new TextBlock
-                        {
-                            Text = prompt,
-                            FontSize = 13,
-                            Foreground = MutedTextBrush,
-                            TextWrapping = TextWrapping.Wrap,
-                        },
-                        inputBox,
-                        new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children =
-                            {
-                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, () => dialog!.Close()),
-                                confirmButton,
-                            },
-                        },
-                    },
-                },
-            },
+                Margin = new Thickness(16),
+                Child = inner2
+            }
         };
 
         dialog.Opened += (_, _) =>

@@ -94,18 +94,29 @@ public partial class MainWindow
         Window? dialog = null;
         dialog = new Window
         {
-            Width = 420,
-            Height = 190,
+            Width = 440,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 400,
+            MaxHeight = 320,
             CanResize = false,
             ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = "Unsaved Changes",
-            Background = CardBrush,
-            Content = BuildUnsavedTabDialogContent(
-                tab,
-                () => { result = UnsavedTabAction.Save; dialog!.Close(); },
-                () => { result = UnsavedTabAction.Discard; dialog!.Close(); },
-                () => { result = UnsavedTabAction.Cancel; dialog!.Close(); })
+            Background = WindowBackgroundBrush,
+            Content = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = BuildUnsavedTabDialogContent(
+                    tab,
+                    () => { result = UnsavedTabAction.Save; dialog!.Close(); },
+                    () => { result = UnsavedTabAction.Discard; dialog!.Close(); },
+                    () => { result = UnsavedTabAction.Cancel; dialog!.Close(); })
+            }
         };
 
         await dialog.ShowDialog(this);
@@ -118,11 +129,44 @@ public partial class MainWindow
         Action discardAction,
         Action cancelAction)
     {
+        var headerRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Save changes before closing?",
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
+
+        var divider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
         var buttonRow = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 10,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
             Children =
             {
                 CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, cancelAction),
@@ -131,35 +175,28 @@ public partial class MainWindow
             }
         };
 
-        return new Border
+        return new StackPanel
         {
-            Padding = new Thickness(20),
-            Child = new StackPanel
+            Spacing = 12,
+            Children =
             {
-                Spacing = 14,
-                Children =
+                headerRow,
+                new TextBlock
                 {
-                    new TextBlock
-                    {
-                        Text = "Save changes before closing?",
-                        FontSize = 18,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = PrimaryTextBrush
-                    },
-                    new TextBlock
-                    {
-                        Text = $"{tab.DisplayName} has unsaved changes.",
-                        Foreground = MutedTextBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    new TextBlock
-                    {
-                        Text = "Choose Save to keep them, Discard to close without saving, or Cancel to keep editing.",
-                        Foreground = MutedTextBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    buttonRow
-                }
+                    Text = $"{tab.DisplayName} has unsaved changes.",
+                    Foreground = PrimaryTextBrush,
+                    FontSize = 13,
+                    FontWeight = FontWeight.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                new TextBlock
+                {
+                    Text = "Choose Save to keep them, Discard to close without saving, or Cancel to keep editing.",
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap
+                },
+                divider,
+                buttonRow
             }
         };
     }
@@ -188,13 +225,30 @@ public partial class MainWindow
         {
             var kind = isFolder ? "Folder" : "File";
 
-            var titleText = new TextBlock
+            var headerRow = new StackPanel
             {
-                Text         = $"{kind} Not Found",
-                FontSize     = 16,
-                FontWeight   = FontWeight.SemiBold,
-                Foreground   = PrimaryTextBrush,
-                TextWrapping = TextWrapping.Wrap,
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 3,
+                        Height = 16,
+                        Background = AccentBrush,
+                        CornerRadius = new CornerRadius(2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = $"{kind} Not Found",
+                        FontSize = 16,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = PrimaryTextBrush,
+                        TextWrapping = TextWrapping.Wrap,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
             };
 
             var bodyText = new TextBlock
@@ -204,6 +258,23 @@ public partial class MainWindow
                 FontSize     = 13,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
+            };
+
+            var pathBorder = new Border
+            {
+                Background = WindowBackgroundBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 8),
+                Child = new SelectableTextBlock
+                {
+                    Text = path,
+                    FontSize = 11,
+                    FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap
+                }
             };
 
             var removeButton = new Button
@@ -234,25 +305,43 @@ public partial class MainWindow
             Grid.SetColumn(dismissButton, 1);
             buttonRow.Children.Add(dismissButton);
 
+            var divider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 4)
+            };
+
             var content = new StackPanel
             {
                 Spacing  = 12,
-                Margin   = new Thickness(20),
-                Children = { titleText, bodyText, buttonRow },
+                Children = { headerRow, bodyText, pathBorder, divider, buttonRow },
+            };
+
+            var outer = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = content
             };
 
             Window? dialog = null;
             dialog = new Window
             {
                 Title                 = "Kodo - Not Found",
-                Width                 = 480,
+                Width                 = 500,
                 SizeToContent         = SizeToContent.Height,
-                MinWidth              = 360,
-                MaxHeight             = 400,
+                MinWidth              = 380,
+                MaxHeight             = 460,
                 CanResize             = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background            = CardBrush,
-                Content               = content,
+                Background            = WindowBackgroundBrush,
+                Content               = outer,
             };
 
             removeButton.Click += (_, _) => { RemoveRecentFile(path); dialog!.Close(); };
@@ -274,13 +363,30 @@ public partial class MainWindow
     {
         try
         {
-            var titleText = new TextBlock
+            var headerRow = new StackPanel
             {
-                Text         = title,
-                FontSize     = 16,
-                FontWeight   = FontWeight.SemiBold,
-                Foreground   = PrimaryTextBrush,
-                TextWrapping = TextWrapping.Wrap,
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 3,
+                        Height = 16,
+                        Background = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
+                        CornerRadius = new CornerRadius(2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = title,
+                        FontSize = 16,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = PrimaryTextBrush,
+                        TextWrapping = TextWrapping.Wrap,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
             };
 
             var bodyText = new TextBlock
@@ -289,7 +395,7 @@ public partial class MainWindow
                 FontSize     = 13,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 4, 0, 0),
+                Margin       = new Thickness(0, 2, 0, 0),
             };
 
             var cancelButton = new Button
@@ -310,7 +416,7 @@ public partial class MainWindow
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding             = new Thickness(20, 8),
                 Background          = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
-                Foreground          = AccentForegroundBrush,
+                Foreground          = Brushes.White,
                 BorderThickness     = new Thickness(0),
                 CornerRadius        = new CornerRadius(8),
             };
@@ -320,25 +426,43 @@ public partial class MainWindow
             Grid.SetColumn(confirmButton, 1);
             buttonRow.Children.Add(confirmButton);
 
+            var divider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 4)
+            };
+
             var content = new StackPanel
             {
                 Spacing  = 12,
-                Margin   = new Thickness(20),
-                Children = { titleText, bodyText, buttonRow },
+                Children = { headerRow, bodyText, divider, buttonRow },
+            };
+
+            var outer = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = content
             };
 
             Window? dialog = null;
             dialog = new Window
             {
                 Title                 = "Kodo",
-                Width                 = 420,
+                Width                 = 440,
                 SizeToContent         = SizeToContent.Height,
-                MinWidth              = 340,
-                MaxHeight             = 320,
+                MinWidth              = 360,
+                MaxHeight             = 360,
                 CanResize             = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background            = CardBrush,
-                Content               = content,
+                Background            = WindowBackgroundBrush,
+                Content               = outer,
             };
 
             var result = false;
@@ -378,13 +502,30 @@ public partial class MainWindow
             var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath      = KodoDiagnostics.MainLogFilePath;
 
-            var titleText = new TextBlock
+            var headerRow = new StackPanel
             {
-                Text         = titleLabel,
-                FontSize     = 16,
-                FontWeight   = FontWeight.SemiBold,
-                Foreground   = PrimaryTextBrush,
-                TextWrapping = TextWrapping.Wrap,
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 3,
+                        Height = 16,
+                        Background = isCritical ? new SolidColorBrush(Color.Parse("#FFA040")) : AccentBrush,
+                        CornerRadius = new CornerRadius(2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = titleLabel,
+                        FontSize = 16,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = PrimaryTextBrush,
+                        TextWrapping = TextWrapping.Wrap,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
             };
 
             var subtitleText = new TextBlock
@@ -393,7 +534,15 @@ public partial class MainWindow
                 FontSize     = 13,
                 Foreground   = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 4, 0, 0),
+                Margin       = new Thickness(0, 2, 0, 0),
+            };
+
+            var headerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 4)
             };
 
             var criticalBanner = new Border
@@ -471,7 +620,7 @@ public partial class MainWindow
 
             var exceptionBorder = new Border
             {
-                Background      = CardBrush,
+                Background      = WindowBackgroundBrush,
                 BorderBrush     = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius    = new CornerRadius(8),
@@ -534,37 +683,57 @@ public partial class MainWindow
             Grid.SetColumn(dismissButton, 1);
             buttonRow.Children.Add(dismissButton);
 
+            var footerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 4)
+            };
+
             var content = new StackPanel
             {
                 Spacing  = 12,
-                Margin   = new Thickness(20),
                 Children =
                 {
-                    titleText,
+                    headerRow,
                     subtitleText,
+                    headerDivider,
                     criticalBanner,
                     contextBadge,
                     metadataText,
                     errorMessageText,
                     exceptionBorder,
                     logPathText,
+                    footerDivider,
                     buttonRow,
                 },
+            };
+
+            var outer = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = content
             };
 
             Window? dialog = null;
             dialog = new Window
             {
                 Title         = windowTitle,
-                Width         = 520,
+                Width         = 560,
                 SizeToContent = SizeToContent.Height,
-                MinWidth      = 380,
-                MinHeight     = 180,
-                MaxHeight     = 660,
+                MinWidth      = 400,
+                MinHeight     = 200,
+                MaxHeight     = 700,
                 CanResize     = true,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background    = CardBrush,
-                Content       = content,
+                Background    = WindowBackgroundBrush,
+                Content       = outer,
             };
 
             copyButton.Click += async (_, _) =>

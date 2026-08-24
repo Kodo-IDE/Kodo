@@ -642,48 +642,111 @@ public partial class MainWindow
             if (ke.Key == Key.Escape) { dialog!.Close(); }
         };
 
-        dialog = new Window
+        var headerRow = new StackPanel
         {
-            Width                 = 340,
-            SizeToContent         = SizeToContent.Height,
-            CanResize             = false,
-            ShowInTaskbar         = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title                 = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
-            Background            = CardBrush,
-            Content = new Border
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
             {
-                Padding = new Thickness(20),
-                Child   = new StackPanel
+                new Border
                 {
-                    Spacing  = 14,
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
+                    FontSize = 15,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
+
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
+        var inner = new StackPanel
+        {
+            Spacing = 12,
+            Children =
+            {
+                headerRow,
+                new TextBlock { Text = IsAmericanEnglish ? "Pick a colour for highlights, selections and buttons" : "Pick a colour for highlights, selections and buttons", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                headerDivider,
+                new Border
+                {
+                    Background = WindowBackgroundBrush,
+                    BorderBrush = SurfaceBorderBrush,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Padding = new Thickness(10),
+                    Child = new StackPanel
+                    {
+                        Spacing = 12,
+                        Children = { svCanvas, hueCanvas }
+                    }
+                },
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    Children = { previewBorder, hexInput },
+                },
+                footerDivider,
+                new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 10,
+                    HorizontalAlignment = HorizontalAlignment.Right,
                     Children =
                     {
-                        new TextBlock { Text = IsAmericanEnglish ? "Choose an accent color" : "Choose an accent colour", FontSize = 15,
-                            FontWeight = FontWeight.SemiBold, Foreground = PrimaryTextBrush },
-                        svCanvas,
-                        hueCanvas,
-                        new StackPanel
-                        {
-                            Orientation = Orientation.Horizontal,
-                            Spacing     = 10,
-                            Children    = { previewBorder, hexInput },
-                        },
-                        new StackPanel
-                        {
-                            Orientation         = Orientation.Horizontal,
-                            Spacing             = 10,
-                            HorizontalAlignment = HorizontalAlignment.Right,
-                            Children =
-                            {
-                                CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                                    () => dialog!.Close()),
-                                CreateDialogButton("Apply", AccentBrush, AccentBrush, AccentForegroundBrush,
-                                    () => { confirmed = true; dialog!.Close(); }),
-                            }
-                        }
+                        CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
+                            () => dialog!.Close()),
+                        CreateDialogButton("Apply", AccentBrush, AccentBrush, AccentForegroundBrush,
+                            () => { confirmed = true; dialog!.Close(); }),
                     }
                 }
+            }
+        };
+
+        dialog = new Window
+        {
+            Width = 360,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 340,
+            MaxHeight = 560,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
+            Background = WindowBackgroundBrush,
+            Content = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = inner
             }
         };
 

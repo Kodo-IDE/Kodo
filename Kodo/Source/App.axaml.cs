@@ -333,14 +333,34 @@ public partial class App : Application
         bool    isTerminating,
         Window? owner)
     {
-        // Header
-        var titleText = new TextBlock
+        var palette = ThemeResolver.GetCurrentPalette();
+        var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
+
+        // Header with accent rail
+        var headerRow = new StackPanel
         {
-            Text        = "Kodo crashed",
-            FontSize    = 16,
-            FontWeight  = FontWeight.SemiBold,
-            Foreground  = Brushes.White,
-            TextWrapping = TextWrapping.Wrap,
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = new SolidColorBrush(accentColor),
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Kodo crashed",
+                    FontSize = 16,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = new SolidColorBrush(palette.Text),
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
         };
 
         var subtitleText = new TextBlock
@@ -349,9 +369,17 @@ public partial class App : Application
                 ? "An unrecoverable error occurred and Kodo will now close. The crash details have been saved."
                 : "An unexpected error occurred, but Kodo may still be running. The crash details have been saved.",
             FontSize    = 13,
-            Foreground  = new SolidColorBrush(KodoTextMuted),
+            Foreground  = new SolidColorBrush(palette.TextMuted),
             TextWrapping = TextWrapping.Wrap,
             Margin      = new Thickness(0, 4, 0, 0),
+        };
+
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(palette.Border),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
         };
 
         // Terminating warning, shown only when isTerminating is true.
@@ -419,8 +447,8 @@ public partial class App : Application
 
         var exceptionBorder = new Border
         {
-            Background      = new SolidColorBrush(KodoDarkSurfaceDeep),
-            BorderBrush     = new SolidColorBrush(KodoDarkBorder),
+            Background      = new SolidColorBrush(palette.SurfaceDeep),
+            BorderBrush     = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
             CornerRadius    = new CornerRadius(8),
             Padding         = new Thickness(12),
@@ -448,8 +476,6 @@ public partial class App : Application
             BorderThickness     = new Thickness(1),
             CornerRadius        = new CornerRadius(8),
         };
-
-        var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
 
         var reportButton = new Button
         {
@@ -487,22 +513,42 @@ public partial class App : Application
         Grid.SetColumn(dismissButton, 1);
         buttonRow.Children.Add(dismissButton);
 
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = new SolidColorBrush(palette.Border),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+
         // Layout
         var content = new StackPanel
         {
             Spacing  = 12,
-            Margin   = new Thickness(20),
             Children =
             {
-                titleText,
+                headerRow,
                 subtitleText,
+                headerDivider,
                 terminatingBanner,
                 sourceBadge,
                 metadataText,
                 exceptionBorder,
                 logPathText,
+                footerDivider,
                 buttonRow,
             },
+        };
+
+        var outer = new Border
+        {
+            Background = new SolidColorBrush(palette.SurfaceDeep),
+            BorderBrush = new SolidColorBrush(palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(20),
+            Margin = new Thickness(16),
+            Child = content
         };
 
         var dialog = new Window
@@ -517,8 +563,8 @@ public partial class App : Application
             WindowStartupLocation = owner is not null
                 ? WindowStartupLocation.CenterOwner
                 : WindowStartupLocation.CenterScreen,
-            Background = new SolidColorBrush(KodoDarkSurface),
-            Content    = content,
+            Background = new SolidColorBrush(palette.Background),
+            Content    = outer,
         };
 
         // Copies the full exception + source to the clipboard.
