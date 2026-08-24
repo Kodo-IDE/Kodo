@@ -2479,6 +2479,10 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(exe))
             return 0;
 
+        // Installed via Kodo marketplace should be considered available even if not yet on PATH for this session
+        if (compiler.IsInstalled)
+            return 1;
+
         var exeName = NormalizeExeName(Path.GetFileName(exe));
         foreach (var record in _manualCompilers.Values)
         {
@@ -2585,6 +2589,17 @@ public partial class MainWindow
                 return sibling;
         }
 
+        // Check common install locations for Go even if not on PATH yet (needs restart)
+        if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", "go.exe");
+            if (File.Exists(goPath)) return goPath;
+            goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Go", "bin", "go.exe");
+            if (File.Exists(goPath)) return goPath;
+            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", "go.exe");
+            if (File.Exists(localGo)) return localGo;
+        }
+
         return TryFindOnPath(exeName) ?? TryFindOnPath(toolName);
     }
 
@@ -2615,6 +2630,63 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(value)) return value;
         if (value.StartsWith('"') && value.EndsWith('"')) return value;
         return value.Any(char.IsWhiteSpace) ? $"\"{value}\"" : value;
+    }
+
+    private async Task EnsureGoModExistsAsync(string workingDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
+            return;
+        // Check working dir and parents (go searches upwards)
+        var current = workingDirectory;
+        for (var i = 0; i < 4; i++)
+        {
+            if (File.Exists(Path.Combine(current, "go.mod")))
+                return;
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrWhiteSpace(parent) || parent.Equals(current, StringComparison.OrdinalIgnoreCase))
+                break;
+            current = parent;
+        }
+        var moduleName = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(moduleName) || moduleName.Length < 2)
+            moduleName = "hello";
+        moduleName = System.Text.RegularExpressions.Regex.Replace(moduleName, @"[^a-zA-Z0-9\.\-_]", "").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(moduleName))
+            moduleName = "hello";
+        moduleName = $"example.com/{moduleName}";
+        var goExe = ResolveToolExecutable("go") ?? "go";
+        try
+        {
+            using var initProc = Process.Start(new ProcessStartInfo(goExe, $"mod init {moduleName}")
+            {
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            });
+            if (initProc is not null)
+            {
+                await initProc.WaitForExitAsync();
+                // Best-effort tidy, ignore failure (no deps yet)
+                try
+                {
+                    using var tidyProc = Process.Start(new ProcessStartInfo(goExe, "mod tidy")
+                    {
+                        WorkingDirectory = workingDirectory,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    });
+                    if (tidyProc is not null)
+                        await tidyProc.WaitForExitAsync();
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("EnsureGoModExistsAsync failed", ex);
+        }
     }
 
     private async Task ExecuteCurrentCommandAsync(bool isBuild, string? extraArgs)
@@ -2674,6 +2746,14 @@ public partial class MainWindow
         }
 
         var workingDirectory = ResolveWorkingDirectory();
+
+        // Auto-init go.mod for Go single-file runs (go run {file} requires a module with GO111MODULE=on)
+        if (ext.Equals(".go", StringComparison.OrdinalIgnoreCase) &&
+            compiler is not null &&
+            (compiler.Id.Equals("go", StringComparison.OrdinalIgnoreCase) || compiler.Id.Equals("project:go", StringComparison.OrdinalIgnoreCase)))
+        {
+            await EnsureGoModExistsAsync(workingDirectory);
+        }
 
         var existing = isBuild ? _buildWindow : _runWindow;
         if (existing is { IsVisible: true })
