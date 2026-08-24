@@ -4109,7 +4109,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    private static Color DarkenColor(Color c, double amount) => WindowsThemeHelper.Darken(c, amount);
+    private static Color DarkenColor(Color c, double amount)
+    {
+        byte Adjust(byte ch) => (byte)Math.Clamp(ch * (1 - amount), 0, 255);
+        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
+    }
 
     private static double GetRelativeLuminance(Color c)
     {
@@ -8020,25 +8024,4 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         button.Click += (_, _) => clickAction();
         return button;
     }
-
-
-
-
-
-
-
-    // Generic "are you sure?" prompt for destructive-but-recoverable actions.
-
-
-    // Two-tier warning dialog: Critical shows an amber banner, non-critical is softer.
-
-
-    // Runs factory with a timeout, throwing a named TimeoutException on expiry.
-
-
-
-
-
-
-
 }
