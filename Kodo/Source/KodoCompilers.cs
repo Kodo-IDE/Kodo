@@ -3126,7 +3126,7 @@ public partial class MainWindow
             }
         }
 
-        // No icon loaded yet — return empty placeholder instead of abbreviation
+        // No icon loaded yet - return empty placeholder instead of abbreviation
         return icon;
     }
 

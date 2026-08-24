@@ -3789,6 +3789,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isConfirmBeforeClosingUnsavedTabsEnabled = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(TabRestoreStatusText));
+            OnPropertyChanged(nameof(ConfirmBeforeClosingStatusText));
             SaveSettings();
         }
     }
@@ -3802,6 +3803,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isRestoreOpenTabsOnLaunchEnabled = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(TabRestoreStatusText));
+            OnPropertyChanged(nameof(ConfirmBeforeClosingStatusText));
             SaveSettings();
         }
     }
@@ -4162,6 +4164,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : IsConfirmBeforeClosingUnsavedTabsEnabled
             ? "Unsaved tabs ask for confirmation before closing."
             : "Tabs close immediately, and launch starts with a fresh editor session.";
+
+    public string ConfirmBeforeClosingStatusText => IsConfirmBeforeClosingUnsavedTabsEnabled
+        ? "Shows Save, Discard and Cancel when you try to close a tab with unsaved changes."
+        : "Unsaved tabs close immediately without asking - any unsaved changes will be lost.";
 
     public string EditorStatsText
     {
@@ -6072,7 +6078,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Shift+Enter / Shift+F3", "Previous search match (in terminal)"),
         };
 
-        // Polished header — accent badge + title, hint underneath, divider
+        // Polished header - accent badge + title, hint underneath, divider
         var iconBadge = new Border
         {
             Background        = AccentBrush,

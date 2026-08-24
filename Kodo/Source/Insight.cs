@@ -1461,7 +1461,7 @@ public sealed class InsightEngine
         var masked = maskedDocForLines.Split('\n');
 
         // Require a clear majority of substantive lines to end in ';' before assuming
-        // semicolon style — a handful of stray semicolons (e.g. in strings/attributes)
+        // semicolon style - a handful of stray semicolons (e.g. in strings/attributes)
         // shouldn't be enough to start flagging every non-semicolon line as an error.
         var nonBlankLines = masked.Count(l => l.Trim().Length > 0);
         var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));

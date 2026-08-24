@@ -5356,6 +5356,9 @@
                                 <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Confirm before closing unsaved tabs" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding ConfirmBeforeClosingStatusText}" />
 
                                 <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
