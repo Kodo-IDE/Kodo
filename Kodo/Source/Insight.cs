@@ -212,8 +212,21 @@ public sealed class InsightEngine
         @"\b(?:let|var|val)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]*)?" + NotCompoundOrArrow,
         RegexOptions.Compiled);
 
+    // Strict bare assignment: `identifier =` at line start, no inline type annotation.
+    // Colon-annotated assignments like `x: int =` are handled separately to avoid
+    // misclassifying labels like `myLabel: x =` as variable declarations.
     private static readonly Regex BareAssignment = new(
-        @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow,
+        @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*" + NotCompoundOrArrow,
+        RegexOptions.Compiled);
+
+    private static readonly Regex ColonAnnotatedAssignment = new(
+        @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z_][A-Za-z0-9_.<>\[\]\?\|,\s]*\s*" + NotCompoundOrArrow,
+        RegexOptions.Compiled);
+
+    // Covers `Type name =`, `public static List<int> field =`, `string? name =`, etc.
+    // Captures the final identifier before `=` after an optional type/qualifier prefix.
+    private static readonly Regex QualifiedTypeAssignment = new(
+        @"^\s*(?:(?:public|private|protected|internal|static|readonly|sealed|abstract|virtual|override|async|extern|unsafe|partial|const|volatile|new|required|file)\s+)*(?:[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>]*>)?\s*(?:\[\s*\])*\s+)+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\]\?\|,\s]*)?\s*" + NotCompoundOrArrow,
         RegexOptions.Compiled);
 
     private static readonly Regex LoopOrHandlerBinding = new(
@@ -225,7 +238,21 @@ public sealed class InsightEngine
         TypedOrKeywordDeclaration,
         ModifiedBinding,
         BareAssignment,
+        ColonAnnotatedAssignment,
+        QualifiedTypeAssignment,
         LoopOrHandlerBinding,
+    };
+
+    // Common type names for colon-annotation validation. If the content between `:` and `=`
+    // is a single lower-case word not in this set, it is likely a label (`myLabel: x =`), not a type.
+    private static readonly HashSet<string> KnownColonTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
+        "float", "double", "decimal", "bool", "char", "string", "object", "dynamic",
+        "var", "auto", "void", "list", "dict", "set", "tuple", "array", "map",
+        "str", "num", "number", "boolean", "any", "unknown", "never", "optional",
+        "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+        "float32", "float64",
     };
 
     private static readonly Regex BatchSetDeclaration = new(
@@ -606,6 +633,109 @@ public sealed class InsightEngine
         }
     }
 
+    private static bool IsPlausibleVariableName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return false;
+        // Single-letter names like `i`, `x`, `_` are still plausible, but
+        // reject obviously non-identifier artifacts.
+        if (name.Length > 64) return false;
+        // Reject numeric-like or hyphenated artifacts that slipped through.
+        if (char.IsDigit(name[0])) return false;
+        if (name.Contains('-')) return false;
+        return true;
+    }
+
+    private static bool IsFalsePositiveDeclaration(string scanText, string name, Regex pattern)
+    {
+        // Reject attribute-style named arguments: `[Attr(Name = "...")]` when the
+        // match is `Name` but the line is starting inside attribute brackets.
+        // These are not variable declarations.
+        var trimmed = scanText.Trim();
+        if (trimmed.StartsWith("[") && trimmed.Contains("=") && trimmed.Contains("]"))
+        {
+            // If the line starts with '[' or contains '[' before the identifier,
+            // likely an attribute declaration. Check if name appears after '[' or '('
+            var idxName = scanText.IndexOf(name, StringComparison.Ordinal);
+            if (idxName > 0)
+            {
+                var before = scanText.Substring(0, idxName);
+                if (before.Contains('[') || before.Contains('('))
+                {
+                    // Additional check: inside brackets, assignments are named arguments, not variables.
+                    // Allow only if the name is preceded by `var`/`let`/`const` etc.
+                    var beforeTrim = before.Trim();
+                    if (!beforeTrim.EndsWith("var", StringComparison.Ordinal) &&
+                        !beforeTrim.EndsWith("let", StringComparison.Ordinal) &&
+                        !beforeTrim.EndsWith("const", StringComparison.Ordinal))
+                        return true;
+                }
+            }
+        }
+
+        // Reject label-like `myLabel: x =` where colon annotation's type is actually
+        // a variable name, not a type. For `x: int =` the type `int` is known; for
+        // `loop: x =` the type `x` is lower-case and not a known type, so skip the
+        // outer label `loop`. Only apply to colon-annotated pattern.
+        if (pattern == ColonAnnotatedAssignment)
+        {
+            // Extract content between ':' and '=' for this specific match
+            var colonIdx = scanText.IndexOf(':', StringComparison.Ordinal);
+            var eqIdx = scanText.IndexOf('=', colonIdx + 1);
+            if (colonIdx >= 0 && eqIdx > colonIdx)
+            {
+                var typePart = scanText.Substring(colonIdx + 1, eqIdx - colonIdx - 1).Trim();
+                // Take first token of type part as the type name
+                var firstToken = typePart.Split(new[] { ' ', '\t', '<', '>', '[', ']', ',', '|', '?' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (!string.IsNullOrEmpty(firstToken))
+                {
+                    // Strip trailing '?' for nullable types
+                    firstToken = firstToken.TrimEnd('?');
+                    // If single token lower-case not in known types, treat as label misclassification
+                    if (firstToken.Length > 0 && char.IsLower(firstToken[0]) && !KnownColonTypes.Contains(firstToken))
+                    {
+                        // If type part is exactly one identifier with no type syntax, reject
+                        var tokens = typePart.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                        if (tokens.Length == 1 && !typePart.Contains("<") && !typePart.Contains("[") && !typePart.Contains("|"))
+                            return true;
+                    }
+                }
+            }
+        }
+
+        // Reject lines that look like property access assignment: `obj.prop =`
+        // BareAssignment would not match `obj.prop` (since it only captures `obj`), but
+        // QualifiedTypeAssignment could still capture `prop` incorrectly if line is `obj.prop = 5`
+        // which we should not flag as new variable. Detect by checking if scanText contains '.'
+        // before the name's position near '='
+        var eqPos = scanText.IndexOf('=');
+        if (eqPos > 0)
+        {
+            var beforeEq = scanText.Substring(0, eqPos);
+            if (beforeEq.Contains('.') || beforeEq.Contains("->") || beforeEq.Contains("::"))
+            {
+                var nameIdx = beforeEq.LastIndexOf(name, StringComparison.Ordinal);
+                if (nameIdx > 0 && beforeEq.Substring(0, nameIdx).Contains('.'))
+                    return true;
+                // Also reject bracket-like `arr[0] =` where LHS is not a simple identifier.
+                if (beforeEq.Contains('[') || beforeEq.Contains(']'))
+                    return true;
+            }
+            // Reject lines like `return x = 5`, `throw x = 5`, `yield x = 5`
+            var beforeTrimLower = beforeEq.TrimStart().ToLowerInvariant();
+            if (beforeTrimLower.StartsWith("return ") || beforeTrimLower.StartsWith("throw ") ||
+                beforeTrimLower.StartsWith("yield ") || beforeTrimLower.StartsWith("await ") ||
+                beforeTrimLower.StartsWith("case ") || beforeTrimLower.StartsWith("default:"))
+                return true;
+        }
+
+        // Reject names that are language keywords even if ReservedWords missed
+        if (name.Length >= 2 && name.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (name.Length >= 2 && name.Equals("false", StringComparison.OrdinalIgnoreCase)) return true;
+        if (name.Length >= 2 && name.Equals("null", StringComparison.OrdinalIgnoreCase)) return true;
+
+        return false;
+    }
+
     // Find variable names declared on line
     public static IEnumerable<string> IdentifyVariableInitializations(string lineText)
     {
@@ -631,13 +761,18 @@ public sealed class InsightEngine
         if (string.IsNullOrWhiteSpace(scanText))
             return [];
 
+        // Quick reject for non-assignment lines: must contain a plausible single `=` (not `==`, `=>`, etc.)
+        if (!scanText.Contains('=')) return [];
+
         List<string>? found = null;
         foreach (var pattern in DeclarationPatterns)
         {
             foreach (Match match in pattern.Matches(scanText))
             {
                 var name = match.Groups[1].Value;
-                if (string.IsNullOrEmpty(name) || ReservedWords.Contains(name))
+                if (string.IsNullOrEmpty(name) || ReservedWords.Contains(name) || !IsPlausibleVariableName(name))
+                    continue;
+                if (IsFalsePositiveDeclaration(scanText, name, pattern))
                     continue;
                 (found ??= []).Add(name);
             }
@@ -646,8 +781,9 @@ public sealed class InsightEngine
         return found is null ? [] : found.Distinct(StringComparer.Ordinal);
     }
 
-    // Index variables for current file
-    public void ScanDocument(string fileKey, string documentText)
+    // Index variables for current file - depth-aware to avoid polluting completions
+    // with property assignments (`Child =`) and kwargs (`width = 5`) that are not variables.
+    public void ScanDocument(string fileKey, string documentText, LoadedExtension? languageExtension = null)
     {
         if (string.IsNullOrEmpty(fileKey))
             return;
@@ -655,10 +791,81 @@ public sealed class InsightEngine
         var variables = new HashSet<string>(StringComparer.Ordinal);
         if (!string.IsNullOrEmpty(documentText))
         {
-            foreach (var line in documentText.Split('\n'))
+            var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
+            var lines = documentText.Split('\n');
+            var maskedLines = maskedDoc.Split('\n');
+            var depthAtLine = new int[lines.Length];
+            var parenDepthAtLine = new int[lines.Length];
+            var bracketDepthAtLine = new int[lines.Length];
+            var curDepth = 0;
+            var curParen = 0;
+            var curBracket = 0;
+            for (var i = 0; i < lines.Length; i++)
             {
-                foreach (var name in IdentifyVariableInitializations(line))
+                depthAtLine[i] = curDepth;
+                parenDepthAtLine[i] = curParen;
+                bracketDepthAtLine[i] = curBracket;
+                if (i < maskedLines.Length)
+                {
+                    curDepth += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}');
+                    curParen += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')');
+                    curBracket += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']');
+                }
+            }
+
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var maskedLine = i < maskedLines.Length ? maskedLines[i] : lines[i];
+                // Skip lines inside attribute brackets or paren kwarg contexts
+                if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
+                {
+                    // Only allow genuine `var`/`let`/`const` declarations inside parens/brackets;
+                    // plain `name = value` inside `foo(name = ...)` or `[Attr(Name = ...)]` is not a variable.
+                    var t = maskedLine.Trim();
+                    var isVarDecl = t.StartsWith("var ", StringComparison.Ordinal) ||
+                                    t.StartsWith("let ", StringComparison.Ordinal) ||
+                                    t.StartsWith("const ", StringComparison.Ordinal) ||
+                                    t.StartsWith("val ", StringComparison.Ordinal);
+                    if (!isVarDecl)
+                        continue;
+                }
+                // Skip PascalCase property assignments inside object initializers at depth>0
+                if (depthAtLine[i] > 0 && maskedLine.Trim().Length > 0 && char.IsUpper(maskedLine.Trim()[0]) && maskedLine.Contains("="))
+                {
+                    var t = maskedLine.Trim();
+                    var isVarDecl2 = t.StartsWith("var ", StringComparison.Ordinal) ||
+                                     t.StartsWith("let ", StringComparison.Ordinal) ||
+                                     t.StartsWith("const ", StringComparison.Ordinal) ||
+                                     t.StartsWith("val ", StringComparison.Ordinal);
+                    if (!isVarDecl2) continue;
+                }
+                // Additional: skip lower-case property-like `name = value,` inside braces when it ends with comma
+                // and is not terminated with `;` – heuristic for object initializer properties.
+                if (depthAtLine[i] > 0 && maskedLine.Contains("=") && maskedLine.TrimEnd().EndsWith(","))
+                {
+                    var t = maskedLine.Trim();
+                    var isVarDecl3 = t.StartsWith("var ", StringComparison.Ordinal) ||
+                                     t.StartsWith("let ", StringComparison.Ordinal) ||
+                                     t.StartsWith("const ", StringComparison.Ordinal);
+                    if (!isVarDecl3 && !t.Contains(";"))
+                    {
+                        // If the line looks like `prop = value,` with no semicolon, treat as property
+                        var eqIdx = t.IndexOf('=');
+                        if (eqIdx > 0)
+                        {
+                            var lhs = t.Substring(0, eqIdx).Trim();
+                            // If lhs is single identifier without type keywords, likely property
+                            if (System.Text.RegularExpressions.Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$") && !lhs.Contains(" "))
+                                continue;
+                        }
+                    }
+                }
+
+                foreach (var name in IdentifyVariableInitializations(maskedLine))
+                {
+                    if (name == "_" || name.StartsWith('_')) continue;
                     variables.Add(name);
+                }
             }
         }
 
@@ -765,16 +972,22 @@ public sealed class InsightEngine
         // Depth for property-vs-variable distinction: properties like `Child =` or
         // `FileName =` inside `new Foo { ... }` are at depth >0 and start with
         // uppercase. They are not variables and must not be flagged as "Unused variable".
+        // Also track `(` and `[` depth to suppress false positives for keyword arguments
+        // (`foo(width = 5)`) and attribute named arguments (`[Attr(Name = "x")]`).
         var depthAtLine = new int[lines.Length];
         var parenDepthAtLine = new int[lines.Length];
+        var bracketDepthAtLine = new int[lines.Length];
         var curDepthForVar = 0;
         var curParenDepthForVar = 0;
+        var curBracketDepthForVar = 0;
         for (var i = 0; i < lines.Length; i++)
         {
             depthAtLine[i] = curDepthForVar;
             parenDepthAtLine[i] = curParenDepthForVar;
+            bracketDepthAtLine[i] = curBracketDepthForVar;
             curDepthForVar += CountChar(masked[i], '{') - CountChar(masked[i], '}');
             curParenDepthForVar += CountChar(masked[i], '(') - CountChar(masked[i], ')');
+            curBracketDepthForVar += CountChar(masked[i], '[') - CountChar(masked[i], ']');
         }
 
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
@@ -799,22 +1012,44 @@ public sealed class InsightEngine
                 //       height = 10,
                 //   )
                 // look identical to a bare assignment but are not variable declarations
-                // at all - only relevant when we're inside an unclosed paren list.
-                if (parenDepthAtLine[i] > 0)
-                    continue;
-
-                // Skip PascalCase property assignments inside object initializers:
-                // `Child = new TextBlock`, `FileName = updaterPath,` etc. are not variables.
-                if (depthAtLine[i] > 0 && trimmedForProp.Length > 0 && char.IsUpper(trimmedForProp[0]) &&
-                    trimmedForProp.Contains("="))
+                // at all - only relevant when we're inside an unclosed paren/bracket list.
+                if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
                 {
-                    // If it looks like `Prop =` and is inside a brace block, treat as property
-                    // Also check that the line is not a variable declaration with `var`/`Type`
+                    var isVarDeclInArg = trimmedForProp.StartsWith("var ", StringComparison.Ordinal) ||
+                                         trimmedForProp.StartsWith("let ", StringComparison.Ordinal) ||
+                                         trimmedForProp.StartsWith("const ", StringComparison.Ordinal) ||
+                                         trimmedForProp.StartsWith("val ", StringComparison.Ordinal);
+                    if (!isVarDeclInArg)
+                        continue;
+                }
+
+                // Skip property assignments inside object/collection initializers:
+                // `Child = new TextBlock`, `FileName = updaterPath,` etc. are not variables.
+                // Original logic only covered PascalCase; expand to also cover any `prop = value,`
+                // pattern inside braces that ends with ',' and lacks ';' (typical initializer).
+                if (depthAtLine[i] > 0 && trimmedForProp.Contains("="))
+                {
                     var isVarDecl = trimmedForProp.StartsWith("var ", StringComparison.Ordinal) ||
                                     trimmedForProp.StartsWith("let ", StringComparison.Ordinal) ||
-                                    trimmedForProp.StartsWith("const ", StringComparison.Ordinal);
+                                    trimmedForProp.StartsWith("const ", StringComparison.Ordinal) ||
+                                    trimmedForProp.StartsWith("val ", StringComparison.Ordinal);
                     if (!isVarDecl)
-                        continue;
+                    {
+                        // Uppercase leading prop: classic C# initializer property
+                        if (trimmedForProp.Length > 0 && char.IsUpper(trimmedForProp[0]))
+                            continue;
+                        // Lowercase `prop = value,` ending with comma inside braces - also initializer property
+                        if (trimmedForProp.TrimEnd().EndsWith(",") && !trimmedForProp.Contains(";"))
+                        {
+                            var eqIdx = trimmedForProp.IndexOf('=');
+                            if (eqIdx > 0)
+                            {
+                                var lhs = trimmedForProp.Substring(0, eqIdx).Trim();
+                                if (Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                                    continue;
+                            }
+                        }
+                    }
                 }
 
                 if (CountWholeWord(name) <= 1)

@@ -168,7 +168,9 @@ public sealed class CompiledSyntaxProfile
         var reservedPrefix = reserved.Length > 0
             ? $"(?!{string.Join("|", reserved.Select(r => r + "(?![\\p{L}\\p{Nd}_])"))})"
             : string.Empty;
-        return new Regex($"(?<![.\\p{{L}}\\p{{Nd}}_]){reservedPrefix}{VariableIdentifierBodyPattern}(?!\\s*[\\.(\"'`]|[\\p{{L}}\\p{{Nd}}_])", RegexOptions.Compiled);
+        // Avoid flagging property keys (`key:`) and member access as variables.
+        // Exclude `:` (object/dict keys, labels, CSS) and keep `.`/`(`/`"`/`'`/`\`` exclusions.
+        return new Regex($"(?<![.\\p{{L}}\\p{{Nd}}_#@\\$]){reservedPrefix}{VariableIdentifierBodyPattern}(?!\\s*[:\\.(\"'`]|[\\p{{L}}\\p{{Nd}}_])", RegexOptions.Compiled);
     }
 
     private static Regex BuildSingleLineStringRegex(string delimiter)
@@ -3219,7 +3221,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             : string.Empty;
 
         return new Regex(
-            $"(?<![.\\p{{L}}\\p{{Nd}}_]){reservedPrefix}{VariableIdentifierBodyPattern}(?!\\s*[\\.(\"'`]|[\\p{{L}}\\p{{Nd}}_])",
+            $"(?<![.\\p{{L}}\\p{{Nd}}_#@\\$]){reservedPrefix}{VariableIdentifierBodyPattern}(?!\\s*[:\\.(\"'`]|[\\p{{L}}\\p{{Nd}}_])",
             RegexOptions.Compiled);
     }
 
