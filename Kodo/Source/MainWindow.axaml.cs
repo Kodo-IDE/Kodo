@@ -6911,7 +6911,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine($"Main log: {MainLogFilePath}");
         sb.AppendLine($"Crash log: {CrashLogFilePath}");
         sb.AppendLine($"Extensions folder: {ExtensionsFolderPath}");
-        sb.AppendLine($"Verbose logging: {IsVerboseLoggingEnabled}");
+        sb.AppendLine($"Debug logging: {IsVerboseLoggingEnabled}");
 
         return sb.ToString();
     }
@@ -8299,6 +8299,3 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // data (the persisted-settings schema), with no dependency on MainWindow itself.
 
 }
-
-
-

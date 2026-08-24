@@ -22,6 +22,8 @@ internal static class KodoDiagnostics
     // Reattaches "Windows 10/11" from CurrentBuildNumber
     public static string OSDescription { get; } = ResolveOSDescription();
 
+    // Also gates whether kodo.log/crash.log keep accumulating across app launches
+    // (Debug Logging on) or each start fresh for the new session (Debug Logging off).
     public static bool VerboseLoggingEnabled { get; set; }
 
     // Rolling window of recent log lines, flushed into crash.log
@@ -29,6 +31,35 @@ internal static class KodoDiagnostics
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
     private static readonly object _breadcrumbLock = new();
+
+    // Per-session log initialization. Each log file is reset to empty exactly once per
+    // process - on its first write - unless Debug Logging is on at that moment, in which
+    // case the existing file is left alone and this session's entries are appended after it.
+    private static readonly object _sessionInitLock = new();
+    private static bool _kodoLogSessionInitialized;
+    private static bool _crashLogSessionInitialized;
+
+    private static void EnsureSessionLog(string path, ref bool initialized)
+    {
+        if (initialized) return;
+
+        lock (_sessionInitLock)
+        {
+            if (initialized) return;
+
+            if (!VerboseLoggingEnabled)
+            {
+                try
+                {
+                    Directory.CreateDirectory(LogDirectoryPath);
+                    File.WriteAllText(path, string.Empty);
+                }
+                catch { /* best effort - fall through to normal append/create-on-write */ }
+            }
+
+            initialized = true;
+        }
+    }
 
     private static void PushBreadcrumb(string line)
     {
@@ -188,7 +219,7 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
-    // Emits a Debug trace; also appends to kodo.log if an exception is attached
+    // Emits a Debug trace; only reaches kodo.log while Debug Logging is enabled
     public static void LogDebug(string message, Exception? exception = null)
     {
         try
@@ -197,9 +228,13 @@ internal static class KodoDiagnostics
                 ? $"[Kodo] {message}"
                 : $"[Kodo] {message}{Environment.NewLine}{exception}");
 
+            // Debug traces (with or without an attached exception) only reach kodo.log
+            // when Debug Logging is on.
+            if (!VerboseLoggingEnabled) return;
+
             if (exception is not null)
                 WriteToLog("KodoDiagnostics.Debug", exception, false, KodoSeverity.Debug, message);
-            else if (VerboseLoggingEnabled)
+            else
                 WriteVerboseTrace(message);
         }
         catch { /* never throw from a debug trace */ }
@@ -209,6 +244,7 @@ internal static class KodoDiagnostics
     {
         var timestamp = UtcNow().ToString("yyyy-MM-dd HH:mm:ss") + " UTC";
         var line = $"[{timestamp}] VERBOSE  {message}";
+        EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
         PushBreadcrumb(line);
         WritePayloadToDisk(line, MainLogFilePath);
     }
@@ -243,6 +279,7 @@ internal static class KodoDiagnostics
                       $"Exception={exception?.GetType()}:{exception?.Message}";
         }
 
+        EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
         PushBreadcrumb(payload);
         WritePayloadToDisk(payload, MainLogFilePath);
     }
@@ -255,6 +292,8 @@ internal static class KodoDiagnostics
     {
         try
         {
+            EnsureSessionLog(CrashLogFilePath, ref _crashLogSessionInitialized);
+
             var sb = new StringBuilder();
             sb.AppendLine("════════════════════════════════════════════════════════════");
             sb.Append('[').Append(UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC] CRASH REPORT");

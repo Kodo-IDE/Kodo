@@ -5658,10 +5658,11 @@
 
                                     <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
                                         <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
-                                                  VerticalAlignment="Center" />
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Enable verbose logging (writes debug traces to kodo.log)" />
+                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
                                     </StackPanel>
 
                                     <StackPanel Orientation="Horizontal" Spacing="8">
