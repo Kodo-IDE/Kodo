@@ -20,10 +20,8 @@ namespace Kodo;
 
 public partial class App : Application
 {
-    // Guards against multiple concurrent crash dialogs.
     private static int _isCrashDialogOpen;
 
-    // Shared colours from DialogPalette.
     private static readonly Color KodoDarkSurface     = DialogPalette.Surface;
     private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
     private static readonly Color KodoDarkBorder      = DialogPalette.Border;
@@ -33,9 +31,7 @@ public partial class App : Application
     private static readonly Color KodoTokenBlue       = DialogPalette.TokenBlue;  // source badge
     private static readonly Color KodoTokenOrange     = DialogPalette.TokenOrange;  // stack trace
 
-    // Initialization
 
-    // Loads AXAML resources/styles and wires up global exception handlers.
     public override void Initialize()
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
@@ -78,7 +74,6 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    // Auto-update
 
     [SupportedOSPlatform("windows")]
     private static void LaunchStandaloneUpdaterIfNeeded()
@@ -134,7 +129,6 @@ public partial class App : Application
         }
         catch
         {
-            // Best-effort; falls through to the normal live update check.
             return false;
         }
     }
@@ -162,7 +156,6 @@ public partial class App : Application
         });
     }
 
-    // Windows file-association registration
 
     [SupportedOSPlatform("windows")]
     private static void RegisterFileAssociations()
@@ -174,7 +167,6 @@ public partial class App : Application
 
             var command = $"\"{exe}\" \"%1\"";
 
-            // Registers the application under HKCU.
             using (var appKey = Registry.CurrentUser.CreateSubKey(@"Software\Classes\Applications\Kodo.exe"))
             {
                 appKey.SetValue("FriendlyAppName", "Kodo");
@@ -182,7 +174,6 @@ public partial class App : Application
                 openKey.SetValue("", command);
             }
 
-            // Extensions to appear in the "Open with" menu.
             string[] extensions =
             [
                 ".txt", ".md", ".cs", ".fs", ".vb",
@@ -209,7 +200,6 @@ public partial class App : Application
         }
     }
 
-    // Global exception handlers
 
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
@@ -217,18 +207,14 @@ public partial class App : Application
 
         AptabaseClient.TrackEvent("app_crash", exception.Message);
 
-        // Critical: unhandled AppDomain exception - may terminate the process.
         KodoDiagnostics.LogCritical("AppDomain.UnhandledException", exception, e.IsTerminating);
         ShowCrashDialog("AppDomain.UnhandledException", exception, isTerminating: e.IsTerminating);
     }
 
     private static void TaskScheduler_OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        // Unobserved Task exception - recoverable; logged as a Warning, no crash.log.
         KodoDiagnostics.LogWarning("TaskScheduler.UnobservedTaskException", e.Exception, operation: "Background task");
-        // Marks the exception as observed.
         e.SetObserved();
-        // Shows the crash-style dialog, marked non-terminating.
         ShowCrashDialog("TaskScheduler.UnobservedTaskException", e.Exception, isTerminating: false);
     }
 
@@ -253,7 +239,6 @@ public partial class App : Application
 
             if (Dispatcher.UIThread.CheckAccess())
             {
-                // Already on the UI thread - fire and forget.
                 _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
                 return;
             }
@@ -261,12 +246,10 @@ public partial class App : Application
             // Posts to the UI thread rather than blocking.
             if (isTerminating)
             {
-                // Non-blocking post.
                 Dispatcher.UIThread.Post(
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                // Spin-waits up to 30s for the dialog to show/dismiss.
                 for (var i = 0; i < 300 && _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
@@ -286,7 +269,6 @@ public partial class App : Application
 
     private static async Task ShowCrashDialogOnUiThreadAsync(string source, Exception exception, string logPath, bool isTerminating)
     {
-        // Marks the dialog as open.
         Interlocked.Exchange(ref _isCrashDialogOpen, 1);
         try
         {
@@ -320,7 +302,6 @@ public partial class App : Application
         }
         finally
         {
-            // Marks the dialog as dismissed.
             Interlocked.Exchange(ref _isCrashDialogOpen, 0);
         }
     }
@@ -336,7 +317,6 @@ public partial class App : Application
         var palette = ThemeResolver.GetCurrentPalette();
         var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
 
-        // Header with accent rail
         var headerRow = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -400,7 +380,6 @@ public partial class App : Application
             },
         };
 
-        // Source badge
         var sourceBadge = new Border
         {
             Background       = new SolidColorBrush(KodoDarkBadgeBg),
@@ -427,7 +406,6 @@ public partial class App : Application
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // Exception details (scrollable, selectable)
         var exceptionText = new SelectableTextBlock
         {
             Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
@@ -455,7 +433,6 @@ public partial class App : Application
             Child           = exceptionScroll,
         };
 
-        // Log path note
         var logPathText = new TextBlock
         {
             Text         = "Full details in: %AppData%\\Kodo\\kodo.log",
@@ -464,7 +441,6 @@ public partial class App : Application
             TextWrapping = TextWrapping.Wrap,
         };
 
-        // Action buttons
         var copyButton = new Button
         {
             Content             = "Copy to Clipboard",
@@ -501,7 +477,6 @@ public partial class App : Application
             CornerRadius        = new CornerRadius(8),
         };
 
-        // Left side: Copy + Report. Right side: Dismiss.
         var leftButtons = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
@@ -521,7 +496,6 @@ public partial class App : Application
             Margin = new Thickness(0, 4)
         };
 
-        // Layout
         var content = new StackPanel
         {
             Spacing  = 12,
@@ -567,7 +541,6 @@ public partial class App : Application
             Content    = outer,
         };
 
-        // Copies the full exception + source to the clipboard.
         copyButton.Click += async (_, _) =>
         {
             try

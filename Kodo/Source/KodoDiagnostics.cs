@@ -18,12 +18,10 @@ internal static class KodoDiagnostics
 {
     public static string AppVersion { get; } = ResolveAppVersion();
 
-    // Reattaches "Windows 10/11" from CurrentBuildNumber
     public static string OSDescription { get; } = ResolveOSDescription();
 
     public static bool VerboseLoggingEnabled { get; set; }
 
-    // Rolling window of recent log lines, flushed into crash.log
 
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
@@ -73,7 +71,6 @@ internal static class KodoDiagnostics
         }
     }
 
-    // Version / OS helpers
 
     private static string ResolveAppVersion()
     {
@@ -81,7 +78,6 @@ internal static class KodoDiagnostics
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "v0.0.0";
 
-        // Strips the +<git-hash> suffix
         var plusIndex = raw.IndexOf('+');
         return plusIndex >= 0 ? raw[..plusIndex] : raw;
     }
@@ -128,7 +124,6 @@ internal static class KodoDiagnostics
         }
     }
 
-    // Log paths
 
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
@@ -137,12 +132,10 @@ internal static class KodoDiagnostics
 
     public static string CrashLogFilePath => Path.Combine(LogDirectoryPath, "crash.log");
 
-    // Legacy alias for MainLogFilePath
     public static string LogFilePath => MainLogFilePath;
 
     public static DateTime UtcNow() => DateTime.UtcNow;
 
-    // Payload builders
 
     public static string BuildDiagnosticPayload(
         string source,
@@ -193,9 +186,7 @@ internal static class KodoDiagnostics
         return redactPaths ? RedactExceptionText(summary.ToString()) : summary.ToString();
     }
 
-    // Typed logging API
 
-    // Logs a Critical event to kodo.log and generates crash.log
     public static void LogCritical(
         string source,
         Exception exception,
@@ -206,7 +197,6 @@ internal static class KodoDiagnostics
         WriteCrashLog(source, exception, isTerminating, operation);
     }
 
-    // Logs a Warning event to kodo.log
     public static void LogWarning(
         string source,
         Exception exception,
@@ -241,7 +231,6 @@ internal static class KodoDiagnostics
         WritePayloadToDisk(line, MainLogFilePath);
     }
 
-    // Legacy API, delegates to typed methods
 
     public static void WriteDiagnosticLog(
         string source,
@@ -251,7 +240,6 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating, ParseSeverity(severity), operation);
 
-    // Internal write helpers
 
     private static void WriteToLog(
         string source,
@@ -357,7 +345,6 @@ internal static class KodoDiagnostics
 
     private static void WritePayloadToDisk(string payload, string primaryPath)
     {
-        // Attempt 1: %AppData%\Kodo
         try
         {
             Directory.CreateDirectory(LogDirectoryPath);
@@ -366,7 +353,6 @@ internal static class KodoDiagnostics
         }
         catch { /* fall through */ }
 
-        // Attempt 2: temp directory
         try
         {
             var tempLog = Path.Combine(Path.GetTempPath(), Path.GetFileName(primaryPath));
@@ -375,7 +361,6 @@ internal static class KodoDiagnostics
         }
         catch { /* fall through */ }
 
-        // Attempt 3: desktop
         try
         {
             var desktopLog = Path.Combine(
@@ -386,7 +371,6 @@ internal static class KodoDiagnostics
         catch { /* all attempts exhausted */ }
     }
 
-    // Helpers
 
     private static string SeverityLabel(KodoSeverity severity) => severity switch
     {

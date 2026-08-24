@@ -52,7 +52,6 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     {
         GroupName = groupName;
         Themes    = themes;
-        // Multi-theme groups start collapsed; single-theme groups are always open.
         _isExpanded = !IsMultiTheme;
     }
 

@@ -11,9 +11,7 @@ namespace Kodo.Models;
 
 internal sealed class AppSettings
 {
-    // Single source of truth for the default terminal panel height.
     public const double DefaultTerminalPanelHeight = 300;
-    // Single source of truth for the default file explorer panel width.
     public const double DefaultExplorerPanelWidth = 260;
 
     public string ThemeName { get; set; } = "Dark";
@@ -44,7 +42,6 @@ internal sealed class AppSettings
     public bool AutoUpdateExtensionsEnabled { get; set; }
     public bool AutoUpdateExtensionsInBackgroundEnabled { get; set; }
     public bool AutoUpdateAppEnabled { get; set; } = true;
-    // Sub-setting: defaults to false so Update Now/Later still shows.
     public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     public string? PreferredTerminalShellId { get; set; }
     public bool PSReadLinePredictionEnabled { get; set; }
@@ -60,7 +57,6 @@ internal sealed class AppSettings
     public string CustomAccentHex { get; set; } = "#8C00FF";
     public string? CachedThemeAccentHex { get; set; }
     public string? CachedThemeWindowBackgroundHex { get; set; }
-    // Personalization - optional; empty/0 means "use OS defaults".
     public string? UserCountry { get; set; }
     public int UserHemisphere { get; set; }
     public string? UserTimezoneOffset { get; set; }
@@ -81,8 +77,6 @@ internal sealed class AppSettings
 
     public Dictionary<string, string> CustomKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    // Persisted set of dismissed diagnostics: each entry is `message|lineText` or `file|message|line`
-    // Used to implement "decline an error and it will never show again".
     public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
 }
 
@@ -210,7 +204,6 @@ internal enum AppPage
     WhatsNew
 }
 
-// Extracted from MainWindow.axaml.cs:14726
 internal sealed record TutorialStep(
     string SectionTitle,
     string Title,

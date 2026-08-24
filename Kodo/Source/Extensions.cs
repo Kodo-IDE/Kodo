@@ -134,7 +134,6 @@ public partial class MainWindow
                 }
                 catch (OperationCanceledException)
                 {
-                    // Work finished in time - nothing to do.
                     return;
                 }
 
@@ -352,7 +351,6 @@ public partial class MainWindow
 
         if (root.ValueKind == JsonValueKind.Array)
         {
-            // One LoadedExtension per theme entry in the array
             var index = 0;
             foreach (var themeElement in root.EnumerateArray())
             {

@@ -30,13 +30,11 @@ internal static class AptabaseClient
     private static string? _sessionId;
     private static readonly Queue<(string eventName, string? message)> _eventQueue = new();
 
-    // Filled once at Initialize
     private static AptabaseSystemProps? _systemProps;
 
     // Off by default until settings load
     private static bool _isEnabled;
 
-    // Set once in Initialize()
     private static bool _isDevBuild;
 
     public static bool IsEnabled => _isEnabled;
@@ -74,28 +72,24 @@ internal static class AptabaseClient
 
         var sanitized = message;
 
-        // Windows user-profile paths: C:\Users\<name>\... -> C:\Users\<redacted>\...
         sanitized = Regex.Replace(
             sanitized,
             @"([A-Za-z]:\\Users\\)[^\\]+",
             "$1<redacted>",
             RegexOptions.IgnoreCase);
 
-        // UNC user-profile paths: \\host\Users\<name>\...
         sanitized = Regex.Replace(
             sanitized,
             @"(\\\\[^\\]+\\Users\\)[^\\]+",
             "$1<redacted>",
             RegexOptions.IgnoreCase);
 
-        // WSL/Unix-style home paths: /home/<name>/... or /Users/<name>/...
         sanitized = Regex.Replace(
             sanitized,
             @"(/(?:home|Users)/)[^/\s]+",
             "$1<redacted>",
             RegexOptions.IgnoreCase);
 
-        // Email addresses.
         sanitized = Regex.Replace(
             sanitized,
             @"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",
@@ -109,7 +103,6 @@ internal static class AptabaseClient
         var ver = Environment.OSVersion.Version;
         if (OperatingSystem.IsWindows())
         {
-            // Windows 11 starts at build 22000
             if (ver.Build >= 22000) return $"Windows 11 (Build {ver.Build})";
             if (ver.Build >= 10240) return $"Windows 10 (Build {ver.Build})";
         }
@@ -118,7 +111,6 @@ internal static class AptabaseClient
 
     public static void Initialize()
     {
-        // Preserves the "-DEV" suffix
         var informationalVersion = System.Reflection.Assembly
             .GetExecutingAssembly()
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
@@ -150,7 +142,6 @@ internal static class AptabaseClient
         Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
         Console.WriteLine($"[Aptabase] App Key: {_appKey}");
 
-        // Connectivity test runs from SetEnabled
     }
 
     private static string? GetAptabaseKey()

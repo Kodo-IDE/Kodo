@@ -53,7 +53,6 @@ namespace Kodo;
 public partial class MainWindow
 {
 
-    // Debounce search filter input
     private void RestartSearchFilterDebounce()
     {
         _searchFilterDebounceTimer.Stop();
@@ -426,7 +425,6 @@ public partial class MainWindow
         await OpenPathInSystemExplorer(result.Path, selectItem: true);
     }
 
-    // Toggle search panel mode
     private void OpenSearchPanel(SearchMode mode)
     {
         if (!CanShowSearchPanelForMode(mode))
@@ -446,7 +444,6 @@ public partial class MainWindow
         FocusSearchInput();
     }
 
-    // Toggle search panel visibility
     private void ToggleSearchPanel(SearchMode mode)
     {
         if (IsSearchPanelVisible && _searchMode == mode)
@@ -566,7 +563,6 @@ public partial class MainWindow
         }
         else
         {
-            // Any regular keypress resets MRU cycling state.
             ResetHistoryIndex();
         }
     }
@@ -701,14 +697,12 @@ public partial class MainWindow
 
         foreach (var item in _searchResults)
         {
-            // Individual result width (auto columns only)
             double resultWidth = iconWidth + item.DisplayName.Length * charWidth12;
             if (resultWidth > maxWidth) maxWidth = resultWidth;
         }
 
         foreach (var group in _fileGroups)
         {
-            // Group header width (all auto columns)
             double groupWidth = chevronWidth
                                + group.FileName.Length * charWidth12
                                + 8
@@ -727,7 +721,6 @@ public partial class MainWindow
         RebuildDisplayItems();
     }
 
-    // Run current search mode
     private async Task RunActiveSearchAsync()
     {
         if (!IsSearchPanelVisible)
@@ -878,11 +871,9 @@ public partial class MainWindow
         }
         catch
         {
-            // Unreadable directory - skip it and keep going elsewhere.
         }
     }
 
-    // Find files by name
     private static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
     {
         Regex? regex = null;
@@ -1022,7 +1013,6 @@ public partial class MainWindow
             }
             catch
             {
-                // Unreadable or locked file - skip it.
             }
         }
         return (results, truncated);
@@ -1136,7 +1126,6 @@ public partial class MainWindow
         if (pos < text.Length)
             sb.Append(text, pos, text.Length - pos);
 
-        // Single document operation - keeps the undo history clean.
         doc.Replace(0, text.Length, sb.ToString());
 
         SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
@@ -1253,7 +1242,6 @@ public partial class MainWindow
         return beforeOk && afterOk;
     }
 
-    // Highlight find matches in editor
     private void UpdateFindHighlights()
     {
         if (EditorTextBox?.Document is null) return;
@@ -1283,7 +1271,6 @@ public partial class MainWindow
             if (m.Length == 0) break;
         }
 
-        // Determine which match the caret is on.
         if (_findMatchOffsets.Count > 0)
         {
             var caretOffset = EditorTextBox.TextArea.Caret.Offset;

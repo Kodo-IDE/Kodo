@@ -15,7 +15,6 @@ using AvaloniaEdit.Rendering;
 
 namespace Kodo.Models;
 
-// Extracted from MainWindow.axaml.cs:14683
 internal enum UnsavedTabAction
 {
     Save,
@@ -76,7 +75,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             lineDepths[i] = Math.Min(above, below);
         }
 
-        // Measures true text-start X, subtracting ScrollOffset.
         var scrollX = textView.ScrollOffset.X;
         var scrollY = textView.ScrollOffset.Y;
 
@@ -85,7 +83,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
             VisualYPosition.LineTop).X - scrollX;
 
-        // Dashed pen matching VS Code-style indent guides
         var dashStyle = new DashStyle([2, 2], 0);
         var pen = new Pen(GuideBrush, 1, dashStyle);
 
@@ -95,7 +92,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             var depth = lineDepths[lineNumber];
             if (depth <= 0) continue;
 
-            // VisualTop is document-absolute; subtract scrollY for screen coords
             var top    = visualLine.VisualTop - scrollY;
             var bottom = top + visualLine.Height;
 
@@ -237,7 +233,6 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
         if (!IsLightTheme) return;
         if (_errorSpans.Count == 0) return;
 
-        // Covered by dead-code? Skip - DeadCodeTextBrightener already handles it.
         foreach (var deadSpan in _deadCodeSpans)
         {
             if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
@@ -557,13 +552,10 @@ public class EditorTab : INotifyPropertyChanged
 
     public string TabTitle => IsDirty ? $"{DisplayName} •" : DisplayName;
 
-    // 1-based line number for scroll-position restore
     public int TopLineNumber { get; set; } = 1;
 
-    // Pixel-exact scroll offset
     public double ScrollOffsetY { get; set; } = 0.0;
 
-    // Caret position for this tab
     public int CaretOffset { get; set; } = 0;
 
     public void Rename(string path, string displayName)
@@ -610,7 +602,6 @@ public class FileNode
     public ObservableCollection<FileNode> Children { get; } = [];
 }
 
-// Represents a single row in the file explorer tree
 public class FileTreeItem : INotifyPropertyChanged
 {
     private bool _isExpanded;
@@ -620,10 +611,8 @@ public class FileTreeItem : INotifyPropertyChanged
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
 
-    // Pixel indentation based on nesting depth
     public double IndentWidth => Depth * 14.0;
 
-    // Chevron shown next to directories; blank for files
     public string ChevronText => IsDirectory ? (_isExpanded ? "↓" : "→") : string.Empty;
 
     public bool IsExpanded
@@ -639,7 +628,6 @@ public class FileTreeItem : INotifyPropertyChanged
         }
     }
 
-    // Icon varies between open/closed folder vs file
     public string Icon => IsDirectory ? (_isExpanded ? "\U0001F4C2" : "\U0001F4C1") : GetFileIcon(Name);
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -647,7 +635,6 @@ public class FileTreeItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // Returns a simple file-type icon based on extension.
     internal static string GetFileIcon(string fileName)
     {
         var ext = Path.GetExtension(fileName).ToLowerInvariant();

@@ -50,10 +50,8 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    // True once Title is set explicitly
     public bool HasCustomTitle { get; private set; }
 
-    // Applies a shell-reported title; no-ops once HasCustomTitle is set
     public void ApplyAutoTitle(string title)
     {
         if (HasCustomTitle || _title == title)
@@ -117,7 +115,6 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    // Tab-strip status dot color
     public string StatusDotColor => StatusText switch
     {
         "Ready"                           => "#22C55E", // green

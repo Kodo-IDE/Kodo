@@ -37,7 +37,6 @@ public sealed class CompiledSyntaxProfile
         SingleLineCommentRegex = singleLineCommentRegex;
     }
 
-    // Compile syntax profile from extension
     public static CompiledSyntaxProfile Create(LoadedExtension extension)
     {
         var rules = new List<CompiledSyntaxRule>();
@@ -168,8 +167,6 @@ public sealed class CompiledSyntaxProfile
         var reservedPrefix = reserved.Length > 0
             ? $"(?!{string.Join("|", reserved.Select(r => r + "(?![\\p{L}\\p{Nd}_])"))})"
             : string.Empty;
-        // Avoid flagging property keys (`key:`) and member access as variables.
-        // Exclude `:` (object/dict keys, labels, CSS) and keep `.`/`(`/`"`/`'`/`\`` exclusions.
         return new Regex($"(?<![.\\p{{L}}\\p{{Nd}}_#@\\$]){reservedPrefix}{VariableIdentifierBodyPattern}(?!\\s*[:\\.(\"'`]|[\\p{{L}}\\p{{Nd}}_])", RegexOptions.Compiled);
     }
 
@@ -343,7 +340,6 @@ public sealed class EmbeddedSyntaxProfile
             tokenRules);
     }
 
-    // Advance embedded syntax state
     public EmbeddedSyntaxState Advance(string text, EmbeddedSyntaxState initialState) =>
         Process(text, initialState, applyBrush: null, rainbowBrushResolver: null);
 
@@ -743,11 +739,9 @@ public static class InlineCodeLanguageDetector
         "where", "which", "set", "export", "cls", "clear"
     };
 
-    // Punctuation/operators that suggest genuine source code, not prose/paths.
     private static readonly Regex CodePunctuationRegex =
         new(@"[{}();]|=>|::|->|\b(?:&&|\|\|)\b|(?<![<>=!])=(?!=)", RegexOptions.Compiled);
 
-    // A bare path segment chain, e.g. `path\to\thing` or `path/to/thing`.
     private static readonly Regex PathSegmentRegex =
         new(@"^[\w.~-]+(?:[\\/][\w.~-]+){1,}$", RegexOptions.Compiled);
 
@@ -880,7 +874,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; set; } = true;
 
-    // Update highlighting for language
     public void UpdateSyntax(LoadedExtension? extension)
     {
         if (extension is null)
@@ -913,7 +906,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     public void InvalidateCache() => _snapshot = null;
 
-    // Colorize document line
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
         if (!IsEnabled)
@@ -1294,7 +1286,6 @@ public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
         codePoint is >= 0x1F3FB and <= 0x1F3FF;
 }
 
-// Builds an AvaloniaEdit IHighlightingDefinition from a LoadedExtension's rules.
 public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -2032,7 +2023,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         ColorizeMarkdownLine(text, line.Offset);
     }
 
-    // Colorize markdown line
     private void ColorizeMarkdownLine(string text, int lineOffset)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -2203,7 +2193,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             }
         }
 
-        // Table-pipe coloring runs last and respects ranges already claimed.
         foreach (Match match in TablePipeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -2629,7 +2618,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return false;
 
         var info = trimmed[markerLength..].Trim();
-        // CommonMark: info string for backtick fences cannot contain backticks.
         if (markerChar == '`' && info.Contains('`'))
             return false;
         delimiter = new FenceDelimiterInfo(markerChar, markerLength, info);
@@ -2994,7 +2982,6 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
     private sealed record ActiveHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, EmbeddedBlockContentMode ContentMode);
 }
 
-// Builds an AvaloniaEdit IHighlightingDefinition from a LoadedExtension's rules.
 public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 {
     private const string VariableIdentifierBodyPattern =
@@ -3072,7 +3059,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"(?<!\*)\*(?!\*)|(?<!_)_(?!_)", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Strikethrough markers: ~~
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"~~", RegexOptions.Compiled),
@@ -3084,7 +3070,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"!?\[", RegexOptions.Compiled),
                 Color = punctuationColor
             });
-            // Table pipe separators
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"\|", RegexOptions.Compiled),
@@ -3099,7 +3084,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         }
 
 
-        // Main ruleset: spans checked in order, first match wins.
         var mainRuleSet = new HighlightingRuleSet();
 
         if (!string.IsNullOrEmpty(ext.CommentBlockStart) && !string.IsNullOrEmpty(ext.CommentBlockEnd))
@@ -3186,7 +3170,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         foreach (var delimiter in stringDelimiters)
             mainRuleSet.Spans.Add(CreateStringSpan(delimiter, stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 
-        // Copies keyword/type/number/char rules into mainRuleSet.
         foreach (var rule in codeRuleSet.Rules)
             mainRuleSet.Rules.Add(rule);
 

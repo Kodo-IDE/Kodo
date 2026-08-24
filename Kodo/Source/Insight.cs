@@ -18,7 +18,6 @@ namespace Kodo;
 // Source of an InsightSuggestion - drives sort order and label.
 public enum InsightKind { Variable, Function, Property, Type, Namespace, Keyword }
 
-// One row in the predictive completion popup.
 public sealed class InsightSuggestion : ICompletionData
 {
     // Set by MainWindow from its live theme brushes before building suggestions.
@@ -28,10 +27,8 @@ public sealed class InsightSuggestion : ICompletionData
     public InsightKind Kind { get; }
     public string Text { get; }
     public IImage? Image => null;
-    // Built lazily, once, on first access.
     private Control? _content;
     public object Content => _content ??= BuildContentVisual();
-    // Null: kind is already drawn in-row (kindBlock below).
     public object? Description => null;
     public double Priority => Kind switch
     {
@@ -64,7 +61,6 @@ public sealed class InsightSuggestion : ICompletionData
         _ => string.Empty,
     };
 
-    // Icon glyph + accent color per kind.
     private static (string Glyph, string Color) GlyphAndColorFor(InsightKind kind) => kind switch
     {
         InsightKind.Variable  => ("V", "#3a79df"),
@@ -76,7 +72,6 @@ public sealed class InsightSuggestion : ICompletionData
         _ => ("•", "#6B7280"),
     };
 
-    // Glyph background brushes, built once and reused across rebuilds.
     private static readonly Dictionary<InsightKind, IBrush> GlyphBrushes =
         Enum.GetValues<InsightKind>().ToDictionary(
             k => k,
@@ -84,7 +79,6 @@ public sealed class InsightSuggestion : ICompletionData
 
     private static readonly FontFamily MonoFontFamily = new("Cascadia Code,Consolas,Menlo,Monospace");
 
-    // Monochrome icon geometries sourced from the provided SVG assets.
     private static readonly Geometry VariableIconGeometry = Geometry.Parse(
         "M0 7.008v-3.008q0-1.632 1.184-2.816t2.816-1.184h4q1.664 0 2.816 1.184t1.184 2.816h4q2.496 0 4.256 1.76l9.984 10.016q1.76 1.728 1.76 4.224t-1.76 4.256l-5.984 6.016q-1.76 1.728-4.224 1.728t-4.256-1.728l-10.016-10.016q-1.76-1.76-1.76-4.256v-12h6.016q0-0.832-0.608-1.408t-1.408-0.576h-4q-0.832 0-1.408 0.576t-0.576 1.408v3.008q0 0.608-0.512 0.864t-0.992 0-0.512-0.864zM8 16q0 0.832 0.608 1.408l9.984 10.016q0.608 0.576 1.44 0.576t1.376-0.576l6.016-6.016q0.576-0.576 0.576-1.408t-0.576-1.408l-10.016-10.016q-0.576-0.576-1.408-0.576h-1.024q1.024 1.376 1.024 3.008 0 1.12-0.384 2.048t-0.992 1.536-1.472 0.992-1.728 0.416-1.76-0.192-1.664-0.832v1.024zM8 11.008q0 0.8 0.32 1.44t0.864 0.928 1.184 0.48 1.28 0 1.152-0.48 0.864-0.928 0.352-1.44q0-0.96-0.576-1.728t-1.44-1.056v2.784q0 0.608-0.512 0.864t-0.992 0-0.48-0.864v-2.784q-0.896 0.288-1.44 1.056t-0.576 1.728z");
 
@@ -197,7 +191,6 @@ public sealed class InsightSuggestion : ICompletionData
     }
 }
 
-// Predicts completions and diagnostics
 public sealed class InsightEngine
 {
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(StringComparer.OrdinalIgnoreCase);
@@ -212,9 +205,6 @@ public sealed class InsightEngine
         @"\b(?:let|var|val)\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=]*)?" + NotCompoundOrArrow,
         RegexOptions.Compiled);
 
-    // Strict bare assignment: `identifier =` at line start, no inline type annotation.
-    // Colon-annotated assignments like `x: int =` are handled separately to avoid
-    // misclassifying labels like `myLabel: x =` as variable declarations.
     private static readonly Regex BareAssignment = new(
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*" + NotCompoundOrArrow,
         RegexOptions.Compiled);
@@ -223,8 +213,6 @@ public sealed class InsightEngine
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[A-Za-z_][A-Za-z0-9_.<>\[\]\?\|,\s]*\s*" + NotCompoundOrArrow,
         RegexOptions.Compiled);
 
-    // Covers `Type name =`, `public static List<int> field =`, `string? name =`, etc.
-    // Captures the final identifier before `=` after an optional type/qualifier prefix.
     private static readonly Regex QualifiedTypeAssignment = new(
         @"^\s*(?:(?:public|private|protected|internal|static|readonly|sealed|abstract|virtual|override|async|extern|unsafe|partial|const|volatile|new|required|file)\s+)*(?:[A-Za-z_][A-Za-z0-9_]*\s*(?:<[^>]*>)?\s*(?:\[\s*\])*\s+)+([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\]\?\|,\s]*)?\s*" + NotCompoundOrArrow,
         RegexOptions.Compiled);
@@ -243,8 +231,6 @@ public sealed class InsightEngine
         LoopOrHandlerBinding,
     };
 
-    // Common type names for colon-annotation validation. If the content between `:` and `=`
-    // is a single lower-case word not in this set, it is likely a label (`myLabel: x =`), not a type.
     private static readonly HashSet<string> KnownColonTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
@@ -285,7 +271,6 @@ public sealed class InsightEngine
         @"(?:(?<=\s)|^)(?://|\#)(?!\S).*$|(?:(?<=\s)|^)(?://|\#)\s.*$",
         RegexOptions.Compiled);
 
-    // Blank out string contents for scans
     private static string MaskStringLiterals(string lineText)
     {
         if (lineText.IndexOfAny(['"', '\'']) < 0)
@@ -323,12 +308,6 @@ public sealed class InsightEngine
         return new string(chars);
     }
 
-    // Build a version of the document where every character that lives inside a
-    // line comment, block comment or string literal is replaced with a space
-    // (newlines preserved). Delimiters themselves are kept for strings so that
-    // `x = "hi"` does not look like an empty assignment, while comment markers
-    // themselves are blanked. This is the single source of truth for "ignore
-    // anything inside comments" for all error/dead-code checks.
     private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
     {
         if (string.IsNullOrEmpty(documentText))
@@ -425,12 +404,8 @@ public sealed class InsightEngine
                             }
                             continue;
                         }
-                        // Inside interpolation code: keep as-is (do not mask) so variables like `ext` in $"{ext}" are counted
-                        // Handle strings inside interpolation code (e.g., $"{x} \"hi\"")
                         if (c == '"' && !inMulti)
                         {
-                            // nested string inside interpolation - treat as start of string inside code?
-                            // For simplicity, keep and continue; will be handled as not masked
                             continue;
                         }
                         continue;
@@ -488,10 +463,6 @@ public sealed class InsightEngine
                     closing = multiDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
                 else if (delim != '\0' && MatchesAt(documentText, i, delim.ToString()))
                 {
-                    // Verbatim strings escape a literal quote by doubling it (`""`),
-                    // which does NOT close the string - without this, a quote inside a
-                    // Windows path or similar in an `@"..."` string prematurely ends
-                    // masking and corrupts everything scanned after it.
                     if (isVerbatim && i + 1 < chars.Length && chars[i + 1] == delim)
                     {
                         masked[i] = ' ';
@@ -519,7 +490,6 @@ public sealed class InsightEngine
                 continue;
             }
 
-            // not inside anything - check for comment/string starts
             if (MatchesAt(documentText, i, commentLine))
             {
                 for (var k = 0; k < commentLine.Length && i + k < chars.Length; k++)
@@ -552,7 +522,6 @@ public sealed class InsightEngine
                     isInterpolated = true;
                 else if (i > 1 && chars[i - 2] == '$' && chars[i - 1] == '@')
                     isInterpolated = true;
-                // keep opening delimiter
                 i += multi.Length - 1;
                 continue;
             }
@@ -582,7 +551,6 @@ public sealed class InsightEngine
                 isVerbatim = verbatim;
                 inInterpolationCode = false;
                 interpolationDepth = 0;
-                // keep opening delimiter
                 continue;
             }
         }
@@ -616,7 +584,6 @@ public sealed class InsightEngine
                 {
                     var info = new System.IO.FileInfo(f);
                     if (info.Length > 1_500_000) continue;
-                    // quick binary check - skip files with NUL bytes
                     var text = System.IO.File.ReadAllText(f);
                     if (text.IndexOf('\0') >= 0) continue;
                     var masked = BuildMaskedDocument(text, ext);
@@ -636,8 +603,6 @@ public sealed class InsightEngine
     private static bool IsPlausibleVariableName(string name)
     {
         if (string.IsNullOrEmpty(name)) return false;
-        // Single-letter names like `i`, `x`, `_` are still plausible, but
-        // reject obviously non-identifier artifacts.
         if (name.Length > 64) return false;
         // Reject numeric-like or hyphenated artifacts that slipped through.
         if (char.IsDigit(name[0])) return false;
@@ -647,22 +612,15 @@ public sealed class InsightEngine
 
     private static bool IsFalsePositiveDeclaration(string scanText, string name, Regex pattern)
     {
-        // Reject attribute-style named arguments: `[Attr(Name = "...")]` when the
-        // match is `Name` but the line is starting inside attribute brackets.
-        // These are not variable declarations.
         var trimmed = scanText.Trim();
         if (trimmed.StartsWith("[") && trimmed.Contains("=") && trimmed.Contains("]"))
         {
-            // If the line starts with '[' or contains '[' before the identifier,
-            // likely an attribute declaration. Check if name appears after '[' or '('
             var idxName = scanText.IndexOf(name, StringComparison.Ordinal);
             if (idxName > 0)
             {
                 var before = scanText.Substring(0, idxName);
                 if (before.Contains('[') || before.Contains('('))
                 {
-                    // Additional check: inside brackets, assignments are named arguments, not variables.
-                    // Allow only if the name is preceded by `var`/`let`/`const` etc.
                     var beforeTrim = before.Trim();
                     if (!beforeTrim.EndsWith("var", StringComparison.Ordinal) &&
                         !beforeTrim.EndsWith("let", StringComparison.Ordinal) &&
@@ -672,10 +630,6 @@ public sealed class InsightEngine
             }
         }
 
-        // Reject label-like `myLabel: x =` where colon annotation's type is actually
-        // a variable name, not a type. For `x: int =` the type `int` is known; for
-        // `loop: x =` the type `x` is lower-case and not a known type, so skip the
-        // outer label `loop`. Only apply to colon-annotated pattern.
         if (pattern == ColonAnnotatedAssignment)
         {
             // Extract content between ':' and '=' for this specific match
@@ -684,13 +638,10 @@ public sealed class InsightEngine
             if (colonIdx >= 0 && eqIdx > colonIdx)
             {
                 var typePart = scanText.Substring(colonIdx + 1, eqIdx - colonIdx - 1).Trim();
-                // Take first token of type part as the type name
                 var firstToken = typePart.Split(new[] { ' ', '\t', '<', '>', '[', ']', ',', '|', '?' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                 if (!string.IsNullOrEmpty(firstToken))
                 {
-                    // Strip trailing '?' for nullable types
                     firstToken = firstToken.TrimEnd('?');
-                    // If single token lower-case not in known types, treat as label misclassification
                     if (firstToken.Length > 0 && char.IsLower(firstToken[0]) && !KnownColonTypes.Contains(firstToken))
                     {
                         // If type part is exactly one identifier with no type syntax, reject
@@ -702,11 +653,6 @@ public sealed class InsightEngine
             }
         }
 
-        // Reject lines that look like property access assignment: `obj.prop =`
-        // BareAssignment would not match `obj.prop` (since it only captures `obj`), but
-        // QualifiedTypeAssignment could still capture `prop` incorrectly if line is `obj.prop = 5`
-        // which we should not flag as new variable. Detect by checking if scanText contains '.'
-        // before the name's position near '='
         var eqPos = scanText.IndexOf('=');
         if (eqPos > 0)
         {
@@ -736,7 +682,6 @@ public sealed class InsightEngine
         return false;
     }
 
-    // Find variable names declared on line
     public static IEnumerable<string> IdentifyVariableInitializations(string lineText)
     {
         if (string.IsNullOrWhiteSpace(lineText))
@@ -761,7 +706,6 @@ public sealed class InsightEngine
         if (string.IsNullOrWhiteSpace(scanText))
             return [];
 
-        // Quick reject for non-assignment lines: must contain a plausible single `=` (not `==`, `=>`, etc.)
         if (!scanText.Contains('=')) return [];
 
         List<string>? found = null;
@@ -781,8 +725,6 @@ public sealed class InsightEngine
         return found is null ? [] : found.Distinct(StringComparer.Ordinal);
     }
 
-    // Index variables for current file - depth-aware to avoid polluting completions
-    // with property assignments (`Child =`) and kwargs (`width = 5`) that are not variables.
     public void ScanDocument(string fileKey, string documentText, LoadedExtension? languageExtension = null)
     {
         if (string.IsNullOrEmpty(fileKey))
@@ -819,8 +761,6 @@ public sealed class InsightEngine
                 // Skip lines inside attribute brackets or paren kwarg contexts
                 if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
                 {
-                    // Only allow genuine `var`/`let`/`const` declarations inside parens/brackets;
-                    // plain `name = value` inside `foo(name = ...)` or `[Attr(Name = ...)]` is not a variable.
                     var t = maskedLine.Trim();
                     var isVarDecl = t.StartsWith("var ", StringComparison.Ordinal) ||
                                     t.StartsWith("let ", StringComparison.Ordinal) ||
@@ -829,7 +769,6 @@ public sealed class InsightEngine
                     if (!isVarDecl)
                         continue;
                 }
-                // Skip PascalCase property assignments inside object initializers at depth>0
                 if (depthAtLine[i] > 0 && maskedLine.Trim().Length > 0 && char.IsUpper(maskedLine.Trim()[0]) && maskedLine.Contains("="))
                 {
                     var t = maskedLine.Trim();
@@ -839,8 +778,6 @@ public sealed class InsightEngine
                                      t.StartsWith("val ", StringComparison.Ordinal);
                     if (!isVarDecl2) continue;
                 }
-                // Additional: skip lower-case property-like `name = value,` inside braces when it ends with comma
-                // and is not terminated with `;` – heuristic for object initializer properties.
                 if (depthAtLine[i] > 0 && maskedLine.Contains("=") && maskedLine.TrimEnd().EndsWith(","))
                 {
                     var t = maskedLine.Trim();
@@ -921,10 +858,6 @@ public sealed class InsightEngine
         }
     }
 
-    // Find unused vars, funcs, unreachable code
-    // When a folder is open, `folderPath` + `currentFilePath` enable cross-file
-    // usage checks so a variable used in another file in the same folder is not
-    // flagged as dead. `folderPath` comes from MainWindow._currentFolderPath.
     public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null)
     {
         var spans = new List<DeadCodeSpan>();
@@ -947,16 +880,9 @@ public sealed class InsightEngine
             offset += lines[i].Length + 1; // +1 accounts for the '\n' consumed by Split.
         }
 
-        // Any code inside comments or string literals must be invisible to dead-code
-        // analysis - see BuildMaskedDocument. This replaces the old per-line
-        // TrailingLineComment + MaskStringLiterals logic which missed block comments
-        // and language-specific line comments.
         var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
         var masked = maskedDoc.Split('\n');
 
-        // Folder-wide usage: when a folder is open, a symbol used in any other file
-        // in that folder is not dead. Build a single masked blob for the rest of the
-        // folder (excluding the current file) so CountWholeWord can include it.
         string? folderMaskedText = null;
         if (!string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(currentFilePath) && System.IO.Directory.Exists(folderPath))
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
@@ -969,11 +895,6 @@ public sealed class InsightEngine
             return count;
         }
 
-        // Depth for property-vs-variable distinction: properties like `Child =` or
-        // `FileName =` inside `new Foo { ... }` are at depth >0 and start with
-        // uppercase. They are not variables and must not be flagged as "Unused variable".
-        // Also track `(` and `[` depth to suppress false positives for keyword arguments
-        // (`foo(width = 5)`) and attribute named arguments (`[Attr(Name = "x")]`).
         var depthAtLine = new int[lines.Length];
         var parenDepthAtLine = new int[lines.Length];
         var bracketDepthAtLine = new int[lines.Length];
@@ -993,26 +914,15 @@ public sealed class InsightEngine
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < lines.Length; i++)
         {
-            // Use the comment-masked line so variables declared inside
-            // `//`, `#`, `/* */` etc are never considered.
             foreach (var name in IdentifyVariableInitializations(masked[i]))
             {
                 if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
                 if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
-                // `_`, `_unused`, etc. are a widely-used convention (Python, Rust, Go, JS
-                // linters) for a deliberately discarded/unused binding - never flag these.
                 if (name == "_" || name.StartsWith('_')) continue;
 
                 var trimmedForProp = masked[i].Trim();
 
-                // Keyword arguments in a multi-line function call, e.g.
-                //   foo(
-                //       width = 5,
-                //       height = 10,
-                //   )
-                // look identical to a bare assignment but are not variable declarations
-                // at all - only relevant when we're inside an unclosed paren/bracket list.
                 if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
                 {
                     var isVarDeclInArg = trimmedForProp.StartsWith("var ", StringComparison.Ordinal) ||
@@ -1023,10 +933,6 @@ public sealed class InsightEngine
                         continue;
                 }
 
-                // Skip property assignments inside object/collection initializers:
-                // `Child = new TextBlock`, `FileName = updaterPath,` etc. are not variables.
-                // Original logic only covered PascalCase; expand to also cover any `prop = value,`
-                // pattern inside braces that ends with ',' and lacks ';' (typical initializer).
                 if (depthAtLine[i] > 0 && trimmedForProp.Contains("="))
                 {
                     var isVarDecl = trimmedForProp.StartsWith("var ", StringComparison.Ordinal) ||
@@ -1035,10 +941,8 @@ public sealed class InsightEngine
                                     trimmedForProp.StartsWith("val ", StringComparison.Ordinal);
                     if (!isVarDecl)
                     {
-                        // Uppercase leading prop: classic C# initializer property
                         if (trimmedForProp.Length > 0 && char.IsUpper(trimmedForProp[0]))
                             continue;
-                        // Lowercase `prop = value,` ending with comma inside braces - also initializer property
                         if (trimmedForProp.TrimEnd().EndsWith(",") && !trimmedForProp.Contains(";"))
                         {
                             var eqIdx = trimmedForProp.IndexOf('=');
@@ -1078,11 +982,6 @@ public sealed class InsightEngine
             if (entryPoints is not null && entryPoints.Contains(name)) continue;
             if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
-            // Reference count, not just call-sites with parens: a function used only as a
-            // delegate/event-handler/callback (`Button.Click += Handler;`, `list.map(handler)`
-            // passed by name, etc.) has no `name(` call site but is very much in use, so
-            // relying on CountCallSites alone produces a false "Unused function" on any
-            // event-driven or callback-style code.
             var refCount = CountWholeWord(name);
             if (refCount > 1) continue;
 
@@ -1177,10 +1076,6 @@ public sealed class InsightEngine
         @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
         RegexOptions.Compiled);
 
-    // Headers that legitimately end without ';' - type/method declarations and
-    // control-flow blocks like if/else/try/catch. Used to suppress the "Missing ';'"
-    // false positives seen for `public partial class App : Application` and
-    // `public override void Initialize()` etc.
     private static readonly Regex NoSemicolonControlHeader = new(
         @"^\s*(?:if|else|else\s+if|for|foreach|while|do|try|catch|finally|using|lock|switch|case|default)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -1189,7 +1084,6 @@ public sealed class InsightEngine
         @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly|const|volatile|new)\s+)*(?:class|struct|interface|enum|record|namespace|void)\b",
         RegexOptions.Compiled);
 
-    // Method declaration like `public override void Initialize()` or `private static int Foo<T>(int x)`
     private static readonly Regex NoSemicolonMethodHeader = new(
         @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly)\s+)*(?:\w+(?:<[^>]+>)?\s+)+\w+\s*\(.*\)\s*$",
         RegexOptions.Compiled);
@@ -1207,9 +1101,6 @@ public sealed class InsightEngine
 
     private static bool IsNoSemicolonNeeded(string trimmedEnd, string trimmedNoIndent, int lineIndex, string[] maskedLines)
     {
-        // Continuation lines starting with `?`, `:`, `.`, `+`, `,` are part of a
-        // multi-line expression (ternary, member access, concatenation) - never
-        // require a `;` on their own.
         if (trimmedNoIndent.StartsWith("?") || trimmedNoIndent.StartsWith(":") ||
             trimmedNoIndent.StartsWith(".") || trimmedNoIndent.StartsWith("+") ||
             trimmedNoIndent.StartsWith(","))
@@ -1223,18 +1114,15 @@ public sealed class InsightEngine
         var next = GetNextNonEmptyLine(maskedLines, lineIndex);
         if (next is not null)
         {
-            // `var x = new TextBlock` + `{`  or `Child = new TextBlock` + `{`  or `Children =` + `{`
             if (next.StartsWith("{") && trimmedEnd.Contains("= new"))
                 return true;
             if (next.StartsWith("{") && trimmedEnd.TrimEnd().EndsWith("=", StringComparison.Ordinal))
                 return true;
-            // Generic initializer header: `var titleText = new TextBlock` without `;` followed by `{`
             if (next.StartsWith("{") && trimmedEnd.Contains("=") && !trimmedEnd.Contains(";") && trimmedEnd.Contains("new"))
                 return true;
             // Ternary continuation: `Text = isTerminating` + `? "..."` or `? "..."` + `:`
             if ((next.StartsWith("?") || next.StartsWith(":") || next.StartsWith(".")) && trimmedEnd.Contains("="))
                 return true;
-            // Chained call / concatenation: `Uri.EscapeDataString(...)` + `.Replace` or `+`
             if ((next.StartsWith(".") || next.StartsWith("+")) && !trimmedEnd.EndsWith(";", StringComparison.Ordinal) && !trimmedEnd.EndsWith("{", StringComparison.Ordinal))
                 return true;
             // Header like `public partial class App : Application` + `{`
@@ -1265,7 +1153,6 @@ public sealed class InsightEngine
     private static bool IsConditionalTerminator(string[] masked, int terminatorIndex)
     {
         var line = masked[terminatorIndex].Trim();
-        // `if (cond) return;` or `if (cond) throw;` on one line - next line is else-branch, not unreachable
         if (Regex.IsMatch(line, @"\bif\s*\(.*\)\s*(?:return|throw|break|continue)\b"))
             return true;
         if (Regex.IsMatch(line, @"\belse\b.*\b(?:return|throw|break|continue)\b"))
@@ -1289,7 +1176,6 @@ public sealed class InsightEngine
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
         RegexOptions.Compiled);
 
-    // Edit distance for typo suggestions
     private static int LevenshteinDistance(string a, string b)
     {
         var dp = new int[a.Length + 1, b.Length + 1];
@@ -1306,7 +1192,6 @@ public sealed class InsightEngine
         return dp[a.Length, b.Length];
     }
 
-    // Basic bracket and syntax error check
     public List<ErrorSpan> FindErrors(string documentText, LoadedExtension? languageExtension = null)
     {
         var spans = new List<ErrorSpan>();
@@ -1347,9 +1232,6 @@ public sealed class InsightEngine
 
             if (inString)
             {
-                // Verbatim/raw strings (C# `@"..."`, Python/Rust `r"..."`) don't treat
-                // backslash as an escape character, so a Windows path or regex like
-                // `@"C:\Users\foo"` must not be read as an escaped closing quote.
                 if (c == '\\' && !inMultiLineString && !inVerbatimString) { i++; continue; }
                 if (c == '\n' && !inMultiLineString && !inVerbatimString)
                 {
@@ -1359,8 +1241,6 @@ public sealed class InsightEngine
                 }
                 if (inVerbatimString && c == stringDelimiter)
                 {
-                    // C#-style verbatim strings escape a literal quote by doubling it (`""`),
-                    // which does NOT close the string.
                     if (i + 1 < documentText.Length && documentText[i + 1] == stringDelimiter)
                     {
                         i++;
@@ -1397,8 +1277,6 @@ public sealed class InsightEngine
 
             if (c is '"' or '\'')
             {
-                // Recognize a raw/verbatim string prefix immediately before the quote:
-                // C# `@"..."` / `$@"..."` / `@$"..."`, and Python/Rust `r"..."` / `r'...'`.
                 var prefixStart = i;
                 while (prefixStart > 0 && documentText[prefixStart - 1] is '@' or '$')
                     prefixStart--;
@@ -1453,16 +1331,9 @@ public sealed class InsightEngine
             offsetAcc += lines[i].Length + 1;
         }
 
-        // Mask everything inside comments/strings so that missing-semicolon,
-        // missing-colon, empty-assignment and typo checks never fire inside
-        // `//`, `#`, `/* */` etc. Replaces the old TrailingLineComment logic
-        // which only handled `//`/`#` trailing comments.
         var maskedDocForLines = BuildMaskedDocument(documentText, languageExtension);
         var masked = maskedDocForLines.Split('\n');
 
-        // Require a clear majority of substantive lines to end in ';' before assuming
-        // semicolon style - a handful of stray semicolons (e.g. in strings/attributes)
-        // shouldn't be enough to start flagging every non-semicolon line as an error.
         var nonBlankLines = masked.Count(l => l.Trim().Length > 0);
         var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
         var looksSemicolonStyle = semicolonLines >= 3 && semicolonLines >= nonBlankLines * 0.5;
@@ -1472,19 +1343,12 @@ public sealed class InsightEngine
             ? new HashSet<string>(kw, StringComparer.Ordinal)
             : null;
 
-        // Collect variable names declared in this file (masked, so comments/strings ignored)
-        // so we don't flag `batch` as a typo of `catch` when `batch` is a real variable.
         var variableNamesInFile = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ml in masked)
         {
             foreach (var v in IdentifyVariableInitializations(ml))
                 variableNamesInFile.Add(v);
         }
-        // Also collect simple assignments like `batch.Add` is not a declaration, but
-        // `var batch =` is. To also capture `batch` when it's a field like
-        // `private List<X> batch;`, we scan for word boundaries in declarations.
-        // For now, also add any word that appears as `word.` or `word(` at start of line
-        // as a potential variable to avoid false typo flagging.
 
         for (var i = 0; i < lines.Length; i++)
         {
@@ -1516,15 +1380,12 @@ public sealed class InsightEngine
                 !ReservedWords.Contains(emptyAssignMatch.Groups[1].Value) &&
                 !BatchSetDeclaration.IsMatch(trimmedNoIndent))
             {
-                // `Children =` with value on next line (`{` / `?` / `new` / `"` etc.) is a
-                // multi-line initializer, not an empty assignment like `x =`
                 var nextForEmpty = GetNextNonEmptyLine(masked, i);
                 if (nextForEmpty is not null &&
                     (nextForEmpty.StartsWith("{") || nextForEmpty.StartsWith("?") || nextForEmpty.StartsWith(":") ||
                      nextForEmpty.StartsWith("\"") || nextForEmpty.StartsWith("'") || nextForEmpty.StartsWith("new", StringComparison.Ordinal) ||
                      nextForEmpty.StartsWith("(") || nextForEmpty.StartsWith("[")))
                 {
-                    // do not flag
                 }
                 else
                 {
@@ -1544,13 +1405,10 @@ public sealed class InsightEngine
                     var word = wordMatch.Groups[1].Value;
                     if (word.Length >= 4 && !knownKeywords.Contains(word) && !variableNamesInFile.Contains(word))
                     {
-                        // Don't flag if the word is clearly an identifier usage like `batch.Add` or `batch(`
-                        // or named argument `Props:` – next non-space char after word is `.`/`(`/`:`/`=`
                         var afterIdx = wordMatch.Index + word.Length;
                         var afterWord = afterIdx < trimmedNoIndent.Length ? trimmedNoIndent.Substring(afterIdx).TrimStart() : string.Empty;
                         if (afterWord.StartsWith(".") || afterWord.StartsWith("(") || afterWord.StartsWith(":") || afterWord.StartsWith("="))
                         {
-                            // likely a variable/method/property, not a misspelled keyword
                         }
                         else
                         {
@@ -1583,7 +1441,6 @@ public sealed class InsightEngine
 
     public static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    // Find start of word at caret
     public static int FindWordStart(string documentText, int caretOffset)
     {
         var start = caretOffset;
@@ -1687,7 +1544,6 @@ public sealed class InsightEngine
         return callStack.Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name!).ToArray();
     }
 
-    // Ranked completions for prefix
     public List<InsightSuggestion> GetSuggestions(
         string prefix,
         string fileKey,

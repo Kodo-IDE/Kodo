@@ -25,11 +25,9 @@ public sealed class NaturalSortComparer : IComparer<string>
 
             if (xIsDigit && yIsDigit)
             {
-                // Skip leading zeros so "007" == "7" numerically
                 while (xi < x.Length && x[xi] == '0') xi++;
                 while (yi < y.Length && y[yi] == '0') yi++;
 
-                // Find end of digit run in both strings
                 var xStart = xi;
                 var yStart = yi;
                 while (xi < x.Length && char.IsAsciiDigit(x[xi])) xi++;
@@ -38,16 +36,13 @@ public sealed class NaturalSortComparer : IComparer<string>
                 var xLen = xi - xStart;
                 var yLen = yi - yStart;
 
-                // Longer digit sequence is numerically larger
                 if (xLen != yLen) return xLen.CompareTo(yLen);
 
-                // Same length: compare digit-by-digit
                 var cmp = string.Compare(x, xStart, y, yStart, xLen, StringComparison.Ordinal);
                 if (cmp != 0) return cmp;
             }
             else
             {
-                // Non-digit chunk: plain case-insensitive char comparison
                 var cmp = char.ToUpperInvariant(x[xi])
                               .CompareTo(char.ToUpperInvariant(y[yi]));
                 if (cmp != 0) return cmp;

@@ -16,12 +16,10 @@ using Kodo.Models;
 
 namespace Kodo;
 
-// Public surface
 
 // Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output.
 public sealed class ConsoleTerminal : Control
 {
-    // Standard 16-colour ANSI palette
     private static readonly Color[] AnsiPalette =
     [
         Color.FromRgb(12,  12,  12),   // 0  Black
@@ -45,13 +43,11 @@ public sealed class ConsoleTerminal : Control
     private static readonly Color DefaultFg = Color.FromRgb(204, 204, 204);
     private static readonly Color DefaultBg = Color.FromRgb(12,  12,  12);
 
-    // Layout
     private const double CellW = 8.4;
     private const double CellH = 17.0;
     private const string FontFamily = "Cascadia Mono,Consolas,Courier New,monospace";
     private const double FontSize = 13.0;
 
-    // State
     private readonly object _lock = new();
     private TermCell[,] _cells = new TermCell[24, 80];
     private int _rows = 24, _cols = 80;
@@ -73,7 +69,6 @@ public sealed class ConsoleTerminal : Control
 
     private bool _bracketedPasteMode;
 
-    // Scrollback search
     private static readonly Color SearchMatchBg   = Color.FromArgb(140, 255, 213, 79);
     private static readonly Color SearchCurrentBg = Color.FromArgb(200, 255, 140, 0);
     private bool _searchActive;
@@ -81,13 +76,11 @@ public sealed class ConsoleTerminal : Control
     private readonly List<(int AbsRow, int Col)> _searchMatches = new();
     private int _searchIndex = -1;
 
-    // VT parser state
     public enum ParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
     private ParseState _parseState = ParseState.Ground;
     private readonly StringBuilder _csiParam = new();
     private readonly StringBuilder _oscBuf   = new();
 
-    // ConPTY
     private IntPtr  _hPcon   = IntPtr.Zero;
     private IntPtr  _hProcess = IntPtr.Zero;
     private IntPtr  _hThread  = IntPtr.Zero;
@@ -97,11 +90,9 @@ public sealed class ConsoleTerminal : Control
 
     private long _suppressOutputUntilTick;
 
-    // Blink timer for cursor
     private readonly DispatcherTimer _blinkTimer;
     private bool _cursorBlinkOn = true;
 
-    // Constructor
     public ConsoleTerminal()
     {
         Focusable = true;
@@ -112,10 +103,8 @@ public sealed class ConsoleTerminal : Control
         _blinkTimer.Start();
 
         AttachedToVisualTree   += (_, _) => Focus();
-        // Detaching from the visual tree does not call Stop().
     }
 
-    // Public API
 
     // Fired when the shell exits, with the process handle from Start().
     public event EventHandler<IntPtr>? SessionExited;
@@ -127,12 +116,10 @@ public sealed class ConsoleTerminal : Control
 
     public IReadOnlyDictionary<string, KeyGesture>? Keybinds { get; set; }
 
-    // Built-in defaults, matching MainWindow's KeybindDefinitions for the same ids.
     private static readonly KeyGesture DefaultCopy   = new(Key.C, KeyModifiers.Control | KeyModifiers.Shift);
     private static readonly KeyGesture DefaultPaste  = new(Key.V, KeyModifiers.Control);
     private static readonly KeyGesture DefaultSearch = new(Key.F, KeyModifiers.Control);
 
-    // Start shell via ConPTY
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
@@ -151,11 +138,9 @@ public sealed class ConsoleTerminal : Control
                 _scrollOffset = 0;
             }
 
-            // Create pipe pairs for ConPTY I/O
             NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
             NativeConPty.CreatePipe(out var hReadPtyInput,  out var hWritePtyInput,  IntPtr.Zero, 0);
 
-            // Create the Pseudo Console
             var result = NativeConPty.CreatePseudoConsole(
                 new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
                 hReadPtyInput, hWritePtyOutput,
@@ -164,17 +149,14 @@ public sealed class ConsoleTerminal : Control
             if (result != 0)
                 throw new InvalidOperationException($"CreatePseudoConsole failed: 0x{result:X}");
 
-            // Close the handles we handed to ConPTY
             NativeConPty.CloseHandle(hReadPtyInput);
             NativeConPty.CloseHandle(hWritePtyOutput);
 
-            // Wrap native handles in .NET streams
             _writeStream = new FileStream(
                 new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput,  true), FileAccess.Write);
             _readStream  = new FileStream(
                 new Microsoft.Win32.SafeHandles.SafeFileHandle(hReadPtyOutput, true), FileAccess.Read);
 
-            // Launch the shell inside the ConPTY
             var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
             NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
                 out _hProcess, out _hThread);
@@ -184,10 +166,8 @@ public sealed class ConsoleTerminal : Control
                 ? Environment.TickCount64 + 500
                 : 0;
 
-            // Start reading output
             _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
 
-            // Watches for process exit and captures the handle.
             var watchedHandle = _hProcess;
             _ = Task.Run(() =>
             {
@@ -277,7 +257,6 @@ public sealed class ConsoleTerminal : Control
     {
         lock (_lock)
         {
-            // Restores into the current grid dimensions.
             var copyR = Math.Min(_rows, snap.Rows);
             var copyC = Math.Min(_cols, snap.Cols);
             var newCells = new TermCell[_rows, _cols];
@@ -299,11 +278,9 @@ public sealed class ConsoleTerminal : Control
             _csiParam.Append(snap.CsiParam);
             _scrollOffset  = 0;
         }
-        // Redraws immediately with the restored content.
         InvalidateVisual();
     }
 
-    // Avalonia overrides
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
@@ -339,9 +316,7 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // Handled here before base.OnKeyDown.
 
-        // Special keys (arrows, F-keys, Home/End).
         var seq = KeyToVt(e.Key, e.KeyModifiers);
         if (seq is not null)
         {
@@ -351,7 +326,6 @@ public sealed class ConsoleTerminal : Control
             return;
         }
 
-        // Ctrl+letter maps to a control character.
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control) &&
             !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
         {
@@ -365,7 +339,6 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // Alt+key sends an ESC-prefixed character.
         if (e.KeyModifiers == KeyModifiers.Alt)
         {
             var altChar = AltKeyChar(e.Key);
@@ -378,7 +351,6 @@ public sealed class ConsoleTerminal : Control
             }
         }
 
-        // Everything else arrives via OnTextInput.
         base.OnKeyDown(e);
     }
 
@@ -474,7 +446,6 @@ public sealed class ConsoleTerminal : Control
         e.Handled = true;
     }
 
-    // Cached typefaces.
     private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
     private static readonly Typeface TypefaceBold   = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
 
@@ -482,7 +453,6 @@ public sealed class ConsoleTerminal : Control
     {
         lock (_lock)
         {
-            // Fill with default background first.
             ctx.FillRectangle(new SolidColorBrush(DefaultBg), new Rect(Bounds.Size));
 
             var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
@@ -518,7 +488,6 @@ public sealed class ConsoleTerminal : Control
                 var cell = GetDisplayCell(r, c, scrollbackStart);
                 var absRow = ScreenRowToAbsRow(r);
 
-                // Integer pixel positions.
                 var x = (int)Math.Round(c * CellW);
                 var x1 = (int)Math.Round((c + 1) * CellW);
                 var y = r * CellH;          // CellH is already integral (17.0)
@@ -543,7 +512,6 @@ public sealed class ConsoleTerminal : Control
                     }
                 }
 
-                // Always paint the cell background.
                 var bg = atCursor ? DefaultFg
                        : isCurrentMatch ? SearchCurrentBg
                        : isMatch ? SearchMatchBg
@@ -552,7 +520,6 @@ public sealed class ConsoleTerminal : Control
                 if (bg != DefaultBg)
                     ctx.FillRectangle(new SolidColorBrush(bg), rect);
 
-                // Glyph
                 if (cell.Char != '\0' && cell.Char != ' ')
                 {
                     var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
@@ -569,7 +536,6 @@ public sealed class ConsoleTerminal : Control
                     ctx.DrawText(ft, new Point(x, y));
                 }
 
-                // Underline
                 if (cell.Underline)
                 {
                     var fg = cell.Fg ?? DefaultFg;
@@ -603,7 +569,6 @@ public sealed class ConsoleTerminal : Control
         ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
-    // Resolves the cell at a screen row/col, including scrollback.
     private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)
     {
         if (_scrollOffset == 0)
@@ -631,7 +596,6 @@ public sealed class ConsoleTerminal : Control
         ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
     }
 
-    // Absolute buffer coordinates (row 0 = oldest scrollback line)
 
     private int TotalAbsRows => _scrollback.Count + _rows;
 
@@ -660,7 +624,6 @@ public sealed class ConsoleTerminal : Control
         return true;
     }
 
-    // Selection / clipboard
 
     private string? GetSelectedText()
     {
@@ -712,7 +675,6 @@ public sealed class ConsoleTerminal : Control
         SendInput(_bracketedPasteMode ? $"\x1b[200~{text}\x1b[201~" : text);
     }
 
-    // Scrollback search
 
     private void OpenSearch()
     {
@@ -801,7 +763,6 @@ public sealed class ConsoleTerminal : Control
         _scrollOffset = Math.Clamp(_scrollback.Count + targetScreenRow - absRow, 0, _scrollback.Count);
     }
 
-    // Private helpers
 
     private (int cols, int rows) CalcSize(Size? size = null)
     {
@@ -828,7 +789,6 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // Output reader
     private async Task ReadOutputLoop(CancellationToken ct)
     {
         var buf = new byte[4096];
@@ -852,7 +812,6 @@ public sealed class ConsoleTerminal : Control
         catch (Exception ex) { Console.WriteLine($"[ConPTY] ReadOutputLoop: {ex.Message}"); }
     }
 
-    // VT / ANSI parser
     private void ProcessChar(char ch)
     {
         switch (_parseState)
@@ -967,7 +926,6 @@ public sealed class ConsoleTerminal : Control
 
         switch (cmd)
         {
-            // Cursor movement
             case 'A': _cursorRow = Math.Max(0, _cursorRow - P(0)); break;
             case 'B': _cursorRow = Math.Min(_rows - 1, _cursorRow + P(0)); break;
             case 'C': _cursorCol = Math.Min(_cols - 1, _cursorCol + P(0)); break;
@@ -981,14 +939,12 @@ public sealed class ConsoleTerminal : Control
                 break;
             case 'd': _cursorRow = Math.Min(_rows - 1, Math.Max(0, P(0) - 1)); break;
 
-            // Erase
             case 'J': EraseDisplay(P0(0)); break;
             case 'K': EraseLine(P0(0)); break;
 
             // SGR - colours and attributes
             case 'm': ApplySgr(nums); break;
 
-            // Cursor visibility / bracketed paste mode
             case 'h':
                 if (priv && P0(0) == 25) _cursorVisible = true;
                 else if (priv && P0(0) == 2004) _bracketedPasteMode = true;
@@ -998,17 +954,14 @@ public sealed class ConsoleTerminal : Control
                 else if (priv && P0(0) == 2004) _bracketedPasteMode = false;
                 break;
 
-            // Insert / delete lines
             case 'L': InsertLines(P(0)); break;
             case 'M': DeleteLines(P(0)); break;
 
-            // Insert / delete / erase chars
             case '@': InsertChars(P(0)); break;
             case 'P': DeleteChars(P(0)); break;
             // CSI <n> X erases n cells at the cursor without moving it.
             case 'X': EraseChars(P(0)); break;
 
-            // Scroll
             case 'S': ScrollUp(P(0));   break;
             case 'T': ScrollDown(P(0)); break;
         }
@@ -1182,7 +1135,6 @@ public sealed class ConsoleTerminal : Control
             _cells[_cursorRow, c] = default;
     }
 
-    // Key mapping
     private static string? KeyToVt(Key key, KeyModifiers mods)
     {
         var ctrl  = mods.HasFlag(KeyModifiers.Control);
@@ -1238,7 +1190,6 @@ public sealed class ConsoleTerminal : Control
         Key.Z => 26, _ => null
     };
 
-    // Returns the lowercase char for readline Alt+key sequences.
     private static string? AltKeyChar(Key key) => key switch
     {
         Key.B => "b",   // Alt+B - move word back
@@ -1249,7 +1200,6 @@ public sealed class ConsoleTerminal : Control
         _ => null
     };
 
-    // Helpers
     private static List<int> ParseNums(string s)
     {
         var result = new List<int>();
@@ -1275,7 +1225,6 @@ public sealed class ConsoleTerminal : Control
     }
 }
 
-// Cell struct
 public readonly record struct TermCell(
     char  Char,
     Color? Fg,
@@ -1306,7 +1255,6 @@ public sealed class TerminalSnapshot(
     internal string      CsiParam      { get; } = csiParam;
 }
 
-// ConPTY P/Invoke
 internal static class NativeConPty
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -1424,7 +1372,6 @@ internal static class NativeConPty
         }
     }
 }
-// Shell discovery and terminal-session helpers moved from MainWindow_axaml.cs.
 
 // One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can launch.
 public sealed class TerminalShellOption
@@ -1444,7 +1391,6 @@ public static class TerminalShellSupport
         export PROMPT_COMMAND='printf \"\033]1337;CurrentDir=%s\007\" \"$(pwd -W)\"'; exec bash --login -i
         """;
 
-    // enablePSReadLinePrediction: off by default; opt-in from Settings.
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();

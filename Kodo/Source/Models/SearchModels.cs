@@ -45,7 +45,6 @@ internal sealed class SearchIgnoreRules
             dir = parent;
         }
 
-        // Parse comma-separated user include/exclude patterns.
         if (!string.IsNullOrWhiteSpace(includeFilter))
         {
             foreach (var pat in includeFilter.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -94,7 +93,6 @@ internal sealed class SearchIgnoreRules
 
         foreach (var (pattern, root, negated) in _rules)
         {
-            // Directory-only rule (trailing /)
             if (pattern.Length > 0 && pattern[^1] == '/')
             {
                 var p = pattern[..^1];
@@ -166,7 +164,6 @@ internal sealed class SearchIgnoreRules
     {
         if (!pattern.Contains('/') && !pattern.Contains('\\'))
         {
-            // Filename-only pattern - match against just the filename.
             return MatchesFileName(pattern, Path.GetFileName(fullPath));
         }
 
@@ -305,7 +302,6 @@ internal static class FuzzyMatch
 
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
 
-        // Fast path: exact substring match - high base score.
         var exactIndex = value.IndexOf(query, comparison);
         if (exactIndex >= 0)
         {
@@ -321,7 +317,6 @@ internal static class FuzzyMatch
             return (exactScore, exactIndices);
         }
 
-        // Fuzzy subsequence match.
         var qi = 0;
         var vi = 0;
         var fuzzyIndices = new List<int>(query.Length);

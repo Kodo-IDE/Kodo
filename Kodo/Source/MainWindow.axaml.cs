@@ -130,7 +130,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
-    // Whole-line/whole-section grey highlighting for Insight's dead code detection.
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
@@ -228,7 +227,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _fileTreeRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
-    // Periodic check for new Kodo releases, handled by AppUpdateScheduler.
     private readonly AppUpdateScheduler _appUpdateScheduler;
     private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
@@ -244,7 +242,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string MarketplaceIndexETagPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json.etag");
     private string? _marketplaceIndexETag;
-    // Same disk-cache pattern as the marketplace index, for CompilerIndex.json.
     private string CompilerIndexCachePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json");
     private string CompilerIndexETagPath =>
@@ -277,7 +274,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _settingsSearchText = string.Empty;
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
-    // Personalization, persisted in settings.json (empty/0 = auto-detect).
     private string _userCountry = string.Empty;
     private int    _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
@@ -303,7 +299,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<string> _projectSearchHistory = new();
     private int _historyIndex = -1;
     private string _savedFindText = string.Empty;
-    // Per-search include/exclude glob filters for Project search mode.
     private string _searchIncludeFilter = string.Empty;
     private string _searchExcludeFilter = string.Empty;
     private bool _isFilterRowVisible;
@@ -317,7 +312,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
-    // Off by default - see AppSettings.PSReadLinePredictionEnabled.
     private bool _isPSReadLinePredictionEnabled;
     private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
@@ -344,7 +338,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSearchRegexEnabled;
     private int _tutorialStepIndex;
 
-    // File tree clipboard state (cut/copy/paste)
     private string? _clipboardItemPath;
     private bool _clipboardItemIsDirectory;
     private bool _clipboardIsCut;
@@ -414,9 +407,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         )
     ];
 
-    // Auto-completion
 
-    // Maps each opening character to its closing pair
     private static readonly Dictionary<char, char> BracketPairs = new()
     {
         { '(', ')' },
@@ -508,7 +499,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsWhatsNewRefreshEnabled => !IsWhatsNewDisabled && !IsRefreshingLatestRelease;
     public bool IsLatestReleaseStatusVisible => !IsWhatsNewDisabled && !HasLatestRelease;
 
-    // Individual sub-toggles under Performance mode.
     public bool NewsDisabled
     {
         get => _newsDisabled;
@@ -875,7 +865,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshState(fullRefresh: true);
     }
 
-    // Extension loading
 
 
 
@@ -967,7 +956,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Fetch announcements from GitHub
     private async Task FetchAnnouncementsAsync(bool forceNetwork)
     {
         if (IsNewsDisabled)
@@ -1067,7 +1055,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Cache news to disk
     private void SaveNewsCache()
     {
         try
@@ -1081,7 +1068,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // Best-effort cache only.
         }
     }
 
@@ -1125,14 +1111,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // Best-effort cache only.
         }
     }
 
     private static List<NewsItem> ParseAnnouncementsMd(string md)
     {
         var items = new List<NewsItem>();
-        // Split on the horizontal rule separator
         var sections = md.Split(["---"], StringSplitOptions.RemoveEmptyEntries);
         foreach (var section in sections)
         {
@@ -1357,7 +1341,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Extract file name from URL
     private static string TryGetFileNameFromUrl(string url)
     {
         try
@@ -1376,7 +1359,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Normalize GitHub URL to raw
     private static string NormalizeGitHubBlobViewerUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -1591,7 +1573,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Check plain-text file type
     private static bool IsPlainTextFile(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -1603,8 +1584,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                ext.Equals(".log", StringComparison.OrdinalIgnoreCase);
     }
 
-    // Files with no extension (Makefile, Dockerfile, LICENSE, etc.) have no reliable
-    // language to detect errors against, so Insight's error/dead-code scanning skips them.
     private static bool HasNoFileExtension(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -1686,7 +1665,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HasFileOpen &&
         ActiveEditorTab is { IsUntitled: false };
 
-    // Theme / editor appearance
 
 
 
@@ -1702,7 +1680,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return Color.FromArgb(color.A, Darken(color.R), Darken(color.G), Darken(color.B));
     }
 
-    // Apply editor font and settings
     private void ApplyEditorSettings()
     {
         if (EditorTextBox is null)
@@ -1769,7 +1746,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshCurrentFileSyntaxHighlighting();
     }
 
-    // Reset syntax highlighters
     private void ClearEditorSyntaxState()
     {
         if (EditorTextBox is null)
@@ -1864,7 +1840,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
-    // Properties
 
     public bool IsSettingsPageVisible
     {
@@ -2225,7 +2200,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsMarketplaceSectionTabSelected =>
         _selectedExtensionsTab is ExtensionsTabModes.Languages or ExtensionsTabModes.Themes or ExtensionsTabModes.Plugins;
 
-    // Extension type the active marketplace tab lists; empty on non-marketplace tabs.
     private string ActiveMarketplaceTabType => _selectedExtensionsTab switch
     {
         ExtensionsTabModes.Languages => "language",
@@ -2369,7 +2343,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (latest != current) return latest > current;
 
-            // Same numeric version - compare by suffix priority
             return VersionPriority(LatestReleaseTag) > VersionPriority(CurrentAppVersion);
         }
     }
@@ -2476,7 +2449,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly Regex MdTablePipeRegex         = new(@"\|",                           RegexOptions.Compiled);
     private static readonly Regex MdExcessNewlinesRegex    = new(@"\n{3,}",                       RegexOptions.Compiled);
 
-    // Matches **bold** and __bold__ spans for inline run splitting.
     private static readonly Regex MdInlineBoldRegex = new(@"\*\*(.+?)\*\*|__(.+?)__", RegexOptions.Compiled | RegexOptions.Singleline);
 
     // Parses raw GitHub markdown into bold/normal runs for AXAML rendering.
@@ -2487,7 +2459,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var raw = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
 
-        // Strip code fences entirely.
         raw = MdCodeFenceRegex.Replace(raw, string.Empty);
         raw = raw.Replace("```", string.Empty);
 
@@ -2497,17 +2468,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var line = rawLine.TrimEnd();
 
-            // Skip horizontal rules and separator lines.
             if (MdHrRegex.IsMatch(line)) continue;
 
-            // Blank line → skip (spacing is handled by TopMargin).
             if (string.IsNullOrWhiteSpace(line)) continue;
 
             var isBullet   = false;
             var isOrdered  = false;
             string? orderedPrefix = null;
 
-            // Bullet list item.
             var bulletMatch = MdBulletRegex.Match(line);
             if (bulletMatch.Success)
             {
@@ -2516,7 +2484,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                // Ordered list item.
                 var orderedMatch = MdOrderedListRegex.Match(line);
                 if (orderedMatch.Success)
                 {
@@ -2526,24 +2493,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    // Heading → strip markers, treat content as bold paragraph.
                     var headingMatch = MdHeadingRegex.Match(line);
                     if (headingMatch.Success)
                         line = line[headingMatch.Length..].Trim();
                 }
             }
 
-            // Strip blockquote markers.
             line = MdBlockquoteRegex.Replace(line, string.Empty);
 
-            // Strip images, resolve links to display text only.
             line = MdImageRegex.Replace(line, "$1");
             line = MdLinkRegex.Replace(line, "$1");
 
-            // Strip inline code backticks (keep the text).
             line = MdInlineCodeRegex.Replace(line, "$1");
 
-            // Strip strikethrough.
             line = MdStrikethroughRegex.Replace(line, "$1");
 
             // Strip italic (single * or _) without consuming bold markers.
@@ -2567,11 +2529,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var pos = 0;
             foreach (Match m in MdInlineBoldRegex.Matches(line))
             {
-                // Normal text before this bold span.
                 if (m.Index > pos)
                     runs.Add(new FormattedRun { Text = line[pos..m.Index], IsBold = false });
 
-                // The bold text itself (group 1 = **, group 2 = __).
                 var boldText = m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value;
                 if (!string.IsNullOrEmpty(boldText))
                     runs.Add(new FormattedRun { Text = boldText, IsBold = true });
@@ -2579,7 +2539,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 pos = m.Index + m.Length;
             }
 
-            // Trailing normal text after the last bold span.
             if (pos < line.Length)
                 runs.Add(new FormattedRun { Text = line[pos..], IsBold = false });
 
@@ -2785,7 +2744,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Developer Options
 
     public bool IsDeveloperOptionsVisible
     {
@@ -3279,7 +3237,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             IEnumerable<LoadedExtension> source = VisibleLoadedExtensions;
 
-            // Respect granular type filters
             if (_selectedInstalledContentFilter == InstalledContentFilters.Languages)
                 source = source.Where(e => string.Equals(e.Type, "language", StringComparison.OrdinalIgnoreCase));
             else if (_selectedInstalledContentFilter == InstalledContentFilters.Plugins)
@@ -3689,7 +3646,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RefreshTerminalStatusBindings();
             if (_activeTerminalSession is not null)
             {
-                // Cold-starts the incoming session; restores the snapshot after Start().
                 var shell = AvailableTerminalShells.FirstOrDefault(s =>
                     string.Equals(s.Id, _activeTerminalSession.ShellId, StringComparison.OrdinalIgnoreCase))
                     ?? GetSelectedTerminalShellOrFallback();
@@ -3901,7 +3857,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? $"Current theme: System Default ({CurrentThemeName})"
         : $"Current theme: {CurrentThemeName}";
 
-    // Personalization settings
 
     public string UserCountry
     {
@@ -3990,7 +3945,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Welcome message
 
 
 
@@ -4004,7 +3958,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return string.Empty; }
     }
 
-    // Holiday and greeting-pool logic lives in WelcomeMessageBuilder.cs.
 
     private string[]? _welcomeMessagesCache;
 
@@ -4016,7 +3969,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly bool _isRareWordmarkVariant = Random.Shared.Next(1_000_000) == 0;
     public string KodoWordmarkText => _isRareWordmarkVariant ? "KODE-O" : "KODO";
 
-    // Birthday
 
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
@@ -4355,7 +4307,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(TerminalStatusBarText));
     }
 
-    // State management
 
     private void RefreshState(bool fullRefresh = false)
     {
@@ -4457,7 +4408,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Window icon
 
     private void LoadWindowIcon()
     {
@@ -4465,7 +4415,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Icon = new WindowIcon(iconStream);
     }
 
-    // Discord Rich Presence
 
     private string? GetDiscordApplicationId()
     {
@@ -4554,7 +4503,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? GetDiscordPresenceStateImproved()
             : GetDiscordPresenceStateClassic();
 
-    // Classic presence (original behaviour)
 
     private string GetDiscordPresenceDetailsClassic()
     {
@@ -4570,7 +4518,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return "Waiting for a file";
     }
 
-    // Improved presence (experimental)
 
     private string GetDiscordPresenceDetailsImproved()
     {
@@ -4680,7 +4627,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateDiscordRichPresenceLifecycle();
     }
 
-    // Settings persistence
 
 
     private static readonly KeybindDefinition[] KeybindDefinitions =
@@ -4994,7 +4940,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Theme application
 
 
 
@@ -5016,10 +4961,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Converts RGB (0–255) to HSV (H: 0–360, S/V: 0–1).
-
-
-    // Converts HSV (H: 0–360, S/V: 0–1) to RGB (0–255).
 
 
 
@@ -5028,7 +4969,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // File operations
+
+
 
 
 
@@ -5234,7 +5176,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 OnPropertyChanged(nameof(FileSummaryText));
             }
 
-            // Read content directly from the TextEditor document
             await File.WriteAllTextAsync(_currentFilePath!, EditorTextBox.Document.Text);
             _isDirty = false;
             if (ActiveEditorTab is not null)
@@ -5280,7 +5221,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task<bool> SaveAsAsync() =>
         await SaveAsync(allowPromptForPath: true, forcePromptForPath: true);
 
-    // File tree
 
 
 
@@ -5341,7 +5281,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Recent files
 
 
 
@@ -5361,7 +5300,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Image zoom helpers
 
 
 
@@ -5371,7 +5309,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Autosave helpers
 
     private void RestartAutoSaveTimerIfNeeded()
     {
@@ -5397,7 +5334,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return $"{AutoSaveFailedMessagePrefix} {message}";
     }
 
-    // Editor helpers
 
     private string GetDocumentDisplayName() =>
         HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
@@ -5440,7 +5376,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueInsightRefresh();
     }
 
-    // Terminal helpers
 
     private void RefreshAvailableTerminalShells(string? preferredShellId = null)
     {
@@ -5634,7 +5569,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseTerminalSession(TerminalSession session, bool activateReplacement = true)
     {
-        // Stop the ConPTY process for this session.
         if (ReferenceEquals(session, ActiveTerminalSession))
         {
             if (_activeSessionExitedHandler is not null)
@@ -5680,7 +5614,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
-    // Event handlers
 
     private void NavigateTo(AppPage page)
     {
@@ -5704,7 +5637,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isTutorialPageVisible   = newTutorial;
         _isWhatsNewPageVisible   = newWhatsNew;
 
-        // Any deliberate navigation dismisses the update splash.
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;
 
@@ -6002,7 +5934,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void CheckForUpdatesButton_OnClick(object? sender, RoutedEventArgs e) =>
         await CheckForUpdatesManuallyAsync();
 
-    // Explicit Settings-page update check; always reports its result.
     private async Task CheckForUpdatesManuallyAsync()
     {
         if (IsCheckingForUpdatesManually) return;
@@ -6186,14 +6117,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             },
         };
 
-        // Editable (rebindable) grid - one row per KeybindDefinition
         var editableGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("140,*,Auto,Auto"),
             RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
         };
 
-        // Non-rebindable reference list, reusing the old static layout
         var fixedGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
@@ -6431,7 +6360,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Child           = scroll,
         };
 
-        // Footer
         var dismissButton = new Button
         {
             Content             = "Close",
@@ -6736,7 +6664,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             sb.AppendLine($"── {title} ──");
         }
 
-        // Environment
         sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
         sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
@@ -6750,7 +6677,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? "(not yet fetched)"
                 : IsNewerVersionAvailable ? $"{latestTag}  ← update available" : latestTag);
 
-        // Editor State
         Section("Editor State");
         var unsavedCount = OpenTabs.Count(t => t.IsDirty);
         sb.AppendLine($"Open tabs: {OpenTabs.Count}{(unsavedCount > 0 ? $"  ({unsavedCount} unsaved)" : string.Empty)}");
@@ -6764,23 +6690,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         sb.AppendLine($"Insight: {IsInsightEnabled}");
         sb.AppendLine($"Auto-save: {IsAutoSaveEnabled}");
 
-        // Appearance
         Section("Appearance");
         sb.AppendLine($"Theme: {(IsSystemThemeActive ? $"System Default ({CurrentThemeName})" : CurrentThemeName)}");
         sb.AppendLine($"Accent mode: {_accentColorMode}");
         if (_accentColorMode == "custom")
             sb.AppendLine($"Custom accent: {_customAccentHex}");
 
-        // Terminal
         Section("Terminal");
         sb.AppendLine($"Preferred shell: {SelectedTerminalShell?.DisplayName ?? "(none)"}");
 
-        // Discord Rich Presence
         Section("Discord Rich Presence");
         sb.AppendLine($"Enabled: {IsDiscordRichPresenceEnabled}");
         sb.AppendLine($"Improved RPC: {IsDiscordImprovedRpcEnabled}");
 
-        // Extensions
         var extensions = VisibleLoadedExtensions.ToList();
         Section($"Installed Extensions ({extensions.Count})");
         if (extensions.Count == 0)
@@ -6789,7 +6711,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             foreach (var ext in extensions)
                 sb.AppendLine($"{ext.Name} v{ext.Version} ({ext.Type}) by {ext.Author}");
 
-        // File Locations
         Section("File Locations");
         sb.AppendLine($"Settings: {SettingsFilePath}");
         sb.AppendLine($"Main log: {MainLogFilePath}");
@@ -6909,7 +6830,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         do
         {
             anyExpanded = false;
-            // Take a snapshot - ToggleDirectoryExpansionAsync mutates FileTreeItems
             var candidates = FileTreeItems
                 .Where(i => i.IsDirectory && !i.IsExpanded && expandedPaths.Contains(i.FullPath))
                 .ToList();
@@ -7045,13 +6965,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isFileTreeExpanded = !_isFileTreeExpanded;
         if (!_isFileTreeExpanded)
         {
-            // Collapse: repopulate from scratch - fastest correct collapse
             if (!string.IsNullOrWhiteSpace(_currentFolderPath))
                 await PopulateFileTreeAsync(_currentFolderPath);
         }
         else
         {
-            // Expand: toggle all top-level directories
             var rootDirs = FileTreeItems.Where(i => i.IsDirectory && i.Depth == 0 && !i.IsExpanded).ToList();
             foreach (var dir in rootDirs)
                 await ToggleDirectoryExpansionAsync(dir);
@@ -7203,7 +7121,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // MRU query history helpers.
 
 
 
@@ -7213,7 +7130,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Search result display grouping.
 
 
 
@@ -7252,7 +7168,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Encoding detection & change
 
 
 
@@ -7451,7 +7366,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Editor context menu (right-click)
 
     private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -7477,7 +7391,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
         var docText = EditorTextBox.Document.Text;
         var lines = docText.Split('\n');
-        // Check error spans
         foreach (var err in _errorHighlightRenderer.Spans)
         {
             if (caretOffset >= err.StartOffset && caretOffset < err.StartOffset + err.Length)
@@ -7496,7 +7409,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return (_currentFilePath, lineText, dead.Reason, dead.StartOffset, dead.Length);
             }
         }
-        // Fallback: check if caret line has any diagnostic (even if offset not exactly inside span)
         var caretLine = EditorTextBox.Document.GetLineByOffset(caretOffset);
         var caretLineText = EditorTextBox.Document.GetText(caretLine.Offset, caretLine.Length);
         foreach (var err in _errorHighlightRenderer.Spans)
@@ -7677,13 +7589,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Insight (predictive completion popup)
 
 
 
 
 
-    // Insight (dead code highlighting)
 
 
 
@@ -7904,7 +7814,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dirtyTabs = OpenTabs.Where(t => t.IsDirty).ToList();
         if (dirtyTabs.Count == 0 || !IsConfirmBeforeClosingUnsavedTabsEnabled) return;
 
-        // Cancel the close and handle it ourselves asynchronously.
         e.Cancel = true;
 
         foreach (var tab in dirtyTabs)
@@ -7925,7 +7834,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // All dirty tabs resolved - close for real.
         _isConfirmedClose = true;
         Close();
     }
@@ -8221,7 +8129,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             textArea.Selection.ReplaceSelectionWithText(text);
     }
 
-    // Nested types
 
     private static int NormalizeTabSize(int value) => value is 2 or 4 or 8 ? value : 4;
 
@@ -8268,7 +8175,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Runs factory with a timeout, throwing a named TimeoutException on expiry.
 
 
-    // Overload for operations that return no value.
 
 
 

@@ -56,7 +56,6 @@ public partial class MainWindow
     private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
         theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
 
-    // Apply selected theme to UI and editor
     private void ApplyThemeToEditor()
     {
         if (EditorTextBox is null) return;
@@ -421,7 +420,6 @@ public partial class MainWindow
                 @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
             if (key?.GetValue("AccentColorMenu") is int raw)
             {
-                // AccentColorMenu is stored as AABBGGRR
                 var r = (raw)       & 0xFF;
                 var g = (raw >> 8)  & 0xFF;
                 var b = (raw >> 16) & 0xFF;
@@ -469,7 +467,6 @@ public partial class MainWindow
         RgbToHsv(initialColor.R, initialColor.G, initialColor.B,
             out var hue, out var sat, out var val);
 
-        // Hue strip
         var hueCanvas = new Canvas { Width = 300, Height = 20 };
         var hueGrad   = new LinearGradientBrush
         {
@@ -495,7 +492,6 @@ public partial class MainWindow
         Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
         hueCanvas.Children.Add(hueCursor);
 
-        // SV square
         const double svSize   = 300.0;
         const double svHeight = 180.0;
         var svCanvas = new Canvas { Width = svSize, Height = svHeight };
@@ -548,7 +544,6 @@ public partial class MainWindow
         Canvas.SetTop (svCursor, (1 - val) * svHeight - 6);
         svCanvas.Children.Add(svCursor);
 
-        // Preview swatch + hex input
         var previewBorder = new Border
         {
             Width = 36, Height = 36, CornerRadius = new CornerRadius(8),
@@ -570,7 +565,6 @@ public partial class MainWindow
             Width           = 110,
         };
 
-        // Sync helpers
         void UpdateAll()
         {
             HsvToRgb(hue, sat, val, out var r2, out var g2, out var b2);
@@ -584,7 +578,6 @@ public partial class MainWindow
         }
         UpdateAll();
 
-        // Hue drag
         hueCanvas.PointerPressed  += (_, pe) =>
         {
             pe.Pointer.Capture(hueCanvas);
@@ -599,7 +592,6 @@ public partial class MainWindow
         };
         hueCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
 
-        // SV drag
         svCanvas.PointerPressed  += (_, pe) =>
         {
             pe.Pointer.Capture(svCanvas);
@@ -618,7 +610,6 @@ public partial class MainWindow
         };
         svCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
 
-        // Hex sync
         hexInput.TextChanged += (_, _) =>
         {
             try

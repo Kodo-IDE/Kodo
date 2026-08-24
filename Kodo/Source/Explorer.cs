@@ -189,7 +189,6 @@ public partial class MainWindow
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        // Restores this tab's caret position (clamped to the current document length).
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
@@ -299,7 +298,6 @@ public partial class MainWindow
         return true;
     }
 
-    // Open file via picker
     private async Task OpenFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -317,7 +315,6 @@ public partial class MainWindow
         await OpenFileFromPathAsync(path);
     }
 
-    // Open file from disk path
     private async Task OpenFileFromPathAsync(string path)
     {
         EnsureCurrentDocumentHasTab();
@@ -390,7 +387,6 @@ public partial class MainWindow
         await OpenFolderFromPathAsync(path);
     }
 
-    // Build tree nodes for folder
     private async Task PopulateFileTreeAsync(string folderPath)
     {
         var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
@@ -452,7 +448,6 @@ public partial class MainWindow
         await RefreshFileTreePreservingExpansionAsync();
     }
 
-    // Refresh tree keeping expand state
     private async Task RefreshFileTreePreservingExpansionAsync()
     {
         if (string.IsNullOrWhiteSpace(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
@@ -563,7 +558,6 @@ public partial class MainWindow
         }
     }
 
-    // Add file to recent list
     private void AddRecentFile(string? path)
     {
         if (!string.IsNullOrWhiteSpace(path) &&
@@ -682,7 +676,6 @@ public partial class MainWindow
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
-    // Handle file tree click
     private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: FileTreeItem item })
@@ -865,7 +858,6 @@ public partial class MainWindow
 
                 foreach (var (binary, args) in fileManagers)
                 {
-                    // Check the binary exists before trying to launch it.
                     var which = Process.Start(new ProcessStartInfo
                     {
                         FileName = "which",
@@ -936,7 +928,6 @@ public partial class MainWindow
             CloseTab(tab);
     }
 
-    // Prompt for rename input
     private async Task<string?> ShowRenameDialogAsync(string currentName)
     {
         string? result = null;
@@ -1304,7 +1295,6 @@ public partial class MainWindow
     {
         if (!HasRecentFiles) return;
 
-        // "Clear Recent Files" only removes non-pinned entries.
         var clearable = RecentFiles.Where(f => !f.IsPinned).ToList();
         if (clearable.Count == 0) return;
 

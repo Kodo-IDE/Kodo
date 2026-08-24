@@ -53,21 +53,18 @@ namespace Kodo;
 public partial class MainWindow
 {
 
-    // Refresh editor state on debounce tick
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _editorStateRefreshTimer.Stop();
         RefreshState(fullRefresh: _pendingFullStateRefresh);
     }
 
-    // Debounce Insight refresh
     private void QueueInsightRefresh()
     {
         _InsightRefreshTimer.Stop();
         _InsightRefreshTimer.Start();
     }
 
-    // Update Insight and highlight layers
     private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
@@ -83,7 +80,6 @@ public partial class MainWindow
         OnPropertyChanged(nameof(IsWordCountVisible));
     }
 
-    // Count words for plain-text files
     private void RefreshWordCount()
     {
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
@@ -99,7 +95,6 @@ public partial class MainWindow
         WordCountText = $"{wordCount} words";
     }
 
-    // Resolve Unsaved / autosave status text
     private string? GetDocumentStatusText()
     {
         if (!HasDocumentOpen) return null;
@@ -127,9 +122,6 @@ public partial class MainWindow
         _diagnosticPopupHideTimer.Stop();
         if (DiagnosticPopup.IsOpen)
             DiagnosticPopup.IsOpen = false;
-        // Keep hovered diagnostics until next PointerMoved so X click can still dismiss,
-        // but hide visually on any interaction (scroll / type / caret move).
-        // Caller that wants a full reset should clear hovered fields explicitly.
         var textView = EditorTextBox?.TextArea?.TextView;
         if (textView is not null)
             ToolTip.SetTip(textView, null);
@@ -145,7 +137,6 @@ public partial class MainWindow
         var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
 
-        // Build a clean, formatted diagnostic message
         string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason);
         string? primaryReason = errorReason ?? deadCodeReason;
 
@@ -157,7 +148,6 @@ public partial class MainWindow
         _hoveredDeadCodeReason = deadCodeReason;
         _hoveredErrorReason = errorReason;
 
-        // Determine the line text for persistence
         _hoveredDiagnosticLineText = nowOverLink ? null : GetLineTextAt(position);
         _hoveredDiagnosticMessage = diagnosticMessage;
 
@@ -174,7 +164,6 @@ public partial class MainWindow
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             DiagnosticPopupText.Text = diagnosticMessage;
             DiagnosticPopup.PlacementTarget = textView;
-            // Lenient placement: anchor just below the hovered line, near cursor X, so gap is ~4px (easy to reach)
             try
             {
                 var floor = textView.GetPositionFloor(position + textView.ScrollOffset);
@@ -182,7 +171,6 @@ public partial class MainWindow
                 {
                     var y = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(floor.Value.Line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y - textView.ScrollOffset.Y;
                     if (double.IsNaN(y) || double.IsInfinity(y)) y = position.Y;
-                    // Right on cursor: place popup directly at cursor tip
                     DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, Math.Max(8, textView.Bounds.Width - 430));
                     DiagnosticPopup.VerticalOffset = Math.Clamp(y, 4, Math.Max(4, textView.Bounds.Height - 100));
                 }
@@ -207,10 +195,6 @@ public partial class MainWindow
         }
     }
 
-    /// <summary>
-    /// Builds a clean, formatted diagnostic message combining error and dead code reasons.
-    /// Format: "[Error/Dead Code] <message>" or combined when both present.
-    /// </summary>
     private static string? BuildDiagnosticMessage(string? errorReason, string? deadCodeReason)
     {
         if (errorReason is null && deadCodeReason is null) return null;
@@ -227,9 +211,6 @@ public partial class MainWindow
         };
     }
 
-    /// <summary>
-    /// Gets the line text at the pointer position for diagnostic persistence.
-    /// </summary>
     private string? GetLineTextAt(Point position)
     {
         try
@@ -252,7 +233,6 @@ public partial class MainWindow
         var filePath = _currentFilePath;
         var didDismiss = false;
 
-        // Use raw reasons (without "Error: "/"Dead Code: " prefix) so signatures match FilterDismissed* checks
         if (lineText is not null)
         {
             if (_hoveredErrorReason is not null)
@@ -267,7 +247,6 @@ public partial class MainWindow
             }
         }
 
-        // Fallback: if hovered reasons were null (e.g., stale), try to parse raw messages from popup text
         if (!didDismiss && lineText is not null && DiagnosticPopupText.Text is not null)
         {
             var parts = DiagnosticPopupText.Text.Split(new[] { "--------------------" }, StringSplitOptions.RemoveEmptyEntries);
@@ -294,7 +273,6 @@ public partial class MainWindow
         UpdateErrorHighlighting();
         UpdateDeadCodeHighlighting();
 
-        // Clear all hovered state
         _hoveredDiagnosticLineText = null;
         _hoveredDiagnosticMessage = null;
         _hoveredDeadCodeReason = null;
@@ -347,7 +325,6 @@ public partial class MainWindow
         }
     }
 
-    // Mark dirty, queue saves and Insight
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         HideDiagnosticPopup();
@@ -370,7 +347,6 @@ public partial class MainWindow
             UpdateFindHighlights();
     }
 
-    // Handle bracket skip and wrap selection
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
@@ -415,7 +391,6 @@ public partial class MainWindow
         }
     }
 
-    // Auto-close brackets and quotes
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
@@ -442,7 +417,6 @@ public partial class MainWindow
         caret.Offset = offset;
     }
 
-    // Show predictive completions for prefix
     private void UpdateInsight()
     {
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
@@ -518,7 +492,6 @@ public partial class MainWindow
         _completionWindow = null;
     }
 
-    // Highlight unused and unreachable code
     private void UpdateDeadCodeHighlighting()
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
@@ -563,7 +536,6 @@ public partial class MainWindow
         return filtered;
     }
 
-    // Build themed completion popup
     private CompletionWindow CreateCompletionWindow()
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
@@ -627,7 +599,6 @@ public partial class MainWindow
         return window;
     }
 
-    // Handle smart keys and search shortcuts
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
         // Any editor interaction should hide the diagnostic popup - don't require X click
@@ -757,7 +728,6 @@ public partial class MainWindow
         }
     }
 
-    // Smart indent and block insert on Enter
     private void HandleSmartEnter(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
     {
         var offset = caret.Offset;
@@ -787,7 +757,6 @@ public partial class MainWindow
         caret.Offset = offset + newLineText.Length;
     }
 
-    // Delete paired bracket together
     private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
     {
         var selection = EditorTextBox.TextArea.Selection;
@@ -810,7 +779,6 @@ public partial class MainWindow
         return true;
     }
 
-    // Indent line or selection
     private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         if (selection is null || selection.IsEmpty)
@@ -837,7 +805,6 @@ public partial class MainWindow
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
-    // Outdent line or selection
     private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         if (selection is null || selection.IsEmpty)
@@ -909,7 +876,6 @@ public partial class MainWindow
         return trimmedAfter.Length > 0 && trimmedAfter[0] == closing && closing is ')' or ']' or '}';
     }
 
-    // Rebase pasted indent to caret level
     private string ReindentPastedText(string text, AvaloniaEdit.Document.TextDocument doc, int offset)
     {
         var normalized = NormalizeLineEndings(text);
@@ -956,7 +922,6 @@ public partial class MainWindow
         return string.Join(Environment.NewLine, pasteLines);
     }
 
-    // Paste with re-indented lines
     private async Task HandleSmartPasteAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Caret caret)
     {
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -982,7 +947,6 @@ public partial class MainWindow
         SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
     }
 
-    // Toggle line comment on selection
     private void ToggleLineComment(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         var lineCommentToken = CurrentLanguageExtension?.CommentLine;

@@ -192,14 +192,12 @@ public partial class MainWindow
         await Task.WhenAll(tasks);
     }
 
-    // Download extension icons
     private async Task FetchMarketplaceIconsAsync(
         IReadOnlyDictionary<string, string> marketplaceIconMap,
         ObservableCollection<MarketplaceExtension>? targetCollection = null)
     {
         var entries = targetCollection ?? MarketplaceExtensions;
 
-        // Applies already-cached icon bytes synchronously, skipping an async round-trip.
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             foreach (var entry in entries)
@@ -266,7 +264,6 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(iconUrl))
             return default;
 
-        // Fast path: bytes already cached.
         if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
             return DecodeCachedIconBytes(bytes);
 

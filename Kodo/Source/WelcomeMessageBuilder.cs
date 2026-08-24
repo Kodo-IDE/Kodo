@@ -7,7 +7,6 @@ namespace Kodo;
 // Home screen welcome-pool logic: holiday detection and the message-pool builder.
 internal static class WelcomeMessageBuilder
 {
-    // Holiday / calendar helpers
 
     private record HolidayEntry(string Name, string? Greeting);
 
@@ -18,7 +17,6 @@ internal static class WelcomeMessageBuilder
         var dow = date.DayOfWeek;
         var y = date.Year;
 
-        // Universal / very widely observed
         if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
         if (m == 12 && d == 31) return new("New Year's Eve", "Happy New Year's Eve!");
         if (m == 12 && d == 25) return new("Christmas Day", "Merry Christmas!");
@@ -36,15 +34,12 @@ internal static class WelcomeMessageBuilder
         if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace!");
         if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day!");
 
-        // Mother's Day: second Sunday of May
         if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
             return new("Mother's Day", "Happy Mother's Day!");
 
-        // Father's Day: third Sunday of June
         if (m == 6 && dow == DayOfWeek.Sunday && d >= 15 && d <= 21)
             return new("Father's Day", "Happy Father's Day!");
 
-        // Easter (Anonymous Gregorian algorithm)
         var easter = ComputeEaster(y);
         if (m == easter.Month && d == easter.Day)
             return new("Easter Sunday", "Happy Easter!");
@@ -53,31 +48,24 @@ internal static class WelcomeMessageBuilder
         if (date == easter.AddDays(1) && country is "CA" or "GB" or "AU" or "NZ")
             return new("Easter Monday", "Happy Easter Monday!");
 
-        // Lunar New Year (Chinese/Vietnamese/Korean)
         if (LunarNewYear(y) is { } lny && m == lny.Month && d == lny.Day)
             return new("Lunar New Year", "Happy Lunar New Year!");
 
-        // Holi (full moon of Phalguna)
         if (HoliDate(y) is { } holi && m == holi.Month && d == holi.Day)
             return new("Holi", "Happy Holi!");
 
-        // Vesak / Buddha Day (full moon of Vaisakha)
         if (VesakDate(y) is { } vesak && m == vesak.Month && d == vesak.Day)
             return new("Vesak", "Happy Vesak!");
 
-        // Eid al-Fitr (1 Shawwal)
         if (EidAlFitr(y) is { } eidFitr && m == eidFitr.Month && d == eidFitr.Day)
             return new("Eid al-Fitr", "Eid Mubarak!");
 
-        // Eid al-Adha (10 Dhu al-Hijjah)
         if (EidAlAdha(y) is { } eidAdha && m == eidAdha.Month && d == eidAdha.Day)
             return new("Eid al-Adha", "Eid Mubarak!");
 
-        // Rosh Hashanah (1 Tishrei)
         if (RoshHashanah(y) is { } rosh && m == rosh.Month && d == rosh.Day)
             return new("Rosh Hashanah", "Shana Tova! Happy New Year!");
 
-        // Yom Kippur (10 Tishrei)
         if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
             return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
 
@@ -85,56 +73,42 @@ internal static class WelcomeMessageBuilder
         if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
             return new("Navratri", "Happy Navratri!");
 
-        // Diwali (new moon of Kartika)
         if (DiwaliDate(y) is { } diwali && m == diwali.Month && d == diwali.Day)
             return new("Diwali", "Happy Diwali!");
 
-        // Hanukkah (25 Kislev)
         if (HanukkahDate(y) is { } hanukkah && m == hanukkah.Month && d == hanukkah.Day)
             return new("Hanukkah", "Happy Hanukkah!");
 
-        // Canada
         if (country == "CA")
         {
             if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
             if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget.");
-            // Victoria Day: last Monday before May 25
             if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
                 return new("Victoria Day", "Happy Victoria Day! Enjoy the long weekend.");
-            // Labour Day: first Monday of September
             if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
                 return new("Labour Day", "Happy Labour Day! Enjoy the long weekend.");
-            // Thanksgiving: second Monday of October
             if (m == 10 && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
                 return new("Thanksgiving", "Happy Thanksgiving!");
-            // Family Day: third Monday of February (most provinces)
             if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
                 return new("Family Day", "Happy Family Day! Enjoy the long weekend.");
         }
 
-        // United States of America
         if (country == "US")
         {
             if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
             if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all who have served.");
-            // Thanksgiving: fourth Thursday of November
             if (m == 11 && dow == DayOfWeek.Thursday && d >= 22 && d <= 28)
                 return new("Thanksgiving", "Happy Thanksgiving! (and happy coding after dinner)");
-            // Memorial Day: last Monday of May
             if (m == 5 && dow == DayOfWeek.Monday && d >= 25)
                 return new("Memorial Day", "Remembering those who gave their lives in service.");
-            // Labor Day: first Monday of September
             if (m == 9 && dow == DayOfWeek.Monday && d <= 7)
                 return new("Labor Day", "Happy Labor Day! Enjoy the long weekend.");
-            // MLK Day: third Monday of January
             if (m == 1 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
                 return new("MLK Day", "Happy Martin Luther King Jr. Day!");
-            // Presidents' Day: third Monday of February
             if (m == 2 && dow == DayOfWeek.Monday && d >= 15 && d <= 21)
                 return new("Presidents' Day", "Happy Presidents' Day! Enjoy the long weekend!");
         }
 
-        // United Kingdom
         if (country == "GB")
         {
             if (m == 8 && dow == DayOfWeek.Monday && d >= 25)
@@ -147,7 +121,6 @@ internal static class WelcomeMessageBuilder
                 return new("Bonfire Night", "Remember, remember the 5th of November!");
         }
 
-        // Australia
         if (country == "AU")
         {
             if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
@@ -156,28 +129,24 @@ internal static class WelcomeMessageBuilder
                 return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
         }
 
-        // New Zealand
         if (country == "NZ")
         {
             if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
             if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget.");
         }
 
-        // Germany
         if (country == "DE")
         {
             if (m == 10 && d == 3) return new("German Unity Day", "Happy German Unity Day!");
             if (m == 5  && d == 1) return new("Labour Day", "Happy Labour Day!");
         }
 
-        // France
         if (country == "FR")
         {
             if (m == 7  && d == 14) return new("Bastille Day", "Bonne fête nationale!");
             if (m == 5  && d == 1)  return new("Fête du Travail", "Bonne Fête du Travail!");
         }
 
-        // Japan
         if (country == "JP")
         {
             if (m == 1  && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
@@ -312,7 +281,6 @@ internal static class WelcomeMessageBuilder
     private static int ApproxHijriYear(int gregorianYear) =>
         (int)((gregorianYear - 622) * 1.030685);
 
-    // Eid al-Fitr: 1 Shawwal (Islamic month 10).
     private static DateTime? EidAlFitr(int year)
     {
         int hy = ApproxHijriYear(year);
@@ -364,9 +332,7 @@ internal static class WelcomeMessageBuilder
     private static int HebrewMonthLength(int hy, int hm)
     {
         int yd = HebrewYearDays(hy);
-        // Cheshvan (2): 30 only in complete years
         if (hm == 2) return yd % 10 == 5 ? 30 : 29;
-        // Kislev (3): 29 only in deficient years
         if (hm == 3) return yd % 10 == 3 ? 29 : 30;
         // Adar (6) is 30 days in leap years, 29 in regular
         if (hm == 6) return IsHebrewLeapYear(hy) ? 30 : 29;
@@ -396,7 +362,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // Yom Kippur: 10 Tishrei.
     private static DateTime? YomKippur(int year)
     {
         int hy0 = ApproxHebrewYear(year);
@@ -408,7 +373,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // Hanukkah: 25 Kislev (first day/night).
     private static DateTime? HanukkahDate(int year)
     {
         // 25 Kislev of Hebrew year ~(Gregorian + 3761) falls in Nov/Dec.
@@ -452,7 +416,6 @@ internal static class WelcomeMessageBuilder
         return GetHolidayEntry(date.AddDays(-1), country) is not null;
     }
 
-    // Welcome message construction
     public static string[] BuildMessages(
         string userName,
         string userCountry,
@@ -495,7 +458,6 @@ internal static class WelcomeMessageBuilder
             messages.Add($"Welcome back, {name}!");
             messages.Add($"Let's go, {name}!");
 
-            // Additional personalised greetings
             messages.Add($"Great to see you again, {name}!");
             messages.Add($"Ready for another session, {name}?");
             messages.Add($"Time to be productive, {name}!");
@@ -561,7 +523,6 @@ internal static class WelcomeMessageBuilder
             Add("Hope the long weekend recharged you. Ready to build?", 2);
         }
 
-        // 3. Day-of-week personality
         messages.Add(dow switch
         {
             DayOfWeek.Monday    => "Monday? Let's make it count.",
@@ -590,7 +551,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("Monday's for the brave. Welcome back.");
         }
 
-        // 4. Time-of-day flavour
         if (tod != "night")
         {
             messages.Add($"Good {tod}!");

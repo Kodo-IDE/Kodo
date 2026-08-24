@@ -57,7 +57,6 @@ public sealed record CompilerResolution(string Version, string DownloadUrl, stri
 
 public partial class MainWindow
 {
-    // Load compiler index with cache and ETag
     private async Task LoadCompilerExtensionsAsync(bool forceResolve = false)
     {
         var effectiveForceResolve = forceResolve || !_hasResolvedCompilersThisSession;
@@ -184,7 +183,6 @@ public partial class MainWindow
         catch { /* best-effort disk cache - ignore write failures */ }
     }
 
-    // Read installed-compilers.json
     private void LoadInstalledCompilerRegistry()
     {
         try
@@ -202,7 +200,6 @@ public partial class MainWindow
         }
     }
 
-    // Persist installed-compilers.json
     private void SaveInstalledCompilerRegistry()
     {
         try
@@ -217,7 +214,6 @@ public partial class MainWindow
         }
     }
 
-    // Sync compiler installed flags
     private void SyncCompilerInstallStates()
     {
         foreach (var entry in CompilerExtensions)
@@ -408,7 +404,6 @@ public partial class MainWindow
         ("julia-auto", "Julia", "JuliaLang", new[] { "julia.exe" }, "julia", false, null)
     ];
 
-    // Detect local compilers on PATH
     private async Task AutoDetectDefaultCompilersAsync()
     {
         try
@@ -759,7 +754,6 @@ public partial class MainWindow
             ["holyc"] = new([".hc"], [], null, "holyc {file}", null),
         };
 
-    // Parse compiler index JSON
     private static List<CompilerIndexEntry> ParseCompilerIndexEntries(string json, List<string> loadErrors)
     {
         var result = new List<CompilerIndexEntry>();
@@ -1018,7 +1012,6 @@ public partial class MainWindow
         return result;
     }
 
-    // Resolve latest compiler versions
     private async Task RefreshCompilerResolutionsAsync(List<CompilerIndexEntry> entries, List<MarketplaceExtension> liveExtensions, bool forceResolve)
     {
         var cache = LoadCompilerResolutionCache();
@@ -1306,7 +1299,6 @@ public partial class MainWindow
                     {
                         var newUserPath = string.IsNullOrWhiteSpace(currentUserPath) ? binToAdd : currentUserPath + Path.PathSeparator + binToAdd;
                         Environment.SetEnvironmentVariable("PATH", newUserPath, EnvironmentVariableTarget.User);
-                        // Also for current process
                         var procPath = Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Process) ?? string.Empty;
                         if (!procPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
                             Environment.SetEnvironmentVariable("PATH", procPath + Path.PathSeparator + binToAdd, EnvironmentVariableTarget.Process);
@@ -2256,7 +2248,6 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
 
-        // .NET: *.csproj, *.fsproj, *.vbproj, *.sln, *.slnx
         if (HasDotnetProject(folder))
         {
             fallback = BuildProjectFallbackExtension(
@@ -2332,7 +2323,6 @@ public partial class MainWindow
             if (Directory.EnumerateFiles(folder, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
             if (Directory.EnumerateFiles(folder, "*.slnx", SearchOption.TopDirectoryOnly).Any()) return true;
 
-            // One level deep (common for src/MyApp.csproj)
             foreach (var sub in Directory.EnumerateDirectories(folder))
             {
                 var name = Path.GetFileName(sub);
@@ -2637,7 +2627,6 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(workingDirectory) || !Directory.Exists(workingDirectory))
             return;
-        // Check working dir and parents (go searches upwards)
         var current = workingDirectory;
         for (var i = 0; i < 4; i++)
         {

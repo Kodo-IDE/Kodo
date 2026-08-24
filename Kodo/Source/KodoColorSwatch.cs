@@ -88,7 +88,6 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         var currentV = initialV;
         var currentA = initialColor.A;
 
-        // Theme-aware swatch border
         var swatchBorder = new Border
         {
             Width = 12,

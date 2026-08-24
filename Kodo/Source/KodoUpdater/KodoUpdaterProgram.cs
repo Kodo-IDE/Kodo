@@ -41,7 +41,6 @@ internal static class Program
         }
         catch
         {
-            // Fall through and run anyway.
         }
 
         try
@@ -109,7 +108,6 @@ internal static class Program
             }
             catch
             {
-                // Transient pipe error - back off briefly and retry.
                 try { await Task.Delay(1000, ct); } catch { break; }
             }
         }
@@ -315,11 +313,9 @@ internal static class Program
         }
         catch
         {
-            // Best-effort - user can still open Kodo manually.
         }
     }
 
-    // ── Settings ──────────────────────────────────────────────────────────
 
     private static async Task RunOneCycleAsync()
     {
@@ -425,7 +421,6 @@ internal static class Program
         }
     }
 
-    // GitHub release check / download (mirrors Kodo's own UpdateService) 
 
     private static HttpClient CreateHttpClient()
     {
@@ -520,7 +515,6 @@ internal static class Program
         }
         catch
         {
-            // Leave the downloaded installer in place; next cycle retries.
         }
     }
 

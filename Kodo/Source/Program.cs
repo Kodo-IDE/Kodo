@@ -1,4 +1,3 @@
-// Licensed under the GPL-v3.0
 using Avalonia;
 using System;
 using System.IO;
@@ -31,7 +30,6 @@ class Program
 
         AptabaseClient.Initialize();
 
-        // Unhandled exceptions are handled in App.Initialize()
         var app = BuildAvaloniaApp();
 
         try

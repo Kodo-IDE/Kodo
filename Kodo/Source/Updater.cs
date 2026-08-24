@@ -44,13 +44,11 @@ internal static class UpdateService
         {
             Timeout = TimeSpan.FromSeconds(15),
         };
-        // GitHub's API requires a User-Agent header on every request.
         client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
     }
 
-    // Update check
 
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
@@ -89,12 +87,10 @@ internal static class UpdateService
         }
         catch
         {
-            // Non-critical - swallow failures and report "no update".
             return null;
         }
     }
 
-    // Compare remote vs local tags
     internal static bool IsNewerVersion(string remote, string local)
     {
         var remoteParts = ParseVersionParts(remote);
@@ -115,7 +111,6 @@ internal static class UpdateService
 
     private static int[]? ParseVersionParts(string tag)
     {
-        // Strips leading "v" and trailing "-DEV"/"-beta"/build metadata.
         var core = tag.Trim();
         if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V'))
             core = core[1..];
@@ -136,7 +131,6 @@ internal static class UpdateService
         return parts.Length > 0 ? parts : null;
     }
 
-    // Settings
 
     public static bool IsAutoUpdateEnabledInSettings()
     {
@@ -192,10 +186,8 @@ internal static class UpdateService
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
-    // Autostart (survives reboot/logoff)
 
     [SupportedOSPlatform("windows")]
-    // Register startup background check
     public static void EnsureAutostartRegistered()
     {
         try
@@ -218,7 +210,6 @@ internal static class UpdateService
     }
 
     [SupportedOSPlatform("windows")]
-    // Remove startup registration
     public static void RemoveAutostartRegistration()
     {
         try
@@ -247,7 +238,6 @@ internal static class UpdateService
         proc?.WaitForExit(5000);
     }
 
-    // Download
 
     // Downloads the installer to a temp path with progress reporting.
     public static async Task<string> DownloadInstallerAsync(
@@ -299,7 +289,6 @@ internal static class UpdateService
             : $"{bytes / 1024.0:0} KB";
     }
 
-    // Install / restart
 
     public static void LaunchInstallerAndExit(string installerPath, bool reopenAfterInstall = false)
     {
@@ -384,7 +373,6 @@ internal static class UpdateService
         return update;
     }
 
-    // GitHub API DTOs
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -424,7 +412,6 @@ internal static class UpdateService
 
 internal sealed class UpdateDialog : Window
 {
-    // Theme-resolved palette, matching the user's active Light/Dark/extension theme.
     private readonly DialogThemePalette _palette;
 
     // Resolved from the user's active accent setting, same as MainWindow.
@@ -621,14 +608,12 @@ internal sealed class UpdateDialog : Window
         });
     }
 
-    // Download and run update
     private async Task BeginUpdateAsync()
     {
         _canClose = false;
         _primaryButton.IsEnabled = false;
         _laterButton.IsEnabled   = false;
 
-        // Fast path: sentinel file means it's already downloaded.
         if (_preDownloadedInstallerPath is not null && File.Exists(_preDownloadedInstallerPath))
         {
             _progressBar.IsVisible      = true;
@@ -659,7 +644,6 @@ internal sealed class UpdateDialog : Window
             _statusText.Text            = "Installing update… Kodo will restart shortly.";
             _primaryButton.Content      = "Installing…";
 
-            // Brief pause so the "installing" message is actually visible.
             await Task.Delay(600);
 
             UpdateService.LaunchInstallerAndExit(installerPath, reopenAfterInstall: true);
@@ -683,7 +667,6 @@ internal sealed class UpdateDialog : Window
         }
     }
 
-    // Open URL in default browser
     private static void OpenUrl(string url)
     {
         try
@@ -760,7 +743,6 @@ internal static class AccentResolver
         }
         catch
         {
-            // Failure just falls back to default Kodo purple.
             return new AccentSettings();
         }
     }
@@ -774,7 +756,6 @@ internal static class AccentResolver
                 @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
             if (key?.GetValue("AccentColorMenu") is int raw)
             {
-                // AccentColorMenu is stored as AABBGGRR.
                 var r = raw & 0xFF;
                 var g = (raw >> 8) & 0xFF;
                 var b = (raw >> 16) & 0xFF;
@@ -827,7 +808,6 @@ internal static class ThemeResolver
 {
     private const string SettingsFileName = "kodosettings.json";
 
-    // Built-in palettes matching MainWindow.ApplyThemeBrushes.
     private static readonly DialogThemePalette DarkPalette = new(
         Background: Color.Parse("#1E1E1E"),
         SurfaceDeep: Color.Parse("#1A1A1A"),
