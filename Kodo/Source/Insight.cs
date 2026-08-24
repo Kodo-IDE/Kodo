@@ -1154,8 +1154,12 @@ public sealed class InsightEngine
         var maskedDocForLines = BuildMaskedDocument(documentText, languageExtension);
         var masked = maskedDocForLines.Split('\n');
 
+        // Require a clear majority of substantive lines to end in ';' before assuming
+        // semicolon style — a handful of stray semicolons (e.g. in strings/attributes)
+        // shouldn't be enough to start flagging every non-semicolon line as an error.
+        var nonBlankLines = masked.Count(l => l.Trim().Length > 0);
         var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
-        var looksSemicolonStyle = semicolonLines >= 3;
+        var looksSemicolonStyle = semicolonLines >= 3 && semicolonLines >= nonBlankLines * 0.5;
         var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
 
         var knownKeywords = languageExtension?.Keywords is { Length: > 0 } kw
@@ -1232,7 +1236,7 @@ public sealed class InsightEngine
                 if (wordMatch.Success)
                 {
                     var word = wordMatch.Groups[1].Value;
-                    if (word.Length >= 3 && !knownKeywords.Contains(word) && !variableNamesInFile.Contains(word))
+                    if (word.Length >= 4 && !knownKeywords.Contains(word) && !variableNamesInFile.Contains(word))
                     {
                         // Don't flag if the word is clearly an identifier usage like `batch.Add` or `batch(`
                         // or named argument `Props:` – next non-space char after word is `.`/`(`/`:`/`=`

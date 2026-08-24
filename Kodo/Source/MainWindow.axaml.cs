@@ -1603,6 +1603,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                ext.Equals(".log", StringComparison.OrdinalIgnoreCase);
     }
 
+    // Files with no extension (Makefile, Dockerfile, LICENSE, etc.) have no reliable
+    // language to detect errors against, so Insight's error/dead-code scanning skips them.
+    private static bool HasNoFileExtension(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return true;
+
+        return Path.GetExtension(filePath).Length == 0;
+    }
+
     private static bool IsMarkdownFile(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -7412,6 +7422,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
+            HasNoFileExtension(_currentFilePath) ||
             IsInsightBlacklisted(_currentFilePath))
         {
             ClearErrorHighlighting();

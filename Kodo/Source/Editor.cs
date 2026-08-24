@@ -311,20 +311,11 @@ public partial class MainWindow
 
         try
         {
-            // Lenient: check hovered line and ±2 neighbors so cursor near line still counts
             var doc = EditorTextBox.Document;
-            for (var d = 0; d <= 2; d++)
-            {
-                var candidates = d == 0 ? new[] { pos.Value.Line } : new[] { pos.Value.Line - d, pos.Value.Line + d };
-                foreach (var ln in candidates)
-                {
-                    if (ln < 1 || ln > doc.LineCount) continue;
-                    var line = doc.GetLineByNumber(ln);
-                    var msg = _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
-                    if (msg is not null) return msg;
-                }
-            }
-            return null;
+            var ln = pos.Value.Line;
+            if (ln < 1 || ln > doc.LineCount) return null;
+            var line = doc.GetLineByNumber(ln);
+            return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
         }
         catch
         {
@@ -342,32 +333,12 @@ public partial class MainWindow
 
         try
         {
-            // Lenient: ±2 lines, exact column then whole-line fallback
             var doc = EditorTextBox.Document;
-            for (var d = 0; d <= 2; d++)
-            {
-                var candidates = d == 0 ? new[] { pos.Value.Line } : new[] { pos.Value.Line - d, pos.Value.Line + d };
-                foreach (var ln in candidates)
-                {
-                    if (ln < 1 || ln > doc.LineCount) continue;
-                    var line = doc.GetLineByNumber(ln);
-                    var colOffset = d == 0 ? Math.Clamp(pos.Value.Column - 1, 0, line.Length) : 0;
-                    var reason = d == 0
-                        ? _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset)
-                        : _deadCodeHighlightRenderer.GetReasonAt(line.Offset);
-                    if (reason is null && d != 0)
-                    {
-                        var end = line.Offset + line.Length;
-                        for (var c = line.Offset; c < end; c++)
-                        {
-                            reason = _deadCodeHighlightRenderer.GetReasonAt(c);
-                            if (reason is not null) break;
-                        }
-                    }
-                    if (reason is not null) return reason;
-                }
-            }
-            return null;
+            var ln = pos.Value.Line;
+            if (ln < 1 || ln > doc.LineCount) return null;
+            var line = doc.GetLineByNumber(ln);
+            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
+            return _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset);
         }
         catch
         {
@@ -554,6 +525,7 @@ public partial class MainWindow
             EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
+            HasNoFileExtension(_currentFilePath) ||
             IsInsightBlacklisted(_currentFilePath))
         {
             ClearDeadCodeHighlighting();
