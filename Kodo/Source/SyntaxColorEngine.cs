@@ -1901,6 +1901,8 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 
 public sealed class MarkdownColorizer : DocumentColorizingTransformer
 {
+    public int TabSize { get; set; } = 4;
+
     private const string CommonStringPrefixPattern =
         "(?i)(?<![\\p{L}\\p{Nd}_])(?:fr|rf|br|rb|ur|ru|cr|rc|f|r|u|b|c)(?=(?:\\\"\\\"\\\"|'''|\\\"|'|#+\\\"))";
     private static readonly Dictionary<char, char> OpeningToClosing = new()
@@ -1924,14 +1926,21 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         Brush.Parse("#9CDCFE"),
         Brush.Parse("#D7BA7D")
     ];
+    // Markdown bullets: blue -> magenta -> yellow -> blue ... (distinct from bracket rainbow)
+    private static readonly IBrush[] MarkdownBulletBrushes =
+    [
+        Brush.Parse("#4FC1FF"), // blue
+        Brush.Parse("#C586C0"), // magenta
+        Brush.Parse("#FFD700"), // yellow
+    ];
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly Regex HeadingRegex = new(@"^(?<indent>\s{0,3})(?<marker>#{1,6})(?<space>\s+)(?<content>.+?)\s*(?:#+\s*)?$", RegexOptions.Compiled);
     private static readonly Regex SetextHeadingUnderlineRegex = new(@"^\s{0,3}(?:=+|-+)\s*$", RegexOptions.Compiled);
     private static readonly Regex HorizontalRuleRegex = new(@"^\s{0,3}(?:([-*_])(?:\s*\1){2,})\s*$", RegexOptions.Compiled);
-    private static readonly Regex OrderedListRegex = new(@"^\s{0,3}\d+[.)]\s+", RegexOptions.Compiled);
-    private static readonly Regex UnorderedListRegex = new(@"^\s{0,3}[-+*]\s+", RegexOptions.Compiled);
-    private static readonly Regex TaskListRegex = new(@"^(\s{0,3}[-+*]\s+)\[(?<state>[ xX])\]\s+", RegexOptions.Compiled);
+    private static readonly Regex OrderedListRegex = new(@"^\s*\d+[.)]\s+", RegexOptions.Compiled);
+    private static readonly Regex UnorderedListRegex = new(@"^\s*[-+*]\s+", RegexOptions.Compiled);
+    private static readonly Regex TaskListRegex = new(@"^(\s*[-+*]\s+)\[(?<state>[ xX])\]\s+", RegexOptions.Compiled);
     private static readonly Regex BlockquoteRegex = new(@"^(?<indent>\s{0,3})(?<markers>(?:>\s?)+)", RegexOptions.Compiled);
     private static readonly Regex TablePipeRegex = new(@"\|", RegexOptions.Compiled);
     private static readonly Regex TableAlignmentRegex = new(@"^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$", RegexOptions.Compiled);
@@ -2087,7 +2096,8 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var taskMatch = TaskListRegex.Match(text);
         if (taskMatch.Success)
         {
-            ApplyBrush(lineOffset, 0, taskMatch.Groups[1].Length, _keywordBrush);
+            var taskDepth = GetListDepth(text);
+            ApplyBrush(lineOffset, 0, taskMatch.Groups[1].Length, GetBulletBrush(taskDepth));
             ApplyBrush(lineOffset, taskMatch.Groups[1].Length, taskMatch.Length, _punctuationBrush);
             var stateGroup = taskMatch.Groups["state"];
             ApplyBrush(lineOffset, stateGroup.Index, stateGroup.Index + stateGroup.Length, _stringBrush);
@@ -2098,14 +2108,16 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             var orderedMatch = OrderedListRegex.Match(text);
             if (orderedMatch.Success)
             {
-                ApplyBrush(lineOffset, 0, orderedMatch.Length, _keywordBrush);
+                var orderedDepth = GetListDepth(text);
+                ApplyBrush(lineOffset, 0, orderedMatch.Length, GetBulletBrush(orderedDepth));
                 MarkRange(protectedRanges, 0, orderedMatch.Length);
             }
 
             var unorderedMatch = UnorderedListRegex.Match(text);
             if (unorderedMatch.Success)
             {
-                ApplyBrush(lineOffset, 0, unorderedMatch.Length, _keywordBrush);
+                var unorderedDepth = GetListDepth(text);
+                ApplyBrush(lineOffset, 0, unorderedMatch.Length, GetBulletBrush(unorderedDepth));
                 MarkRange(protectedRanges, 0, unorderedMatch.Length);
             }
         }
@@ -2572,6 +2584,27 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             string.Equals(ext, ".axaml", StringComparison.OrdinalIgnoreCase)) == true;
 
     private static IBrush GetRainbowBrush(int depth) => RainbowBrushes[Math.Abs(depth) % RainbowBrushes.Length];
+
+    private static int GetIndentWidth(string line)
+    {
+        var w = 0;
+        foreach (var ch in line)
+        {
+            if (ch == ' ') w++;
+            else if (ch == '\t') w += 4;
+            else break;
+        }
+        return w;
+    }
+
+    private int GetListDepth(string line)
+    {
+        var tabs = line.TakeWhile(c => c == '\t').Count();
+        if (tabs > 0) return tabs;
+        return GetIndentWidth(line) / TabSize;
+    }
+
+    private static IBrush GetBulletBrush(int depth) => MarkdownBulletBrushes[Math.Abs(depth) % MarkdownBulletBrushes.Length];
 
     private void ApplyBrush(int lineOffset, int startOffset, int endOffset, IBrush brush)
     {

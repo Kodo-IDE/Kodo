@@ -1824,6 +1824,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.Options.IndentationSize = TabSize;
         EditorTextBox.FontSize = EditorFontSize;
         _indentGuideRenderer.TabSize = TabSize;
+        _markdownColorizer.TabSize = TabSize;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
     }
