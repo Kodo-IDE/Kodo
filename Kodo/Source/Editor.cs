@@ -124,6 +124,7 @@ public partial class MainWindow
 
     private void HideDiagnosticPopup()
     {
+        _diagnosticPopupHideTimer.Stop();
         if (DiagnosticPopup.IsOpen)
             DiagnosticPopup.IsOpen = false;
         // Keep hovered diagnostics until next PointerMoved so X click can still dismiss,
@@ -137,6 +138,7 @@ public partial class MainWindow
     // Show link or diagnostic popup on hover (with X to dismiss)
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
+        _diagnosticPopupHideTimer.Stop();
         var textView = EditorTextBox.TextArea.TextView;
         var position = e.GetPosition(textView);
         var nowOverLink = IsPointerOverLink(position, textView);
@@ -169,6 +171,7 @@ public partial class MainWindow
         else if (diagnosticMessage is not null)
         {
             ToolTip.SetTip(textView, null);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             DiagnosticPopupText.Text = diagnosticMessage;
             DiagnosticPopup.PlacementTarget = textView;
             DiagnosticPopup.IsOpen = true;
@@ -177,6 +180,7 @@ public partial class MainWindow
         {
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
     }
 

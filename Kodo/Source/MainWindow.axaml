@@ -1587,15 +1587,19 @@
                     </avaloniaEdit:TextEditor>
                     <Popup x:Name="DiagnosticPopup"
                             Placement="Pointer"
-                            IsLightDismissEnabled="True"
-                            OverlayDismissEventPassThrough="True"
+                            HorizontalOffset="0"
+                            VerticalOffset="6"
+                            IsLightDismissEnabled="False"
                             WindowManagerAddShadowHint="False">
-                        <Border Background="{Binding CardBrush}"
+                        <Border x:Name="DiagnosticPopupBorder"
+                                Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="6"
                                 Padding="10,8"
-                                MaxWidth="450">
+                                MaxWidth="450"
+                                PointerEntered="DiagnosticPopup_OnPointerEntered"
+                                PointerExited="DiagnosticPopup_OnPointerExited">
                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                                 <TextBlock x:Name="DiagnosticPopupText"
                                             Foreground="{Binding PrimaryTextBrush}"

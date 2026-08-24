@@ -114,6 +114,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+    private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(260) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
@@ -726,6 +727,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(_colorSwatchGenerator);
         EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
+        EditorTextBox.TextArea.TextView.PointerEntered += (_, _) => _diagnosticPopupHideTimer.Stop();
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         EditorTextBox.TextArea.TextView.PointerPressed += (_, _) => HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.PointerWheelChanged += (_, _) => HideDiagnosticPopup();
@@ -826,6 +828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
         _InsightRefreshTimer.Tick += InsightRefreshTimer_OnTick;
+        _diagnosticPopupHideTimer.Tick += DiagnosticPopupHideTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
@@ -7321,14 +7324,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
         if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
+        // Lenient hover: give 260ms to reach tooltip across the 12px gap before closing
+        _diagnosticPopupHideTimer.Stop();
+        _diagnosticPopupHideTimer.Start();
+    }
+
+    private void DiagnosticPopup_OnPointerEntered(object? sender, PointerEventArgs e) => _diagnosticPopupHideTimer.Stop();
+
+    private void DiagnosticPopup_OnPointerExited(object? sender, PointerEventArgs e)
+    {
+        _diagnosticPopupHideTimer.Stop();
+        _diagnosticPopupHideTimer.Start();
+    }
+
+    private void DiagnosticPopupHideTimer_OnTick(object? sender, EventArgs e)
+    {
+        _diagnosticPopupHideTimer.Stop();
+        var textView = EditorTextBox.TextArea.TextView;
+        if (textView.IsPointerOver || DiagnosticPopup.IsPointerOver || DiagnosticPopupBorder.IsPointerOver) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
         _hoveredErrorReason = null;
         _hoveredDiagnosticLineText = null;
         _hoveredDiagnosticMessage = null;
-        var textView = EditorTextBox.TextArea.TextView;
         DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(textView, null);
+        textView.Cursor = new Cursor(StandardCursorType.Ibeam);
     }
 
 
