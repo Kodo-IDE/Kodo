@@ -2231,11 +2231,20 @@ public partial class MainWindow
             return null;
         }
 
-        return candidates
+        var scored = candidates
             .Select(c => (Compiler: c, Score: ScoreCompilerForExtension(c, ext)))
             .OrderByDescending(x => x.Score)
             .ThenBy(x => candidates.IndexOf(x.Compiler))
-            .First().Compiler;
+            .ToList();
+        var best = scored.FirstOrDefault();
+        if (best.Compiler is null || best.Score <= 0)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var fallbackScoreZero))
+                return fallbackScoreZero;
+            return null;
+        }
+        return best.Compiler;
     }
 
     private bool TryGetProjectFallbackExtension(string folder, string forExt, out MarketplaceExtension fallback)
