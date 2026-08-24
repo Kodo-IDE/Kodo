@@ -3097,6 +3097,7 @@ public partial class MainWindow
             Width = 18,
             Height = 18,
             VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
         };
 
         if (compiler.IconImage is not null)
