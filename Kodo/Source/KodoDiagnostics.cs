@@ -387,3 +387,42 @@ internal static class KodoDiagnostics
         _                                 => KodoSeverity.Warning,
     };
 }
+
+internal static class WindowsThemeHelper
+{
+    public static string KodoDataPath(string file) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", file);
+    public static string? GetWindowsAccentHex()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
+            if (key?.GetValue("AccentColorMenu") is int raw)
+            {
+                var r = raw & 0xFF; var g = (raw >> 8) & 0xFF; var b = (raw >> 16) & 0xFF;
+                return $"#{r:X2}{g:X2}{b:X2}";
+            }
+        }
+        catch { }
+        return null;
+    }
+    public static bool? GetIsLightTheme()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            if (key?.GetValue("AppsUseLightTheme") is int v) return v != 0;
+        }
+        catch { }
+        return null;
+    }
+    public static Avalonia.Media.IBrush GetReadableForeground(Avalonia.Media.Color bg)
+    {
+        static double Lum(Avalonia.Media.Color c) { double To(double ch){ ch/=255; return ch<=0.03928?ch/12.92:Math.Pow((ch+0.055)/1.055,2.4);} return 0.2126*To(c.R)+0.7152*To(c.G)+0.0722*To(c.B); }
+        var l = Lum(bg);
+        return (1.05/(l+0.05)) >= ((l+0.05)/0.05) ? Avalonia.Media.Brushes.White : Avalonia.Media.Brushes.Black;
+    }
+    public static Avalonia.Media.Color Lighten(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch+(255-ch)*a,0,255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
+    public static Avalonia.Media.Color Darken(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch*(1-a),0,255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
+}

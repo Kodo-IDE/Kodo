@@ -736,55 +736,17 @@ public sealed class InsightEngine
             var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
             var lines = documentText.Split('\n');
             var maskedLines = maskedDoc.Split('\n');
-            var depthAtLine = new int[lines.Length];
-            var parenDepthAtLine = new int[lines.Length];
-            var bracketDepthAtLine = new int[lines.Length];
-            var curDepth = 0;
-            var curParen = 0;
-            var curBracket = 0;
-            for (var i = 0; i < lines.Length; i++)
-            {
-                depthAtLine[i] = curDepth;
-                parenDepthAtLine[i] = curParen;
-                bracketDepthAtLine[i] = curBracket;
-                if (i < maskedLines.Length)
-                {
-                    curDepth += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}');
-                    curParen += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')');
-                    curBracket += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']');
-                }
-            }
+            ComputeDepths(maskedLines, out var depthAtLine, out var parenDepthAtLine, out var bracketDepthAtLine);
 
             for (var i = 0; i < lines.Length; i++)
             {
                 var maskedLine = i < maskedLines.Length ? maskedLines[i] : lines[i];
-                // Skip lines inside attribute brackets or paren kwarg contexts
-                if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
-                {
-                    var t = maskedLine.Trim();
-                    var isVarDecl = t.StartsWith("var ", StringComparison.Ordinal) ||
-                                    t.StartsWith("let ", StringComparison.Ordinal) ||
-                                    t.StartsWith("const ", StringComparison.Ordinal) ||
-                                    t.StartsWith("val ", StringComparison.Ordinal);
-                    if (!isVarDecl)
-                        continue;
-                }
-                if (depthAtLine[i] > 0 && maskedLine.Trim().Length > 0 && char.IsUpper(maskedLine.Trim()[0]) && maskedLine.Contains("="))
-                {
-                    var t = maskedLine.Trim();
-                    var isVarDecl2 = t.StartsWith("var ", StringComparison.Ordinal) ||
-                                     t.StartsWith("let ", StringComparison.Ordinal) ||
-                                     t.StartsWith("const ", StringComparison.Ordinal) ||
-                                     t.StartsWith("val ", StringComparison.Ordinal);
-                    if (!isVarDecl2) continue;
-                }
+                if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLine.Trim())) continue;
+                if (depthAtLine[i] > 0 && maskedLine.Trim().Length > 0 && char.IsUpper(maskedLine.Trim()[0]) && maskedLine.Contains("=") && !IsVarDeclPrefix(maskedLine.Trim())) continue;
                 if (depthAtLine[i] > 0 && maskedLine.Contains("=") && maskedLine.TrimEnd().EndsWith(","))
                 {
                     var t = maskedLine.Trim();
-                    var isVarDecl3 = t.StartsWith("var ", StringComparison.Ordinal) ||
-                                     t.StartsWith("let ", StringComparison.Ordinal) ||
-                                     t.StartsWith("const ", StringComparison.Ordinal);
-                    if (!isVarDecl3 && !t.Contains(";"))
+                    if (!IsVarDeclPrefix(t) && !t.Contains(";"))
                     {
                         // If the line looks like `prop = value,` with no semicolon, treat as property
                         var eqIdx = t.IndexOf('=');
@@ -842,6 +804,13 @@ public sealed class InsightEngine
         foreach (var ch in text)
             if (ch == c) count++;
         return count;
+    }
+    private static bool IsVarDeclPrefix(string t) => t.StartsWith("var ", StringComparison.Ordinal) || t.StartsWith("let ", StringComparison.Ordinal) || t.StartsWith("const ", StringComparison.Ordinal) || t.StartsWith("val ", StringComparison.Ordinal);
+    private static void ComputeDepths(string[] maskedLines, out int[] brace, out int[] paren, out int[] bracket)
+    {
+        brace = new int[maskedLines.Length]; paren = new int[maskedLines.Length]; bracket = new int[maskedLines.Length];
+        var cb=0; var cp=0; var ck=0;
+        for (var i=0;i<maskedLines.Length;i++) { brace[i]=cb; paren[i]=cp; bracket[i]=ck; cb+=CountChar(maskedLines[i],'{')-CountChar(maskedLines[i],'}'); cp+=CountChar(maskedLines[i],'(')-CountChar(maskedLines[i],')'); ck+=CountChar(maskedLines[i],'[')-CountChar(maskedLines[i],']'); }
     }
 
     public sealed class DeadCodeSpan

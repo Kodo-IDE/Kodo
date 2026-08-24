@@ -183,36 +183,31 @@ public partial class MainWindow
         catch { /* best-effort disk cache - ignore write failures */ }
     }
 
-    private void LoadInstalledCompilerRegistry()
+    private static T? ReadJsonCache<T>(string path, string logName) where T : class
     {
-        try
-        {
-            if (!File.Exists(CompilerInstallRegistryPath))
-                return;
-            var json = File.ReadAllText(CompilerInstallRegistryPath, System.Text.Encoding.UTF8);
-            var loaded = JsonSerializer.Deserialize<Dictionary<string, InstalledCompilerRecord>>(json);
-            if (loaded is not null)
-                _installedCompilers = new Dictionary<string, InstalledCompilerRecord>(loaded, StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to read installed-compilers.json.", ex);
-        }
+        var json = TryReadCacheFile(path);
+        if (json is null) return null;
+        try { return JsonSerializer.Deserialize<T>(json); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to read {logName}.", ex); return null; }
     }
 
-    private void SaveInstalledCompilerRegistry()
+    private static void WriteJsonCache<T>(string path, T value, string logName)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(CompilerInstallRegistryPath)!);
-            var json = JsonSerializer.Serialize(_installedCompilers, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(CompilerInstallRegistryPath, json, System.Text.Encoding.UTF8);
+            var json = JsonSerializer.Serialize(value, new JsonSerializerOptions { WriteIndented = true });
+            TryWriteCacheFile(path, json);
         }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to write installed-compilers.json.", ex);
-        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to write {logName}.", ex); }
     }
+
+    private void LoadInstalledCompilerRegistry()
+    {
+        var loaded = ReadJsonCache<Dictionary<string, InstalledCompilerRecord>>(CompilerInstallRegistryPath, "installed-compilers.json");
+        if (loaded is not null) _installedCompilers = new Dictionary<string, InstalledCompilerRecord>(loaded, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private void SaveInstalledCompilerRegistry() => WriteJsonCache(CompilerInstallRegistryPath, _installedCompilers, "installed-compilers.json");
 
     private void SyncCompilerInstallStates()
     {
@@ -241,43 +236,13 @@ public partial class MainWindow
 
     private void LoadManualCompilerRegistry()
     {
-        try
-        {
-            if (!File.Exists(ManualCompilersRegistryPath))
-                return;
-
-            var json = File.ReadAllText(ManualCompilersRegistryPath, System.Text.Encoding.UTF8);
-            var loaded = JsonSerializer.Deserialize<ManualCompilerRegistryFile>(json);
-            if (loaded is null)
-                return;
-
-            _manualCompilers = new Dictionary<string, ManualCompilerRecord>(loaded.Entries, StringComparer.OrdinalIgnoreCase);
-            _autoDetectDismissedIds = new HashSet<string>(loaded.DismissedAutoDetectIds, StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to read manual-compilers.json.", ex);
-        }
+        var loaded = ReadJsonCache<ManualCompilerRegistryFile>(ManualCompilersRegistryPath, "manual-compilers.json");
+        if (loaded is null) return;
+        _manualCompilers = new Dictionary<string, ManualCompilerRecord>(loaded.Entries, StringComparer.OrdinalIgnoreCase);
+        _autoDetectDismissedIds = new HashSet<string>(loaded.DismissedAutoDetectIds, StringComparer.OrdinalIgnoreCase);
     }
 
-    private void SaveManualCompilerRegistry()
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(ManualCompilersRegistryPath)!);
-            var payload = new ManualCompilerRegistryFile
-            {
-                Entries = _manualCompilers,
-                DismissedAutoDetectIds = _autoDetectDismissedIds.ToList()
-            };
-            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(ManualCompilersRegistryPath, json, System.Text.Encoding.UTF8);
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to write manual-compilers.json.", ex);
-        }
-    }
+    private void SaveManualCompilerRegistry() => WriteJsonCache(ManualCompilersRegistryPath, new ManualCompilerRegistryFile { Entries = _manualCompilers, DismissedAutoDetectIds = _autoDetectDismissedIds.ToList() }, "manual-compilers.json");
 
     private void RefreshManualCompilerExtensions()
     {
@@ -522,31 +487,6 @@ public partial class MainWindow
         }
     }
 
-    private static string? TryFindOnPath(string exeName)
-    {
-        try
-        {
-            var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-            foreach (var dir in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-            {
-                try
-                {
-                    var candidate = Path.Combine(dir.Trim(), exeName);
-                    if (File.Exists(candidate))
-                        return candidate;
-                }
-                catch
-                {
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return null;
-    }
-
     private static List<string> FindAllOnPath(string exeName)
     {
         var results = new List<string>();
@@ -559,23 +499,18 @@ public partial class MainWindow
                 try
                 {
                     var candidate = Path.Combine(dir.Trim(), exeName);
-                    if (File.Exists(candidate))
-                    {
-                        var full = Path.GetFullPath(candidate);
-                        if (seen.Add(full))
-                            results.Add(full);
-                    }
+                    if (!File.Exists(candidate)) continue;
+                    var full = Path.GetFullPath(candidate);
+                    if (seen.Add(full)) results.Add(full);
                 }
-                catch
-                {
-                }
+                catch { }
             }
         }
-        catch
-        {
-        }
+        catch { }
         return results;
     }
+
+    private static string? TryFindOnPath(string exeName) => FindAllOnPath(exeName).FirstOrDefault();
 
     private static string TryGetVersionFromPath(string exePath)
     {
@@ -903,36 +838,11 @@ public partial class MainWindow
 
     private Dictionary<string, ResolvedCompilerCacheEntry> LoadCompilerResolutionCache()
     {
-        try
-        {
-            if (!File.Exists(CompilerResolvedCachePath))
-                return new(StringComparer.OrdinalIgnoreCase);
-            var json = File.ReadAllText(CompilerResolvedCachePath, System.Text.Encoding.UTF8);
-            var loaded = JsonSerializer.Deserialize<Dictionary<string, ResolvedCompilerCacheEntry>>(json);
-            return loaded is not null
-                ? new Dictionary<string, ResolvedCompilerCacheEntry>(loaded, StringComparer.OrdinalIgnoreCase)
-                : new(StringComparer.OrdinalIgnoreCase);
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to read resolved-compiler-versions.json.", ex);
-            return new(StringComparer.OrdinalIgnoreCase);
-        }
+        var d = ReadJsonCache<Dictionary<string, ResolvedCompilerCacheEntry>>(CompilerResolvedCachePath, "resolved-compiler-versions.json");
+        return d is not null ? new Dictionary<string, ResolvedCompilerCacheEntry>(d, StringComparer.OrdinalIgnoreCase) : new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private void SaveCompilerResolutionCache(Dictionary<string, ResolvedCompilerCacheEntry> cache)
-    {
-        try
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(CompilerResolvedCachePath)!);
-            var json = JsonSerializer.Serialize(cache, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(CompilerResolvedCachePath, json, System.Text.Encoding.UTF8);
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug("Failed to write resolved-compiler-versions.json.", ex);
-        }
-    }
+    private void SaveCompilerResolutionCache(Dictionary<string, ResolvedCompilerCacheEntry> cache) => WriteJsonCache(CompilerResolvedCachePath, cache, "resolved-compiler-versions.json");
 
     private void InvalidateCompilerResolution(string compilerId)
     {
@@ -2185,13 +2095,7 @@ public partial class MainWindow
             _activeBuildCommandLine = ActiveCompilerExtension is null
                 ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
 
-        OnPropertyChanged(nameof(IsRunButtonEnabled));
-        OnPropertyChanged(nameof(IsBuildButtonEnabled));
-        OnPropertyChanged(nameof(IsCompilerIconVisible));
-        OnPropertyChanged(nameof(ActiveCompilerDisplayName));
-        OnPropertyChanged(nameof(RunBuildButtonTooltip));
-        OnPropertyChanged(nameof(ActiveRunCommandText));
-        OnPropertyChanged(nameof(ActiveBuildCommandText));
+        RaiseMany(nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled), nameof(IsCompilerIconVisible), nameof(ActiveCompilerDisplayName), nameof(RunBuildButtonTooltip), nameof(ActiveRunCommandText), nameof(ActiveBuildCommandText));
     }
 
     private MarketplaceExtension? ResolveActiveCompiler()

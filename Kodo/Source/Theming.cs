@@ -52,6 +52,7 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private void RaiseMany(params string[] names) { foreach (var n in names) OnPropertyChanged(n); }
 
     private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
         theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
@@ -112,19 +113,8 @@ public partial class MainWindow
         resources["SystemAccentColorDark3"]  = DarkenColor(c, 0.45);
     }
 
-    private static Color LightenColor(Color c, double amount)
-    {
-        byte Adjust(byte ch) => (byte)Math.Clamp(ch + (255 - ch) * amount, 0, 255);
-        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
-    }
-
-    private static IBrush GetReadableForeground(Color background)
-    {
-        var L = GetRelativeLuminance(background);
-        return (1.05 / (L + 0.05)) >= ((L + 0.05) / 0.05)
-            ? Brushes.White
-            : Brushes.Black;
-    }
+    private static Color LightenColor(Color c, double amount) => WindowsThemeHelper.Lighten(c, amount);
+    private static IBrush GetReadableForeground(Color background) => WindowsThemeHelper.GetReadableForeground(background);
 
     private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
     {
@@ -170,209 +160,81 @@ public partial class MainWindow
         return brush;
     }
 
-    private void ApplyThemeBrushes(string themeName)
+    private static readonly Dictionary<string, string> LightPalette = new()
+    {
+        ["WindowBackground"]="#F3F3F3", ["TopBar"]="#FFFFFF", ["Sidebar"]="#EFF2F7", ["Button"]="#E3E8F1",
+        ["ButtonHover"]="#D5DDE9", ["EditorBackground"]="#FFFFFF", ["Card"]="#F7F9FC", ["PrimaryText"]="#202124",
+        ["MutedText"]="#5F6B7A", ["SurfaceBorder"]="#D7DCE5", ["Accent"]="#8C00FF"
+    };
+    private static readonly Dictionary<string, string> DarkPalette = new()
+    {
+        ["WindowBackground"]="#1E1E1E", ["TopBar"]="#181818", ["Sidebar"]="#181818", ["Button"]="#252526",
+        ["ButtonHover"]="#313437", ["EditorBackground"]="#1E1E1E", ["Card"]="#252526", ["PrimaryText"]="#F4F4F4",
+        ["MutedText"]="#A0A0A0", ["SurfaceBorder"]="#2B2B2B", ["Accent"]="#8C00FF"
+    };
+
+    private void SetThemeBrushesCore(string themeName)
     {
         _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to Windows' current setting first.
-        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
-            ? ResolveSystemThemeName()
-            : themeName;
-        var extensionTheme = ThemeExtensions
-            .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
-
+        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase) ? ResolveSystemThemeName() : themeName;
+        var extensionTheme = ThemeExtensions.Select(e => e.ThemeDefinition!).FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
         if (extensionTheme is not null)
         {
             CurrentThemeName = extensionTheme.ThemeId;
-            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
+            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase) ? ThemeVariant.Light : ThemeVariant.Dark;
             WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
-            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
-            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
-            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
-            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
+            TopBarBrush = GetCachedBrush(extensionTheme.TopBar);
+            SidebarBrush = GetCachedBrush(extensionTheme.Sidebar);
+            ButtonBrush = GetCachedBrush(extensionTheme.Button);
+            ButtonHoverBrush = GetCachedBrush(extensionTheme.ButtonHover);
             EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
-            CardBrush             = GetCachedBrush(extensionTheme.Card);
-            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
-            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
+            CardBrush = GetCachedBrush(extensionTheme.Card);
+            PrimaryTextBrush = GetCachedBrush(extensionTheme.PrimaryText);
+            MutedTextBrush = GetCachedBrush(extensionTheme.MutedText);
             PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
-            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
-            _themeAccentHex       = extensionTheme.Accent;
-            _hasThemeAccent       = true;
-            _windowBackgroundHex  = extensionTheme.WindowBackground;
-            _hasWindowBackground  = true;
+            MutedTextBrush = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
+            SurfaceBorderBrush = GetCachedBrush(extensionTheme.SurfaceBorder);
+            AccentBrush = GetCachedBrush(extensionTheme.Accent);
+            _themeAccentHex = extensionTheme.Accent; _hasThemeAccent = true;
+            _windowBackgroundHex = extensionTheme.WindowBackground; _hasWindowBackground = true;
             ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
         }
         else
         {
             CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
-            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
-            if (CurrentThemeName == "Light")
-            {
-                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
-                TopBarBrush           = GetCachedBrush("#FFFFFF");
-                SidebarBrush          = GetCachedBrush("#EFF2F7");
-                ButtonBrush           = GetCachedBrush("#E3E8F1");
-                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
-                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
-                CardBrush             = GetCachedBrush("#F7F9FC");
-                PrimaryTextBrush      = GetCachedBrush("#202124");
-                MutedTextBrush        = GetCachedBrush("#5F6B7A");
-                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#F3F3F3";
-            }
-            else
-            {
-                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
-                TopBarBrush           = GetCachedBrush("#181818");
-                SidebarBrush          = GetCachedBrush("#181818");
-                ButtonBrush           = GetCachedBrush("#252526");
-                ButtonHoverBrush      = GetCachedBrush("#313437");
-                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
-                CardBrush             = GetCachedBrush("#252526");
-                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
-                MutedTextBrush        = GetCachedBrush("#A0A0A0");
-                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#1E1E1E";
-            }
-            _hasThemeAccent         = false;
-            _hasWindowBackground    = false;
-            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
+            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light" ? ThemeVariant.Light : ThemeVariant.Dark;
+            var pal = CurrentThemeName == "Light" ? LightPalette : DarkPalette;
+            WindowBackgroundBrush = GetCachedBrush(pal["WindowBackground"]);
+            TopBarBrush = GetCachedBrush(pal["TopBar"]);
+            SidebarBrush = GetCachedBrush(pal["Sidebar"]);
+            ButtonBrush = GetCachedBrush(pal["Button"]);
+            ButtonHoverBrush = GetCachedBrush(pal["ButtonHover"]);
+            EditorBackgroundBrush = GetCachedBrush(pal["EditorBackground"]);
+            CardBrush = GetCachedBrush(pal["Card"]);
+            PrimaryTextBrush = GetCachedBrush(pal["PrimaryText"]);
+            MutedTextBrush = GetCachedBrush(pal["MutedText"]);
+            SurfaceBorderBrush = GetCachedBrush(pal["SurfaceBorder"]);
+            AccentBrush = GetCachedBrush(pal["Accent"]);
+            _themeAccentHex = pal["Accent"]; _windowBackgroundHex = pal["WindowBackground"];
+            _hasThemeAccent = false; _hasWindowBackground = false;
+            ThemeAccentPreviewBrush = GetCachedBrush(pal["Accent"]);
         }
-
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
-        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
-
-        var resolvedAccent = _accentColorMode switch
-        {
-            "theme"   => _themeAccentHex,
-            "windows" => windowsHex,
-            "custom"  => _customAccentHex,
-            _         => "#8C00FF"   // "kodo" - always the fixed Kodo purple
-        };
-        try { AccentBrush = GetCachedBrush(resolvedAccent); }
-        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
+        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); } catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
+        var resolvedAccent = _accentColorMode switch { "theme" => _themeAccentHex, "windows" => windowsHex, "custom" => _customAccentHex, _ => "#8C00FF" };
+        try { AccentBrush = GetCachedBrush(resolvedAccent); } catch { AccentBrush = GetCachedBrush("#8C00FF"); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         SyncSystemAccentResources(AccentBrush);
-
-        RefreshSystemThemePreview();
     }
+
+    private void ApplyThemeBrushes(string themeName) { SetThemeBrushesCore(themeName); RefreshSystemThemePreview(); }
 
     private void ApplyTheme(string themeName)
     {
-        _requestedThemeName = themeName;
-        var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
-            ? ResolveSystemThemeName()
-            : themeName;
-        var extensionTheme = ThemeExtensions
-            .Select(e => e.ThemeDefinition!)
-            .FirstOrDefault(t => string.Equals(t.ThemeId, effectiveThemeName, StringComparison.OrdinalIgnoreCase));
-
-        if (extensionTheme is not null)
-        {
-            CurrentThemeName = extensionTheme.ThemeId;
-            Application.Current!.RequestedThemeVariant = string.Equals(extensionTheme.BaseTheme, "Light", StringComparison.OrdinalIgnoreCase)
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
-            WindowBackgroundBrush = GetCachedBrush(extensionTheme.WindowBackground);
-            TopBarBrush           = GetCachedBrush(extensionTheme.TopBar);
-            SidebarBrush          = GetCachedBrush(extensionTheme.Sidebar);
-            ButtonBrush           = GetCachedBrush(extensionTheme.Button);
-            ButtonHoverBrush      = GetCachedBrush(extensionTheme.ButtonHover);
-            EditorBackgroundBrush = GetCachedBrush(extensionTheme.EditorBackground);
-            CardBrush             = GetCachedBrush(extensionTheme.Card);
-            PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
-            MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
-            SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
-            AccentBrush           = GetCachedBrush(extensionTheme.Accent);
-            _themeAccentHex       = extensionTheme.Accent;
-            _hasThemeAccent       = true;
-            _windowBackgroundHex  = extensionTheme.WindowBackground;
-            _hasWindowBackground  = true;
-            ThemeAccentPreviewBrush = GetCachedBrush(extensionTheme.Accent);
-        }
-        else
-        {
-            CurrentThemeName = effectiveThemeName == "Light" ? "Light" : "Dark";
-            Application.Current!.RequestedThemeVariant = CurrentThemeName == "Light"
-                ? ThemeVariant.Light
-                : ThemeVariant.Dark;
-
-            if (CurrentThemeName == "Light")
-            {
-                WindowBackgroundBrush = GetCachedBrush("#F3F3F3");
-                TopBarBrush           = GetCachedBrush("#FFFFFF");
-                SidebarBrush          = GetCachedBrush("#EFF2F7");
-                ButtonBrush           = GetCachedBrush("#E3E8F1");
-                ButtonHoverBrush      = GetCachedBrush("#D5DDE9");
-                EditorBackgroundBrush = GetCachedBrush("#FFFFFF");
-                CardBrush             = GetCachedBrush("#F7F9FC");
-                PrimaryTextBrush      = GetCachedBrush("#202124");
-                MutedTextBrush        = GetCachedBrush("#5F6B7A");
-                SurfaceBorderBrush    = GetCachedBrush("#D7DCE5");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#F3F3F3";
-            }
-            else
-            {
-                WindowBackgroundBrush = GetCachedBrush("#1E1E1E");
-                TopBarBrush           = GetCachedBrush("#181818");
-                SidebarBrush          = GetCachedBrush("#181818");
-                ButtonBrush           = GetCachedBrush("#252526");
-                ButtonHoverBrush      = GetCachedBrush("#313437");
-                EditorBackgroundBrush = GetCachedBrush("#1E1E1E");
-                CardBrush             = GetCachedBrush("#252526");
-                PrimaryTextBrush      = GetCachedBrush("#F4F4F4");
-                MutedTextBrush        = GetCachedBrush("#A0A0A0");
-                SurfaceBorderBrush    = GetCachedBrush("#2B2B2B");
-                AccentBrush           = GetCachedBrush("#8C00FF");
-                _themeAccentHex       = "#8C00FF";
-                _windowBackgroundHex  = "#1E1E1E";
-            }
-            _hasThemeAccent         = false;
-            _hasWindowBackground    = false;
-            ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
-        }
-
-        OnPropertyChanged(nameof(WindowBackgroundBrush));
-        OnPropertyChanged(nameof(TopBarBrush));
-        OnPropertyChanged(nameof(SidebarBrush));
-        OnPropertyChanged(nameof(ButtonBrush));
-        OnPropertyChanged(nameof(ButtonHoverBrush));
-        OnPropertyChanged(nameof(EditorBackgroundBrush));
-        OnPropertyChanged(nameof(CardBrush));
-        OnPropertyChanged(nameof(PrimaryTextBrush));
-        OnPropertyChanged(nameof(MutedTextBrush));
-        OnPropertyChanged(nameof(SurfaceBorderBrush));
-        OnPropertyChanged(nameof(HasThemeAccent));
-        OnPropertyChanged(nameof(IsAccentKodo));
-        OnPropertyChanged(nameof(IsAccentTheme));
-        OnPropertyChanged(nameof(ThemeAccentPreviewBrush));
-        OnPropertyChanged(nameof(IsSystemThemeActive));
-        OnPropertyChanged(nameof(IsDarkThemeActive));
-        OnPropertyChanged(nameof(IsLightThemeActive));
+        SetThemeBrushesCore(themeName);
+        RaiseMany(nameof(WindowBackgroundBrush), nameof(TopBarBrush), nameof(SidebarBrush), nameof(ButtonBrush), nameof(ButtonHoverBrush), nameof(EditorBackgroundBrush), nameof(CardBrush), nameof(PrimaryTextBrush), nameof(MutedTextBrush), nameof(SurfaceBorderBrush), nameof(HasThemeAccent), nameof(IsAccentKodo), nameof(IsAccentTheme), nameof(ThemeAccentPreviewBrush), nameof(IsSystemThemeActive), nameof(IsDarkThemeActive), nameof(IsLightThemeActive));
         RefreshSystemThemePreview();
-        ApplyAccentOverride();
-        ApplyThemeToEditor();
-        SaveSettings();
-        RefreshState(fullRefresh: true);
-        RefreshExtensionTheme();
+        ApplyAccentOverride(); ApplyThemeToEditor(); SaveSettings(); RefreshState(fullRefresh: true); RefreshExtensionTheme();
     }
 
     private void ApplyAccentOverride()
@@ -411,38 +273,8 @@ public partial class MainWindow
         ApplyThemeToEditor();
     }
 
-    private static string? GetWindowsAccentColor()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
-            if (key?.GetValue("AccentColorMenu") is int raw)
-            {
-                var r = (raw)       & 0xFF;
-                var g = (raw >> 8)  & 0xFF;
-                var b = (raw >> 16) & 0xFF;
-                return $"#{r:X2}{g:X2}{b:X2}";
-            }
-        }
-        catch { /* Registry unavailable */ }
-        return null;
-    }
-
-    private static bool? GetWindowsAppsUseLightTheme()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            if (key?.GetValue("AppsUseLightTheme") is int raw)
-                return raw != 0;
-        }
-        catch { /* Registry unavailable */ }
-        return null;
-    }
+    private static string? GetWindowsAccentColor() => WindowsThemeHelper.GetWindowsAccentHex();
+    private static bool? GetWindowsAppsUseLightTheme() => WindowsThemeHelper.GetIsLightTheme();
 
     private static string ResolveSystemThemeName() =>
         GetWindowsAppsUseLightTheme() == true ? "Light" : "Dark";

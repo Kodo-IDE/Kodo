@@ -148,10 +148,7 @@ public partial class MainWindow
                 error => error);
 
             SyncMarketplaceInstallStates();
-            OnPropertyChanged(nameof(ExtensionLoadErrors));
-            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
-            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
-            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+            RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
             NotifyExtensionFiltersChanged();
 
             marketplaceIconMap = MarketplaceExtensions
@@ -422,102 +419,22 @@ public partial class MainWindow
                 localExt.IsUpdateAvailable = isUpdateAvailable;
         }
 
-        OnPropertyChanged(nameof(AvailableExtensionUpdatesCount));
-        OnPropertyChanged(nameof(IsExtensionUpdateBannerVisible));
-        OnPropertyChanged(nameof(ExtensionUpdatesBannerText));
-        OnPropertyChanged(nameof(AutoUpdateExtensionsStatusText));
+        RaiseMany(nameof(AvailableExtensionUpdatesCount), nameof(IsExtensionUpdateBannerVisible), nameof(ExtensionUpdatesBannerText), nameof(AutoUpdateExtensionsStatusText));
         NotifyExtensionActionStateChanged();
         NotifyExtensionFiltersChanged();
     }
 
     private void NotifyExtensionFiltersChanged()
     {
-        OnPropertyChanged(nameof(FilteredInstalledExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledLanguageExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledPluginExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledThemeExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledLanguageExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledPluginExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledThemeExtensions));
-        OnPropertyChanged(nameof(IsInstalledLanguageDividerVisible));
-        OnPropertyChanged(nameof(IsInstalledPluginDividerVisible));
-        OnPropertyChanged(nameof(IsInstalledThemeDividerVisible));
-        OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
-        OnPropertyChanged(nameof(FilteredCompilerExtensions));
-        OnPropertyChanged(nameof(FilteredInstalledCompilerExtensions));
-        OnPropertyChanged(nameof(IsNoExtensionsVisible));
-        OnPropertyChanged(nameof(IsInstalledSearchEmptyVisible));
-        OnPropertyChanged(nameof(IsMarketplaceSearchEmptyVisible));
-        OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
-        OnPropertyChanged(nameof(InstalledExtensionsCount));
-        OnPropertyChanged(nameof(InstalledCompilersCount));
-        OnPropertyChanged(nameof(MarketplaceEmptyStateText));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensions));
-        OnPropertyChanged(nameof(HasVisibleMarketplaceExtensions));
-        OnPropertyChanged(nameof(HasVisibleCompilerExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledCompilerExtensions));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsOrCompilers));
-        OnPropertyChanged(nameof(HasVisibleInstalledExtensionsAndCompilers));
-        OnPropertyChanged(nameof(IsInstalledCompilersEmptyStateVisible));
+        RaiseMany(nameof(FilteredInstalledExtensions), nameof(FilteredInstalledLanguageExtensions), nameof(FilteredInstalledPluginExtensions), nameof(FilteredInstalledThemeExtensions), nameof(HasVisibleInstalledLanguageExtensions), nameof(HasVisibleInstalledPluginExtensions), nameof(HasVisibleInstalledThemeExtensions), nameof(IsInstalledLanguageDividerVisible), nameof(IsInstalledPluginDividerVisible), nameof(IsInstalledThemeDividerVisible), nameof(FilteredMarketplaceExtensions), nameof(FilteredCompilerExtensions), nameof(FilteredInstalledCompilerExtensions), nameof(IsNoExtensionsVisible), nameof(IsInstalledSearchEmptyVisible), nameof(IsMarketplaceSearchEmptyVisible), nameof(IsMarketplaceEmptyVisible), nameof(InstalledExtensionsCount), nameof(InstalledCompilersCount), nameof(MarketplaceEmptyStateText), nameof(HasVisibleInstalledExtensions), nameof(HasVisibleMarketplaceExtensions), nameof(HasVisibleCompilerExtensions), nameof(HasVisibleInstalledCompilerExtensions), nameof(HasVisibleInstalledExtensionsOrCompilers), nameof(HasVisibleInstalledExtensionsAndCompilers), nameof(IsInstalledCompilersEmptyStateVisible));
     }
 
-    private static void SyncMarketplaceExtensionCollection(
-        ObservableCollection<MarketplaceExtension> target,
-        IList<MarketplaceExtension> source)
-    {
-        var sourceByKey = source.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
-
-        for (var i = target.Count - 1; i >= 0; i--)
+    private static void SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
+        => SyncObservableCollection(target, source, e => e.Id, (existing, incoming) =>
         {
-            if (!sourceByKey.ContainsKey(target[i].Id))
-            {
-                target[i].IconImage?.Dispose();
-                target.RemoveAt(i);
-            }
-        }
-
-        var targetIndexByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < target.Count; i++)
-            targetIndexByKey[target[i].Id] = i;
-
-        for (var i = 0; i < source.Count; i++)
-        {
-            var incoming = source[i];
-            var key = incoming.Id;
-            var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
-
-            if (existingIndex == -1)
-            {
-                target.Insert(Math.Min(i, target.Count), incoming);
-                for (var j = i; j < target.Count; j++)
-                    targetIndexByKey[target[j].Id] = j;
-                continue;
-            }
-
-            if (existingIndex != i)
-            {
-                target.Move(existingIndex, i);
-                var start = Math.Min(existingIndex, i);
-                for (var j = start; j < target.Count; j++)
-                    targetIndexByKey[target[j].Id] = j;
-            }
-
-            var existing = target[i];
-            if (!ReferenceEquals(existing, incoming))
-            {
-                if (existing.IconImage is not null && incoming.IconImage is null)
-                    incoming.IconImage = existing.IconImage;
-                else
-                    existing.IconImage?.Dispose();
-
-                if (existing.SvgData is not null && incoming.SvgData is null)
-                    incoming.SvgData = existing.SvgData;
-
-                target[i] = incoming;
-                targetIndexByKey[key] = i;
-            }
-        }
-    }
+            if (existing.IconImage is not null && incoming.IconImage is null) incoming.IconImage = existing.IconImage; else existing.IconImage?.Dispose();
+            if (existing.SvgData is not null && incoming.SvgData is null) incoming.SvgData = existing.SvgData;
+        });
 
     private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
     {
@@ -893,7 +810,8 @@ public partial class MainWindow
     private static void SyncObservableCollection<T, TKey>(
         ObservableCollection<T> target,
         IList<T> source,
-        Func<T, TKey> keySelector)
+        Func<T, TKey> keySelector,
+        Action<T, T>? merge = null)
         where TKey : notnull
     {
         var sourceByKey = source.ToDictionary(keySelector);
@@ -902,7 +820,10 @@ public partial class MainWindow
         {
             var key = keySelector(target[i]);
             if (!sourceByKey.ContainsKey(key))
+            {
+                if (target[i] is MarketplaceExtension mex) mex.IconImage?.Dispose();
                 target.RemoveAt(i);
+            }
         }
 
         var targetIndexByKey = new Dictionary<TKey, int>();
@@ -933,6 +854,7 @@ public partial class MainWindow
 
             if (!ReferenceEquals(target[i], item))
             {
+                merge?.Invoke(target[i], item);
                 target[i] = item;
                 targetIndexByKey[key] = i;
             }

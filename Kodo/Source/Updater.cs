@@ -132,52 +132,21 @@ internal static class UpdateService
     }
 
 
-    public static bool IsAutoUpdateEnabledInSettings()
+    private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
     {
         try
         {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Kodo",
-                "kodosettings.json");
-
-            if (!File.Exists(path)) return true;
-
+            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "kodosettings.json");
+            if (!File.Exists(path)) return fallback;
             var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json)) return true;
-
+            if (string.IsNullOrWhiteSpace(json)) return fallback;
             var settings = JsonSerializer.Deserialize<AutoUpdateSettings>(json);
-            return settings?.AutoUpdateAppEnabled ?? true;
+            return settings is null ? fallback : sel(settings);
         }
-        catch
-        {
-            return true;
-        }
+        catch { return fallback; }
     }
-
-    // Same standalone read, for "Update Kodo in the background"; defaults to false.
-    public static bool IsAutoUpdateInBackgroundEnabledInSettings()
-    {
-        try
-        {
-            var path = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Kodo",
-                "kodosettings.json");
-
-            if (!File.Exists(path)) return false;
-
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json)) return false;
-
-            var settings = JsonSerializer.Deserialize<AutoUpdateSettings>(json);
-            return settings?.AutoUpdateAppInBackgroundEnabled ?? false;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    public static bool IsAutoUpdateEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppEnabled, true);
+    public static bool IsAutoUpdateInBackgroundEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppInBackgroundEnabled, false);
 
     // Minimal subset of MainWindow's AppSettings needed to read this one flag.
     private sealed class AutoUpdateSettings

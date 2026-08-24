@@ -1066,75 +1066,34 @@ public partial class MainWindow
         await OpenPathInSystemExplorer(tab.Path, selectItem: true);
     }
 
+    private async Task CreateExplorerEntryAsync(string directory, string baseName, string? ext, bool isFile)
+    {
+        try
+        {
+            var path = CreateUniqueChildPath(directory, baseName, ext ?? string.Empty);
+            if (isFile) await File.WriteAllTextAsync(path, string.Empty); else Directory.CreateDirectory(path);
+            await RefreshExplorerTreeAsync();
+            if (isFile) await OpenFileFromPathAsync(path);
+        }
+        catch (Exception ex)
+        {
+            var op = isFile ? "file" : "folder";
+            ExtensionsStatusText = $"New {op} failed: {ex.Message}";
+            await ShowWarningDialogAsync($"New {op} in explorer", ex);
+        }
+    }
     private async void NewFileInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-
-        try
-        {
-            var directory = GetExplorerTargetDirectory(item);
-            var newFilePath = CreateUniqueChildPath(directory, "new-file", ".txt");
-            await File.WriteAllTextAsync(newFilePath, string.Empty);
-            await RefreshExplorerTreeAsync();
-            await OpenFileFromPathAsync(newFilePath);
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New file failed: {ex.Message}";
-            await ShowWarningDialogAsync("New file in explorer", ex);
-        }
+        await CreateExplorerEntryAsync(GetExplorerTargetDirectory(item), "new-file", ".txt", true);
     }
-
-    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var directory = GetExplorerRootDirectory();
-            var newFilePath = CreateUniqueChildPath(directory, "new-file", ".txt");
-            await File.WriteAllTextAsync(newFilePath, string.Empty);
-            await RefreshExplorerTreeAsync();
-            await OpenFileFromPathAsync(newFilePath);
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New file failed: {ex.Message}";
-            await ShowWarningDialogAsync("New file in explorer", ex);
-        }
-    }
-
+    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e) => await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true);
     private async void NewFolderInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-
-        try
-        {
-            var directory = GetExplorerTargetDirectory(item);
-            var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
-            Directory.CreateDirectory(newFolderPath);
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New folder failed: {ex.Message}";
-            await ShowWarningDialogAsync("New folder in explorer", ex);
-        }
+        await CreateExplorerEntryAsync(GetExplorerTargetDirectory(item), "New Folder", null, false);
     }
-
-    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        try
-        {
-            var directory = GetExplorerRootDirectory();
-            var newFolderPath = CreateUniqueChildPath(directory, "New Folder");
-            Directory.CreateDirectory(newFolderPath);
-            await RefreshExplorerTreeAsync();
-        }
-        catch (Exception ex)
-        {
-            ExtensionsStatusText = $"New folder failed: {ex.Message}";
-            await ShowWarningDialogAsync("New folder in explorer", ex);
-        }
-    }
+    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e) => await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false);
 
     private async void OpenExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -1235,23 +1194,9 @@ public partial class MainWindow
         }
     }
 
-    private void CutFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        _clipboardItemPath        = item.FullPath;
-        _clipboardItemIsDirectory = item.IsDirectory;
-        _clipboardIsCut           = true;
-        ExtensionsStatusText      = $"Cut: {item.Name}";
-    }
-
-    private void CopyFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
-        _clipboardItemPath        = item.FullPath;
-        _clipboardItemIsDirectory = item.IsDirectory;
-        _clipboardIsCut           = false;
-        ExtensionsStatusText      = $"Copied: {item.Name}";
-    }
+    private void SetClipboard(FileTreeItem item, bool isCut) { _clipboardItemPath = item.FullPath; _clipboardItemIsDirectory = item.IsDirectory; _clipboardIsCut = isCut; ExtensionsStatusText = $"{(isCut ? "Cut" : "Copied")}: {item.Name}"; }
+    private void CutFileMenuItem_OnClick(object? sender, RoutedEventArgs e) { if (TryGetTaggedData<FileTreeItem>(sender) is { } item) SetClipboard(item, true); }
+    private void CopyFileMenuItem_OnClick(object? sender, RoutedEventArgs e) { if (TryGetTaggedData<FileTreeItem>(sender) is { } item) SetClipboard(item, false); }
 
     private async void PasteFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {

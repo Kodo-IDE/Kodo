@@ -500,12 +500,7 @@ public partial class MainWindow
 
     private void NotifySearchModeChanged()
     {
-        OnPropertyChanged(nameof(IsFindInFileSearchMode));
-        OnPropertyChanged(nameof(IsFileByNameSearchMode));
-        OnPropertyChanged(nameof(IsProjectSearchMode));
-        OnPropertyChanged(nameof(IsSearchResultsVisible));
-        OnPropertyChanged(nameof(SearchPlaceholderText));
-        OnPropertyChanged(nameof(IsSearchPanelActive));
+        RaiseMany(nameof(IsFindInFileSearchMode), nameof(IsFileByNameSearchMode), nameof(IsProjectSearchMode), nameof(IsSearchResultsVisible), nameof(SearchPlaceholderText), nameof(IsSearchPanelActive));
     }
 
     private void FocusSearchInput()
@@ -1098,18 +1093,7 @@ public partial class MainWindow
         var replacement = ReplaceText ?? string.Empty;
         var regex = BuildFindRegex();
 
-        // Collect all match offsets in a single pass over the original text.
-        var matches = new List<(int Offset, int Length)>();
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
-        {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0)
-                break;
-            matches.Add(m);
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break; // prevent infinite loop on zero-length regex matches
-        }
+        var matches = EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex).ToList();
 
         if (matches.Count == 0)
             return;
@@ -1241,6 +1225,7 @@ public partial class MainWindow
         var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
         return beforeOk && afterOk;
     }
+    private static IEnumerable<(int Offset,int Length)> EnumerateFindMatches(string text,string needle,StringComparison cmp,bool wholeWord,Regex? regex) { var idx=0; while(idx<=text.Length){ var m=FindNextMatch(text,needle,idx,true,cmp,wholeWord,regex); if(m.Offset<0) yield break; yield return m; idx=m.Offset+m.Length; if(m.Length==0) yield break; } }
 
     private void UpdateFindHighlights()
     {
@@ -1260,16 +1245,7 @@ public partial class MainWindow
         var text = EditorTextBox.Document.Text;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
-        {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0) break;
-            _findMatchOffsets.Add(m.Offset);
-            _findHighlightRenderer.AddMatch(m.Offset, m.Length);
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break;
-        }
+        foreach (var m in EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
 
         if (_findMatchOffsets.Count > 0)
         {

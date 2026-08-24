@@ -507,10 +507,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_newsDisabled == value) return;
             _newsDisabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsNewsDisabled));
-            OnPropertyChanged(nameof(IsNewsContentVisible));
-            OnPropertyChanged(nameof(IsNewsEmpty));
-            OnPropertyChanged(nameof(IsNewsRefreshEnabled));
+            RaiseMany(nameof(IsNewsDisabled), nameof(IsNewsContentVisible), nameof(IsNewsEmpty), nameof(IsNewsRefreshEnabled));
             SaveSettings();
             if (IsPerformanceModeEnabled)
             {
@@ -536,9 +533,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_whatsNewDisabled == value) return;
             _whatsNewDisabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsWhatsNewDisabled));
-            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
-            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
+            RaiseMany(nameof(IsWhatsNewDisabled), nameof(IsWhatsNewRefreshEnabled), nameof(IsLatestReleaseStatusVisible));
             SaveSettings();
             if (IsPerformanceModeEnabled)
             {
@@ -563,14 +558,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isPerformanceModeEnabled == value) return;
             _isPerformanceModeEnabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsNewsDisabled));
-            OnPropertyChanged(nameof(IsNewsContentVisible));
-            OnPropertyChanged(nameof(IsNewsEmpty));
-            OnPropertyChanged(nameof(IsNewsRefreshEnabled));
-            OnPropertyChanged(nameof(IsWhatsNewDisabled));
-            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
-            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
-            OnPropertyChanged(nameof(IsDebouncedSearchActive));
+            RaiseMany(nameof(IsNewsDisabled), nameof(IsNewsContentVisible), nameof(IsNewsEmpty), nameof(IsNewsRefreshEnabled), nameof(IsWhatsNewDisabled), nameof(IsWhatsNewRefreshEnabled), nameof(IsLatestReleaseStatusVisible), nameof(IsDebouncedSearchActive));
             SaveSettings();
             if (value)
             {
@@ -620,12 +608,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentImagePreview = value;
             previousPreview?.Dispose();
             OnPropertyChanged();
-            OnPropertyChanged(nameof(HasImagePreview));
-            OnPropertyChanged(nameof(IsImagePreviewVisible));
-            OnPropertyChanged(nameof(IsTextEditorVisible));
-            OnPropertyChanged(nameof(ImageZoomedWidth));
-            OnPropertyChanged(nameof(ImageZoomedHeight));
-            OnPropertyChanged(nameof(ImageZoomPercent));
+            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
         }
     }
 
@@ -638,9 +621,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (Math.Abs(_imageZoomLevel - clamped) < 0.001) return;
             _imageZoomLevel = clamped;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(ImageZoomPercent));
-            OnPropertyChanged(nameof(ImageZoomedWidth));
-            OnPropertyChanged(nameof(ImageZoomedHeight));
+            RaiseMany(nameof(ImageZoomPercent), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight));
         }
     }
 
@@ -915,9 +896,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         _isRefreshingLatestRelease = true;
-        OnPropertyChanged(nameof(IsRefreshingLatestRelease));
-        OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
-        OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
+        RaiseMany(nameof(IsRefreshingLatestRelease), nameof(IsWhatsNewRefreshEnabled), nameof(RefreshLatestReleaseButtonText));
         LatestReleaseStatusText = "Loading latest release...";
 
         try
@@ -950,9 +929,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             _isRefreshingLatestRelease = false;
-            OnPropertyChanged(nameof(IsRefreshingLatestRelease));
-            OnPropertyChanged(nameof(IsWhatsNewRefreshEnabled));
-            OnPropertyChanged(nameof(RefreshLatestReleaseButtonText));
+            RaiseMany(nameof(IsRefreshingLatestRelease), nameof(IsWhatsNewRefreshEnabled), nameof(RefreshLatestReleaseButtonText));
         }
     }
 
@@ -1824,12 +1801,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isFileCorrupted == corrupted) return;
         _isFileCorrupted = corrupted;
-        OnPropertyChanged(nameof(IsCorruptedFileViewVisible));
-        OnPropertyChanged(nameof(IsTextEditorVisible));
-        OnPropertyChanged(nameof(CanShowFindInFile));
-        OnPropertyChanged(nameof(CanShowSearchPanel));
-        OnPropertyChanged(nameof(IsSearchPanelActive));
-        OnPropertyChanged(nameof(CanShowSaveActions));
+        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions));
     }
 
 
@@ -1901,12 +1873,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEmptyStateVisible));
-            OnPropertyChanged(nameof(IsDocumentViewVisible));
-            OnPropertyChanged(nameof(FileSummaryText));
-            OnPropertyChanged(nameof(FilePathText));
-            OnPropertyChanged(nameof(LanguageDisplayText));
-            OnPropertyChanged(nameof(CanShowSaveActions));
+            RaiseMany(nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
         }
     }
 
@@ -1931,9 +1898,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isUpdateSplashVisible == value) return;
             _isUpdateSplashVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsReleaseNotesSectionVisible));
-            OnPropertyChanged(nameof(OpeningSplashTitleText));
-            OnPropertyChanged(nameof(OpeningSplashSubtitleText));
+            RaiseMany(nameof(IsReleaseNotesSectionVisible), nameof(OpeningSplashTitleText), nameof(OpeningSplashSubtitleText));
         }
     }
 
@@ -2157,11 +2122,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isRefreshingExtensions == value) return;
             _isRefreshingExtensions = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(RefreshExtensionsButtonText));
-            OnPropertyChanged(nameof(CanUpdateAllExtensions));
-            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
-            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
-            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+            RaiseMany(nameof(RefreshExtensionsButtonText), nameof(CanUpdateAllExtensions), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
         }
     }
 
@@ -2272,18 +2233,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_latestRelease == value) return;
             _latestRelease = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(HasLatestRelease));
-            OnPropertyChanged(nameof(LatestReleaseDisplayName));
-            OnPropertyChanged(nameof(LatestReleaseTag));
-            OnPropertyChanged(nameof(LatestReleaseNotes));
-            OnPropertyChanged(nameof(LatestReleaseFormatted));
-            OnPropertyChanged(nameof(LatestReleasePreview));
-            OnPropertyChanged(nameof(LatestReleaseUrl));
-            OnPropertyChanged(nameof(LatestReleaseLinks));
-            OnPropertyChanged(nameof(HasLatestReleaseLinks));
-            OnPropertyChanged(nameof(IsNewerVersionAvailable));
-            OnPropertyChanged(nameof(IsAppUpdateAvailable));
-            OnPropertyChanged(nameof(IsLatestReleaseStatusVisible));
+            RaiseMany(nameof(HasLatestRelease), nameof(LatestReleaseDisplayName), nameof(LatestReleaseTag), nameof(LatestReleaseNotes), nameof(LatestReleaseFormatted), nameof(LatestReleasePreview), nameof(LatestReleaseUrl), nameof(LatestReleaseLinks), nameof(HasLatestReleaseLinks), nameof(IsNewerVersionAvailable), nameof(IsAppUpdateAvailable), nameof(IsLatestReleaseStatusVisible));
         }
     }
 
@@ -2638,9 +2588,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isMarketplaceConnectivityWarningVisible == value) return;
             _isMarketplaceConnectivityWarningVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsMarketplaceUnavailableVisible));
-            OnPropertyChanged(nameof(IsMarketplacePartialErrorVisible));
-            OnPropertyChanged(nameof(IsMarketplaceEmptyVisible));
+            RaiseMany(nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
         }
     }
 
@@ -2820,11 +2768,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isStatusBarFilePathVisible == value) return;
             _isStatusBarFilePathVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(FilePathText));
-            OnPropertyChanged(nameof(LanguageDisplayText));
-            OnPropertyChanged(nameof(StatusBarFilePathVisibilityText));
-            OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
-            OnPropertyChanged(nameof(ActiveTerminalFooterText));
+            RaiseMany(nameof(FilePathText), nameof(LanguageDisplayText), nameof(StatusBarFilePathVisibilityText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText));
             SaveSettings();
         }
     }
@@ -3772,10 +3716,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_currentThemeName == value) return;
             _currentThemeName = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(ThemeStatusText));
-            OnPropertyChanged(nameof(IsDarkThemeActive));
-            OnPropertyChanged(nameof(IsLightThemeActive));
-            OnPropertyChanged(nameof(IsSystemThemeActive));
+            RaiseMany(nameof(ThemeStatusText), nameof(IsDarkThemeActive), nameof(IsLightThemeActive), nameof(IsSystemThemeActive));
             foreach (var ext in ThemeExtensions)
                 ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, value, StringComparison.OrdinalIgnoreCase);
         }
@@ -3868,17 +3809,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsAmericanEnglish));
-            OnPropertyChanged(nameof(LabelAccentColour));
-            OnPropertyChanged(nameof(TooltipAccentTheme));
-            OnPropertyChanged(nameof(TooltipAccentWindows));
-            OnPropertyChanged(nameof(TooltipAccentCustom));
-            OnPropertyChanged(nameof(LabelPersonalization));
-            OnPropertyChanged(nameof(LabelPersonalizationDescription));
-            OnPropertyChanged(nameof(TutorialSpotlightTitle));
-            OnPropertyChanged(nameof(TutorialBody));
-            OnPropertyChanged(nameof(TutorialHighlightOne));
-            OnPropertyChanged(nameof(TutorialHighlightThree));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationDescription), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
@@ -4178,11 +4109,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    private static Color DarkenColor(Color c, double amount)
-    {
-        byte Adjust(byte ch) => (byte)Math.Clamp(ch * (1 - amount), 0, 255);
-        return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
-    }
+    private static Color DarkenColor(Color c, double amount) => WindowsThemeHelper.Darken(c, amount);
 
     private static double GetRelativeLuminance(Color c)
     {
@@ -4219,10 +4146,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_accentColorMode == value) return;
             _accentColorMode = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsAccentKodo));
-            OnPropertyChanged(nameof(IsAccentWindows));
-            OnPropertyChanged(nameof(IsAccentCustom));
-            OnPropertyChanged(nameof(IsAccentTheme));
+            RaiseMany(nameof(IsAccentKodo), nameof(IsAccentWindows), nameof(IsAccentCustom), nameof(IsAccentTheme));
         }
     }
     public bool IsAccentKodo    => _accentColorMode == "kodo";
@@ -4256,9 +4180,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (e.Action == NotifyCollectionChangedAction.Add)
             IsFileExplorerVisible = true;
-        OnPropertyChanged(nameof(HasOpenEditors));
-        OnPropertyChanged(nameof(HasMultipleOpenEditors));
-        OnPropertyChanged(nameof(IsEditorTabsVisible));
+        RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible));
         SaveSettings();
     }
 
@@ -4281,11 +4203,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        OnPropertyChanged(nameof(HasActiveTerminal));
-        OnPropertyChanged(nameof(HasTerminalSessions));
-        OnPropertyChanged(nameof(TerminalSessionCount));
-        OnPropertyChanged(nameof(TerminalStatusBarText));
-        OnPropertyChanged(nameof(ActiveTerminalFooterText));
+        RaiseMany(nameof(HasActiveTerminal), nameof(HasTerminalSessions), nameof(TerminalSessionCount), nameof(TerminalStatusBarText), nameof(ActiveTerminalFooterText));
         RefreshTerminalWindows();
         SaveSettings();
     }
@@ -4301,10 +4219,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshTerminalStatusBindings()
     {
-        OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
-        OnPropertyChanged(nameof(ActiveTerminalStatusText));
-        OnPropertyChanged(nameof(ActiveTerminalFooterText));
-        OnPropertyChanged(nameof(TerminalStatusBarText));
+        RaiseMany(nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalStatusText), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
     }
 
 
@@ -4348,32 +4263,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        OnPropertyChanged(nameof(HasDocumentOpen));
-        OnPropertyChanged(nameof(IsDocumentViewVisible));
-        OnPropertyChanged(nameof(HasImagePreview));
-        OnPropertyChanged(nameof(IsImagePreviewVisible));
-        OnPropertyChanged(nameof(IsTextEditorVisible));
-        OnPropertyChanged(nameof(CanShowFindInFile));
-        OnPropertyChanged(nameof(CanShowSearchPanel));
-        OnPropertyChanged(nameof(IsSearchPanelActive));
-        OnPropertyChanged(nameof(CanShowSaveActions));
-        OnPropertyChanged(nameof(IsWordCountVisible));
-        OnPropertyChanged(nameof(HasFileOpen));
-        OnPropertyChanged(nameof(IsFolderOpen));
-        OnPropertyChanged(nameof(IsEmptyStateVisible));
-        OnPropertyChanged(nameof(HasRecentFiles));
-        OnPropertyChanged(nameof(FileSummaryText));
-        OnPropertyChanged(nameof(FilePathText));
-        OnPropertyChanged(nameof(ExplorerHeaderText));
-        OnPropertyChanged(nameof(ExplorerHeaderTooltipText));
-        OnPropertyChanged(nameof(ExplorerPanelMinWidth));
-        OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
-        OnPropertyChanged(nameof(AutoSaveStatusText));
-        OnPropertyChanged(nameof(LanguageDisplayText));
-        OnPropertyChanged(nameof(EncodingDisplayText));
-        OnPropertyChanged(nameof(ActiveTerminalWorkingDirectory));
-        OnPropertyChanged(nameof(ActiveTerminalFooterText));
-        OnPropertyChanged(nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -5640,19 +5530,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;
 
-        OnPropertyChanged(nameof(IsHomePageVisible));
-        OnPropertyChanged(nameof(IsSettingsPageVisible));
-        OnPropertyChanged(nameof(IsExtensionsPageVisible));
-        OnPropertyChanged(nameof(IsTutorialPageVisible));
-        OnPropertyChanged(nameof(IsWhatsNewPageVisible));
-        OnPropertyChanged(nameof(IsEditorPageVisible));
-        OnPropertyChanged(nameof(IsSearchPanelActive));
-        OnPropertyChanged(nameof(IsEditorTabsVisible));
-        OnPropertyChanged(nameof(IsDocumentViewVisible));
-        OnPropertyChanged(nameof(IsEmptyStateVisible));
-        OnPropertyChanged(nameof(CanShowSaveActions));
-        OnPropertyChanged(nameof(FileSummaryText));
-        OnPropertyChanged(nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
     }
 
@@ -7887,24 +7765,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnTutorialStepChanged()
     {
-        OnPropertyChanged(nameof(TutorialStepIndex));
-        OnPropertyChanged(nameof(TutorialStepLabel));
-        OnPropertyChanged(nameof(TutorialProgressDotsText));
-        OnPropertyChanged(nameof(TutorialSectionTitle));
-        OnPropertyChanged(nameof(TutorialTitle));
-        OnPropertyChanged(nameof(TutorialBody));
-        OnPropertyChanged(nameof(TutorialShortcutText));
-        OnPropertyChanged(nameof(TutorialSpotlightTitle));
-        OnPropertyChanged(nameof(TutorialHighlightOne));
-        OnPropertyChanged(nameof(TutorialHighlightTwo));
-        OnPropertyChanged(nameof(TutorialHighlightThree));
-        OnPropertyChanged(nameof(CanGoToPreviousTutorialStep));
-        OnPropertyChanged(nameof(TutorialPrimaryButtonText));
-        OnPropertyChanged(nameof(IsTutorialSetupStep));
-        OnPropertyChanged(nameof(IsNotTutorialSetupStep));
-        OnPropertyChanged(nameof(IsTutorialWelcomeStep));
-        OnPropertyChanged(nameof(IsNotTutorialWelcomeStep));
-        OnPropertyChanged(nameof(IsTutorialHeaderVisible));
+        RaiseMany(nameof(TutorialStepIndex), nameof(TutorialStepLabel), nameof(TutorialProgressDotsText), nameof(TutorialSectionTitle), nameof(TutorialTitle), nameof(TutorialBody), nameof(TutorialShortcutText), nameof(TutorialSpotlightTitle), nameof(TutorialHighlightOne), nameof(TutorialHighlightTwo), nameof(TutorialHighlightThree), nameof(CanGoToPreviousTutorialStep), nameof(TutorialPrimaryButtonText), nameof(IsTutorialSetupStep), nameof(IsNotTutorialSetupStep), nameof(IsTutorialWelcomeStep), nameof(IsNotTutorialWelcomeStep), nameof(IsTutorialHeaderVisible));
     }
 
     private void CompleteTutorialAndReturnHome()
