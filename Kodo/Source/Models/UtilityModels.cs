@@ -5,7 +5,6 @@ using Avalonia;
 
 namespace Kodo.Models;
 
-// Compares strings the way humans expect - splits into digit/non-digit chunks, compares digits numerically.
 public sealed class NaturalSortComparer : IComparer<string>
 {
     public static readonly NaturalSortComparer OrdinalIgnoreCase = new();
@@ -92,16 +91,11 @@ public sealed class FormattedRun
     public bool   IsBold { get; init; }
 }
 
-// One release-notes paragraph; the bullet/number marker is kept separate so wrapped lines hang-indent.
 public sealed class FormattedParagraph
 {
     public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
     // Extra top margin so paragraphs breathe; bullet items get slightly less.
     public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
-    // "•" for bullets, "1." / "2." / ... for ordered items, or empty for a
-    // plain paragraph/heading (in which case MarkerColumnWidth is 0).
     public string Marker { get; init; } = string.Empty;
-    // Fixed width of the marker column, shared across rows so every bullet's
-    // wrapped text lines up under its own first line instead of under "• ".
     public double MarkerColumnWidth { get; init; }
 }

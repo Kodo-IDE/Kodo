@@ -85,7 +85,6 @@ public partial class MainWindow
 
         _isResizingExplorerPanel = false;
         e.Pointer.Capture(null);
-        // Flushes the final width immediately instead of waiting on the debounce timer, in case of a quick resize-then-close.
         SaveSettings(immediate: true);
         e.Handled = true;
     }
@@ -192,12 +191,10 @@ public partial class MainWindow
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
         // Restores this tab's caret position (clamped to the current document length).
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
-        // Restores scroll position: ScrollToLine first, then a pixel offset at Background priority.
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
         if (savedOffsetY > 0.0)
         {
-            // Posts at Background priority so AvaloniaEdit finishes its layout pass before we reposition the viewport.
             Dispatcher.UIThread.Post(() =>
             {
                 var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
@@ -207,8 +204,6 @@ public partial class MainWindow
         }
         UpdateCurrentDocumentPresentation();
 
-        // Directly set the backing field before NavigateTo so the bail-early
-        // check doesn't short-circuit when we're already on the editor page.
         _isHomePageVisible = false;
         NavigateTo(AppPage.Editor);
         RefreshState(fullRefresh: true);
@@ -254,9 +249,6 @@ public partial class MainWindow
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
 
-        // No tabs and no folder left open - the explorer would otherwise be
-        // stuck visible with nothing to show and no folder-gated toggle to
-        // close it (that toggle only appears when IsFolderOpen).
         if (_currentFolderPath is null)
             IsFileExplorerVisible = false;
 
@@ -307,6 +299,7 @@ public partial class MainWindow
         return true;
     }
 
+    // Open file via picker
     private async Task OpenFileAsync()
     {
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -324,6 +317,7 @@ public partial class MainWindow
         await OpenFileFromPathAsync(path);
     }
 
+    // Open file from disk path
     private async Task OpenFileFromPathAsync(string path)
     {
         EnsureCurrentDocumentHasTab();
@@ -350,8 +344,6 @@ public partial class MainWindow
             }
             else
             {
-                // Offload both the binary-sniff read and the encoding-BOM read to a
-                // thread-pool thread so the UI stays responsive on large or slow files.
                 var (encoding, corrupted) = await Task.Run(() =>
                 {
                     if (IsBinaryContent(path))
@@ -398,6 +390,7 @@ public partial class MainWindow
         await OpenFolderFromPathAsync(path);
     }
 
+    // Build tree nodes for folder
     private async Task PopulateFileTreeAsync(string folderPath)
     {
         var items = await CreateFileTreeItemsAsync(folderPath, depth: 0);
@@ -426,8 +419,6 @@ public partial class MainWindow
         }
         catch
         {
-            // Some folders (network shares, permission-restricted directories, huge
-            // trees) can't be watched - the explorer just won't auto-refresh for them.
         }
     }
 
@@ -461,6 +452,7 @@ public partial class MainWindow
         await RefreshFileTreePreservingExpansionAsync();
     }
 
+    // Refresh tree keeping expand state
     private async Task RefreshFileTreePreservingExpansionAsync()
     {
         if (string.IsNullOrWhiteSpace(_currentFolderPath) || !Directory.Exists(_currentFolderPath))
@@ -544,8 +536,6 @@ public partial class MainWindow
         if (dirItem.IsExpanded)
         {
             dirItem.IsExpanded = false;
-            // Collect all descendants first, then remove in reverse index order
-            // so each removal doesn't shift the indices of subsequent items.
             var toRemove = FileTreeItems
                 .Skip(index + 1)
                 .TakeWhile(i => i.Depth > dirItem.Depth)
@@ -564,8 +554,6 @@ public partial class MainWindow
     {
         RecentFiles.Clear();
 
-        // Doesn't filter files under a recent folder's tree - only active-folder files collapse.
-        // Doesn't filter by File/Directory.Exists - unreachable paths should still reappear.
         foreach (var entry in (recentFiles ?? [])
             .Where(entry => !string.IsNullOrWhiteSpace(entry.Path))
             .OrderByDescending(entry => entry.IsPinned)
@@ -575,6 +563,7 @@ public partial class MainWindow
         }
     }
 
+    // Add file to recent list
     private void AddRecentFile(string? path)
     {
         if (!string.IsNullOrWhiteSpace(path) &&
@@ -693,6 +682,7 @@ public partial class MainWindow
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
+    // Handle file tree click
     private async void FileTreeItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: FileTreeItem item })
@@ -850,8 +840,6 @@ public partial class MainWindow
 
             if (OperatingSystem.IsMacOS())
             {
-                // `open -R <path>` reveals and selects the item in Finder.
-                // Falls back to opening the parent directory if path doesn't exist.
                 var target = selectItem && (File.Exists(path) || Directory.Exists(path)) ? path
                     : Directory.Exists(path) ? path
                     : Path.GetDirectoryName(path) ?? path;
@@ -865,8 +853,6 @@ public partial class MainWindow
                 return;
             }
 
-            // Linux: try common file managers that support --select / reveal flags,
-            // then fall back to opening the parent directory via xdg-open.
             if (OperatingSystem.IsLinux() && selectItem && File.Exists(path))
             {
                 var fileManagers = new[]
@@ -915,8 +901,6 @@ public partial class MainWindow
     {
         if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
         {
-            // Snapshot which directories are expanded before wiping the tree,
-            // then restore them afterward so the user's expansion state is preserved.
             var expandedPaths = FileTreeItems
                 .Where(i => i.IsDirectory && i.IsExpanded)
                 .Select(i => i.FullPath)
@@ -952,6 +936,7 @@ public partial class MainWindow
             CloseTab(tab);
     }
 
+    // Prompt for rename input
     private async Task<string?> ShowRenameDialogAsync(string currentName)
     {
         string? result = null;
@@ -1239,7 +1224,6 @@ public partial class MainWindow
         if (_clipboardItemPath is null) return;
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } target) return;
 
-        // Paste destination is the target's directory (or the target itself if it's a folder)
         var destDir = target.IsDirectory ? target.FullPath : Path.GetDirectoryName(target.FullPath)!;
         var itemName = Path.GetFileName(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar));
         var destPath = CreateUniqueSiblingPath(Path.Combine(destDir, itemName), _clipboardItemIsDirectory);

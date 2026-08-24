@@ -60,15 +60,12 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
 
-        // Seeds the marketplace list from the disk cache so it appears immediately, before the network round-trip completes.
         var diskJson = TryReadMarketplaceIndexCache();
         if (diskJson is not null)
             ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
 
         try
         {
-            // Sends If-None-Match so an unchanged index returns a free 304.
-            // Only attaches the conditional header when we already have marketplace data to fall back on.
             _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
             var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
             foreach (var indexUrl in MarketplaceIndexUrls)
@@ -128,8 +125,6 @@ public partial class MainWindow
         {
             if (diskJson is not null)
             {
-                // Network failed but a cached copy exists - the marketplace was
-                // already seeded above, so stay usable.  Log without a dialog.
                 extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
                 KodoDiagnostics.LogDebug("Marketplace index fetch failed; using disk cache.", ex);
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
@@ -143,8 +138,6 @@ public partial class MainWindow
             }
         }
 
-        // All ObservableCollection mutations and PropertyChanged notifications must
-        // run on the UI thread - Avalonia's binding engine requires it.
         Dictionary<string, string> marketplaceIconMap = [];
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -187,8 +180,6 @@ public partial class MainWindow
                             // Index icon fetched successfully - use it, replacing any kox icon.
                             ReplaceLoadedExtensionIcon(pair.ext, icon);
                         }
-                        // else: fetch returned nothing (bad URL, corrupt bytes, etc.) -
-                        // leave whatever the kox provided in place.
                     });
                 }
                 catch (Exception ex)
@@ -201,6 +192,7 @@ public partial class MainWindow
         await Task.WhenAll(tasks);
     }
 
+    // Download extension icons
     private async Task FetchMarketplaceIconsAsync(
         IReadOnlyDictionary<string, string> marketplaceIconMap,
         ObservableCollection<MarketplaceExtension>? targetCollection = null)
@@ -261,7 +253,6 @@ public partial class MainWindow
 
         await Task.WhenAll(tasks);
 
-        // Logs a warning if every icon fetch failed, but doesn't show a dialog since icons are purely decorative.
         if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
         {
             KodoDiagnostics.LogDebug(
@@ -285,10 +276,8 @@ public partial class MainWindow
         {
             if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
             {
-                // Per-request timeout (GitHubOperationTimeout) so one stalled icon fetch can't hold up the whole Task.WhenAll.
                 using var cts = new CancellationTokenSource(GitHubOperationTimeout);
 
-                // Kodo-hosted icon URLs go through the Contents API with the raw+json header; third-party URLs are plain GETs.
                 using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
                 if (IsGitHubContentsApiUrl(iconUrl))
                     request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
@@ -328,8 +317,6 @@ public partial class MainWindow
 
     private static bool IsSvgContent(byte[] bytes)
     {
-        // SVG files start with either a UTF-8 BOM + '<' or directly with '<'.
-        // Check for the <?xml or <svg opening tag in the first 512 bytes.
         var header = System.Text.Encoding.UTF8.GetString(bytes, 0, Math.Min(bytes.Length, 512));
         return header.TrimStart().StartsWith("<?xml", StringComparison.OrdinalIgnoreCase)
             || header.TrimStart().StartsWith("<svg", StringComparison.OrdinalIgnoreCase);
@@ -406,8 +393,6 @@ public partial class MainWindow
             item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
         var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
         var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
-        // ^ declaredVersion is trusted as-is; declaredFileName/urlFileName only contribute if a
-        // v1.2.3-style version can be extracted from them (see GetHighestKnownExtensionVersion).
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
         var canonicalDownloadUrl = NormalizeMarketplaceDownloadUrl(rawDownloadUrl, canonicalFileName);
 
@@ -514,8 +499,6 @@ public partial class MainWindow
             var existing = target[i];
             if (!ReferenceEquals(existing, incoming))
             {
-                // Transfer the already-decoded bitmap/SVG so the UI keeps showing the icon
-                // while the rest of the object is refreshed with updated metadata.
                 if (existing.IconImage is not null && incoming.IconImage is null)
                     incoming.IconImage = existing.IconImage;
                 else
@@ -549,7 +532,6 @@ public partial class MainWindow
             var installedExtension = GetPreferredLoadedExtension(marketplaceExtension.Id);
             var outputPath = ResolveExtensionInstallPath(marketplaceExtension, installedExtension);
 
-            // Downloads the package under GitHubOperationTimeout so a stall can't silently block the install pipeline.
             var bytes = await RunWithGitHubTimeoutAsync(
                 $"Extension download - {marketplaceExtension.Name}",
                 async ct =>
@@ -559,8 +541,6 @@ public partial class MainWindow
                     {
 
                         using var downloadRequest = new HttpRequestMessage(HttpMethod.Get, downloadUrl);
-                        // Contents API URLs require raw+json to receive file bytes directly
-                        // instead of a base64-wrapped JSON envelope.
                         if (IsGitHubContentsApiUrl(downloadUrl))
                             downloadRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
 
@@ -753,8 +733,6 @@ public partial class MainWindow
                     File.Delete(resolvedPath);
             }
 
-            // suppressWatchdog: true - uninstall is a local disk operation with its
-            // own error handling above; the watchdog is not meaningful here.
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{extension.Name} uninstalled.";
         }
@@ -1082,14 +1060,12 @@ public partial class MainWindow
         if (!IsAutoUpdateExtensionsEnabled)
             return;
 
-        // suppressWatchdog=true: this is a silent background check, so a stall shouldn't pop a timeout dialog.
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
         await AutoUpdateExtensionsIfEnabledAsync();
     }
 
     private async void MarketplaceRefreshTimer_OnTick(object? sender, EventArgs e)
     {
-        // suppressWatchdog=true for the same reason as the extension sweep - a silent hourly refresh shouldn't pop a dialog.
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
     }
 

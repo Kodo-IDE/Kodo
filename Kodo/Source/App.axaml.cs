@@ -18,7 +18,6 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// Handles global unhandled-exception wiring, crash logging, and the crash dialog UI.
 public partial class App : Application
 {
     // Guards against multiple concurrent crash dialogs.
@@ -55,10 +54,6 @@ public partial class App : Application
             var mainWindow = new MainWindow(startupFilePath);
             desktop.MainWindow = mainWindow;
 
-            // We only reach here as the primary instance (Program.Main already
-            // exited secondary launches before the app was built). Listen for
-            // file paths handed off by any later launches and open them as tabs
-            // in this window instead of letting a new process open its own.
             SingleInstance.StartListening(handoffPath =>
                 Dispatcher.UIThread.Post(() => mainWindow.ActivateFromSecondaryInstance(handoffPath)));
 
@@ -85,18 +80,6 @@ public partial class App : Application
 
     // Auto-update
 
-    // KodoUpdater.exe is the only thing that keeps polling for updates while Kodo itself
-    // is closed, but nothing ever spawned it - so "update in the background" silently did
-    // nothing once the user quit Kodo. Launch it detached on every startup; its own named
-    // mutex (see KodoUpdaterProgram.Main) makes a redundant launch a harmless instant no-op
-    // if a copy is already resident.
-    //
-    // That alone only keeps it alive for the rest of the current login session though - if
-    // the machine reboots or the user logs off, the detached process dies with the session
-    // and nothing brings it back until Kodo.exe happens to be opened again. So this also
-    // (re)registers a per-user logon task pointing at KodoUpdater.exe, making the background
-    // updater genuinely autonomous: it resumes polling on its own after every reboot, with
-    // no dependency on Kodo ever having been launched that session.
     [SupportedOSPlatform("windows")]
     private static void LaunchStandaloneUpdaterIfNeeded()
     {
@@ -131,7 +114,6 @@ public partial class App : Application
         }
     }
 
-    // Checks for a pending-update sentinel from KodoUpdater; shows UpdateDialog if newer.
     private static bool CheckPendingUpdateSentinel()
     {
         try
@@ -157,7 +139,6 @@ public partial class App : Application
         }
     }
 
-    // Fires a best-effort update check a few seconds after launch; failures are swallowed.
     private static void CheckForUpdatesInBackground()
     {
         _ = Task.Run(async () =>
@@ -169,11 +150,6 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                // When "install in background" is on, KodoUpdater.exe owns the whole
-                // download+install cycle - including while Kodo is running - and only
-                // installs once it confirms Kodo has closed. If this in-app check also
-                // silently installed here, Kodo would Environment.Exit(0) a few seconds
-                // after the user just opened it. Defer to the standalone updater instead.
                 if (UpdateService.IsAutoUpdateInBackgroundEnabledInSettings())
                     return;
 

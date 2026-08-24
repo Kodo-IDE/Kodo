@@ -56,6 +56,7 @@ public partial class MainWindow
     private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
         theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
 
+    // Apply selected theme to UI and editor
     private void ApplyThemeToEditor()
     {
         if (EditorTextBox is null) return;
@@ -71,26 +72,16 @@ public partial class MainWindow
         _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
             ? new SolidColorBrush(mutedBrush.Color, 0.4)
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
-        // A real grey rather than a near-black/near-white tint - those looked either
-        // invisible or (combined with unlit text) crushed contrast to nothing.
-        // The same grey also drives the error renderer's stripe half, so combined
-        // dead-code+error stripes stay visually tied to pure dead-code lines.
         IBrush deadCodeGrey = IsLightThemeActive
             ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
             : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
         _deadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
         _errorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
-        // Force dead-code text to a fixed, theme-aware color instead of lightening whatever
-        // the syntax colorizer set - plain identifiers often have no explicit brush at all,
-        // so "lighten if present" silently left them dim while only accent tokens changed.
         var basePrimary = PrimaryTextBrush.ToImmutable() is ISolidColorBrush primarySolid
             ? primarySolid.Color
             : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
         _deadCodeTextBrightener.TextBrush = new SolidColorBrush(
             PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
-        // Mirror dead-code's per-theme text fix: in light themes the red wash buries the
-        // syntax colors, so force pure-error lines to black for contrast (dead-code
-        // stripes keep their own brightened treatment).
         _errorTextDarkener.IsLightTheme = IsLightThemeActive;
         _errorTextDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
@@ -207,7 +198,6 @@ public partial class MainWindow
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colors aren't guaranteed readable - verify and fall back to a safe color.
             PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
@@ -262,8 +252,6 @@ public partial class MainWindow
             ThemeAccentPreviewBrush = GetCachedBrush("#8C00FF");
         }
 
-        // Silently resolves the accent hex without the full ApplyAccentOverride().
-        // WindowsAccentPreviewBrush is initialised from the live registry here too.
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
         try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
@@ -280,14 +268,12 @@ public partial class MainWindow
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         SyncSystemAccentResources(AccentBrush);
 
-        // Initialises the System Default preview from the registry now, not on the first poll tick.
         RefreshSystemThemePreview();
     }
 
     private void ApplyTheme(string themeName)
     {
         _requestedThemeName = themeName;
-        // "System" isn't a real palette - resolve it to Windows' current reporting before the lookup below.
         var effectiveThemeName = string.Equals(themeName, "System", StringComparison.OrdinalIgnoreCase)
             ? ResolveSystemThemeName()
             : themeName;
@@ -311,7 +297,6 @@ public partial class MainWindow
             CardBrush             = GetCachedBrush(extensionTheme.Card);
             PrimaryTextBrush      = GetCachedBrush(extensionTheme.PrimaryText);
             MutedTextBrush        = GetCachedBrush(extensionTheme.MutedText);
-            // Theme-pack colors aren't guaranteed readable against each other - verify and fall back to a safe color.
             PrimaryTextBrush = EnsureReadableTextBrush(PrimaryTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             MutedTextBrush   = EnsureReadableTextBrush(MutedTextBrush, CardBrush, WindowBackgroundBrush, EditorBackgroundBrush, SidebarBrush, TopBarBrush, ButtonBrush);
             SurfaceBorderBrush    = GetCachedBrush(extensionTheme.SurfaceBorder);
@@ -384,7 +369,6 @@ public partial class MainWindow
         OnPropertyChanged(nameof(IsDarkThemeActive));
         OnPropertyChanged(nameof(IsLightThemeActive));
         RefreshSystemThemePreview();
-        // Always runs ApplyAccentOverride: updates AccentBrush for all three modes and keeps WindowsAccentPreviewBrush live.
         ApplyAccentOverride();
         ApplyThemeToEditor();
         SaveSettings();
@@ -394,8 +378,6 @@ public partial class MainWindow
 
     private void ApplyAccentOverride()
     {
-        // Always keep the Windows preview brush current so the blob reflects
-        // the real system colour regardless of which mode is active.
         var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
         try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }

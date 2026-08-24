@@ -22,9 +22,6 @@ class Program
         AttachConsole(0xFFFFFFFF);
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
-        // If Kodo is already running, hand this launch's file (e.g. from "Open with"
-        // / double-click in Explorer) off to that instance as a new tab and exit -
-        // don't spin up a second window.
         if (!SingleInstance.TryAcquire())
         {
             var handoffPath = args.Length > 0 ? args[0] : null;
@@ -57,8 +54,6 @@ class Program
 
 internal static class SingleInstance
 {
-    // Suffixed with the build version so a dev build never shares an instance
-    // lock with an installed release build (or a different dev version).
     private static readonly string MutexName = $@"Local\Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}";
     private static readonly string PipeName  = $"Kodo_SingleInstance_Pipe_9F3E2C1A_{VersionSuffix()}";
 
@@ -99,7 +94,6 @@ internal static class SingleInstance
         catch { /* best effort on shutdown */ }
     }
 
-    // Called by the primary instance once its MainWindow exists. Listens forever (until the process exits) for activation requests from later launches.
     public static void StartListening(Action<string?> onActivationRequested)
     {
         _ = Task.Run(async () =>
@@ -133,8 +127,6 @@ internal static class SingleInstance
         });
     }
 
-    // Called by a secondary launch. Hands the startup file path (if any) to the
-    // already-running primary instance so it can open it as a tab and come to front.
     public static void SendActivationRequest(string? filePath)
     {
         try

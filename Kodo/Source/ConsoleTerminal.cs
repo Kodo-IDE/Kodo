@@ -58,7 +58,6 @@ public sealed class ConsoleTerminal : Control
     private int _cursorRow, _cursorCol;
     private bool _cursorVisible = true;
 
-    // Scrollback rows, oldest first. _scrollOffset counts back from live view (0 = bottom).
     private const int MaxScrollbackLines = 5000;
     private readonly List<TermCell[]> _scrollback = new();
     private int _scrollOffset;
@@ -96,7 +95,6 @@ public sealed class ConsoleTerminal : Control
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
 
-    // Discards shell output until this timestamp passes, set during a pending snapshot restore.
     private long _suppressOutputUntilTick;
 
     // Blink timer for cursor
@@ -125,13 +123,8 @@ public sealed class ConsoleTerminal : Control
     // Fired when the shell reports a new window title via OSC 0/2.
     public event EventHandler<string>? TitleChanged;
 
-    // Fired when the shell reports its current working directory via OSC 1337;CurrentDir=<path>.
     public event EventHandler<string>? WorkingDirectoryChanged;
 
-    // Customizable terminal gestures, keyed by the command id used in MainWindow's
-    // KeybindDefinitions ("TerminalCopy", "TerminalPaste", "TerminalSearch"). Any id that's
-    // missing (or a null table entirely, e.g. when this control is hosted standalone)
-    // falls back to the built-in defaults below.
     public IReadOnlyDictionary<string, KeyGesture>? Keybinds { get; set; }
 
     // Built-in defaults, matching MainWindow's KeybindDefinitions for the same ids.
@@ -139,8 +132,7 @@ public sealed class ConsoleTerminal : Control
     private static readonly KeyGesture DefaultPaste  = new(Key.V, KeyModifiers.Control);
     private static readonly KeyGesture DefaultSearch = new(Key.F, KeyModifiers.Control);
 
-    // Starts a shell; stops any previous session first.
-    // suppressOutputUntilRestored: discard output until a pending restore completes.
+    // Start shell via ConPTY
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
@@ -281,7 +273,6 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // Replaces the screen buffer with a saved snapshot; keeps the ConPTY process running.
     public void RestoreSnapshot(TerminalSnapshot snap)
     {
         lock (_lock)
@@ -391,19 +382,12 @@ public sealed class ConsoleTerminal : Control
         base.OnKeyDown(e);
     }
 
-    // True if the pressed key matches the current (possibly user-customized) gesture for the
-    // given terminal command id, falling back to a built-in default when no keybind table (or
-    // entry) is present.
     private bool MatchesTerminalKeybind(KeyEventArgs e, string id, KeyGesture fallback)
     {
         var gesture = fallback;
         if (Keybinds is not null && Keybinds.TryGetValue(id, out var custom))
             gesture = custom;
 
-        // Guard against gestures that can't be assigned via the shortcuts dialog (it requires
-        // at least one modifier unless the key is a function key). This protects bare keys the
-        // terminal must always pass through to the shell - Enter, Tab, Escape, arrows, ... -
-        // even if an invalid value is hand-edited into the settings file.
         if (gesture.KeyModifiers == KeyModifiers.None &&
             (gesture.Key < Key.F1 || gesture.Key > Key.F24))
         {
@@ -946,7 +930,6 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // OSC payload is "<code>;<text>". Codes 0/2 set the window title; 1337 CurrentDir=<path> reports cwd.
     private void HandleOscComplete()
     {
         var s = _oscBuf.ToString();
@@ -1095,8 +1078,6 @@ public sealed class ConsoleTerminal : Control
             for (var c = 0; c < _cols; c++) row[c] = _cells[r, c];
             _scrollback.Add(row);
         }
-        // Keep the viewport pinned to the same absolute lines instead of letting it
-        // drift toward the live tail as new lines get pushed in from below.
         if (_scrollOffset > 0)
             _scrollOffset += n;
 
@@ -1454,13 +1435,11 @@ public sealed class TerminalShellOption
     public string Arguments { get; init; } = string.Empty;
 }
 
-// Static helpers for shell discovery, panel-height clamping, and terminal-tab title formatting.
 public static class TerminalShellSupport
 {
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
 
-    // Raw string literal for the bash cwd-report hook; uses `pwd -W` for a Windows-style path.
     private const string BashCwdHookCommand = """
         export PROMPT_COMMAND='printf \"\033]1337;CurrentDir=%s\007\" \"$(pwd -W)\"'; exec bash --login -i
         """;
@@ -1614,7 +1593,6 @@ public static class TerminalShellSupport
         return string.IsNullOrWhiteSpace(lastSegment) ? rawTitle : lastSegment;
     }
 
-    // Windows drive-letter path, UNC path, or Unix-style absolute path; anything else is left alone.
     private static bool LooksLikeFilePath(string text)
     {
         if (text.Length >= 3 && char.IsLetter(text[0]) && text[1] == ':' && (text[2] == '\\' || text[2] == '/'))

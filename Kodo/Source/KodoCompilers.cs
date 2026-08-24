@@ -57,6 +57,7 @@ public sealed record CompilerResolution(string Version, string DownloadUrl, stri
 
 public partial class MainWindow
 {
+    // Load compiler index with cache and ETag
     private async Task LoadCompilerExtensionsAsync(bool forceResolve = false)
     {
         var effectiveForceResolve = forceResolve || !_hasResolvedCompilersThisSession;
@@ -183,6 +184,7 @@ public partial class MainWindow
         catch { /* best-effort disk cache - ignore write failures */ }
     }
 
+    // Read installed-compilers.json
     private void LoadInstalledCompilerRegistry()
     {
         try
@@ -200,6 +202,7 @@ public partial class MainWindow
         }
     }
 
+    // Persist installed-compilers.json
     private void SaveInstalledCompilerRegistry()
     {
         try
@@ -214,6 +217,7 @@ public partial class MainWindow
         }
     }
 
+    // Sync compiler installed flags
     private void SyncCompilerInstallStates()
     {
         foreach (var entry in CompilerExtensions)
@@ -404,6 +408,7 @@ public partial class MainWindow
         ("julia-auto", "Julia", "JuliaLang", new[] { "julia.exe" }, "julia", false, null)
     ];
 
+    // Detect local compilers on PATH
     private async Task AutoDetectDefaultCompilersAsync()
     {
         try
@@ -502,10 +507,6 @@ public partial class MainWindow
                 if (_manualCompilers.ContainsKey(resolvedId) || _autoDetectDismissedIds.Contains(resolvedId))
                     continue;
 
-                // Don't create a local proxy for a compiler already installed via the
-                // marketplace registry — the Installed tab collapses them into one row,
-                // so auto-detecting a duplicate would be immediately hidden anyway and
-                // only clutters manual-compilers.json.
                 if (canonicalCompilerId is not null && _installedCompilers.ContainsKey(canonicalCompilerId))
                     continue;
 
@@ -758,6 +759,7 @@ public partial class MainWindow
             ["holyc"] = new([".hc"], [], null, "holyc {file}", null),
         };
 
+    // Parse compiler index JSON
     private static List<CompilerIndexEntry> ParseCompilerIndexEntries(string json, List<string> loadErrors)
     {
         var result = new List<CompilerIndexEntry>();
@@ -1016,6 +1018,7 @@ public partial class MainWindow
         return result;
     }
 
+    // Resolve latest compiler versions
     private async Task RefreshCompilerResolutionsAsync(List<CompilerIndexEntry> entries, List<MarketplaceExtension> liveExtensions, bool forceResolve)
     {
         var cache = LoadCompilerResolutionCache();
@@ -1187,7 +1190,6 @@ public partial class MainWindow
 
             await File.WriteAllBytesAsync(outputPath, bytes);
 
-            // MSYS2 is a meta-installer: base MSYS2 has no g++. One-click should end with a working g++.
             if (compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleMsys2MingwInstallAsync(outputPath, compilerExtension);
@@ -1237,7 +1239,6 @@ public partial class MainWindow
             var msysRoots = new[] { @"C:\msys64", @"C:\msys32", @"C:\tools\msys64", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "msys64") };
             string? bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
 
-            // If MSYS2 not yet installed, launch the base installer and wait for the wizard to finish.
             if (bashPath is null)
             {
                 try
@@ -1254,7 +1255,6 @@ public partial class MainWindow
                 bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
                 if (bashPath is null)
                 {
-                    // Fallback: installer may have used default C:\msys64 but we missed it, try again with delay
                     await Task.Delay(TimeSpan.FromSeconds(2));
                     bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
                 }
@@ -1273,8 +1273,6 @@ public partial class MainWindow
             var ucrtBin = Path.Combine(msysRoot, @"ucrt64\bin");
 
             ExtensionsStatusText = $"Installing g++ via pacman (this may take a minute)...";
-            // -Sy to refresh DB, then install toolchain. --noconfirm avoids interactive prompt.
-            // Use bash -lc so pacman runs in MSYS2 env.
             var pacmanCmd = "pacman --noconfirm -Sy && pacman --noconfirm -S mingw-w64-x86_64-gcc mingw-w64-x86_64-gdb mingw-w64-x86_64-make";
             using var pacmanProc = Process.Start(new ProcessStartInfo(bashPath, $"-lc \"{pacmanCmd}\"")
             {
@@ -1313,10 +1311,6 @@ public partial class MainWindow
                         if (!procPath.Split(Path.PathSeparator).Any(p => p.Equals(binToAdd, StringComparison.OrdinalIgnoreCase)))
                             Environment.SetEnvironmentVariable("PATH", procPath + Path.PathSeparator + binToAdd, EnvironmentVariableTarget.Process);
                     }
-                    // Also try to add via manual compiler tracking so Kodo sees it immediately.
-                    // When msys2-mingw is already managed-installed the Installed tab collapses
-                    // the manual proxy into the managed row (see FilteredInstalledCompilerExtensions),
-                    // so skip the insert to avoid a hidden duplicate in manual-compilers.json.
                     var gppPath = Path.Combine(binToAdd, "g++.exe");
                     if (File.Exists(gppPath) && !_installedCompilers.ContainsKey("msys2-mingw"))
                     {
@@ -1547,7 +1541,6 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException || ex is FileNotFoundException || (ex is System.ComponentModel.Win32Exception win32 && win32.NativeErrorCode == 2))
         {
-            // Folder/exe already gone - treat as cancelled install, clean up the Installed tab.
             ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
             ForgetLocalCompilerRecord(compilerExtension);
         }
@@ -2447,7 +2440,6 @@ public partial class MainWindow
             return ("bash", $"{quotedPath}{extra}{fileArg}");
         if (ext is ".py" or ".pyw")
             return ("python", $"{quotedPath}{extra}{fileArg}");
-        // Generic executable/script: run directly; append file + extra args so {file} behaviour is preserved by default.
         var args = fileArg.Length > 0 ? $"{expandedExtra.Trim()} {quotedFile}".Trim() : expandedExtra.Trim();
         if (string.IsNullOrWhiteSpace(args) && !alreadyHasFileArg)
             args = quotedFile;
@@ -2489,7 +2481,6 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(exe))
             return 0;
 
-        // Installed via Kodo marketplace should be considered available even if not yet on PATH for this session
         if (compiler.IsInstalled)
             return 1;
 
@@ -2713,7 +2704,6 @@ public partial class MainWindow
 
         var ext = Path.GetExtension(_currentFilePath).ToLowerInvariant();
 
-        // Allow Build to proceed with a custom script even when no compiler is resolved for this extension.
         if (ActiveCompilerExtension is null && !(isBuild && TryGetCustomBuildScript(ext, out _)))
             return;
 
@@ -2733,13 +2723,9 @@ public partial class MainWindow
         }
         else
         {
-            // For Run, or Build without custom script, use the normal compiler flow.
-            // If ActiveCompilerExtension is null (no compiler) and this is a Build with no custom script, bail.
             if (ActiveCompilerExtension is null)
                 return;
 
-            // If this is a Build but we checked custom above and didn't take it, fall through to normal Build template.
-            // If this is a Run, ignore any custom Build script and use Run template.
             var template = ResolveCommandTemplate(compiler!, isBuild, ext);
             if (template is null)
                 return;
@@ -2757,7 +2743,6 @@ public partial class MainWindow
 
         var workingDirectory = ResolveWorkingDirectory();
 
-        // Auto-init go.mod for Go single-file runs (go run {file} requires a module with GO111MODULE=on)
         if (ext.Equals(".go", StringComparison.OrdinalIgnoreCase) &&
             compiler is not null &&
             (compiler.Id.Equals("go", StringComparison.OrdinalIgnoreCase) || compiler.Id.Equals("project:go", StringComparison.OrdinalIgnoreCase)))
@@ -2991,7 +2976,6 @@ public partial class MainWindow
             menu.Items.Add(item);
         }
 
-        // Project fallback when no compiler matches but a project file exists (e.g., .csproj in folder)
         if (!anyAdded)
         {
             var folder = ResolveWorkingDirectory();
@@ -3225,8 +3209,6 @@ internal sealed class CompilerRunWindow : Window
     private TextBlock _statusText = null!;
     private Button _rerunButton = null!;
 
-    // Mirrors the user's customizable terminal gestures (copy/paste/search) so this
-    // window's terminal behaves like the main terminal panel.
     public IReadOnlyDictionary<string, KeyGesture>? TerminalKeybinds
     {
         get => _terminal.Keybinds;

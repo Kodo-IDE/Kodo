@@ -10,8 +10,6 @@ using AvaloniaEdit.Rendering;
 
 namespace Kodo.Models;
 
-// Modes for the unified search panel opened by Ctrl+F / Ctrl+Shift+F / the status bar.
-// Extracted from MainWindow.axaml.cs:9181
 internal enum SearchMode
 {
     FindInFile,
@@ -19,15 +17,8 @@ internal enum SearchMode
     ProjectSearch
 }
 
-/// <summary>
-/// Minimal .gitignore parser. Collects patterns from .gitignore files and
-/// answers whether a given path should be excluded from project search.
-/// Extracted from MainWindow.axaml.cs:11812
-/// </summary>
 internal sealed class SearchIgnoreRules
 {
-    // Built-in directory names that are always skipped during project search,
-    // regardless of .gitignore contents. Was MainWindow.DefaultIgnoreDirectories.
     private static readonly HashSet<string> DefaultIgnoreDirectories = new(StringComparer.OrdinalIgnoreCase)
     {
         ".git", "node_modules", "bin", "obj", "dist", ".vs",
@@ -39,11 +30,6 @@ internal sealed class SearchIgnoreRules
     public string IncludeFilterSnapshot { get; set; } = "";
     public string ExcludeFilterSnapshot { get; set; } = "";
 
-    /// <summary>
-    /// Creates rules by walking from <paramref name="projectRoot"/> upward
-    /// to the filesystem root, loading every .gitignore encountered.
-    /// Optional user-defined include/exclude glob patterns are layered on top.
-    /// </summary>
     public static SearchIgnoreRules Load(string projectRoot, string? includeFilter = null, string? excludeFilter = null)
     {
         var rules = new SearchIgnoreRules();
@@ -98,11 +84,6 @@ internal sealed class SearchIgnoreRules
         catch { /* unreadable .gitignore - skip */ }
     }
 
-    /// <summary>
-    /// Returns true if the directory should be skipped entirely.
-    /// Checks default ignore names, .gitignore directory patterns, and
-    /// hidden/system file attributes.
-    /// </summary>
     public bool ShouldSkipDirectory(string dirPath)
     {
         var name = Path.GetFileName(dirPath);
@@ -129,10 +110,6 @@ internal sealed class SearchIgnoreRules
         return false;
     }
 
-    /// <summary>
-    /// Returns true if the file should be excluded from results.
-    /// Checks hidden/system attributes and .gitignore file patterns.
-    /// </summary>
     public bool ShouldSkipFile(string filePath)
     {
         if (IsHiddenOnDisk(filePath)) return true;
@@ -263,10 +240,6 @@ internal sealed class SearchIgnoreRules
     }
 }
 
-/// <summary>
-/// Highlights all search matches in the editor when Find-in-file is active.
-/// Extracted from MainWindow.axaml.cs:15361
-/// </summary>
 internal sealed class FindHighlightRenderer : IBackgroundRenderer
 {
     private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));
@@ -322,21 +295,9 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
     }
 }
 
-// ---------------------------------------------------------------------------
-// Consolidated from previously fragmented files:
-// FuzzyMatch.cs, SearchDisplayItem.cs, SearchFileGroup.cs, SearchResultItem.cs
-// ---------------------------------------------------------------------------
 
-/// <summary>
-/// Fuzzy subsequence matching with scoring. Used for "Find files by name"
-/// to rank results by relevance rather than simple substring containment.
-/// </summary>
 internal static class FuzzyMatch
 {
-    /// <summary>
-    /// Returns a relevance score and the matched character indices.
-    /// Returns (-1, empty) if the query does not match as a subsequence.
-    /// </summary>
     public static (int Score, IReadOnlyList<int> Indices) Match(string query, string value, bool matchCase = false)
     {
         if (string.IsNullOrEmpty(query) || string.IsNullOrEmpty(value))
@@ -417,28 +378,15 @@ internal static class FuzzyMatch
     }
 }
 
-/// <summary>
-/// View-layer wrapper for the search results ListBox. Each item in the
-/// flat display list is either a file-group header or an individual result.
-/// This keeps the ListBox's flat ItemsSource while visually grouping
-/// results by file for project-wide search.
-/// </summary>
 public sealed class SearchDisplayItem
 {
-    /// <summary>True when this item is a collapsible file-group header row.</summary>
     public bool IsGroupHeader { get; init; }
 
-    /// <summary>The file group this header represents (non-null when <see cref="IsGroupHeader"/> is true).</summary>
     public SearchFileGroup? Group { get; init; }
 
-    /// <summary>The individual search result (non-null when <see cref="IsGroupHeader"/> is false).</summary>
     public SearchResultItem? Result { get; init; }
 }
 
-/// <summary>
-/// Represents a group of search results belonging to the same file.
-/// Tracks the expanded/collapsed state for the collapsible header row.
-/// </summary>
 public sealed class SearchFileGroup : INotifyPropertyChanged
 {
     private bool _isExpanded;
@@ -468,9 +416,6 @@ public sealed class SearchFileGroup : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
-// A single row in the unified search panel's results list. Used both for
-// "find files by name" (LineNumber/PreviewText empty) and project-wide text
-// search (LineNumber/PreviewText point at a specific match).
 public class SearchResultItem
 {
     public string Path { get; init; } = string.Empty;
@@ -481,12 +426,9 @@ public class SearchResultItem
     public string Icon { get; init; } = string.Empty;
     public bool HasPreview => !string.IsNullOrEmpty(PreviewText);
 
-    /// <summary>Character indices in <see cref="DisplayName"/> that matched the query (for highlighting).</summary>
     public IReadOnlyList<int> MatchedIndices { get; init; } = System.Array.Empty<int>();
 
-    /// <summary>Character indices in <see cref="PreviewText"/> that matched the query (for highlighting).</summary>
     public IReadOnlyList<int> MatchedPreviewIndices { get; init; } = System.Array.Empty<int>();
 
-    /// <summary>Fuzzy match score - higher is better. Used for sorting File-by-name results.</summary>
     public int Score { get; init; }
 }

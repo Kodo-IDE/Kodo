@@ -37,6 +37,7 @@ public sealed class CompiledSyntaxProfile
         SingleLineCommentRegex = singleLineCommentRegex;
     }
 
+    // Compile syntax profile from extension
     public static CompiledSyntaxProfile Create(LoadedExtension extension)
     {
         var rules = new List<CompiledSyntaxRule>();
@@ -91,7 +92,6 @@ public sealed class CompiledSyntaxProfile
                     : @"(?<![\p{L}\p{Nd}_])[@#][\p{L}_][\p{L}\p{Nd}_-]*",
                 RegexOptions.Compiled), "preprocessor", "#C586C0"));
             rules.Add(new(new Regex(@"(?<=\[)[\p{L}_][\p{L}\p{Nd}_:.]*(?=[,\]\(])|(?<=<)[\p{L}_][\p{L}\p{Nd}_:-]*(?=[^>]*>)", RegexOptions.Compiled), "attribute", "#C586C0"));
-            // Function calls must score before property-by-dot, so `a.b.Method()` colours "Method" as a function despite the preceding dot.
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\s*\()", RegexOptions.Compiled), "function", "#DCDCAA"));
             rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])[\p{L}_][\p{L}\p{Nd}_]*(?=\.)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
             rules.Add(new(new Regex(@"(?<=\.|->|::)[\p{L}_][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "property", "#9CDCFE"));
@@ -211,7 +211,6 @@ public sealed class CompiledSyntaxProfile
 
 public readonly record struct CompiledSyntaxRule(Regex Regex, string ColorTokenName, string FallbackHex);
 
-// Shared embedded-tag content extraction, used by HtmlEmbeddedColorizer and MarkdownColorizer.
 public enum EmbeddedBlockContentMode
 {
     AwaitingContent,
@@ -342,6 +341,7 @@ public sealed class EmbeddedSyntaxProfile
             tokenRules);
     }
 
+    // Advance embedded syntax state
     public EmbeddedSyntaxState Advance(string text, EmbeddedSyntaxState initialState) =>
         Process(text, initialState, applyBrush: null, rainbowBrushResolver: null);
 
@@ -482,7 +482,6 @@ public sealed class EmbeddedSyntaxProfile
 
         foreach (var (regex, brush, colorTokenName) in TokenRules)
         {
-            // Punctuation doesn't reserve its range, so rainbow bracket color (below) can still repaint it. Every other rule reserves its range.
             var isPunctuation = string.Equals(colorTokenName, "punctuation", StringComparison.Ordinal);
 
             foreach (Match match in regex.Matches(text))
@@ -730,10 +729,8 @@ public sealed class EmbeddedSyntaxProfile
     private readonly record struct EmbeddedStringStart(string Delimiter, int MatchedLength, bool IsVerbatim, bool CanSpanMultipleLines);
 }
 
-// Decides whether a Markdown inline-code span gets language-specific highlighting or plain string coloring.
 public static class InlineCodeLanguageDetector
 {
-    // Common CLI verbs - a bare command line opening with one of these is treated as shell/console, never a language match.
     private static readonly HashSet<string> ShellVerbs = new(StringComparer.OrdinalIgnoreCase)
     {
         "cd", "ls", "dir", "cp", "mv", "rm", "del", "mkdir", "md", "rmdir", "rd",
@@ -752,7 +749,6 @@ public static class InlineCodeLanguageDetector
     private static readonly Regex PathSegmentRegex =
         new(@"^[\w.~-]+(?:[\\/][\w.~-]+){1,}$", RegexOptions.Compiled);
 
-    // A bare HTML/XML tag mention (e.g. `<style>`) is prose referencing markup vocabulary, not a code sample - must never be highlighted as one.
     private static readonly Regex BareMarkupTagRegex =
         new(@"^</?[A-Za-z][\w:-]*(?:\s+[^<>]*)?\s*/?>$", RegexOptions.Compiled);
 
@@ -783,8 +779,6 @@ public static class InlineCodeLanguageDetector
         return bestMatch.Extension;
     }
 
-    // "Looks like non-code prose" (skip language matching) covers: a bare tag
-    // mention, a shell command with no code punctuation, or a bare path.
     private static bool LooksLikeNonCodeProse(string snippet)
     {
         if (BareMarkupTagRegex.IsMatch(snippet))
@@ -826,8 +820,6 @@ public static class InlineCodeLanguageDetector
 
         var distinctKindsMatched = new[] { keywordHits, typeHits, functionHits, propertyHits, namespaceHits }.Count(hits => hits > 0);
 
-        // Requires real code punctuation or multiple independent token-kind
-        // matches - a single stray keyword hit is no longer enough.
         var isCredible = score > 0 && (hasCodePunctuation || distinctKindsMatched >= 2);
 
         return isCredible ? (extension, score) : (null, 0);
@@ -884,10 +876,9 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
     private string[] _stringDelimiters = ["\"", "'"];
     private string[] _multiLineStringDelimiters = [];
 
-    // Disabled for unsaved (untitled) files and plain-text files (.txt / .log / .text)
-    // so that smart visual features don't activate where no language context exists.
     public bool IsEnabled { get; set; } = true;
 
+    // Update highlighting for language
     public void UpdateSyntax(LoadedExtension? extension)
     {
         if (extension is null)
@@ -920,6 +911,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     public void InvalidateCache() => _snapshot = null;
 
+    // Colorize document line
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
         if (!IsEnabled)
@@ -1542,7 +1534,6 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 
         var expressionText = text.Substring(expressionStart, expressionEnd - expressionStart);
 
-        // Reserves each match's range so specific rules can't be overwritten by generic ones.
         var protectedRanges = new bool[expressionText.Length];
 
         foreach (var rule in _rules)
@@ -1926,7 +1917,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         Brush.Parse("#9CDCFE"),
         Brush.Parse("#D7BA7D")
     ];
-    // Markdown bullets: blue -> magenta -> yellow -> blue ... (distinct from bracket rainbow)
     private static readonly IBrush[] MarkdownBulletBrushes =
     [
         Brush.Parse("#4FC1FF"), // blue
@@ -2040,6 +2030,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         ColorizeMarkdownLine(text, line.Offset);
     }
 
+    // Colorize markdown line
     private void ColorizeMarkdownLine(string text, int lineOffset)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -2252,7 +2243,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
         if (fence.Profile is null)
         {
-            // Unknown/plain fenced language: paint the whole line white so no other rules bleed in.
             ApplyBrush(lineOffset, 0, text.Length, Brushes.White);
             return;
         }
@@ -3053,8 +3043,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         var isMarkdown = KodoExtensionIds.IsMarkdown(ext.Id);
 
-        // Inner rulesets: codeRuleSet holds keyword/type/number rules (kept for clarity, unused directly);
-        // emptyRuleSet is empty so keyword/number rules can't fire inside comment/string spans.
         var codeRuleSet  = new HighlightingRuleSet();
         var emptyRuleSet = new HighlightingRuleSet();
 
@@ -3071,8 +3059,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         }
         else
         {
-            // Markdown-specific inline rules
-            // Bold/bold-italic markers: ** *** __ ___
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"\*{2,3}|_{2,3}", RegexOptions.Compiled),
@@ -3110,12 +3096,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Char-literal rule for disableSingleQuoteStrings is handled above; this guard is a no-op for Markdown.
 
         // Main ruleset: spans checked in order, first match wins.
         var mainRuleSet = new HighlightingRuleSet();
 
-        // Block comment /* … */ - added first so it takes priority over // on the same line.
         if (!string.IsNullOrEmpty(ext.CommentBlockStart) && !string.IsNullOrEmpty(ext.CommentBlockEnd))
         {
             mainRuleSet.Spans.Add(new HighlightingSpan
@@ -3129,13 +3113,8 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Added before the generic comment-line span so #-headings get keywordColor, not commentColor.
         if (isMarkdown)
         {
-            // Fenced code blocks are NOT handled here - MarkdownColorizer (BuildSnapshot/TryParseFenceOpening/Closing)
-            // owns fence state with correct indent (0-3 spaces), marker char, and length >= opening checks.
-            // The old loose Regex @"^(?:`{3,}|~{3,})" allowed ~~~ to close ``` and missed indented fences,
-            // causing Highlighting vs Colorizer divergence that persists to EOF in long files.
 
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
@@ -3183,7 +3162,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"\$""", @"""", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 
-            // Bare verbatim strings use doubled quotes for escaping and can span multiple lines.
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"@""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
         }
 
@@ -3200,9 +3178,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         if (ext.DisableSingleQuoteStrings)
             stringDelimiters.RemoveAll(d => d == "'");
 
-        // Markdown inline code (`...`) is owned by MarkdownColorizer (InlineCodeRegex + language detection).
-        // A generic string span for "`" with allowEndOfLineFallback:true would paint an unclosed ` to EOL
-        // and clash with that logic, causing flicker in long files.
         if (isMarkdown)
             stringDelimiters.RemoveAll(d => d == "`");
 
@@ -3266,8 +3241,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         bool allowEndOfLineFallback,
         bool isVerbatim = false)
     {
-        // A closing delimiter ends a string only after an even number of backslashes.
-        // Mirrors EmbeddedSyntaxProfile's escape logic; verbatim strings don't use it.
         var unescapedDelimiterGuard = isVerbatim ? string.Empty : @"(?<=(?:^|[^\\])(?:\\\\)*)";
         var endPattern = allowEndOfLineFallback
             ? $@"{unescapedDelimiterGuard}{endDelimiterPattern}|$"
@@ -3285,6 +3258,5 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
     }
 
     public HighlightingColor GetNamedColor(string name) => new();
-    // Named ruleset lookups are unused - this definition only uses anonymous inline rulesets.
     public HighlightingRuleSet GetNamedRuleSet(string name) => new HighlightingRuleSet();
 }

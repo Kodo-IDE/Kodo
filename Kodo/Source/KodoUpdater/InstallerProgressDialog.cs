@@ -11,8 +11,6 @@ using Avalonia.Threading;
 
 namespace KodoUpdater;
 
-// Shown by KodoUpdater while the Inno Setup installer replaces Kodo's files.
-// Matches the palette and accent colour of Kodo's own dialogs via ThemeResolver.
 internal sealed class InstallerProgressDialog : Window
 {
     private readonly TextBlock _statusText;
@@ -78,9 +76,6 @@ internal sealed class InstallerProgressDialog : Window
             Value         = 0,
             Height        = 8,
             IsVisible     = true,
-            // Indeterminate until the first real percentage comes in from the
-            // installer (there's a brief gap while it starts up) - SetProgress
-            // flips this off.
             IsIndeterminate = true,
             Foreground    = new SolidColorBrush(accentColor),
             Background    = new SolidColorBrush(palette.BadgeBg),
@@ -115,11 +110,6 @@ internal sealed class InstallerProgressDialog : Window
     {
         Dispatcher.UIThread.Post(() => _statusText.Text = text);
     }
-
-    // Drives the bar from the installer's real progress (0-100), as reported
-    // by KodoInstaller.iss's CurInstallProgressChanged via the shared
-    // install-progress.json file. Converted to a 0-1 fraction to match the
-    // Value domain every other progress bar in Kodo uses (see UpdateDialog).
     public void SetProgress(int percent)
     {
         var clamped = Math.Clamp(percent, 0, 100);
@@ -130,9 +120,6 @@ internal sealed class InstallerProgressDialog : Window
         });
     }
 }
-
-// Full colour palette for code-built dialogs, resolved from the user's active theme.
-// Duplicate of the class in Updater.cs so KodoUpdater (a separate process) can use it.
 internal sealed record DialogThemePalette(
     Color Background,
     Color SurfaceDeep,
@@ -287,7 +274,6 @@ internal static class ThemeResolver
     }
 }
 
-// Resolves accent colour from kodosettings.json, matching Kodo's own AccentResolver.
 internal static class AccentResolver
 {
     private const string DefaultAccentHex = "#8C00FF";

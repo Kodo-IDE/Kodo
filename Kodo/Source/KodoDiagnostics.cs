@@ -12,7 +12,6 @@ using Microsoft.Win32;
 
 namespace Kodo;
 
-// Critical: crashes, shows dialog. Warning: recoverable failures. Debug: internal diagnostics.
 public enum KodoSeverity { Critical, Warning, Debug }
 
 internal static class KodoDiagnostics
@@ -22,8 +21,6 @@ internal static class KodoDiagnostics
     // Reattaches "Windows 10/11" from CurrentBuildNumber
     public static string OSDescription { get; } = ResolveOSDescription();
 
-    // Also gates whether kodo.log/crash.log keep accumulating across app launches
-    // (Debug Logging on) or each start fresh for the new session (Debug Logging off).
     public static bool VerboseLoggingEnabled { get; set; }
 
     // Rolling window of recent log lines, flushed into crash.log
@@ -32,9 +29,6 @@ internal static class KodoDiagnostics
     private static readonly Queue<string> _breadcrumbs = new();
     private static readonly object _breadcrumbLock = new();
 
-    // Per-session log initialization. Each log file is reset to empty exactly once per
-    // process - on its first write - unless Debug Logging is on at that moment, in which
-    // case the existing file is left alone and this session's entries are appended after it.
     private static readonly object _sessionInitLock = new();
     private static bool _kodoLogSessionInitialized;
     private static bool _crashLogSessionInitialized;
@@ -228,8 +222,6 @@ internal static class KodoDiagnostics
                 ? $"[Kodo] {message}"
                 : $"[Kodo] {message}{Environment.NewLine}{exception}");
 
-            // Debug traces (with or without an attached exception) only reach kodo.log
-            // when Debug Logging is on.
             if (!VerboseLoggingEnabled) return;
 
             if (exception is not null)

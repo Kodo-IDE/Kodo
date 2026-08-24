@@ -122,8 +122,6 @@ public partial class MainWindow
         IsRefreshingExtensions = true;
         ExtensionsStatusText = "Refreshing extensions...";
 
-        // Refresh watchdog: warns if the full refresh doesn't finish within GitHubOperationTimeout.
-        // suppressWatchdog=true when called from a step that already owns its own timeout handling.
         using var watchdogCts = new CancellationTokenSource();
         var watchdogToken = watchdogCts.Token;
         if (!suppressWatchdog)
@@ -140,8 +138,6 @@ public partial class MainWindow
                     return;
                 }
 
-                // Still refreshing after 7 s: build a descriptive TimeoutException
-                // and surface it through the standard Kodo warning dialog + log.
                 var timeoutEx = new TimeoutException(
                     $"Marketplace refresh did not complete within " +
                     $"{GitHubOperationTimeout.TotalSeconds:0} seconds. " +
@@ -164,7 +160,6 @@ public partial class MainWindow
 
         try
         {
-            // ScanInstalledExtensions runs off the UI thread; everything after is marshalled via InvokeAsync.
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
@@ -197,8 +192,6 @@ public partial class MainWindow
         }
         finally
         {
-            // Cancel the watchdog whether we succeeded, timed out, or threw - it
-            // must not fire after IsRefreshingExtensions has been cleared.
             await watchdogCts.CancelAsync();
             await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
         }
@@ -211,7 +204,6 @@ public partial class MainWindow
 
     private ExtensionScanResult ScanInstalledExtensions()
     {
-        // Drops cached highlighting definitions on reload since old LoadedExtension instances are now orphaned.
         var loadedExtensions = new List<LoadedExtension>();
         var extensionLoadErrors = new List<string>();
         var searchPaths = GetExtensionSearchPaths().ToList();
@@ -291,7 +283,6 @@ public partial class MainWindow
             }
         }
 
-        // Re-stamps IsActiveTheme since new LoadedExtension instances may have joined since it was set.
         foreach (var ext in ThemeExtensions)
             ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
 
@@ -368,8 +359,6 @@ public partial class MainWindow
                 var def = ParseTheme(themeElement, baseExt);
                 var entry = CloneBaseExtension(baseExt);
                 entry.ThemeDefinition = def;
-                // Make the Id unique so duplicate-checking works correctly.
-                // Mark index > 0 entries so they're hidden from the Installed list.
                 if (index > 0)
                     entry = entry with { Id = $"{baseExt.Id}_{def.ThemeId}", IsThemeSubEntry = true };
                 yield return entry;
@@ -424,8 +413,6 @@ public partial class MainWindow
             yield break;
         }
 
-        // ZipArchiveEntry streams are forward-only - read to memory first so we can
-        // enumerate the JSON array without the stream closing under us.
         using var themeStream = themeEntry.Open();
         using var ms = new MemoryStream();
         themeStream.CopyTo(ms);
@@ -549,7 +536,6 @@ public partial class MainWindow
             ext.NotifyAllBrushesChanged();
         }
 
-        // Keeps the active-theme dot in sync after brushes refresh, covering newly-added LoadedExtension instances.
         foreach (var ext in ThemeExtensions)
             ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
     }
@@ -566,8 +552,6 @@ public partial class MainWindow
 
         if (extension is null)
         {
-            // No extension matched - try to detect the language from file content.
-            // Result is cached per path so we only read the file once per session.
             if (!_contentSniffCache.TryGetValue(filePath, out var sniffed))
             {
                 sniffed = TryDetectLanguageFromContent(filePath);
@@ -636,8 +620,6 @@ public partial class MainWindow
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return url;
 
-        // github.com/blob viewer URL
-        // /{owner}/{repo}/blob/{branch}/{...path} -> Contents API
         if (uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
         {
             var segments = uri.AbsolutePath.TrimStart('/').Split('/');
@@ -653,8 +635,6 @@ public partial class MainWindow
             return url; // non-blob or third-party github.com URL - leave alone
         }
 
-        // raw.githubusercontent.com CDN URL
-        // /{owner}/{repo}/{branch}/{...path} -> Contents API, but only for Kodo's own repo.
         if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
         {
             var segments = uri.AbsolutePath.TrimStart('/').Split('/');
@@ -992,8 +972,6 @@ public partial class MainWindow
             if (firstLine is null)
                 return null;
 
-            // Map root-element signatures to a representative extension that an installed
-            // language extension already claims, so we reuse the full profile lookup.
             string? syntheticExt = null;
 
             if (firstLine.StartsWith("<Project", StringComparison.OrdinalIgnoreCase))
@@ -1165,8 +1143,6 @@ public partial class MainWindow
 
     private void ConfigureRainbowBrackets(LoadedExtension? ext)
     {
-        // Rainbow brackets have no meaning in plain text or markdown prose.
-        // Markdown fenced code blocks are colourised by _markdownColorizer independently.
         var isMarkdown = KodoExtensionIds.IsMarkdown(ext?.Id);
         _rainbowBracketColorizer.UpdateSyntax(isMarkdown ? null : ext);
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);

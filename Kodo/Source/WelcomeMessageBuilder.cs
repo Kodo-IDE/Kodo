@@ -11,7 +11,6 @@ internal static class WelcomeMessageBuilder
 
     private record HolidayEntry(string Name, string? Greeting);
 
-    /// Returns a HolidayEntry when date is a public holiday (or its eve) for country, or null.
     private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
     {
         var m = date.Month;
@@ -201,9 +200,7 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    // Astronomical calendar helpers: compute floating-date holidays algorithmically so they stay correct through 2100.
 
-    // Julian Day Number of the kth new moon since J2000 (Meeus ch.49); pass k+0.5 for the full moon.
     private static double MoonPhaseJdn(double k)
     {
         double T   = k / 1236.85;
@@ -263,7 +260,6 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    /// Finds the new or full moon in a given Gregorian year/month, or null if none falls in it.
     private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
     {
         double kApprox = (year - 2000) * 12.3685 + month - 1;
@@ -278,7 +274,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// Lunar New Year: the new moon between Jan 20-Feb 20 CST, after the sun enters Aquarius.
     private static DateTime? LunarNewYear(int year)
     {
         double kApprox = (year - 2000) * 12.3685;
@@ -293,7 +288,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // Holi: the full moon of the Hindu month Phalguna, falling in March (occasionally late February).
     private static DateTime? HoliDate(int year)
     {
         var march = MoonInMonth(year, 3, fullMoon: true);
@@ -302,11 +296,9 @@ internal static class WelcomeMessageBuilder
         return feb?.Day >= 20 ? feb : null;
     }
 
-    // Vesak (Buddha Day): the full moon of Vaisakha, observed in May by Theravada countries.
     private static DateTime? VesakDate(int year) =>
         MoonInMonth(year, 5, fullMoon: true);
 
-    // Converts an Islamic (Hijri) date to Gregorian via the tabular calendar, accurate to ±1 day.
     private static DateTime IslamicToGregorian(int iy, int im, int id)
     {
         int jdn = id
@@ -332,7 +324,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    /// Eid al-Adha: 10 Dhu al-Hijjah (Islamic month 12).
     private static DateTime? EidAlAdha(int year)
     {
         int hy = ApproxHijriYear(year);
@@ -344,7 +335,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // Hebrew calendar (Rosh Hashanah / Yom Kippur / Hanukkah): traditional molad-based calculation.
 
     private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
 
@@ -383,7 +373,6 @@ internal static class WelcomeMessageBuilder
         return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
     }
 
-    // Converts a Hebrew date to Gregorian. Months: Tishrei=1 ... Elul=12(13), with AdarII=7 in leap years.
     private static DateTime HebrewToGregorian(int hy, int hm, int hd)
     {
         const int HebrewEpoch = 347997; // JDN of 1 Tishrei AM 1
@@ -396,7 +385,6 @@ internal static class WelcomeMessageBuilder
 
     private static int ApproxHebrewYear(int gregorianYear) => gregorianYear + 3760;
 
-    // Rosh Hashanah: 1 Tishrei of the Hebrew year beginning in <paramref name="year"/>.
     private static DateTime? RoshHashanah(int year)
     {
         int hy0 = ApproxHebrewYear(year);
@@ -433,7 +421,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-    // Diwali: the new moon (Amavasya) of Kartika, falling in October or early November.
     private static DateTime? DiwaliDate(int year)
     {
         // Kartika new moon is always in the second half of October or early November.
@@ -444,7 +431,6 @@ internal static class WelcomeMessageBuilder
         return oct; // Fallback
     }
 
-    // Sharad Navratri: begins the day after the new moon of Ashwin, falling in September or early October.</summary>
     private static DateTime? NavratriDate(int year)
     {
         // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
@@ -495,8 +481,6 @@ internal static class WelcomeMessageBuilder
 
         var messages = new List<string>();
 
-        // Adds text to the pool `times` times - used to weight special-moment/holiday
-        // greetings so they dominate the pool on the day they apply.
         void Add(string text, int times = 1)
         {
             for (var i = 0; i < times; i++) messages.Add(text);
@@ -522,7 +506,6 @@ internal static class WelcomeMessageBuilder
             messages.Add($"Your workspace is ready, {name}.");
         }
 
-        // Holiday / special day: added multiple times (x8) so it dominates the pool on the day itself.
         var holiday = GetHolidayEntry(now, country);
         if (holiday?.Greeting is not null)
             Add(holiday.Greeting, 8);
@@ -539,7 +522,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("One year of fast, focused editing. Here's to many more! 🎉");
         }
 
-        // 11:11 wish moment: easter egg at exactly 11:11, weighted x8 like the other special-moment greetings.
         if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
             Add("11:11! Make a wish!", 8);
 
@@ -554,21 +536,17 @@ internal static class WelcomeMessageBuilder
         if (now.Month == 2 && now.Day == 29)
             Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.", 8);
 
-        // Programmer's Day (256th day of the year, Sept 12/13) and Pi Day (3/14) get the same easter-egg treatment.
         if (now.DayOfYear == 256)
             Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?", 8);
         if (now.Month == 3 && now.Day == 14)
             Add("Happy Pi Day! 🥧 3.14159265...", 8);
 
-        // New Year's Eve countdown: layers a countdown line over the last hour before midnight.
         if (now.Month == 12 && now.Day == 31 && now.Hour == 23)
         {
             Add("Almost midnight - one more commit before the new year?", 8);
             messages.Add("The countdown's on. Ship it before the ball drops!");
         }
 
-        // 2. Long weekend hints
-        // Weighted up so these feel timely when applicable.
         if (IsLongWeekendEve(now, country))
         {
             Add("Long weekend starts tomorrow - one more push!", 2);
@@ -655,8 +633,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("Another late one? Worth it.");
         }
 
-        // 5. Season-aware messages
-        // Hemisphere: 0 auto-detect, 1 northern, 2 southern.
         var isSouthern = userHemisphereIndex == 2
             || (userHemisphereIndex == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
         var month = now.Month;
@@ -696,7 +672,6 @@ internal static class WelcomeMessageBuilder
             messages.Add("Sweater weather, solid code.");
         }
 
-        // Neutral standby messages: excluded when a name is set, so the pool isn't diluted by messages that could have used it.
         if (string.IsNullOrWhiteSpace(name))
         {
             messages.Add("Welcome back!");

@@ -8,8 +8,6 @@ using Avalonia.Media.Imaging;
 
 namespace Kodo.Models;
 
-// Discriminated result from GetCachedIconAsync.
-// Extracted from MainWindow.axaml.cs:1469
 internal readonly record struct IconResult(Bitmap? Bitmap, string? SvgData)
 {
     public bool HasValue => Bitmap is not null || SvgData is not null;
@@ -49,11 +47,6 @@ internal sealed record ExtensionScanResult(
     List<LoadedExtension> Extensions,
     List<string> LoadErrors);
 
-// ---------------------------------------------------------------------------
-// Consolidated from previously fragmented files:
-// ExtensionCatalogOptions.cs, KodoExtensionIds.cs, LanguageSyntaxProfile.cs,
-// LoadedExtension.cs, MarketplaceExtension.cs
-// ---------------------------------------------------------------------------
 
 public static class ExtensionSortModes
 {
@@ -63,7 +56,6 @@ public static class ExtensionSortModes
     public const string UpdatesAvailable = "Updates Available";
 }
 
-// Backing values for the Extensions-page tabs: Installed, Languages, Themes, Plugins, and Compilers.
 public static class ExtensionsTabModes
 {
     public const string Installed = "Installed";
@@ -73,7 +65,6 @@ public static class ExtensionsTabModes
     public const string Compilers = "Compilers";
 }
 
-// Single source of truth for the built-in Markdown extension id, used by several colorizers.
 public static class KodoExtensionIds
 {
     public const string Markdown = "markdown-kodo-extension";
@@ -119,18 +110,13 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string[] Properties { get; set; } = [];
     public string[] Namespaces { get; set; } = [];
     public string[] Blacklist { get; set; } = [];
-    // Names the dead-code scanner should never flag (unused variable/function), e.g.
-    // framework-called hooks or conventionally-unused names for this language.
     public string[] DeadCodeIgnore { get; set; } = [];
-    // Extra implicit entry-point function names for this language, added on top of
-    // Insight's built-in list (main, WinMain, etc).
     public string[] DeadCodeEntryPoints { get; set; } = [];
     public string CommentLine { get; set; } = "//";
     public string CommentBlockStart { get; set; } = "/*";
     public string CommentBlockEnd { get; set; } = "*/";
     public string[] StringDelimiters { get; set; } = ["\"", "'"];
     public string[] MultiLineStringDelimiters { get; set; } = [];
-    // True: use a precise char-literal regex instead of an open string span (disableSingleQuoteStrings in language.json).
     public bool DisableSingleQuoteStrings { get; set; }
     public Dictionary<string, string> ColorTokens { get; set; } = new();
     public List<LanguageSyntaxProfile> SyntaxProfiles { get; } = [];
@@ -151,11 +137,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string ThemeCardPreviewBackground => ThemeDefinition?.PreviewBackground ?? "#000000";
     public string ThemeCardPreviewBorder => ThemeDefinition?.PreviewBorder ?? "#4A4A4A";
     public string ThemeCardAccent => ThemeDefinition?.Accent ?? "#8C00FF";
-    // True for the 2nd, 3rd, etc. entries split out of a multi-theme array -
-    // they appear in ThemeExtensions but are hidden from the Installed list.
     public bool IsThemeSubEntry { get; init; }
-    // Raw PNG or SVG bytes read from icon.png / icon.svg on the background scan thread.
-    // Decoded into IconImage (PNG) or SvgData (SVG) on the UI thread by ApplyLoadedExtensionsResult.
     public byte[]? IconBytes { get; set; }
     // Optional icon loaded from icon.png / icon.svg inside the .kox / folder
     public Bitmap? IconImage { get; set; }
@@ -221,10 +203,6 @@ public class MarketplaceExtension : INotifyPropertyChanged
     public string Description { get; init; } = string.Empty;
     public string IconUrl { get; init; } = string.Empty;
 
-    // Version/DownloadUrl/FileName are mutable (not init-only) because compiler entries now
-    // resolve these live from the vendor after the initial fast paint - see
-    // MainWindow.RefreshCompilerResolutionsAsync. Extensions still only ever set them once,
-    // at construction, so this is a no-op behavior change for the Marketplace tab.
     private string _version = string.Empty;
     public string Version
     {
@@ -246,12 +224,6 @@ public class MarketplaceExtension : INotifyPropertyChanged
         set { if (_fileName == value) return; _fileName = value; OnPropertyChanged(); }
     }
 
-    // Compiler-only metadata used by the editor's Run/Build buttons. Extensions never set these.
-    // FileExtensions maps open files onto this compiler; LanguageExtensionIds lists the language
-    // extensions it provides tooling for (so installing a compiler can also install its language
-    // counterpart). RunCommandTemplate/BuildCommandTemplate are command lines with {file}/{name}/
-    // {folder}/{args} placeholders; FileCommands override them per file extension where a compiler
-    // needs different tools for different file types (e.g. gcc for .c vs g++ for .cpp).
     public string[] FileExtensions { get; init; } = [];
     public string[] LanguageExtensionIds { get; init; } = [];
     public string? RunCommandTemplate { get; init; }
@@ -337,7 +309,6 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
 
-    // Installed with nothing to update - shown as a quiet status pill instead of an action button.
     public bool ShowInstalledBadge => IsInstalled && !IsUpdateAvailable;
 
     public string InstallButtonText
@@ -357,8 +328,6 @@ public class MarketplaceExtension : INotifyPropertyChanged
         ApplyInstalledState(isInstalled, installedExtension?.Version ?? string.Empty, installedExtension?.InstalledOnUtc, isUpdateAvailable);
     }
 
-    // Compilers aren't Kodo extensions (no LoadedExtension record), so their installed state
-    // comes from the local Compilers install registry instead - see SyncCompilerInstallStates.
     public void SetCompilerInstalledState(string? installedVersion, DateTime? installedOnUtc, bool isUpdateAvailable) =>
         ApplyInstalledState(installedVersion is not null, installedVersion ?? string.Empty, installedOnUtc, isUpdateAvailable);
 

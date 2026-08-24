@@ -197,7 +197,7 @@ public sealed class InsightSuggestion : ICompletionData
     }
 }
 
-// Predictive Insight engine: language candidates from the active .kox profile, plus per-file declared variables.
+// Predicts completions and diagnostics
 public sealed class InsightEngine
 {
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(StringComparer.OrdinalIgnoreCase);
@@ -228,10 +228,6 @@ public sealed class InsightEngine
         LoopOrHandlerBinding,
     };
 
-    // Batch `set` declarations: `set NAME=value`, `set "NAME=value"`, `set /a NAME=expr`,
-    // `set /p NAME=prompt`. Matched against the raw line, not the quote-masked copy - batch's
-    // quoting wraps the whole NAME=VALUE pair rather than delimiting a string literal, so
-    // masking would blank the variable name out along with the value.
     private static readonly Regex BatchSetDeclaration = new(
         @"^\s*set\s+(?:/a\s+|/p\s+)?""?([A-Za-z_][A-Za-z0-9_]*)\s*=",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -261,6 +257,7 @@ public sealed class InsightEngine
         @"(?:(?<=\s)|^)(?://|\#)(?!\S).*$|(?:(?<=\s)|^)(?://|\#)\s.*$",
         RegexOptions.Compiled);
 
+    // Blank out string contents for scans
     private static string MaskStringLiterals(string lineText)
     {
         if (lineText.IndexOfAny(['"', '\'']) < 0)
@@ -298,6 +295,7 @@ public sealed class InsightEngine
         return new string(chars);
     }
 
+    // Find variable names declared on line
     public static IEnumerable<string> IdentifyVariableInitializations(string lineText)
     {
         if (string.IsNullOrWhiteSpace(lineText))
@@ -311,8 +309,6 @@ public sealed class InsightEngine
             trimmed.Equals("REM", StringComparison.OrdinalIgnoreCase))
             return [];
 
-        // Batch `set` runs before quote-masking (see BatchSetDeclaration comment) and, when
-        // matched, is the line's only declaration - batch doesn't chain assignments per line.
         var batchMatch = BatchSetDeclaration.Match(trimmed);
         if (batchMatch.Success)
         {
@@ -339,6 +335,7 @@ public sealed class InsightEngine
         return found is null ? [] : found.Distinct(StringComparer.Ordinal);
     }
 
+    // Index variables for current file
     public void ScanDocument(string fileKey, string documentText)
     {
         if (string.IsNullOrEmpty(fileKey))
@@ -359,38 +356,26 @@ public sealed class InsightEngine
 
     public void ForgetFile(string fileKey) => _variablesByFile.Remove(fileKey);
 
-    // ---- Dead code detection ----
-    // Function declarations, keyword-style: function/def/fn/func/sub/proc name(...)
     private static readonly Regex KeywordFunctionDeclaration = new(
         @"\b(?:function|def|fn|func|sub|proc)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
         RegexOptions.Compiled);
 
-    // Function declarations, C-family style: [modifiers] ReturnType Name(args) { ...
-    // The trailing '{' on the same line keeps this from matching plain call statements.
     private static readonly Regex CStyleFunctionDeclaration = new(
         @"\b([A-Za-z_][A-Za-z0-9_]*)\s*\([^;{}]*\)\s*\{",
         RegexOptions.Compiled);
 
-    // A statement that unconditionally exits the current block: return/throw/break/continue.
     private static readonly Regex BlockTerminatorStatement = new(
         @"^\s*(?:return\b|throw\b|break\b|continue\b)[^{}]*;?\s*$",
         RegexOptions.Compiled);
 
-    // A line that could be a jump target (case/default/goto label) - unreachable-code
-    // detection stops here rather than flagging it, since something could still jump to it.
     private static readonly Regex PossibleJumpTarget = new(
         @"^(?:case\b|default\s*:|[A-Za-z_][A-Za-z0-9_]*\s*:)",
         RegexOptions.Compiled);
 
     private static readonly Regex ClosingBraceOnlyLine = new(@"^\}+;?$", RegexOptions.Compiled);
 
-    // Length of a line's real content, excluding a trailing '\r' left over from splitting
-    // \r\n text on '\n' alone - keeps highlighted spans from touching the line delimiter.
     private static int ContentLength(string line) => line.EndsWith('\r') ? line.Length - 1 : line.Length;
 
-    // Entry-point functions every language calls implicitly (via the runtime/OS, not another
-    // line of source) - flagging these as "unused" would greyed-out the entire file for any
-    // program that's just a single main function, which is more misleading than helpful.
     private static readonly HashSet<string> EntryPointNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "main", "wmain", "winmain", "wwinmain", "dllmain", "_start",
@@ -404,8 +389,6 @@ public sealed class InsightEngine
         return count;
     }
 
-    // A dead-code finding: a whole-line/whole-section span to grey out, plus a short
-    // human-readable reason (used for the hover tooltip).
     public sealed class DeadCodeSpan
     {
         public int StartOffset { get; }
@@ -420,21 +403,13 @@ public sealed class InsightEngine
         }
     }
 
-    // Heuristic, single-file dead code scan: unused variables, unused functions (with their
-    // whole body highlighted, not just the header), and code that's unreachable because it
-    // follows a return/throw/break/continue in the same block. Kodo has no real per-language
-    // parser (same constraint as the variable scanner above), so this works line-by-line with
-    // string/comment masking and brace-depth counting rather than a real AST - it will miss
-    // some cases and occasionally over-flag unusual formatting, but stays useful across
-    // Kodo's many supported languages without a language-specific implementation each.
+    // Find unused vars, funcs, unreachable code
     public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null)
     {
         var spans = new List<DeadCodeSpan>();
         if (string.IsNullOrEmpty(documentText))
             return spans;
 
-        // Extension-supplied additions: names that should never be flagged (unused var/func),
-        // and extra implicit entry-point function names on top of the built-in list.
         var ignoreNames = languageExtension?.DeadCodeIgnore is { Length: > 0 } ignoreArr
             ? new HashSet<string>(ignoreArr, StringComparer.OrdinalIgnoreCase)
             : null;
@@ -451,12 +426,6 @@ public sealed class InsightEngine
             offset += lines[i].Length + 1; // +1 accounts for the '\n' consumed by Split.
         }
 
-        // Comment/string-masked copy of every line, reused by all three passes below so
-        // matches never land inside a string literal or a line comment. Batch `set "NAME=..."`
-        // lines are left unmasked (comments only stripped): batch's quotes wrap the whole
-        // NAME=VALUE pair rather than delimiting a string, so masking them would erase the
-        // declaration's own occurrence of NAME and make CountWholeWord undercount by one,
-        // flagging correctly-used batch variables as unused.
         var masked = new string[lines.Length];
         for (var i = 0; i < lines.Length; i++)
         {
@@ -467,7 +436,6 @@ public sealed class InsightEngine
 
         int CountWholeWord(string name) => Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
 
-        // ---- Pass 1: unused variables (declared once, never referenced again) ----
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < lines.Length; i++)
         {
@@ -480,7 +448,6 @@ public sealed class InsightEngine
             }
         }
 
-        // ---- Pass 2: unused functions (never called anywhere else in the file) ----
         for (var i = 0; i < lines.Length; i++)
         {
             var line = masked[i];
@@ -502,8 +469,6 @@ public sealed class InsightEngine
             if (entryPoints is not null && entryPoints.Contains(name)) continue;
             if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
-            // Counts call-shaped usages (name followed by '('); the declaration itself
-            // always matches once, so more than one means it's called somewhere.
             var callSites = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\s*\(").Count;
             if (callSites > 1) continue;
 
@@ -525,7 +490,6 @@ public sealed class InsightEngine
             spans.Add(new DeadCodeSpan(start, end - start, "Unused function"));
         }
 
-        // ---- Pass 3: code unreachable after return/throw/break/continue ----
         for (var i = 0; i < lines.Length; i++)
         {
             if (!BlockTerminatorStatement.IsMatch(masked[i]))
@@ -566,10 +530,6 @@ public sealed class InsightEngine
     public IReadOnlyCollection<string> GetVariables(string fileKey) =>
         _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
 
-    // ---- Basic error detection ----
-    // A syntax-error finding: the whole line containing it gets a full-width red
-    // highlight (grey/red stripes when dead code covers the same line), plus a short
-    // human-readable message for the hover tooltip.
     public sealed class ErrorSpan
     {
         public int StartOffset { get; }
@@ -592,8 +552,6 @@ public sealed class InsightEngine
         @"^\s*(?:if|elif|else|for|while|def|class|try|except|finally|with)\b.*:\s*$",
         RegexOptions.Compiled);
 
-    // A line that plausibly ends a complete C-family statement even without a trailing
-    // ';' - closing punctuation, operators, or nothing worth flagging.
     private static readonly Regex StatementSafeLineEnd = new(
         @"[;{}:,\\+\-*/%&|^~<>=!\[(]$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
         RegexOptions.Compiled);
@@ -603,14 +561,11 @@ public sealed class InsightEngine
         @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
         RegexOptions.Compiled);
 
-    // A bare `Name =` (optionally type-annotated) with nothing after the '=' - an
-    // assignment that declares no value. The shared NotCompoundOrArrow guard keeps
-    // `==`, `=>`, and compound operators (`+=`, `<=`, ...) out of the match, and a
-    // trailing '\' (line continuation) skips the flag since the value continues below.
     private static readonly Regex EmptyAssignment = new(
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
         RegexOptions.Compiled);
 
+    // Edit distance for typo suggestions
     private static int LevenshteinDistance(string a, string b)
     {
         var dp = new int[a.Length + 1, b.Length + 1];
@@ -627,13 +582,7 @@ public sealed class InsightEngine
         return dp[a.Length, b.Length];
     }
 
-    // Heuristic, single-file error scan - same trade-off as the dead-code scanner above
-    // (no real per-language parser, so this is line/char based rather than a true AST).
-    // Hardcoded, language-agnostic checks: unmatched/unclosed brackets, unterminated
-    // string literals, and (self-detected) missing ';' or ':'. Anything that needs
-    // language-specific knowledge - like flagging a misspelled keyword - is driven by
-    // whatever the active language extension supplies (its Keywords list), so new
-    // languages/checks can be added via extensions instead of hardcoding a dictionary here.
+    // Basic bracket and syntax error check
     public List<ErrorSpan> FindErrors(string documentText, LoadedExtension? languageExtension = null)
     {
         var spans = new List<ErrorSpan>();
@@ -647,7 +596,6 @@ public sealed class InsightEngine
             ? mls
             : Array.Empty<string>();
 
-        // ---- Pass 1: bracket matching + unterminated strings (whole-document scan) ----
         var stack = new Stack<(char Bracket, int Offset)>();
         var inLineComment = false;
         var inBlockComment = false;
@@ -745,7 +693,6 @@ public sealed class InsightEngine
             spans.Add(new ErrorSpan(offset, 1, $"'{bracket}' is never closed it's missing a '{expectedClose}'"));
         }
 
-        // ---- Per-line passes: missing ';'/':' and misspelled keywords ----
         var lines = documentText.Split('\n');
         var lineStart = new int[lines.Length];
         var offsetAcc = 0;
@@ -759,9 +706,6 @@ public sealed class InsightEngine
         for (var i = 0; i < lines.Length; i++)
             masked[i] = TrailingLineComment.Replace(MaskStringLiterals(lines[i]), string.Empty);
 
-        // Self-detect statement style rather than hardcoding a language list: if the file
-        // already uses ';' to end statements, check for missing ones; otherwise, if it looks
-        // like a colon-block language (Python-style), check for missing trailing ':'.
         var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
         var looksSemicolonStyle = semicolonLines >= 3;
         var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
@@ -793,9 +737,6 @@ public sealed class InsightEngine
                     spans.Add(new ErrorSpan(lineStart[i] + contentLen - 1, 1, "Missing ':'"));
             }
 
-            // `Name =` with no value: flagged as its own error. Batch `set NAME=` is
-            // exempt (clearing a variable is legal there), and reserved words are never
-            // treated as assignment targets.
             var emptyAssignMatch = EmptyAssignment.Match(trimmedNoIndent);
             if (emptyAssignMatch.Success &&
                 !ReservedWords.Contains(emptyAssignMatch.Groups[1].Value) &&
@@ -808,8 +749,6 @@ public sealed class InsightEngine
                         $"'{emptyAssignMatch.Groups[1].Value}' declares nothing, expected a value after '='"));
             }
 
-            // Misspelled-keyword check: extension-driven, so it only runs for languages that
-            // supply a Keywords list (built-in fallback languages get no spellcheck here).
             if (knownKeywords is not null)
             {
                 var wordMatch = Regex.Match(trimmedNoIndent, @"^([A-Za-z_][A-Za-z0-9_]*)\b");
@@ -846,6 +785,7 @@ public sealed class InsightEngine
 
     public static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
+    // Find start of word at caret
     public static int FindWordStart(string documentText, int caretOffset)
     {
         var start = caretOffset;
@@ -949,6 +889,7 @@ public sealed class InsightEngine
         return callStack.Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name!).ToArray();
     }
 
+    // Ranked completions for prefix
     public List<InsightSuggestion> GetSuggestions(
         string prefix,
         string fileKey,

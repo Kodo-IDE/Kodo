@@ -22,19 +22,11 @@ internal static class Program
 
     private static async Task Main(string[] args)
     {
-        // When launched by the installer's [Run] section after an update,
-        // check whether we need to relaunch Kodo and then exit immediately.
         if (args.Length > 0 && args[0] == "--relaunch")
         {
             HandleRelaunchSentinel();
             return;
         }
-
-        // Launched from a temp copy of this exe (see PrepareProgressHelper)
-        // so it isn't the process the installer's [Code] section taskkills to
-        // free up KodoUpdater.exe for overwriting. Owns the whole
-        // dialog+installer+progress lifecycle on its own and exits when done -
-        // no mutex, no pipe listener, no resident loop.
         if (args.Length > 1 && args[0] == "--show-progress")
         {
             await ShowProgressAndInstallAsync(args[1]);
@@ -54,8 +46,6 @@ internal static class Program
 
         try
         {
-            // Start the named pipe listener on a background thread so it
-            // doesn't block the 30-minute poll loop.
             var pipeCts = new CancellationTokenSource();
             _ = Task.Run(() => PipeListenerLoopAsync(pipeCts.Token));
 
@@ -78,10 +68,6 @@ internal static class Program
             singleInstance?.Dispose();
         }
     }
-
-    // ── Named pipe listener ────────────────────────────────────────────────
-    // Kodo sends an InstallRequest JSON payload when it is about to exit so
-    // that KodoUpdater can show the installer-progress dialog.
 
     private const string PipeName = "Kodo-KodoUpdater-InstallCommand";
 
@@ -114,8 +100,6 @@ internal static class Program
                 var request = JsonSerializer.Deserialize<InstallRequest>(json, JsonOptions);
                 if (request is not null && !string.IsNullOrEmpty(request.InstallerPath))
                 {
-                    // Fire-and-forget: the handler runs Avalonia on an STA thread
-                    // and blocks until the installer exits (or is killed by it).
                     _ = Task.Run(() => HandleInstallRequestAsync(request));
                 }
             }
@@ -137,17 +121,9 @@ internal static class Program
         {
             if (request.Reopen)
                 WriteRelaunchSentinel();
-
-            // Run the dialog+installer from a temp copy of this exe, not this
-            // process - the installer's [Code] section taskkills the running
-            // KodoUpdater.exe by image name to free the file for overwriting,
-            // which would otherwise kill whichever process is showing the
-            // dialog partway through the install, before progress means much.
             var helperPath = PrepareProgressHelper();
             if (helperPath is null)
             {
-                // No UI possible - fall back to a silent, undialoged install
-                // so the update still lands.
                 Process.Start(new ProcessStartInfo
                 {
                     FileName  = request.InstallerPath,
@@ -171,9 +147,6 @@ internal static class Program
         await Task.CompletedTask;
     }
 
-    // Copies this running exe (self-contained single-file, so the copy is a
-    // fully standalone runnable binary) to a differently-named temp path that
-    // the installer's taskkill /IM KodoUpdater.exe won't match.
     private static string? PrepareProgressHelper()
     {
         try
@@ -201,8 +174,6 @@ internal static class Program
             IClassicDesktopStyleApplicationLifetime? appLifetime = null;
             var dialog = new InstallerProgressDialog();
 
-            // Show the Avalonia progress dialog on an STA thread (required by Win32).
-            // StartWithClassicDesktopLifetime blocks until lifetime.Shutdown() is called.
             var staThread = new Thread(() =>
             {
                 BuildAvaloniaApp().StartWithClassicDesktopLifetime(new string[0], lt =>
@@ -238,8 +209,6 @@ internal static class Program
                 }
                 catch
                 {
-                    // Best-effort - if the installer fails to launch, the
-                    // user is picked up on the next Kodo update check.
                 }
 
                 progressCts.Cancel();
@@ -256,8 +225,6 @@ internal static class Program
         }
         catch
         {
-            // Best-effort - if the dialog/install pipeline throws, the update
-            // itself has already been kicked off; nothing left to recover here.
         }
     }
 
@@ -281,7 +248,6 @@ internal static class Program
             }
             catch
             {
-                // File may be mid-write from the installer's own SaveStringToFile - just retry next tick.
             }
 
             try { await Task.Delay(150, ct).ConfigureAwait(false); }
@@ -301,9 +267,6 @@ internal static class Program
             .WithInterFont()
             .LogToTrace();
 
-    // ── Relaunch sentinel ──────────────────────────────────────────────────
-    // A small JSON file written before the installer runs and read by the
-    // fresh KodoUpdater.exe instance that the installer's [Run] section spawns.
 
     private static string RelaunchSentinelPath =>
         Path.Combine(Path.GetTempPath(), "Kodo-Update", "relaunch.json");
@@ -397,8 +360,6 @@ internal static class Program
 
         if (settings.AutoUpdateAppInBackgroundEnabled && !IsKodoRunning())
         {
-            // Fully silent path: install right away, no sentinel needed since
-            // there's nothing left for Kodo to prompt about.
             LaunchInstallerSilently(installerPath);
             return;
         }
@@ -433,8 +394,6 @@ internal static class Program
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
 
-    // KodoUpdater.exe is installed side-by-side with Kodo.exe, so its own
-    // directory is the install directory - no registry lookup needed.
     private static string ReadInstalledKodoVersion()
     {
         try
@@ -597,8 +556,6 @@ internal static class PendingUpdate
         }
         catch
         {
-            // Best-effort - if this fails, Kodo's next 6h in-app check just
-            // re-discovers the same update and prompts normally.
         }
     }
 

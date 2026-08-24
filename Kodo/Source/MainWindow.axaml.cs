@@ -57,23 +57,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DefaultDiscordLargeImageKey = "kodo_logo";
     private const string DefaultDiscordLargeImageText = "Kodo";
     private const string SettingsFileName = "kodosettings.json";
-    // Bounds for the drag-resizable terminal panel. Kept in sync with the
-    // RowDefinition's MaxHeight in MainWindow.axaml - if one changes, change both.
-    // Default lives on AppSettings (Models/AppSettings.cs) - it's a settings value, not
-    // just a UI bound, so the model is the single source of truth for it.
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
     private const string AutoSaveFailedMessagePrefix = "Save failed:";
-    // App version read from <InformationalVersion> in Kodo.csproj (bump only that tag).
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
     public string CopyrightText => $"© {DateTime.Now.Year} Kodo, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
-    // GitHub Contents API endpoint for the extension index JSON, fetched with the raw+json Accept header for direct file bytes.
     private static readonly string[] MarketplaceIndexUrls =
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/ExtensionsIndex.json",
     ];
-    // Same repo/format as the extension index, but lists standalone compiler installers instead.
     private static readonly string[] CompilerIndexUrls =
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/CompilerIndex.json",
@@ -90,7 +83,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string PrivacyPolicyUrl = "https://github.com/Kodo-IDE/Kodo/blob/main/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kodo-ide.github.io/Kodo-Website/";
-    // GitHub Contents API endpoint for ANNOUNCEMENTS.md, same raw+json Accept header as the marketplace index.
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
     private static readonly string NewsCachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -103,8 +95,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool _isNewsLoading = true;
     private bool _isNewsError;
-    // Performance mode: when on, toggled features are never pulled from local cache
-    // or GitHub and never shown on the home screen (see FetchAnnouncementsAsync).
     private bool _isPerformanceModeEnabled;
     private bool _newsDisabled;
     private bool _whatsNewDisabled;
@@ -125,15 +115,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    // Coalesces concurrent background saves into a single writer that always ends on the latest snapshot.
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
-    // Polls the Windows accent registry key so the blob and active accent stay
-    // live without requiring the Microsoft.Win32.SystemEvents NuGet package.
     private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _lastSeenWindowsAccentHex = string.Empty;
-    // Polls Windows' light/dark registry setting so the System Default preview swatch and active palette track it live.
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private string _lastSeenWindowsThemeName = string.Empty;
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
@@ -141,15 +127,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
     private readonly MarkdownColorizer _markdownColorizer = new();
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
-    // Predictive Insight: engine tracks per-file variables + language candidates,
-    // _completionWindow is the currently-open popup (null when nothing is showing).
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
     // Whole-line/whole-section grey highlighting for Insight's dead code detection.
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
-    // Whole-line red highlights (grey/red stripes on lines also flagged as dead code)
-    // for Insight's basic error detection.
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
     private readonly ErrorTextDarkener _errorTextDarkener = new();
     private EditorTab? _activeEditorTab;
@@ -163,17 +145,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private bool _isUpdatingAllExtensions;
-    // Guards the silent background sweep (AutoUpdateExtensionsIfEnabledAsync)
-    // so it never overlaps with itself or with the manual "Update All" button.
     private bool _isAutoUpdatingExtensions;
     private bool _isAutoUpdateExtensionsEnabled;
-    // Sub-setting of auto-update extensions: silent sweeps skip updating ExtensionsStatusText so nothing visibly changes.
     private bool _isAutoUpdateExtensionsInBackgroundEnabled;
-    // Whether whole-app updates (not just extensions) auto-install; kept separate since users may want one without the other.
     private bool _isAutoUpdateAppEnabled = true;
-    // Sub-setting: installs a found app update immediately instead of showing the Update Now/Later prompt.
     private bool _isAutoUpdateAppInBackgroundEnabled;
-    // Backs the manual Check for Updates button; separate from the silent startup check and the auto-update toggle.
     private bool _isCheckingForUpdatesManually;
     private string _checkForUpdatesStatusText = string.Empty;
     private string _developerOptionsStatusText = string.Empty;
@@ -186,9 +162,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWhatsNewExpanded;
     // Whether the opening splash (release notes and/or consent ask) is on screen.
     private bool _isUpdateSplashVisible;
-    // Whether this showing of the opening splash includes release notes vs. a consent-only ask.
     private bool _openingSplashShowsReleaseNotes;
-    // Version running at last launch; if older than current, release notes show once in the opening splash.
     private string _lastSeenVersion = string.Empty;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
@@ -197,7 +171,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWordWrapEnabled;
     // Defaults to true - predictive completion is on unless the user turns it off.
     private bool _isInsightEnabled = true;
-    // Sub-toggles under IsInsightEnabled - only shown/meaningful while Insight itself is on.
     private bool _isInsightCodeSuggestionsEnabled = true;
     private bool _isInsightDeadCodeEnabled = true;
     private bool _isInsightErrorDetectionEnabled = true;
@@ -208,7 +181,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isRestoreOpenTabsOnLaunchEnabled;
     private string _selectedExtensionsTab = ExtensionsTabModes.Installed;
     private bool _suppressDirtyTracking;
-    // True during startup so incidental SaveSettings() calls can't overwrite just-loaded settings.
     private bool _suppressSettingsSave;
     private bool _isDeveloperOptionsVisible;
     private bool _isVerboseLoggingEnabled;
@@ -216,7 +188,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _editorFontSize = 14;
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
     private string _customAccentHex = "#8C00FF";
-    // The accent colour supplied by the active theme; restored when switching back to "kodo" mode.
     private string _themeAccentHex = "#8C00FF";
     private bool   _hasThemeAccent  = false;
     private string _windowBackgroundHex = "#1E1E1E";
@@ -230,14 +201,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastDiscordPresenceState = string.Empty;
     private (string?, string?, int, string?, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
-    // True when settings.json did not exist on this launch - used to show the tutorial once.
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
-    // Anonymous analytics opt-in; defaults to false until the user answers the consent prompt, changeable later in Settings.
     private bool _isDataTrackingEnabled;
     private bool _hasRespondedToDataTrackingPrompt;
-    // Privacy Policy acknowledgment - separate from the data-tracking opt-in above. No decline
-    // path, so this only ever flips true; gates the same tutorial/splash flow as the consent card.
     private bool _hasAcceptedPrivacyPolicy;
     private bool _isPrivacyPolicyScrolledToBottom;
     private string? _privacyPolicyText;
@@ -255,18 +222,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private FileSystemWatcher? _extensionsFolderWatcher;
     private FileSystemWatcher? _projectExtensionsFolderWatcher;
 
-    // Watches the currently open project folder so the explorer tree stays in
-    // sync with changes made outside Kodo (git checkout/pull, other editors, etc.).
     private FileSystemWatcher? _projectFolderWatcher;
-    // Coalesces bursts of filesystem events (e.g. a git checkout touching hundreds
-    // of files) into a single tree rebuild instead of one per event.
     private readonly DispatcherTimer _fileTreeRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _extensionsRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
-    // Periodic background check for extension updates; only runs when auto-update extensions is enabled.
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
     // Periodic check for new Kodo releases, handled by AppUpdateScheduler.
     private readonly AppUpdateScheduler _appUpdateScheduler;
-    // Refreshes the marketplace listing hourly; always runs regardless of the auto-update-extensions setting.
     private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
     private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
     private readonly List<string> _startupOpenTabPaths = [];
@@ -276,13 +237,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
-    // Disk cache for the marketplace index JSON, alongside its ETag so an unchanged index returns a free 304.
     private string MarketplaceIndexCachePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json");
     private string MarketplaceIndexETagPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json.etag");
-    // In-memory ETag kept in sync with every successful 200 response.
-    // Null means no cache exists yet; loaded lazily from disk on first fetch.
     private string? _marketplaceIndexETag;
     // Same disk-cache pattern as the marketplace index, for CompilerIndex.json.
     private string CompilerIndexCachePath =>
@@ -290,16 +248,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string CompilerIndexETagPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json.etag");
     private string? _compilerIndexETag;
-    // Parsed CompilerIndex.json entries from the last compiler load - lets a failed install
-    // re-resolve a single compiler's download on demand (see RefreshSingleCompilerResolutionAsync).
     private List<CompilerIndexEntry> _compilerIndexEntries = [];
-    // Compilers install to a folder of their own (they're standalone toolchains, not Kodo
-    // extensions) - this JSON file is the source of truth for "is compiler X installed".
     private string CompilerInstallRegistryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "installed-compilers.json");
     private string CompilersFolderPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "Compilers");
-    // Manually-added/auto-detected compilers (not from CompilerIndex.json) - see ManualCompilerRecord.
     private string ManualCompilersRegistryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "manual-compilers.json");
     private Dictionary<string, ManualCompilerRecord> _manualCompilers = new(StringComparer.OrdinalIgnoreCase);
@@ -307,10 +260,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _hasRunCompilerAutoDetect;
     private Dictionary<string, InstalledCompilerRecord> _installedCompilers =
         new(StringComparer.OrdinalIgnoreCase);
-    // Debounces duplicate error dialogs (same context/exception/message) within a short burst.
     private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
 
-    // Timeout ceiling for any GitHub network op; past this we cancel, log, and show the standard error dialog.
     private static readonly TimeSpan GitHubOperationTimeout  = TimeSpan.FromSeconds(7);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -338,10 +289,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSearchBusy;
     private CancellationTokenSource? _searchCancellation;
     private readonly DispatcherTimer _searchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
-    // Debounces extension/settings search filtering when IsDebouncedSearchEnabled is on.
     private readonly DispatcherTimer _searchFilterDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
-    // Caches the enumerated file list (with ignore rules) for the currently
-    // open folder so repeated searches don't re-walk the tree.
     private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
     // Find-in-file highlight state: tracks all match offsets for live highlighting.
     private readonly FindHighlightRenderer _findHighlightRenderer = new();
@@ -363,7 +311,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _hoveredErrorReason;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
-    // Tracks the subscribed SessionExited handler so it can be unsubscribed before a new one attaches on Start().
     private EventHandler<IntPtr>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
@@ -380,12 +327,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _explorerPanelDragStartPointerX;
     private double _explorerPanelDragStartWidth;
 
-    // Caches compiled KodoHighlightingDefinition per extension; building one compiles several regexes, expensive per tab switch.
     private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LoadedExtension, CompiledSyntaxProfile> _compiledSyntaxProfileCache =
         new(ReferenceEqualityComparer.Instance);
-    // Caches content-sniffed language per file path to avoid re-reading extensionless files on every tab switch.
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
@@ -481,7 +426,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         { '`', '`' },
     };
 
-    // Closing characters - when typed over an existing auto-inserted closer, skip past it
     private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'', '`' };
     private static readonly Dictionary<string, string> FenceLanguageAliases = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -529,20 +473,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string ProjectExtensionsFolderPath =>
         Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
 
-    // Flat list that backs the ItemsControl – directories insert/remove their children in-place
     public ObservableCollection<FileTreeItem> FileTreeItems { get; } = new();
     public ObservableCollection<RecentFileItem> RecentFiles { get; } = new();
     public ObservableCollection<EditorTab> OpenTabs { get; } = new();
     public ObservableCollection<TerminalSession> TerminalSessions { get; } = new();
     public ObservableCollection<LoadedExtension> LoadedExtensions { get; } = new();
     public ObservableCollection<MarketplaceExtension> MarketplaceExtensions { get; } = new();
-    // Compilers (e.g. Shine) are standalone installer downloads, not Kodo extensions -
-    // tracked separately from MarketplaceExtensions and installed via CompilerIndex.json.
     public ObservableCollection<MarketplaceExtension> CompilerExtensions { get; } = new();
-    // Compilers the user pointed Kodo at by filepath, or that Kodo found on this machine on its
-    // own (see AutoDetectDefaultCompilersAsync) - not part of CompilerIndex.json, so they're kept
-    // out of CompilerExtensions to avoid being wiped out whenever that index refreshes. Merged
-    // into the Installed tab's compiler list in FilteredInstalledCompilerExtensions.
     public ObservableCollection<MarketplaceExtension> ManualCompilerExtensions { get; } = new();
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
     public ObservableCollection<TerminalShellOption> AvailableTerminalShells { get; } = new();
@@ -626,10 +563,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Settings toggle: performance mode lets you selectively disable News & Announcements
-    // and What's New release notes - they are not fetched from GitHub, not shown on the
-    // home screen (a "Disabled" note takes their place), and their refresh buttons are
-    // disabled. Nothing else is affected.
     public bool IsPerformanceModeEnabled
     {
         get => _isPerformanceModeEnabled;
@@ -754,7 +687,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public MainWindow(string? startupFilePath)
     {
-        // Suppresses SaveSettings() for the whole constructor + OnOpened sequence; cleared in OnOpened's finally block.
         _suppressSettingsSave = true;
 
         var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
@@ -769,9 +701,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dottedLineMargin = DottedLineMargin.Create();
         dottedLineMargin.VerticalAlignment = VerticalAlignment.Top;
         EditorTextBox.TextArea.LeftMargins.Add(dottedLineMargin);
-        // DottedLineMargin stretches to fill its container (the full viewport) by default,
-        // so on short files the separator runs past the last line into empty scroll space.
-        // Clamp it to the smaller of the document's real height or the viewport height.
         EditorTextBox.TextArea.TextView.VisualLinesChanged += (_, _) =>
         {
             var textView = EditorTextBox.TextArea.TextView;
@@ -786,29 +715,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_htmlEmbeddedColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_markdownColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
-        // Added last so it runs after the syntax colorizers above and can lighten
-        // whatever foreground color they've already set.
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_deadCodeTextBrightener);
-        // Added even later so pure-error red lines are forced to black text in light
-        // themes (dead-code stripes keep their own brighter treatment).
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_errorTextDarkener);
         EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
-        // Replaces the default LinkElementGenerator with one that trims trailing punctuation from link spans.
         var defaultLinkGen = EditorTextBox.TextArea.TextView.ElementGenerators.OfType<LinkElementGenerator>().FirstOrDefault();
         if (defaultLinkGen is not null)
             EditorTextBox.TextArea.TextView.ElementGenerators.Remove(defaultLinkGen);
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
         EditorTextBox.TextArea.TextView.ElementGenerators.Add(_colorSwatchGenerator);
-        // Shows a Ctrl+click tooltip over URLs, using the same regex as StrictLinkElementGenerator.
         EditorTextBox.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
-        // TerminalHostControl is shared across sessions (snapshot/restore), so one subscription for the window's lifetime is enough.
-        // Not subscribing to TerminalHostControl.TitleChanged: tab titles are derived from the
-        // workspace/working directory (see CreateTerminalSession), not the shell's self-reported
-        // OSC 0/2 title (which for PowerShell is just its own exe path, e.g. "...\v1.0\powershell.exe").
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
@@ -817,16 +736,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => QueueRefreshState();
-        // Insight's own popup closes itself on focus loss (window minimized, tabbed away
-        // from, etc.) - reopen it as soon as focus is back, so the user doesn't have to
-        // retype anything just to see it again.
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
         Activated += (_, _) => QueueInsightRefresh();
-		// Auto-completion: insert closing bracket/quote after opener, skip-over when typing a closer
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
-        // Registers Ctrl+wheel zoom in the tunnel phase so it fires before ScrollViewer consumes the scroll.
         ImageScrollViewer.AddHandler(
             InputElement.PointerWheelChangedEvent,
             ImageScrollViewer_OnPointerWheelChanged,
@@ -865,11 +779,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDataTrackingEnabled = settings.AllowDataTracking;
         _hasRespondedToDataTrackingPrompt = settings.HasRespondedToDataTrackingPrompt;
         _hasAcceptedPrivacyPolicy = settings.HasAcceptedPrivacyPolicy;
-        // Syncs the Aptabase client with the loaded consent choice (it defaults to disabled until now).
         AptabaseClient.SetEnabled(_isDataTrackingEnabled);
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
-        // Migration: upgrade legacy "kodo" mode with an active theme to "theme" mode so the accent preference isn't lost.
         _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
@@ -918,7 +830,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             installInBackground: () => IsAutoUpdateAppInBackgroundEnabled);
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
-        // Extensions load before ApplyTheme, both before DataContext = this, avoiding a startup flash.
         EnsureExtensionsFolder();
         SetupExtensionFolderWatchers();
         LoadExtensions();
@@ -931,7 +842,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         IsHomePageVisible = true;
 
-        // Kicks off the async marketplace refresh; LoadExtensions() already populated the theme synchronously.
         UpdateDiscordRichPresenceLifecycle();
         UpdateExtensionAutoUpdateLifecycle();
         _appUpdateScheduler.UpdateLifecycle();
@@ -941,16 +851,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
         RefreshMarketplaceConnectivityState();
-        // Poll the Windows accent registry every 2 s so the blob preview and
-        // active accent stay live without the Microsoft.Win32.SystemEvents package.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
             _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
             _windowsAccentPollTimer.Start();
 
-            // Same approach for the System Default theme blob - poll the
-            // light/dark registry value every 2 s so it stays live too.
             _lastSeenWindowsThemeName = ResolveSystemThemeName();
             _windowsThemePollTimer.Tick += WindowsThemePollTimer_OnTick;
             _windowsThemePollTimer.Start();
@@ -1041,8 +947,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LatestRelease = null;
             LatestReleaseStatusText = $"Could not load release info: {DescribeFetchFailure(ex)}";
 
-            // Log and surface the Kodo warning dialog so the user knows why the
-            // release panel is empty (timeout, rate-limit, no connectivity, etc.).
             KodoDiagnostics.LogDebug("Failed to fetch latest release info", ex);
             await ShowWarningDialogAsync("Latest release info fetch", ex);
         }
@@ -1055,10 +959,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Fetch announcements from GitHub
     private async Task FetchAnnouncementsAsync(bool forceNetwork)
     {
-        // Performance mode: never pull from the local cache or GitHub, and never show
-        // anything - the disabled state is already in place from the toggle setter.
         if (IsNewsDisabled)
         {
             NewsItems.Clear();
@@ -1156,6 +1059,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Cache news to disk
     private void SaveNewsCache()
     {
         try
@@ -1217,8 +1121,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Parses ANNOUNCEMENTS.md: "## Title", optional "> yyyy-MM-dd" date blockquote, body lines, then "---" between posts.
-    // Returned in reverse order so the latest entry appears first.
     private static List<NewsItem> ParseAnnouncementsMd(string md)
     {
         var items = new List<NewsItem>();
@@ -1377,7 +1279,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    // Extracts marketplace entries from raw JSON; shared by the disk-cache seed and live-fetch paths.
 
 
 
@@ -1448,6 +1349,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
+    // Extract file name from URL
     private static string TryGetFileNameFromUrl(string url)
     {
         try
@@ -1460,20 +1362,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // The first candidate is the declared "version" field and is trusted as-is, even if it
-    // doesn't match the v1.2.3 pattern (e.g. "8.0.404"). Every candidate after that is a
-    // fileName/URL - those are only used if a v1.2.3-style version can be *extracted* from
-    // them. Falling back to the raw fileName (as this used to do) meant a whole installer
-    // fileName like "dotnet-sdk-8.0.404-win-x64.exe" could out-compare "8.0.404" (its stray
-    // digits, e.g. the "64" in "x64", made it look like a "higher" version) and get displayed
-    // in place of the real version.
 
 
 
 
 
 
-    /// Converts a GitHub blob-viewer URL to the Contents API form for raw bytes.
+    // Normalize GitHub URL to raw
     private static string NormalizeGitHubBlobViewerUrl(string url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -1482,7 +1377,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             return url;
 
-        // Only rewrite github.com /blob/ viewer URLs - everything else is already fetchable.
         if (!uri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
             return url;
 
@@ -1499,24 +1393,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    // Owner/repo Kodo's own marketplace and compiler icons live in (see MarketplaceIndexUrls /
-    // CompilerIndexUrls). Only URLs pointing into this repo get rewritten to the Contents API -
-    // that's what lets Kodo-hosted icons be fetched with the raw+json Accept header. Third-party
-    // extension/compiler authors (e.g. Shine's own website repo) host their own icons and must be
-    // left as plain URLs: raw.githubusercontent.com already serves raw bytes directly, so routing
-    // it through api.github.com instead just trades a working CDN request for one that's subject
-    // to GitHub's unauthenticated API rate limit and can 404 on branch/path mismatches.
     private const string KodoExtensionsOwner = "Kodo-IDE";
     private const string KodoExtensionsRepo = "Kodo-Extensions";
 
-    /// Normalises GitHub URLs pointing at Kodo's own extensions repo to the Contents API form.
-    /// URLs for any other owner/repo (third-party icons) are returned unchanged.
 
 
 
 
 
-    /// True when the URL is a GitHub Contents API endpoint, used to decide whether to add the raw+json Accept header.
 
     private static bool IsGitHubContentsApiUrl(string url) =>
         !string.IsNullOrWhiteSpace(url) &&
@@ -1606,12 +1490,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrWhiteSpace(name))
             return string.Empty;
 
-        // Captures an optional pre-release suffix (-BETA, -rc1, -alpha.2, ...) along with the
-        // numeric version. Without this, extracting from "Shine-v0.8.0-BETA-Installer.exe" would
-        // return just "v0.8.0", dropping "-BETA" - which made this look like a stale/mismatched
-        // filename versus the declared "v0.8.0-BETA" version and triggered a find/replace that
-        // duplicated the suffix ("...v0.8.0-BETA-BETA-Installer.exe"), pointing the download URL
-        // at an asset that doesn't exist and causing an HTTP 404 on install.
         var match = Regex.Match(name, @"(?i)(v\d+(?:\.\d+)+(?:-[A-Za-z0-9]+(?:\.[A-Za-z0-9]+)*)?)");
         return match.Success ? match.Groups[1].Value : string.Empty;
     }
@@ -1635,8 +1513,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Shallow-clones a LoadedExtension so each theme entry gets its own object
 
 
-    // Loads a PNG from a stream and scales it to 48x48 if it is square,
-    // otherwise returns null so the text fallback is used.
     private static byte[]? ReadIconBytesFromStream(Stream stream)
     {
         try
@@ -1648,8 +1524,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return null; }
     }
 
-    // Must be called on the UI thread. Decodes raw PNG bytes into an Avalonia Bitmap
-    // and validates that the image is square (non-square icons are rejected).
     private static Bitmap? DecodeBitmapOnUiThread(byte[]? iconBytes)
     {
         if (iconBytes is null) return null;
@@ -1707,9 +1581,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Peeks at the first line to match known XML/MSBuild root elements, so ambiguous files still get highlighting.
 
 
+    // Check plain-text file type
     private static bool IsPlainTextFile(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
@@ -1740,7 +1614,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return ImagePreviewExtensions.Contains(ext);
     }
 
-    // Binary detection: sample up to 8 KB and flag null bytes, the standard git/editor heuristic.
     private static bool IsBinaryContent(string path)
     {
         try
@@ -1799,8 +1672,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Pushes a color further toward black or white, used to keep dead-code text reliably
-    // readable against its grey overlay regardless of the active theme's exact palette.
     private static Color PushTowardExtreme(Color color, bool towardWhite, double amount)
     {
         if (towardWhite)
@@ -1813,6 +1684,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return Color.FromArgb(color.A, Darken(color.R), Darken(color.G), Darken(color.B));
     }
 
+    // Apply editor font and settings
     private void ApplyEditorSettings()
     {
         if (EditorTextBox is null)
@@ -1850,8 +1722,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var langExt = GetLanguageExtension(_currentFilePath);
         CurrentLanguageExtension = langExt;
 
-        // Indent guides are only meaningful when a language extension is active.
-        // Plain-text files (.txt / .log / .text) return null from GetLanguageExtension.
         _indentGuideRenderer.IsEnabled = langExt is not null;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
@@ -1881,6 +1751,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshCurrentFileSyntaxHighlighting();
     }
 
+    // Reset syntax highlighters
     private void ClearEditorSyntaxState()
     {
         if (EditorTextBox is null)
@@ -1953,10 +1824,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Inline-code language detection now lives in SyntaxColorEngine.cs; this just supplies the loaded extensions.
 
 
-    // Sets the corrupted/unsupported state and fires all dependent property notifications.
     private void SetFileCorrupted(bool corrupted)
     {
         if (_isFileCorrupted == corrupted) return;
@@ -2061,7 +1930,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Master visibility flag for the opening splash (release notes and/or consent ask).
     public bool IsUpdateSplashVisible
     {
         get => _isUpdateSplashVisible;
@@ -2076,7 +1944,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Gates the release-notes section of the opening splash; false means a consent-only showing.
     public bool IsReleaseNotesSectionVisible => _isUpdateSplashVisible && _openingSplashShowsReleaseNotes;
 
     public string OpeningSplashTitleText => _openingSplashShowsReleaseNotes
@@ -2087,7 +1954,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? LatestReleaseDisplayName
         : "One quick question before you get back to it.";
 
-    // Backs the "Help improve Kodo" consent checkbox; any interaction counts as answered.
     public bool IsDataTrackingEnabled
     {
         get => _isDataTrackingEnabled;
@@ -2114,16 +1980,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // True until the user has answered the consent prompt at least once.
     public bool IsDataTrackingPromptVisible => !_hasRespondedToDataTrackingPrompt;
 
-    // True until the user has scrolled through and accepted the embedded Privacy Policy.
-    // Unlike the data-tracking card, there's no decline path - this only ever flips true.
     public bool IsPrivacyPolicyPromptVisible => !_hasAcceptedPrivacyPolicy;
 
-    // Gates the update splash's plain "Got it" dismiss button - only shown once neither
-    // consent card has anything left pending.
     public bool AreAllConsentPromptsResolved => !IsDataTrackingPromptVisible && !IsPrivacyPolicyPromptVisible;
 
-    // Flips true once the bound Privacy Policy ScrollViewer reaches the bottom of its
-    // extent (see PrivacyPolicyScrollViewer_OnScrollChanged); gates the Accept button.
     public bool IsPrivacyPolicyScrolledToBottom
     {
         get => _isPrivacyPolicyScrolledToBottom;
@@ -2135,12 +1995,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Resets the scroll gate so re-showing the card (fresh tutorial run, or a returning-user
-    // splash) always requires scrolling again before Accept is enabled.
     private void ResetPrivacyPolicyScrollState() => IsPrivacyPolicyScrolledToBottom = false;
 
-    // Lazily loads PRIVACY_POLICY.txt, bundled as an AvaloniaResource under Assets/, so it can
-    // render in-app instead of only linking out to the canonical hosted copy on GitHub.
     public string PrivacyPolicyText
     {
         get
@@ -2182,25 +2038,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Manual drag handling, mirroring TerminalPanelSplitter_OnPointer* - the splitter
-    // sits on the panel's right edge, so dragging right grows it.
 
 
 
 
 
 
-    // Guards against a stray PointerCaptureLost leaving the panel stuck in resize mode.
 
 
-    // Chevron (16) + its margin (2) + icon viewbox (32) + icon/name spacing (6) +
-    // ItemsControl margin (8) + a little breathing room so text never touches the
-    // scrollbar. Shared with ExplorerItemNameMaxWidthConverter so the live column
-    // width and the auto-fit width agree on the same chrome.
     internal const double FileTreeRowFixedOverhead = 16 + 2 + 32 + 6 + 8 + 10;
 
-    // Double-click the splitter to snap the panel to fit the widest currently-visible
-    // entry, the way VS Code's sidebar splitter does.
 
 
 
@@ -2260,8 +2107,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IEnumerable<LoadedExtension> VisibleLoadedExtensions =>
         LoadedExtensions.Where(e => !e.IsThemeSubEntry);
 
-    // Only the true "nothing installed" empty state - hidden while a search is
-    // active so it can't stomp on the "no matches" state below.
     public bool IsNoExtensionsVisible =>
         _selectedInstalledContentFilter != InstalledContentFilters.Compilers &&
         !VisibleLoadedExtensions.Any() && string.IsNullOrWhiteSpace(_extensionSearchText);
@@ -2288,20 +2133,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return dedupedCanonical.Concat(dedupedManuals);
     }
 
-    // Installed compilers use their own registry (installed-compilers.json) rather than
-    // LoadedExtension records - see SyncCompilerInstallStates. Count is deduplicated the same
-    // way as FilteredInstalledCompilerExtensions so managed + local for the same canonical
-    // (e.g. Go + local go.exe) counts as one. Search text is intentionally ignored here so the
-    // tab badge stays stable while typing.
     public int InstalledCompilersCount => GetDeduplicatedInstalledCompilerSourceNoFilter().Count();
-    // Drives whether the Installed/Marketplace list cards render at all, so an
-    // empty result (no installed extensions yet, or a search with zero matches)
-    // doesn't leave a hollow, padded card floating above the empty-state message.
     public bool HasVisibleInstalledExtensions => FilteredInstalledExtensions.Any();
     public bool HasVisibleMarketplaceExtensions => FilteredMarketplaceExtensions.Any();
     public bool HasVisibleCompilerExtensions => FilteredCompilerExtensions.Any();
-    // Combined visibility for the single Installed-tab list card that now holds both
-    // installed extensions and installed compilers as one continuous list.
     public bool HasVisibleInstalledExtensionsOrCompilers =>
         HasVisibleInstalledExtensions || HasVisibleInstalledCompilerExtensions;
     public bool HasVisibleInstalledExtensionsAndCompilers =>
@@ -2313,8 +2148,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasThemeExtensions => ThemeExtensions.Any();
 
 
-    /// ThemeExtensions grouped by name; multi-theme extensions collapse into one group.
-    /// Bind Settings/tutorial theme lists to this instead of <see cref="ThemeExtensions"/>.
 
     public IEnumerable<ThemeExtensionGroup> GroupedThemeExtensions =>
         ThemeExtensions
@@ -2365,15 +2198,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Plugins); }
     }
 
-    // Compilers tab, to the right of Plugins - lists standalone toolchain installers
-    // (e.g. the Shine compiler) sourced from CompilerIndex.json rather than Kodo extensions.
     public bool IsCompilersTabSelected
     {
         get => _selectedExtensionsTab == ExtensionsTabModes.Compilers;
         private set { if (value) SetSelectedExtensionsTab(ExtensionsTabModes.Compilers); }
     }
 
-    // The Languages/Themes/Plugins tabs share the marketplace browse UI (search, sort, tiles).
     public bool IsMarketplaceSectionTabSelected =>
         _selectedExtensionsTab is ExtensionsTabModes.Languages or ExtensionsTabModes.Themes or ExtensionsTabModes.Plugins;
 
@@ -2472,8 +2302,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _updateBannerDismissed;
     private bool _extensionUpdateBannerDismissed;
 
-    // Returns true if the current build is a -DEV build.
-    // DEV builds suppress all app update UI (but extension updating still works).
     private static bool IsDevBuild =>
         CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
 
@@ -2508,12 +2336,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (current != seen) return current > seen;
 
-        // Same numeric version - current is "newer" only if its suffix has higher priority
-        // (e.g. upgrading from v1.2.0-BETA to v1.2.0 stable should still show the splash).
         return VersionPriority(CurrentAppVersion) > VersionPriority(lastSeen);
     }
 
-    // Core version check ignores dismissal; -DEV builds never report updates. Priority: stable > beta > dev.
     public bool IsNewerVersionAvailable
     {
         get
@@ -2562,7 +2387,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? "No release notes available."
         : ConvertMarkdownToDisplayText(LatestRelease.Notes);
 
-    // Structured release notes: paragraphs of bold/normal runs, used by both the Settings and splash templates.
     public IReadOnlyList<FormattedParagraph> LatestReleaseFormatted =>
         string.IsNullOrWhiteSpace(LatestRelease?.Notes)
             ? [new FormattedParagraph { Runs = [new FormattedRun { Text = "No release notes available." }] }]
@@ -2615,8 +2439,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return text.Trim();
     }
 
-    // Pre-compiled regex patterns used by ConvertMarkdownToDisplayText - compiled
-    // once at class load time so repeated calls don't recompile on every access.
     private static readonly Regex MdCodeFenceRegex         = new(@"```(?:[\w#+.-]+)?\n?",         RegexOptions.Compiled);
     private static readonly Regex MdInlineCodeRegex        = new(@"`([^`]+)`",                    RegexOptions.Compiled);
     private static readonly Regex MdImageRegex             = new(@"!\[([^\]]*)\]\([^)]+\)",        RegexOptions.Compiled);
@@ -2720,8 +2542,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : isOrdered && orderedPrefix is not null ? orderedPrefix
                 : string.Empty;
 
-            // Bullets need a narrow column; ordered markers ("1." .. "99.")
-            // need a little more room so two-digit numbers don't clip.
             var markerColumnWidth = isBullet ? 18.0
                 : isOrdered ? 28.0
                 : 0.0;
@@ -2808,9 +2628,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // True when the marketplace has entries but some failed to load (partial error).
     public bool IsMarketplacePartialErrorVisible => MarketplaceExtensions.Count > 0 && IsMarketplaceConnectivityWarningVisible;
 
-    // Search produced zero results but the underlying list isn't actually empty -
-    // distinct from IsNoExtensionsVisible/IsMarketplaceEmptyVisible above, which
-    // previously fired (or failed to fire) regardless of the active search text.
     public bool IsInstalledSearchEmptyVisible =>
         _selectedInstalledContentFilter != InstalledContentFilters.Compilers &&
         !string.IsNullOrWhiteSpace(_extensionSearchText) &&
@@ -2822,8 +2639,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         MarketplaceExtensions.Any() &&
         !FilteredMarketplaceExtensions.Any();
 
-    // True when the active marketplace tab has no entries of its own type (no search text,
-    // no connectivity error, not mid-refresh) - distinct from IsMarketplaceSearchEmptyVisible.
     public bool IsMarketplaceEmptyVisible =>
         !IsRefreshingExtensions &&
         !IsMarketplaceConnectivityWarningVisible &&
@@ -2852,7 +2667,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // The welcome step (index 0) is not counted in "Step X of Y" - only the content steps are.
     public string TutorialStepLabel => $"Step {TutorialStepIndex} of {TutorialSteps.Length - 1}";
 
     public string TutorialProgressDotsText =>
@@ -2879,7 +2693,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
 
-    // Step 4 ("Settings") HighlightTwo contains "tab behavior" - swap for non-US users.
     public string TutorialHighlightTwo => (!IsAmericanEnglish && TutorialStepIndex == 4)
         ? CurrentTutorialStep.HighlightTwo.Replace("tab behavior", "tab behaviour")
         : CurrentTutorialStep.HighlightTwo;
@@ -2891,8 +2704,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool CanGoToPreviousTutorialStep => TutorialStepIndex > 0;
 
-    // True only on the final "Set up Kodo" step so the AXAML can show
-    // interactive personalisation controls instead of the spotlight text panel.
     public bool IsTutorialSetupStep => TutorialStepIndex == TutorialSteps.Length - 1;
     public bool IsNotTutorialSetupStep => !IsTutorialSetupStep;
 
@@ -2900,8 +2711,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsTutorialWelcomeStep => TutorialStepIndex == 0;
     public bool IsNotTutorialWelcomeStep => !IsTutorialWelcomeStep;
 
-    // Show the "Tutorial" page header only when opened deliberately from Settings,
-    // not on first-launch where the welcome splash is the first thing seen.
     public bool IsTutorialHeaderVisible => _tutorialOpenedFromSettings;
 
     public string TutorialPrimaryButtonText => TutorialStepIndex >= TutorialSteps.Length - 1 ? "Finish tutorial" : "Next";
@@ -2973,7 +2782,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// When on, also appends Debug-level traces to kodo.log; useful for diagnosing issues but noisy, so off by default.
 
     public bool IsVerboseLoggingEnabled
     {
@@ -2988,8 +2796,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Feedback shown under the Developer Options buttons after an action like
-    // "Copy Diagnostic Info" or "Clear Logs" completes. Empty until used.
     public string DeveloperOptionsStatusText
     {
         get => _developerOptionsStatusText;
@@ -3004,16 +2810,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasDeveloperOptionsStatus => !string.IsNullOrWhiteSpace(DeveloperOptionsStatusText);
 
-    /// Path to kodo.log (main log), shown in developer options.
     public string MainLogFilePath => KodoDiagnostics.MainLogFilePath;
 
-    /// Path to crash.log, shown in developer options.
     public string CrashLogFilePath => KodoDiagnostics.CrashLogFilePath;
 
-    /// Path to the folder that contains kodo.log and crash.log.    
     public string CrashLogFolderPath => KodoDiagnostics.LogDirectoryPath;
 
-    /// Path to the folder that contains kodosettings.json, shown in the button tooltip.
     public string SettingsFolderPath =>
         Path.GetDirectoryName(SettingsFilePath) ?? string.Empty;
 
@@ -3073,8 +2875,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isInsightEnabled == value) return;
             _isInsightEnabled = value;
             OnPropertyChanged();
-            // The two sub-toggles only make sense (and only show in Settings) while
-            // Insight itself is on - turning Insight off tears down both effects too.
             if (!_isInsightEnabled)
             {
                 CloseCompletionWindow();
@@ -3085,7 +2885,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-toggle: predictive completion popup. Only meaningful while IsInsightEnabled is true.
     public bool IsInsightCodeSuggestionsEnabled
     {
         get => _isInsightCodeSuggestionsEnabled;
@@ -3100,7 +2899,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-toggle: dead code highlighting. Only meaningful while IsInsightEnabled is true.
     public bool IsInsightDeadCodeEnabled
     {
         get => _isInsightDeadCodeEnabled;
@@ -3121,8 +2919,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-toggle: basic error detection (unmatched brackets, unterminated strings,
-    // missing ';'/':' , misspelled keywords). Only meaningful while IsInsightEnabled is true.
     public bool IsInsightErrorDetectionEnabled
     {
         get => _isInsightErrorDetectionEnabled;
@@ -3156,6 +2952,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // Build Insight ignore list
     private void RebuildInsightBlacklist()
     {
         _insightBlacklistSet.Clear();
@@ -3181,8 +2978,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isPSReadLinePredictionEnabled == value) return;
             _isPSReadLinePredictionEnabled = value;
             OnPropertyChanged();
-            // Rebuild the shell list so the launch arguments pick up the new setting;
-            // sessions already running are unaffected until restarted.
             RefreshAvailableTerminalShells(SelectedTerminalShell?.Id);
             SaveSettings();
         }
@@ -3273,8 +3068,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Performance setting: defer search filtering until the user stops typing.
-    // Only active while Performance mode is on (matches how the toggle is gated in the UI).
     public bool IsDebouncedSearchActive => IsPerformanceModeEnabled && _isDebouncedSearchEnabled;
 
     public bool IsDebouncedSearchEnabled
@@ -3302,9 +3095,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SettingsPage_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        // Clicking anywhere on the settings page background while the search box
-        // is focused should defocus it. Some targets (cards, ScrollViewer) aren't
-        // focusable, so LostFocus wouldn't fire on its own - force a focus clear.
         var box = this.FindControl<TextBox>("SettingsSearchTextBox");
         if (box is null) return;
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
@@ -3312,37 +3102,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Don't steal focus if the click was inside the TextBox itself.
         if (e.Source is Visual v && (v == box || v.GetVisualAncestors().Contains(box)))
             return;
-        // Steal focus to the parent grid (Avalonia stops caret blink automatically on LostFocus).
         var grid = this.FindControl<Grid>("SettingsPageGrid");
         if (grid is not null)
         {
             grid.Focusable = true;
             grid.Focus();
         }
-        // Fallback flush in case focus change doesn't trigger LostFocus (non-focusable click target).
         if (_searchFilterDebounceTimer.IsEnabled)
             _searchFilterDebounceTimer.Stop();
         if (_settingsSearchPending)
             FlushPendingSearchFilters();
     }
 
-    // Automatic settings search: instead of a hand-maintained keyword list per
-    // card, we walk each card's live visual tree and pull out every bit of text
-    // a user could actually read (labels, content, headers, tooltips, watermarks) -
-    // the same way a search engine indexes a page's rendered text rather than a
-    // curated meta-keywords tag. New cards/controls are searchable automatically
-    // as soon as they're named; nothing here needs to be updated for them.
-
-
-    // Rebuilt on every call rather than cached, so status text that changes at
-    // runtime (e.g. "Enable Insight" hints, version numbers) stays searchable -
-    // these cards are small, so re-walking them per keystroke is cheap.
 
 
 
 
-    // Search active, but every card was filtered out - lets the empty-state
-    // placeholder tell the difference from "Settings just hasn't loaded yet".
+
+
     private bool _isSettingsSearchEmpty;
     public bool IsSettingsSearchEmptyVisible => _isSettingsSearchEmpty;
 
@@ -3361,7 +3138,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Settings toggle: silently install extension updates instead of requiring a manual click.
     public bool IsAutoUpdateExtensionsEnabled
     {
         get => _isAutoUpdateExtensionsEnabled;
@@ -3378,7 +3154,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-setting: suppresses the "Auto-updating..." progress text so the silent sweep makes no visible change.
     public bool IsAutoUpdateExtensionsInBackgroundEnabled
     {
         get => _isAutoUpdateExtensionsInBackgroundEnabled;
@@ -3392,7 +3167,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Settings toggle: check GitHub Releases for a newer build after launch and offer to install it.
     public bool IsAutoUpdateAppEnabled
     {
         get => _isAutoUpdateAppEnabled;
@@ -3405,9 +3179,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
             _appUpdateScheduler.UpdateLifecycle();
 
-            // Keep KodoUpdater's logon-autostart registration in sync immediately, rather than waiting
-            // for Kodo to relaunch - flipping this off should stop it being resident right away, and
-            // flipping it on should make it survive the next reboot right away.
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
                 if (value) Task.Run(UpdateService.EnsureAutostartRegistered);
@@ -3416,7 +3187,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Sub-setting: installs a found app update immediately, no Update Now/Later prompt.
     public bool IsAutoUpdateAppInBackgroundEnabled
     {
         get => _isAutoUpdateAppInBackgroundEnabled;
@@ -3430,7 +3200,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Drives the Check for Updates button's disabled/label state while a manual check is running.
     public bool IsCheckingForUpdatesManually
     {
         get => _isCheckingForUpdatesManually;
@@ -3445,8 +3214,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string CheckForUpdatesButtonText => IsCheckingForUpdatesManually ? "Checking…" : "Check for Updates";
 
-    // Result of the most recent manual check ("You're up to date", "vX.Y.Z is
-    // available", or a failure message). Empty until the button is clicked.
     public string CheckForUpdatesStatusText
     {
         get => _checkForUpdatesStatusText;
@@ -3483,7 +3250,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             IEnumerable<MarketplaceExtension> source = MarketplaceExtensions;
 
-            // Each marketplace tab (Languages/Themes/Plugins) shows only its own extension type.
             var tabType = ActiveMarketplaceTabType;
             if (!string.IsNullOrEmpty(tabType))
             {
@@ -3527,8 +3293,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Drives visibility of the "add a compiler by path" bar - only shown in the Installed tab
-    // while its content filter is scoped to Compilers, not All or Extensions.
     public bool IsInstalledCompilersFilterSelected => _selectedInstalledContentFilter == InstalledContentFilters.Compilers;
 
     private string _manualCompilerPathText = string.Empty;
@@ -3543,13 +3307,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Installed compilers, surfaced in the Installed tab alongside LoadedExtensions -
-    // filtered by SelectedInstalledContentFilter (All / Extensions / Compilers) and search text.
-    // Combines index-installed compilers with manually-added/auto-detected ones (see
-    // ManualCompilerExtensions) into one deduplicated list: when a compiler is installed
-    // via the marketplace (installed-compilers.json) and a local/auto-detected counterpart
-    // exists with the same CanonicalCompilerId, they are collapsed into a single row so the
-    // Installed tab shows "one Go" / "one Python" instead of two identical cards.
     public IEnumerable<MarketplaceExtension> FilteredInstalledCompilerExtensions
     {
         get
@@ -3575,8 +3332,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsInstalledCompilersEmptyStateVisible =>
         !HasVisibleInstalledCompilerExtensions && _selectedInstalledContentFilter != InstalledContentFilters.Extensions;
 
-    // Compilers tab source list - same search behaviour as Marketplace, plus the
-    // Installed-only filter toggle (compilers have no Type/Theme/Language split).
     public IEnumerable<MarketplaceExtension> FilteredCompilerExtensions
     {
         get
@@ -3783,7 +3538,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (!_isResizingTerminalPanel) return;
 
-        // The splitter sits above the panel, so dragging up should grow it - the inverse of the pointer's delta.
         var deltaY = _terminalPanelDragStartPointerY - e.GetPosition(this).Y;
         TerminalPanelHeight = _terminalPanelDragStartHeight + deltaY;
         e.Handled = true;
@@ -3795,12 +3549,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _isResizingTerminalPanel = false;
         e.Pointer.Capture(null);
-        // Flushes the final height immediately instead of waiting on the debounce timer, in case of a quick resize-then-close.
         SaveSettings(immediate: true);
         e.Handled = true;
     }
 
-    // Guards against a stray PointerCaptureLost leaving the panel stuck in resize mode.
     private void TerminalPanelSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
         if (!_isResizingTerminalPanel) return;
@@ -3818,7 +3570,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (ReferenceEquals(_activeTerminalSession, value))
                 return;
 
-            // Saves the outgoing session's screen buffer; the tab stays restorable and shows as paused instead of exited.
             if (_activeTerminalSession is not null)
             {
                 if (TerminalHostControl.HasLiveProcess)
@@ -3867,7 +3618,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         var watchedSession = _activeTerminalSession;
                         void OnExited(object? s, IntPtr exitedHandle)
                         {
-                            // Rejects stale SessionExited posts by comparing the exiting process's handle to the one we started.
                             if (exitedHandle != expectedHandle)
                                 return;
 
@@ -4021,17 +3771,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar)).ToUpperInvariant()
         : "EXPLORER";
 
-    // Header row chrome that competes with the header text: border padding (12+12),
-    // accent bar (3) + its spacing to the text (6), and the four 28px activity
-    // buttons (new file/new folder/collapse-all/close, all visible together whenever
-    // a folder - and therefore a real folder name - is open).
     private const double ExplorerHeaderFixedChrome = 12 + 12 + 3 + 6 + 4 * 28;
 
     private static readonly Typeface ExplorerHeaderTypeface = new("Segoe UI", weight: FontWeight.SemiBold);
 
-    // Keeps the header text from being clipped under the activity buttons when the
-    // panel is dragged narrow: floors MinWidth at however wide ExplorerHeaderText
-    // actually renders, on top of the surrounding chrome.
     public double ExplorerPanelMinWidth
     {
         get
@@ -4059,7 +3802,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Personalization settings
 
-    /// ISO country code for the user, used to pick region-appropriate holiday messages.
     public string UserCountry
     {
         get => _userCountry;
@@ -4086,11 +3828,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// True when the user's country is US, driving American spelling instead of British/Canadian.
 
     public bool IsAmericanEnglish => _userCountry == "US";
 
-    // Regional spelling: US gets "Color"/"personalize"; everyone else gets "Colour"/"personalise".
     public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
     public string TooltipAccentTheme       => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
     public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
@@ -4101,7 +3841,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
 
 
-    /// Hemisphere override: 0 auto-detect, 1 north, 2 south; affects the inferred season for greetings.
 
     public int UserHemisphereIndex
     {
@@ -4118,7 +3857,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// UTC offset entered by the user; overrides the system clock for time-of-day greetings when set.
 
     public string UserTimezoneOffset
     {
@@ -4135,7 +3873,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// Optional display name for personalised greetings; empty omits the name.
 
     public string UserName
     {
@@ -4155,7 +3892,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Welcome message
 
 
-    /// Infers the user's country from OS regional settings; returns an ISO code or empty string if unknown.
 
     private static string DetectCountryCode()
     {
@@ -4169,18 +3905,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Holiday and greeting-pool logic lives in WelcomeMessageBuilder.cs.
 
-    // Lazily constructed per-instance so it can incorporate the personalization settings
-    // which are read from settings before DataContext is set.
     private string[]? _welcomeMessagesCache;
 
-    // The message picked for this pool generation, cached to avoid re-rolling on every read.
     private string? _selectedWelcomeMessage;
 
-    // Evaluated once per launch: true one in ten thousand times, showing the "Code fast. Stay light" tagline.
     private readonly bool _isTaglineGreeting = Random.Shared.Next(10_000) == 0;
     public bool IsTaglineGreeting => _isTaglineGreeting;
 
-    // One-in-a-million chance per launch that the "KODO" wordmark reads "Kode-o" instead.
     private readonly bool _isRareWordmarkVariant = Random.Shared.Next(1_000_000) == 0;
     public string KodoWordmarkText => _isRareWordmarkVariant ? "KODE-O" : "KODO";
 
@@ -4189,7 +3920,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly DateTime _kodoBirthDate = new(2026, 4, 18);
 
 
-    /// True on April 18, Kodo's birthday; drives celebratory UI accents throughout the app.
 
     public bool IsKodoBirthday
     {
@@ -4200,7 +3930,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// How old Kodo is today (whole years since April 18 2026).
     public int KodoBirthdayAge
     {
         get
@@ -4214,7 +3943,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// Short status-bar note shown on Kodo's birthday; empty every other day.
     public string StatusBarBirthdayText
     {
         get
@@ -4252,7 +3980,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // True when the user picked "follow Windows"; tracked off _requestedThemeName.
     public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
 
-    // Live preview for the System Default blob, reflecting Windows' current light/dark state regardless of the active theme.
     public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
     public IBrush SystemThemePreviewBorder     { get; private set; } = Brush.Parse("#2B2B2B");
 
@@ -4274,7 +4001,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Short human-readable label for the encoding of the active file, shown in the status bar.
     public string EncodingDisplayText
     {
         get
@@ -4372,7 +4098,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Only visible for plain-text files (.txt / .text / .log) that are open in the editor.
     public bool IsWordCountVisible =>
         IsTextEditorVisible && IsPlainTextFile(_currentFilePath);
 
@@ -4388,11 +4113,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
 
-    // Black or white, whichever contrasts better against AccentBrush, for text/icons drawn on the accent color.
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
 
-    // Returns Brushes.White or Brushes.Black depending on which gives better contrast
-    // against the supplied brush, using the WCAG relative-luminance formula.
 
 
 
@@ -4405,8 +4127,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return Color.FromArgb(c.A, Adjust(c.R), Adjust(c.G), Adjust(c.B));
     }
 
-    // Shared relative-luminance calculation (WCAG 2.x), used both for picking
-    // accent-button text and for the theme-pack text safety net below.
     private static double GetRelativeLuminance(Color c)
     {
         static double Lin(byte channel)
@@ -4429,11 +4149,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Returns whichever of white/black contrasts best against the given colour.
 
 
-    // Checks the candidate text color against every surface it's on, falls back to WCAG-safe black/white.
 
 
-    // Always reflects the live Windows accent colour; used by the Windows blob
-    // preview even when another accent mode is active.
     public IBrush WindowsAccentPreviewBrush { get; private set; } =
         Brush.Parse("#0078D4");
 
@@ -4454,14 +4171,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsAccentKodo    => _accentColorMode == "kodo";
     public bool IsAccentWindows => _accentColorMode == "windows";
     public bool IsAccentCustom  => _accentColorMode == "custom";
-    // True when the active theme supplies a preset accent colour.
-    // When true the "Theme" blob is shown alongside "Kodo", "Windows", and "Custom".
     public bool HasThemeAccent  => _hasThemeAccent;
-    // The "Theme" blob is active when the user has explicitly chosen to follow
-    // the theme-supplied accent (mode == "theme").
     public bool IsAccentTheme   => _accentColorMode == "theme";
-    // Solid-colour preview brush for the Theme blob, always reflects the
-    // accent supplied by the currently active extension theme.
     public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse("#8C00FF");
 
     public string CustomAccentHex
@@ -4721,8 +4432,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Cheap tuple key built from the primitive fields that drive presence strings.
-    // Avoids allocating display strings on every 75 ms refresh tick.
     private (string? filePath, string? folderPath, int tabCount,
              string? language, bool settings, bool extensions, bool home,
              bool improved) GetDiscordPresenceKey() =>
@@ -4868,17 +4577,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     // Settings persistence
 
-    // Keybinds -------------------------------------------------------------
-    // A small, fixed set of app-level commands whose gesture can be changed from
-    // Settings -> Help -> View Shortcuts. Editor-local single-key bindings (Tab, Enter,
-    // Backspace) and context-dependent ones (terminal search navigation, image zoom) aren't
-    // included - they either need a modifier-free key (which would collide with typing) or
-    // only make sense in one specific context.
-    //
-    // IsContextLocal marks bindings that only fire while a specific control is focused
-    // (currently the terminal). Two bindings are considered a conflict only when they share
-    // the same scope, so e.g. Ctrl+V can be "Paste" in the editor and "Paste" in the terminal
-    // at the same time.
 
     private static readonly KeybindDefinition[] KeybindDefinitions =
     {
@@ -4927,12 +4625,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return new KeyGesture(key, modifiers);
     }
 
-    // Mirrors the capture dialog's rule (Settings -> Help -> View Shortcuts): a gesture is
-    // only assignable if it carries at least one modifier key or is a bare function key.
-    // Bare keys like Enter, Tab, or Escape are deliberately not customizable - they'd
-    // otherwise collide with typing and (in the terminal) with keys the shell expects to
-    // receive as raw input. Hand-edited settings files are validated against this too, so
-    // an invalid gesture can never take effect even if it wasn't entered through the dialog.
     private static bool IsValidKeybindGesture(KeyGesture gesture) =>
         gesture.KeyModifiers != KeyModifiers.None ||
         (gesture.Key >= Key.F1 && gesture.Key <= Key.F24);
@@ -4953,14 +4645,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _keybinds[def.Id] = gesture;
         }
 
-        // Shares the live keybind table with the terminal so its copy/paste/search
-        // gestures follow the user's customizations (and any in-place edits from the
-        // shortcuts dialog) without re-wiring.
         TerminalHostControl.Keybinds = _keybinds;
     }
 
-    // Only the deltas from default are persisted, so future default changes (e.g. a new
-    // build remapping a command) still take effect for users who never touched that bind.
     private Dictionary<string, string> BuildCustomKeybindsSnapshot()
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -4975,8 +4662,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return result;
     }
 
-    // e.g. "Ctrl+Shift+F", ",", "Ctrl+/" - a friendlier rendering than KeyGesture.ToString()
-    // for the Oem* keys that show up in our default bindings.
     private static string FormatGesture(KeyGesture gesture)
     {
         var parts = new List<string>();
@@ -5009,8 +4694,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ => key.ToString(),
     };
 
-    // True if the pressed key event matches the current (possibly user-customized)
-    // gesture for the given command id. Falls back to false for unknown ids.
     private bool MatchesKeybind(KeyEventArgs e, string id) =>
         _keybinds.TryGetValue(id, out var gesture) &&
         e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
@@ -5026,15 +4709,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var json = File.ReadAllText(SettingsFilePath);
 
-            // An empty or whitespace-only file means a previous write was interrupted.
-            // Treat it like a missing file rather than overwriting with defaults.
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 
             if (json.Contains("\"CodePredictEnabled\"", StringComparison.Ordinal))
                 json = json.Replace("\"CodePredictEnabled\"", "\"InsightEnabled\"", StringComparison.Ordinal);
 
-            // Cap recursion depth so a deeply-nested or adversarial settings file
-            // cannot cause a StackOverflowException inside the deserializer.
             var opts = new JsonSerializerOptions { MaxDepth = 32 };
             var settings = JsonSerializer.Deserialize<AppSettings>(json, opts);
             if (settings is null) return new AppSettings();
@@ -5087,8 +4766,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private AppSettings BuildSettingsSnapshot()
     {
-        // Snapshot all UI-thread-owned state here, before the background task,
-        // so we don't access ObservableCollections or bound properties from a background thread.
         return new AppSettings
         {
             ThemeName                              = _requestedThemeName,
@@ -5171,8 +4848,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }
 
-        // Shutdown save runs synchronously, under the same lock as the background writer,
-        // so the last write reaches disk before exit.
         if (synchronous)
         {
             lock (_settingsWriteLock)
@@ -5185,8 +4860,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         lock (_settingsWriteLock)
         {
-            // Always replace, never queue multiple - only the most recent snapshot
-            // matters, and this is how concurrent calls get coalesced into one write.
             _pendingSettingsSnapshot = snapshot;
             if (_isPersistingSettings) return; // a writer loop is already running and will pick this up
             _isPersistingSettings = true;
@@ -5218,8 +4891,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Theme application
 
 
-    /// Sets theme brushes and <see cref="Application.RequestedThemeVariant"/> without notifications, saves, or refresh.
-    /// Call before <c>DataContext = this</c> so bindings read correct colors on first evaluation.
 
 
 
@@ -5229,10 +4900,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Reads the same registry value Windows uses for light/dark chrome; null means unreadable, not a definite answer.
 
 
-    // Resolves "System" to the concrete Light/Dark theme Windows currently reports, falling back to Dark.
 
 
     // Keeps the System Default preview live regardless of the active theme mode.
@@ -5267,9 +4936,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Invoked (via SingleInstance) when a second Kodo launch was redirected here instead
-    // of opening its own window - e.g. double-clicking another file in Explorer while
-    // Kodo is already running. Brings this window to front and opens the file as a tab.
     public async void ActivateFromSecondaryInstance(string? filePath)
     {
         if (WindowState == WindowState.Minimized)
@@ -5321,9 +4987,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
             {
-                // Only restore the folder if one of the tabs being restored actually
-                // came from it - otherwise a stale LastOpenedFolderPath from a folder
-                // the user has since closed would reopen unexpectedly.
                 if (!string.IsNullOrWhiteSpace(_startupFolderPath) &&
                     _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
                 {
@@ -5355,8 +5018,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
-            // Re-enable saves so that any *real* future change (the user toggling
-            // a setting, opening/closing a tab, etc.) persists normally.
             _suppressSettingsSave = false;
 
             // Only forces a write if a settings file already existed.
@@ -5370,7 +5031,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshLatestReleaseAsync(forceNetwork: false);
         _ = FetchAnnouncementsAsync(forceNetwork: false);
 
-        // Exactly one of tutorial (first launch) or What's New splash (subsequent launches) shows per run.
         var isReturningUser = _hasCompletedTutorial;
 
         if (_isFirstLaunch && !_hasCompletedTutorial)
@@ -5394,8 +5054,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void NewFile()
     {
-        // Navigate away from home BEFORE adding the tab, so the CollectionChanged
-        // notification evaluates IsEditorTabsVisible with IsHomePageVisible already false.
         NavigateTo(AppPage.Editor);
 
         var tab = CreateUntitledTab();
@@ -5405,9 +5063,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Shared by the folder picker and by startup tab restoration, so a folder
-    // opened either way ends up in the same state (tree populated, watcher armed,
-    // added to Recent).
     private async Task OpenFolderFromPathAsync(string path)
     {
         _currentFolderPath = path;
@@ -5523,31 +5178,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Starts (or restarts, if the folder changed) watching the open project
-    // folder for external changes so the tree can refresh itself automatically.
 
 
 
 
-    // Raised on the watcher's background thread - hop to the UI thread before
-    // touching the DispatcherTimer or anything else.
 
 
     private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
-        // Internal buffer overflow or the watched folder became inaccessible -
-        // fall back to a full refresh rather than trying to recover the watcher.
         Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
 
 
 
 
 
-    // Rebuilds the tree from disk, re-expanding whichever directories were
-    // expanded beforehand so an external change doesn't collapse the user's view.
 
 
-    // Like CreateFileTreeItemsAsync, but recurses into any directory whose path is
-    // in expandedPaths so previously-expanded subtrees come back expanded.
 
 
 
@@ -5575,9 +5220,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { return []; }
     }
 
-    // Mirrors Explorer's notion of "hidden": the actual Hidden/System file
-    // attributes, not a Unix-style leading dot. ".gitignore", ".env", etc. have
-    // no such attribute on Windows and so should show up like any other file.
     private static bool IsHiddenOnDisk(string path)
     {
         try
@@ -5619,8 +5261,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Snaps zoom to a clean percentage (0.25, 0.5, 0.75, 1.0, 1.25 …) to
-    // avoid floating-point drift making levels like 0.9999999 appear.
 
 
 
@@ -5656,7 +5296,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string GetDocumentDisplayName() =>
         HasFileOpen ? Path.GetFileName(_currentFilePath!) : "untitled.txt";
 
-    // Builds the OS window title with page/file state, simpler than the Discord RPC logic.
     private string BuildWindowTitle()
     {
         var birthday = IsKodoBirthday ? " 🎂" : string.Empty;
@@ -5687,16 +5326,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
-        // Clears the shared TextArea's selection/caret so they don't carry over from the previous tab.
         EditorTextBox.TextArea.ClearSelection();
         EditorTextBox.TextArea.Caret.Offset = 0;
-        // Clear the flag via a posted action so it stays true until after
-        // AvaloniaEdit's async TextChanged event has fired and been handled.
         Dispatcher.UIThread.Post(
             () => _suppressDirtyTracking = false,
             DispatcherPriority.Background);
-        // EditorTextBox_OnTextChanged bails out early while _suppressDirtyTracking is true,
-        // so tab switches/loads need their own nudge to refresh Insight (suggestions + dead code).
         QueueInsightRefresh();
     }
 
@@ -5716,7 +5350,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ?? AvailableTerminalShells.FirstOrDefault();
     }
 
-    /// Derives a tab-title-friendly name from the workspace/working-directory path (e.g. "Kodo" from ".../Kodo"), falling back to the shell name for root paths.
     private static string GetWorkspaceDisplayName(string workingDirectory, string fallback)
     {
         if (string.IsNullOrWhiteSpace(workingDirectory))
@@ -5732,8 +5365,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!string.IsNullOrWhiteSpace(ActiveTerminalSession?.WorkingDirectory) && Directory.Exists(ActiveTerminalSession.WorkingDirectory))
             return ActiveTerminalSession.WorkingDirectory;
 
-        // The active file's directory takes priority over _currentFolderPath, unless the
-        // active file lives inside the open folder.
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
             var fileDirectory = Path.GetDirectoryName(_currentFilePath);
@@ -5765,8 +5396,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else
             IsTerminalVisible = !IsTerminalVisible;
 
-        // Do NOT auto-spawn a shell when the panel opens - the user must click
-        // "Create terminal" or use Ctrl+Shift+` to start one explicitly.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
             FocusActiveTerminal();
     }
@@ -5812,9 +5441,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusActiveTerminal();
     }
 
-    /// Tracks the active session's live working directory (via the shell's OSC 1337 CWD reports,
-    /// see <see cref="TerminalShellSupport.DetectTerminalShells"/>) and keeps tab titles in sync
-    /// as the user cd's around.
     private void TerminalHostControl_OnWorkingDirectoryChanged(object? sender, string path)
     {
         if (ActiveTerminalSession is not { } session) return;
@@ -5847,7 +5473,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void StartTerminalProcess(TerminalSession session, TerminalShellOption shell)
     {
-        // Marks the session as launching; the exit watcher is wired elsewhere to avoid duplicates.
         session.IsRunning = true;
         session.StatusText = "Launching...";
     }
@@ -6173,8 +5798,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsInstalledTabSelected = true;
 
-    // Switches to one of the marketplace tabs (Languages/Themes/Plugins) and refreshes the
-    // listing (respecting the normal refresh cooldown).
     private void LanguagesTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenMarketplaceTab(ExtensionsTabModes.Languages);
 
@@ -6185,8 +5808,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Used by the "Visit Marketplace" button on the home screen -
-    // opens the Extensions page AND switches to the Marketplace tab
 
 
     private void RefreshNewsButton_OnClick(object? sender, RoutedEventArgs e)
@@ -6209,12 +5830,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ = RefreshLatestReleaseAsync(forceNetwork: false);
     }
 
-    // Only reachable once any pending consent ask is resolved, so the splash can't be dismissed past an unanswered question.
     private void DismissUpdateSplashButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsUpdateSplashVisible = false;
 
-    // Shared consent card: declining counts as answering, same as accepting. Only auto-dismisses
-    // the splash once the Privacy Policy prompt (if also pending) has been resolved too.
     private void AcceptDataTrackingButton_OnClick(object? sender, RoutedEventArgs e)
     {
         IsDataTrackingEnabled = true;
@@ -6227,8 +5845,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (IsUpdateSplashVisible && !IsPrivacyPolicyPromptVisible) IsUpdateSplashVisible = false;
     }
 
-    // No decline path - this is acknowledgment of terms, not an opt-in. Only reachable once
-    // IsPrivacyPolicyScrolledToBottom is true (button is disabled until then).
     private void AcceptPrivacyPolicyButton_OnClick(object? sender, RoutedEventArgs e)
     {
         _hasAcceptedPrivacyPolicy = true;
@@ -6238,7 +5854,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SaveSettings();
     }
 
-    // Tracks whether the embedded Privacy Policy ScrollViewer has been scrolled to its bottom.
     private void PrivacyPolicyScrollViewer_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (sender is not ScrollViewer scrollViewer) return;
@@ -6304,7 +5919,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (Exception ex)
         {
-            // CheckAndHandleUpdateAsync already swallows failures, but guard here too so a manual click can never crash the page.
             CheckForUpdatesStatusText = "Couldn't check for updates. Check your connection and try again.";
             KodoDiagnostics.LogDebug("Manual check-for-updates failed", ex);
         }
@@ -6327,12 +5941,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            // A button labelled "Open Releases Page" silently installing and exiting Kodo out
-            // from under the user is not what they clicked for - always just check and show
-            // the dialog here. Actual background installs are KodoUpdater.exe's job.
             var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
             if (update is null)
-                // No installer asset found (rate-limited, draft release, etc.) - fall back to the releases page.
                 OpenUrl(ReleasesPageUrl);
         }
         finally
@@ -6356,9 +5966,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ViewShortcutsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Non-rebindable reference list - context-specific keys that only fire inside an
-        // active terminal search overlay and rely on modifier-free keys (which would collide
-        // with typing the query), so they're not exposed in the editable list.
         var fixedShortcuts = new (string Gesture, string Description)[]
         {
             ("Enter / F3",         "Next search match (in terminal)"),
@@ -6630,9 +6237,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Content               = content,
         };
 
-        // Captures the next key combo while a row is in "Press keys..." mode. Runs in the
-        // tunnel phase (with handledEventsToo) so it sees the key before any control inside
-        // the dialog would otherwise consume it.
         dialog.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
         {
             if (capturingId is null) return;
@@ -6654,8 +6258,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             keyArgs.Handled = true;
             var newGesture = new KeyGesture(keyArgs.Key, keyArgs.KeyModifiers);
 
-            // A gesture with no modifiers at all would normally fight with regular typing,
-            // so it's only allowed for keys that never appear in text input (function keys).
             if (!IsValidKeybindGesture(newGesture))
             {
                 statusText.Text = "Shortcuts need at least one modifier key (Ctrl, Alt, Shift, or Win), unless it's a function key.";
@@ -6664,9 +6266,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             var capturingDef = KeybindDefinitions.First(d => d.Id == capturingId);
-            // Conflicts are only reported within the same scope: context-local bindings
-            // (terminal) may reuse a chord that a global binding already uses, since they
-            // can't be active at the same time.
             var conflict = KeybindDefinitions.FirstOrDefault(d =>
                 d.Id != capturingId &&
                 d.IsContextLocal == capturingDef.IsContextLocal &&
@@ -6870,7 +6469,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : "No logs to clear.";
     }
 
-    // Builds a bug-report snapshot shared by Copy Diagnostic Info and Export Kodo Data.
     private string BuildDiagnosticReport()
     {
         var sb = new StringBuilder();
@@ -7047,8 +6645,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Re-expands directories that were open before a tree refresh.
-    // Works top-down: a parent must be expanded before its children are visible.
     private async Task RestoreExpandedPathsAsync(HashSet<string> expandedPaths)
     {
         // Keep expanding until no more progress can be made (handles nested directories).
@@ -7109,8 +6705,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    /// After a rename or move, updates every open tab under <paramref name="oldPath"/> to the new location,
-    /// patching <c>_currentFilePath</c> if the active tab is affected.
 
     private void RetargetTabPaths(string oldPath, string newPath, bool wasDirectory)
     {
@@ -7142,7 +6736,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    /// Shows a small modal asking for a new name; returns the trimmed input, or null if cancelled/empty.
 
 
     private async Task ActivateEditorTabForMenuActionAsync(EditorTab tab)
@@ -7186,8 +6779,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(Path.GetFileName(tab.Path));
     }
 
-    // Closes every open tab positioned after the clicked one, mirroring
-    // Close Others' pattern but scoped to one side of the tab strip.
 
 
 
@@ -7224,9 +6815,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Opens a new terminal session rooted at the clicked item's own directory
-    // (or its containing folder, for a file) instead of the usual
-    // ResolveTerminalWorkingDirectory() fallback chain.
 
 
 
@@ -7338,13 +6926,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Ctrl+F and the search button both route through the same menu now.
-    // Picking a mode opens the panel directly.
 
 
-    // Clicking a mode tab inside the panel. Unlike ToggleSearchPanel this never
-    // closes the panel - it just switches the active mode (and shows a hint if
-    // the chosen mode can't run yet, e.g. Project search with no folder open).
 
 
 
@@ -7389,8 +6972,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Walks the open folder's whole tree, skipping ignored directories and
-    // guarding against directory cycles (junction points etc.).
 
 
 
@@ -7417,19 +6998,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Encoding detection & change
 
 
-    /// Detects a file's encoding from its BOM, falling back to UTF-8 (no BOM).
 
 
 
 
-    /// Shows an encoding picker and immediately re-saves the file if a different encoding is chosen.
 
     private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (!HasFileOpen) return;
 
-        // CodePagesEncodingProvider is required for non-Unicode encodings (e.g. 1252) on
-        // .NET Core / .NET 5+. Registering it more than once is safe - it's a no-op.
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
         // Build the list defensively: skip any encoding the current runtime can't supply.
@@ -7457,7 +7034,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         System.Text.Encoding? chosen = null;
         Window? dialog = null;
 
-        // Resolves the live accent color so the encoding highlight matches the active theme.
         var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? accentSolid.Color
             : Color.Parse("#8C00FF");
@@ -7564,15 +7140,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Mirrors VS Code's "Find All Occurrences": grabs the current selection,
-    // drops it into Find, and opens the Find panel with every match
-    // highlighted (via UpdateFindHighlights, triggered by the FindText set
-    // below) - no jump to Replace, unlike Change All Occurrences.
 
 
-    // Mirrors VS Code's "Change All Occurrences": grabs the current selection,
-    // drops it into Find, and opens the Find/Replace panel so the user can
-    // type a replacement and hit Replace All.
     private void EditorChangeAllOccurrencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
@@ -7582,9 +7151,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FindText = selectedText;
         OpenSearchPanel(SearchMode.FindInFile);
 
-        // Send focus to the Replace box instead of the Find box, since the
-        // find term is already filled in and the user's next move is typing
-        // the replacement.
         Dispatcher.UIThread.Post(() =>
         {
             var replaceTextBox = this.FindControl<TextBox>("ReplaceTextBox");
@@ -7641,19 +7207,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Starts/stops the extension auto-update timer to match IsAutoUpdateExtensionsEnabled; called at startup and on toggle.
 
 
-    // The app auto-updater's timer and tick handler now live in AppUpdateScheduler (Updater.cs).
 
-    // Fires every few hours while Kodo is open and the setting is enabled, so
-    // extensions published mid-session aren't only picked up on next launch.
 
 
     // Fires hourly to keep the Marketplace tab current, even with auto-update off.
 
 
-    // Used on startup: refreshes extensions/marketplace first, then silently installs pending updates if opted in.
 
 
     // Silently installs pending updates when opted in; guards against overlap.
@@ -7663,8 +7224,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Shows a Ctrl+click tooltip and hand cursor over URLs, or the dead-code reason when
-    // hovering a greyed-out span; only fires on state transitions, not every pixel of movement.
 
 
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
@@ -7678,18 +7237,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         textView.Cursor = new Cursor(StandardCursorType.Ibeam);
     }
 
-    // Returns the combined Insight tooltip for the line under the pointer: the error
-    // message(s) for any error touching the line, plus the dead-code reason when the
-    // pointer is inside a greyed-out span (e.g. "Missing ';'" + "Unused variable").
-    // Null when neither applies.
 
 
-    // Returns the dead-code reason ("Unused variable", "Unreachable code", etc.) at the
-    // given pointer position, or null if it isn't over a greyed-out span.
 
 
-    // Returns true if the given pointer position (relative to the TextView, not
-    // scroll-adjusted) falls within any URL span on the visible line.
     private bool IsPointerOverLink(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
     {
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -7712,33 +7263,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return false;
     }
 
-    // TextEditor fires EventHandler (not RoutedEventHandler) - signature must match exactly
 
 
 	// Fires before the character is written; skips an auto-inserted closing character.
 
 
-    // Fires AFTER the character has been written into the document.
-    // Used to insert the matching closing character right after the opener.
 
 
     // Insight (predictive completion popup)
 
-    // Recomputes and shows/updates/hides the completion popup based on the word at
-    // the caret. Called after every real text edit (see EditorTextBox_OnTextChanged).
 
 
 
 
     // Insight (dead code highlighting)
 
-    // Recomputes the grey dead-code highlights for the active document. Heuristic and
-    // regex/brace-based (Kodo has no real per-language parser) - same trade-off Insight's
-    // variable tracker already makes. Runs on the same debounce timer as UpdateInsight.
 
 
-    // Clears both the grey background and the text-brightening effect, and forces a redraw
-    // so stale highlighting doesn't linger (e.g. after switching to a blacklisted file).
     private void ClearDeadCodeHighlighting()
     {
         _deadCodeHighlightRenderer.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
@@ -7749,8 +7290,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.Redraw();
     }
 
-    // Recomputes the whole-line red error highlights for the active document. Same
-    // heuristic/regex trade-off as dead-code highlighting - runs on the same debounce timer.
     private void UpdateErrorHighlighting()
     {
         if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled ||
@@ -7765,8 +7304,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var spans = _InsightEngine.FindErrors(EditorTextBox.Document.Text, CurrentLanguageExtension);
         _errorHighlightRenderer.SetSpans(spans);
-        // Runs right after UpdateDeadCodeHighlighting on the same tick, so these spans are
-        // fresh - they decide which error lines render as grey/red stripes vs plain red.
         _errorHighlightRenderer.SetDeadCodeSpans(_deadCodeHighlightRenderer.Spans);
         _errorTextDarkener.SetSpans(spans, _deadCodeHighlightRenderer.Spans);
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
@@ -7783,15 +7320,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.Redraw();
     }
 
-    // Row geometry - kept as named constants so the popup's MaxHeight can be an
-    // exact multiple of a row, rather than cutting off partway through one.
     private const double InsightRowHeight = 26d;
     private const double InsightListVerticalPadding = 8d;  // ListBox Padding(0,4) top+bottom
     private const double InsightBorderThickness = 2d;      // 1px top + 1px bottom
     private const int InsightVisibleRows = 8;
 
-    // Builds a CompletionWindow styled to match Kodo's own panels (CardBrush background,
-    // SurfaceBorderBrush border, accent-tinted selected row).
 
 
 
@@ -7990,8 +7523,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         CurrentImagePreview = null;
     }
 
-    // Runs on the UI thread every 2 s; re-applies the accent only when the
-    // registry value has actually changed, so there's no unnecessary work.
 
 
     // Runs every 2s; refreshes the System Default preview on a Windows theme change.
@@ -8044,8 +7575,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NavigateTo(AppPage.Home);
     }
 
-    // Gates every path that can end the tutorial until consent is answered and the Privacy
-    // Policy has been accepted.
     private bool TryFinishTutorial()
     {
         if (IsDataTrackingPromptVisible || IsPrivacyPolicyPromptVisible)
@@ -8080,7 +7609,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void MainWindow_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Doesn't swallow keys when the terminal is focused; also stops Escape stealing focus.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
@@ -8092,7 +7620,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
 
-        // Escape - dismiss the search panel / Settings / Extensions / Tutorial / WhatsNew and return to editor
         if (MatchesKeybind(e, "CloseOverlay"))
         {
             if (IsSearchPanelVisible)
@@ -8115,10 +7642,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        // Rebindable commands (Settings -> Help -> View Shortcuts) are checked against
-        // the user's current gesture for each id, rather than a fixed Key/modifier switch,
-        // so a remapped shortcut actually takes effect here. Every entry in
-        // KeybindDefinitions is covered by a branch below - nothing left hardcoded.
         if (MatchesKeybind(e, "NewFile"))
         {
             NewFile();
@@ -8219,8 +7742,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             e.Handled = true;
             await PasteIntoEditorAsync();
         }
-        // Image zoom: the numpad +/-/0 keys always work as a hardware fallback alongside
-        // whichever gesture ZoomIn/ZoomOut/ZoomReset are currently bound to.
         else if (MatchesKeybind(e, "ZoomIn") || (hasControl && e.Key == Key.Add))
         {
             if (HasImagePreview)
@@ -8302,12 +7823,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
 
-    // Shown once when settings.json doesn't exist; HasCompletedTutorial is then persisted so later launches skip it.
 
 
 
-    // Shown when a recent file/folder path is unreachable at open time - not an error, since the entry may simply be offline.
-    // Kept in recents so it reappears once available; offers an explicit "Remove from recents" button.
 
 
     // Generic "are you sure?" prompt for destructive-but-recoverable actions.
@@ -8324,7 +7842,5 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // AppSettings and RecentFileEntry moved to Models/AppSettings.cs - both are pure
-    // data (the persisted-settings schema), with no dependency on MainWindow itself.
 
 }

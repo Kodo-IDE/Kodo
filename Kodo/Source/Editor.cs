@@ -53,18 +53,21 @@ namespace Kodo;
 public partial class MainWindow
 {
 
+    // Refresh editor state on debounce tick
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _editorStateRefreshTimer.Stop();
         RefreshState(fullRefresh: _pendingFullStateRefresh);
     }
 
+    // Debounce Insight refresh
     private void QueueInsightRefresh()
     {
         _InsightRefreshTimer.Stop();
         _InsightRefreshTimer.Start();
     }
 
+    // Update Insight and highlight layers
     private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
@@ -80,6 +83,7 @@ public partial class MainWindow
         OnPropertyChanged(nameof(IsWordCountVisible));
     }
 
+    // Count words for plain-text files
     private void RefreshWordCount()
     {
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
@@ -95,6 +99,7 @@ public partial class MainWindow
         WordCountText = $"{wordCount} words";
     }
 
+    // Resolve Unsaved / autosave status text
     private string? GetDocumentStatusText()
     {
         if (!HasDocumentOpen) return null;
@@ -114,6 +119,7 @@ public partial class MainWindow
         return _isDirty ? "Unsaved" : null;
     }
 
+    // Show link or diagnostic tooltip on hover
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         var textView = EditorTextBox.TextArea.TextView;
@@ -122,8 +128,6 @@ public partial class MainWindow
         var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
 
-        // A line can carry both findings (unused variable + syntax error, rendered as
-        // grey/red stripes) - show both messages together in that case.
         string? tooltipText = (errorReason, deadCodeReason) switch
         {
             (null, null)     => null,
@@ -198,6 +202,7 @@ public partial class MainWindow
         }
     }
 
+    // Mark dirty, queue saves and Insight
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _rainbowBracketColorizer.InvalidateCache();
@@ -219,6 +224,7 @@ public partial class MainWindow
             UpdateFindHighlights();
     }
 
+    // Handle bracket skip and wrap selection
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
@@ -263,6 +269,7 @@ public partial class MainWindow
         }
     }
 
+    // Auto-close brackets and quotes
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
@@ -276,8 +283,6 @@ public partial class MainWindow
         var doc    = EditorTextBox.Document;
         var offset = caret.Offset;
 
-        // For symmetric pairs, don't auto-close when the next char is alphanumeric
-        // (avoids nuisance completions mid-word, e.g. typing " in  it's).
         if (ch == '"' || ch == '\'' || ch == '`')
         {
             if (offset < doc.TextLength)
@@ -287,11 +292,11 @@ public partial class MainWindow
             }
         }
 
-        // Insert the closer and explicitly restore the caret to the space between the pair.
         doc.Insert(offset, closing.ToString());
         caret.Offset = offset;
     }
 
+    // Show predictive completions for prefix
     private void UpdateInsight()
     {
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
@@ -306,7 +311,6 @@ public partial class MainWindow
             return;
         }
 
-        // Skips plain-text files and untitled (unsaved) tabs, which have no language to predict against.
         if (ActiveEditorTab is null || ActiveEditorTab.IsUntitled || IsPlainTextFile(_currentFilePath))
         {
             CloseCompletionWindow();
@@ -326,8 +330,6 @@ public partial class MainWindow
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
-        // Require at least one word character already typed, so the popup doesn't pop
-        // up after whitespace, punctuation, or a fresh newline.
         if (prefix.Length == 0)
         {
             CloseCompletionWindow();
@@ -337,8 +339,6 @@ public partial class MainWindow
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
         _InsightEngine.ScanDocument(fileKey, text);
 
-        // Keeps popup rows in sync with the active theme even if it changed
-        // while a suggestion list was already open.
         InsightSuggestion.PanelForeground = PrimaryTextBrush;
         InsightSuggestion.MutedForeground = MutedTextBrush;
 
@@ -372,6 +372,7 @@ public partial class MainWindow
         _completionWindow = null;
     }
 
+    // Highlight unused and unreachable code
     private void UpdateDeadCodeHighlighting()
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
@@ -387,15 +388,12 @@ public partial class MainWindow
         var spans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension);
         _deadCodeHighlightRenderer.SetSpans(spans);
         _deadCodeTextBrightener.SetSpans(spans);
-        // Keep the combined grey/red stripe decision and the error-only text darkening
-        // in sync when dead-code spans change out from under a red highlight.
         _errorHighlightRenderer.SetDeadCodeSpans(spans);
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, spans);
-        // Redraw (not just InvalidateLayer) so the text-brightening LineTransformers also
-        // re-run - our spans changed independently of any document edit.
         EditorTextBox.TextArea.TextView.Redraw();
     }
 
+    // Build themed completion popup
     private CompletionWindow CreateCompletionWindow()
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
@@ -406,8 +404,6 @@ public partial class MainWindow
             Width = 460,
         };
 
-        // CompletionWindow itself is just a Popup (positioning only, no chrome) - the
-        // actual panel/border/font live on CompletionList, which it hosts as Child.
         var panelBrush = CardBrush;
         window.CompletionList.Background = panelBrush;
         window.CompletionList.BorderBrush = SurfaceBorderBrush;
@@ -429,19 +425,15 @@ public partial class MainWindow
             listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
         }
 
-        // Zeroes ListBoxItem's background transition so rows render instantly instead of crossfading.
         var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
         noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
         window.Styles.Add(noTransitionStyle);
 
-        // Paints ListBoxItem's Background directly so each row's highlight stretches to the popup's full width.
         var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, panelBrush));
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         window.Styles.Add(baseRowStyle);
 
-        // Selected row: Kodo's accent color at low opacity over the panel, same
-        // tinting pattern used for editor text selection - not a fixed VS Code blue.
         var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? new SolidColorBrush(accentSolid.Color, 0.35)
             : new SolidColorBrush(Color.Parse("#8C00FF"), 0.35);
@@ -456,7 +448,6 @@ public partial class MainWindow
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(6, 3)));
-        // A fixed MinHeight keeps every row the same height so the virtualizing panel positions them consistently.
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, InsightRowHeight));
         window.Styles.Add(rowPaddingStyle);
 
@@ -464,12 +455,9 @@ public partial class MainWindow
         return window;
     }
 
+    // Handle smart keys and search shortcuts
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Tab always accepts the top suggestion (the list is already sorted by priority -
-        // see GetSuggestions), regardless of whether the popup happens to have a different
-        // row highlighted. Handled explicitly here rather than left to the popup's own
-        // selection state, which isn't something we set ourselves.
         if (_completionWindow is not null && e.Key == Key.Tab)
         {
             var firstSuggestion = _completionWindow.CompletionList.CompletionData
@@ -489,18 +477,12 @@ public partial class MainWindow
             return;
         }
 
-        // Lets the open Insight popup own navigation/accept/dismiss keys before smart-enter/smart-tab.
-        // Enter was missing here - accepting a suggestion with Enter would fall through to
-        // HandleSmartEnter below and insert an auto-indented newline on top of the completion,
-        // which is exactly what "finishing" a word felt like it was doing.
         if (_completionWindow is not null && e.Key is Key.Escape or Key.Enter
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
             return;
         }
 
-        // Doesn't intercept keys destined for the terminal.
-        // Uses the TopLevel FocusManager, not e.Source, for the true current focus owner.
         if (IsTerminalVisible && ActiveTerminalSession is not null)
         {
             var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() as Visual;
@@ -521,8 +503,6 @@ public partial class MainWindow
         var textArea = EditorTextBox.TextArea;
         var caret = textArea.Caret;
         var doc = EditorTextBox.Document;
-        // Swallow editor-local Find/Find-in-project so AvaloniaEdit doesn't open its own find UI,
-        // whatever gesture the user has them bound to.
         if (MatchesKeybind(e, "FindInProject"))
         {
             OpenSearchPanel(SearchMode.ProjectSearch);
@@ -595,13 +575,13 @@ public partial class MainWindow
         }
         catch
         {
-            // Keep Tab editor-local even if AvaloniaEdit reports an invalid selection snapshot.
             var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
             doc.Insert(safeOffset, GetIndentUnit());
             SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
         }
     }
 
+    // Smart indent and block insert on Enter
     private void HandleSmartEnter(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
     {
         var offset = caret.Offset;
@@ -631,6 +611,7 @@ public partial class MainWindow
         caret.Offset = offset + newLineText.Length;
     }
 
+    // Delete paired bracket together
     private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
     {
         var selection = EditorTextBox.TextArea.Selection;
@@ -653,6 +634,7 @@ public partial class MainWindow
         return true;
     }
 
+    // Indent line or selection
     private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         if (selection is null || selection.IsEmpty)
@@ -679,6 +661,7 @@ public partial class MainWindow
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
+    // Outdent line or selection
     private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         if (selection is null || selection.IsEmpty)
@@ -750,6 +733,7 @@ public partial class MainWindow
         return trimmedAfter.Length > 0 && trimmedAfter[0] == closing && closing is ')' or ']' or '}';
     }
 
+    // Rebase pasted indent to caret level
     private string ReindentPastedText(string text, AvaloniaEdit.Document.TextDocument doc, int offset)
     {
         var normalized = NormalizeLineEndings(text);
@@ -796,6 +780,7 @@ public partial class MainWindow
         return string.Join(Environment.NewLine, pasteLines);
     }
 
+    // Paste with re-indented lines
     private async Task HandleSmartPasteAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Caret caret)
     {
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
@@ -821,6 +806,7 @@ public partial class MainWindow
         SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
     }
 
+    // Toggle line comment on selection
     private void ToggleLineComment(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         var lineCommentToken = CurrentLanguageExtension?.CommentLine;

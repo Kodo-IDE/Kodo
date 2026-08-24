@@ -53,6 +53,7 @@ namespace Kodo;
 public partial class MainWindow
 {
 
+    // Debounce search filter input
     private void RestartSearchFilterDebounce()
     {
         _searchFilterDebounceTimer.Stop();
@@ -81,9 +82,6 @@ public partial class MainWindow
 
     private void SettingsSearchTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
     {
-        // User clicked off the settings search bar - flush any debounced filtering
-        // immediately and stop the typing/debounce timer so the caret blink and
-        // pending filter animation end at once.
         if (_searchFilterDebounceTimer.IsEnabled)
             _searchFilterDebounceTimer.Stop();
         if (_settingsSearchPending)
@@ -428,6 +426,7 @@ public partial class MainWindow
         await OpenPathInSystemExplorer(result.Path, selectItem: true);
     }
 
+    // Toggle search panel mode
     private void OpenSearchPanel(SearchMode mode)
     {
         if (!CanShowSearchPanelForMode(mode))
@@ -447,6 +446,7 @@ public partial class MainWindow
         FocusSearchInput();
     }
 
+    // Toggle search panel visibility
     private void ToggleSearchPanel(SearchMode mode)
     {
         if (IsSearchPanelVisible && _searchMode == mode)
@@ -651,10 +651,6 @@ public partial class MainWindow
             return;
         }
 
-        // Project search: group by file path.
-        // Preserve each group's expanded/collapsed state across rebuilds - new
-        // SearchFileGroup instances are constructed below, so without this the
-        // state set by ToggleGroup() would be discarded on every call.
         var previousExpansion = _fileGroups
             .ToDictionary(g => g.FilePath, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
 
@@ -703,9 +699,6 @@ public partial class MainWindow
         const double chevronWidth = 12;
         const double paddingAndMargins = 56;
 
-        // Individual result row: Icon(22) + DisplayName(12px) + gap(8) + RelativePath(11px, star column)
-        // The star column fills remaining space so we only need the auto columns.
-        // Group header row: Chevron(12) + FileName(12px) + gap(8) + RelativePath(11px) + gap + MatchCount(11px)
         foreach (var item in _searchResults)
         {
             // Individual result width (auto columns only)
@@ -734,6 +727,7 @@ public partial class MainWindow
         RebuildDisplayItems();
     }
 
+    // Run current search mode
     private async Task RunActiveSearchAsync()
     {
         if (!IsSearchPanelVisible)
@@ -888,6 +882,7 @@ public partial class MainWindow
         }
     }
 
+    // Find files by name
     private static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
     {
         Regex? regex = null;
@@ -1129,7 +1124,6 @@ public partial class MainWindow
         if (matches.Count == 0)
             return;
 
-        // Build the replacement string by copying unchanged segments and inserting replacements.
         var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - FindText.Length));
         var pos = 0;
         foreach (var match in matches)
@@ -1208,7 +1202,6 @@ public partial class MainWindow
             }
             else
             {
-                // For backward regex search, scan all matches up to startIndex and return the last one before it.
                 (int Offset, int Length) last = (-1, 0);
                 foreach (Match m in regex.Matches(text))
                 {
@@ -1260,6 +1253,7 @@ public partial class MainWindow
         return beforeOk && afterOk;
     }
 
+    // Highlight find matches in editor
     private void UpdateFindHighlights()
     {
         if (EditorTextBox?.Document is null) return;

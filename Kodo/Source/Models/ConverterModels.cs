@@ -10,10 +10,6 @@ using Avalonia.Controls;
 
 namespace Kodo.Models;
 
-// Computes how much room a file-tree row's name TextBlock has to work with, so
-// long names truncate less (or not at all) as the user widens the explorer panel
-// via ExplorerPanelSplitter, instead of being capped at a fixed pixel width.
-// Extracted from MainWindow.axaml.cs:56
 public sealed class ExplorerItemNameMaxWidthConverter : IMultiValueConverter
 {
     public static readonly ExplorerItemNameMaxWidthConverter Instance = new();
@@ -29,8 +25,6 @@ public sealed class ExplorerItemNameMaxWidthConverter : IMultiValueConverter
     }
 }
 
-// Converts bold flag to FontWeight for the release-notes run template.
-// Extracted from MainWindow.axaml.cs:15542
 public sealed class BoolToFontWeightConverter : IValueConverter
 {
     public static readonly BoolToFontWeightConverter Instance = new();
@@ -65,15 +59,7 @@ public sealed class MarketplaceTileWidthConverter : IValueConverter
         throw new NotSupportedException();
 }
 
-// ---------------------------------------------------------------------------
-// Consolidated from previously fragmented files:
-// BoolInverter.cs, HighlightedTextBlock.cs, InlinesBehavior.cs
-// ---------------------------------------------------------------------------
 
-/// <summary>
-/// Inverts a boolean value. Used to toggle visibility of mutually
-/// exclusive layouts inside a single DataTemplate.
-/// </summary>
 public sealed class BoolInverter : IValueConverter
 {
     public static readonly BoolInverter Instance = new();
@@ -85,11 +71,6 @@ public sealed class BoolInverter : IValueConverter
         value is bool b ? !b : value;
 }
 
-/// <summary>
-/// Converts (string text, IReadOnlyList&lt;int&gt; indices) into an
-/// InlineCollection for a TextBlock, highlighting the specified character positions.
-/// Implements IMultiValueConverter for use with MultiBinding in XAML.
-/// </summary>
 public sealed class HighlightConverter : IMultiValueConverter
 {
     public static readonly HighlightConverter Instance = new();
@@ -141,10 +122,6 @@ public sealed class HighlightConverter : IMultiValueConverter
     }
 }
 
-/// <summary>
-/// Same as <see cref="HighlightConverter"/> but uses a subtler brush and
-/// normal weight for preview-line matches (as opposed to filename matches).
-/// </summary>
 public sealed class PreviewHighlightConverter : IMultiValueConverter
 {
     public static readonly PreviewHighlightConverter Instance = new();

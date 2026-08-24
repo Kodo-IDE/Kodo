@@ -29,8 +29,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
     public int TabSize { get; set; } = 4;
 
-    // Disabled for unsaved (untitled) files and plain-text files (.txt / .log / .text)
-    // so that smart visual features don't activate where no language context exists.
     public bool IsEnabled { get; set; } = true;
 
     public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
@@ -103,7 +101,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
             for (var level = 1; level <= depth; level++)
             {
-                // Each guide sits at the first character of its indent level: column TabSize, 2*TabSize, etc.
                 var x = originX + (level * TabSize - 1) * spaceWidth;
                 if (x < 0 || x > textView.Bounds.Width) continue;
 
@@ -125,26 +122,11 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     }
 }
 
-/// <summary>
-/// Highlights all search matches in the editor when Find-in-file is active.
-/// </summary>
-// Whole-line/whole-section grey highlighting for Insight's dead code detection
-// (unused variables, unused functions, unreachable code). Deliberately muted rather
-// than alarm-red - dead code isn't an error, just something the editor thinks is inert.
-// Brightens the syntax-highlighted text sitting on top of a dead-code grey overlay, so it
-// stays readable instead of washing out against the highlight. Lightens whatever foreground
-// color the syntax colorizer already picked, rather than overriding it with a flat color, so
-// each token keeps its own hue - just brighter.
 internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme. Unconditional
-    // override rather than lightening the existing brush - plain identifiers often carry no
-    // explicit brush at all (null, inherited from the editor default), so a "lighten if solid"
-    // check silently skipped them, which is why only accent-colored tokens (numbers, keywords)
-    // were changing while the rest of the line stayed dim.
     public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
 
     private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
@@ -158,9 +140,6 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
         foreach (var span in _spans)
         {
             var start = Math.Max(span.StartOffset, line.Offset);
-            // DocumentLine.EndOffset already excludes the line delimiter - subtracting
-            // DelimiterLength again here was crushing "end" down near "start" for short
-            // lines, which is why only a sliver near the start of the line was affected.
             var end = Math.Min(span.StartOffset + span.Length, line.EndOffset);
             if (start >= end) continue;
 
@@ -176,21 +155,15 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 
 internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 {
-    // Instance (not static/const) so ApplyThemeToEditor can swap it for a darker overlay
-    // in light themes, where a translucent mid-grey barely shows up against white.
     public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
     private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
 
-    // Current spans, shared with ErrorLineHighlightRenderer so error lines covered by dead
-    // code can switch their whole-line highlight to grey/red stripes.
     public IReadOnlyList<InsightEngine.DeadCodeSpan> Spans => _spans;
 
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
 
-    // Returns the reason string for the dead-code span containing the given document
-    // offset, or null if the offset isn't inside one - used to drive the hover tooltip.
     public string? GetReasonAt(int offset)
     {
         foreach (var span in _spans)
@@ -213,10 +186,6 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
         var scrollY = textView.ScrollOffset.Y;
         var width = textView.Bounds.Width;
 
-        // One full-width rectangle per visible line covered by a dead-code span. Manual
-        // rects reaching the viewport edge rather than BackgroundGeometryBuilder - its
-        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line, which
-        // left short lines highlighted just around their text.
         foreach (var visualLine in visualLines)
         {
             if (!SpanCoversLine(visualLine.FirstDocumentLine))
@@ -241,9 +210,6 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
     }
 }
 
-// Forces legible black text over error-only lines (red wash, no dead-code grey) in
-// light themes, where the default syntax colors become hard to read against the
-// translucent red background. Dead-code lines keep their own brighter text treatment.
 internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
 {
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -278,7 +244,6 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
                 return;
         }
 
-        // Has any error span? Force black text (light theme only - see ApplyThemeToEditor).
         foreach (var errorSpan in _errorSpans)
         {
             if (errorSpan.StartOffset < line.EndOffset && errorSpan.StartOffset + errorSpan.Length > line.Offset)
@@ -295,22 +260,10 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
     }
 }
 
-// Whole-line red highlight for Insight's basic error detection (unmatched/unclosed
-// brackets, unterminated strings, missing ';'/':' , misspelled keywords). Each line
-// containing an error is washed with a translucent full-width red highlight; when such
-// a line is ALSO covered by a dead-code finding (e.g. an unused variable), the wash
-// becomes alternating grey/red vertical stripes spanning the whole line, so both
-// findings stay visible on the same row.
 internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 {
-    // Whole-line wash behind error-only lines. Kept translucent so the syntax colors
-    // underneath stay readable.
     public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.18);
-    // Red half of the stripes on error+dead-code lines. Stronger than the plain wash so
-    // it reads as clearly red next to the grey.
     public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.40);
-    // Grey half of the stripes - themed to match DeadCodeHighlightRenderer.HighlightBrush
-    // (see ApplyThemeToEditor) so mixed lines tie back to pure dead-code lines.
     public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
 
     private const double StripeWidth = 8.0;
@@ -326,9 +279,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public void SetDeadCodeSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _deadCodeSpans = spans;
 
-    // All error messages whose spans touch the given line, newline-separated - drives the
-    // hover tooltip. Line-based (not offset-based) because highlighting is line-wide, so
-    // hovering anywhere on the line should surface its message(s).
     public string? GetMessageForLine(int lineStart, int lineEnd)
     {
         List<string>? messages = null;
@@ -340,8 +290,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         return messages is null ? null : string.Join(Environment.NewLine, messages);
     }
 
-    // True when any dead-code span overlaps the line's content - switches the whole-line
-    // highlight from a solid red wash to grey/red stripes.
     private bool LineOverlapsDeadCode(DocumentLine line)
     {
         foreach (var deadSpan in _deadCodeSpans)
@@ -364,10 +312,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         var scrollY = textView.ScrollOffset.Y;
         var width = textView.Bounds.Width;
 
-        // One full-width rectangle per visible line touched by an error span: solid red
-        // wash normally, grey/red stripes when a dead-code finding covers the same line.
-        // Manual rects reaching the viewport edge - BackgroundGeometryBuilder's
-        // ExtendToFullWidthAtLineEnd only stretches to the document's widest line.
         foreach (var visualLine in visualLines)
         {
             var docLine = visualLine.FirstDocumentLine;
@@ -395,9 +339,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         return false;
     }
 
-    // Alternating grey/red vertical bars spanning the full editor width of one line -
-    // the combined "dead code + error" treatment. Starts with grey so the pattern reads
-    // as a dead-code line first, then flags the error on top.
     private void DrawStripes(DrawingContext drawingContext, double y, double height, double width)
     {
         var x = 0.0;
@@ -413,7 +354,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     }
 }
 
-// Replaces the default LinkElementGenerator: genuine URLs only, Ctrl+click to open.
 public sealed class StrictLinkElementGenerator : LinkElementGenerator
 {
     private static readonly char[] TrailingPunctuation = [')', ']', '}', '.', ',', ':', ';', '!', '?', '\'', '"'];
@@ -516,10 +456,6 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
         ch is not '<' and not '>' and not '"' and not '\'' and not '[' and not ']' and not '(' and not ')' and not '{' and not '}' and not '|' and not '\\' and not '^' and not '`';
 }
 
-// ---------------------------------------------------------------------------
-// Consolidated from previously fragmented files:
-// EditorTab.cs, ExplorerClipboardMode.cs, FileNode.cs, FileTreeItem.cs
-// ---------------------------------------------------------------------------
 
 public class EditorTab : INotifyPropertyChanged
 {

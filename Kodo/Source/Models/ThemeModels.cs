@@ -25,7 +25,6 @@ public class ExtensionThemeDefinition
     public string PreviewBorder { get; init; } = "#4A4A4A";
 }
 
-/// A named group of theme cards from one extension; multi-theme groups render as a collapsible section.
 public class ThemeExtensionGroup : INotifyPropertyChanged
 {
     private bool _isExpanded;
@@ -33,10 +32,8 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     public string GroupName { get; }
     public IReadOnlyList<LoadedExtension> Themes { get; }
 
-    /// True when this extension packs more than one theme.
     public bool IsMultiTheme => Themes.Count > 1;
 
-    /// Whether the card row is expanded; single-theme groups are always shown.
     public bool IsExpanded
     {
         get => _isExpanded;
@@ -49,7 +46,6 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
         }
     }
 
-    /// ▶ when collapsed, ▼ when expanded.
     public string ChevronGlyph => _isExpanded ? "▾" : "▸";
 
     public ThemeExtensionGroup(string groupName, IReadOnlyList<LoadedExtension> themes)

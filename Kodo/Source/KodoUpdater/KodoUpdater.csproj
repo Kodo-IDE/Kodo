@@ -2,10 +2,6 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- WinExe, not Exe: this process is launched silently by Kodo and must
-         never flash a console window. It shows an installer-progress dialog
-         when Kodo hands off an update, and writes the sentinel file that Kodo
-         reads on next launch otherwise. -->
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>

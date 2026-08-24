@@ -114,14 +114,6 @@
             <Setter Property="Opacity" Value="0.5" />
         </Style>
 
-
-
-        <!-- Group header variant: full-row hit-testable via Border-backed template.
-             Avalonia's Fluent theme paints :pointerover directly on
-             ContentPresenter#PART_ContentPresenter, bypassing any wrapper border.
-             We fully override that by: (1) setting PART_ContentPresenter background
-             to Transparent at all times, and (2) targeting our named PART_Border
-             (which carries Margin="4,0") for the hover fill, producing an inset pill. -->
         <Style Selector="Button.chrome.groupheader">
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -149,9 +141,7 @@
                 </ControlTemplate>
             </Setter>
         </Style>
-        <!-- Keep PART_ContentPresenter transparent in ALL states so Fluent's own
-             :pointerover rule (which targets PART_ContentPresenter directly) cannot
-             paint a full-width background over our inset pill. -->
+        
         <Style Selector="Button.chrome.groupheader /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
@@ -296,9 +286,6 @@
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
-        <!-- "Installed" status pill for the Marketplace tab - quiet/neutral so it
-             doesn't compete with the accent-filled primary action button. Same rule as
-             above: no colors here, set explicitly per usage. -->
         <Style Selector="Border.installedtag">
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="999" />
@@ -310,15 +297,6 @@
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
 
-        <!-- "Install" action button - styled to match the Installed pill above instead of
-             an accent-filled button, so the two read as matched states. Colors are NOT
-             set here for the same reason as Border.installedtag: this button lives inside
-             the marketplace item template, whose DataContext is the extension, not the
-             window, so a plain {Binding AccentBrush} (as Button.marketaction used) resolves
-             against the item and silently fails, leaving the button unstyled (black).
-             Background/BorderBrush/Foreground are set explicitly per usage with
-             #RootWindow references instead - those use ElementName, not DataContext, so
-             they resolve correctly regardless of what the button sits inside. -->
         <Style Selector="Button.marketinstall">
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="999" />
@@ -336,10 +314,6 @@
             <Setter Property="Opacity" Value="0.45" />
         </Style>
 
-        <!-- Extensions page hero stat chip - small metric card used in the page header
-             (Installed / Updates / Marketplace counts). Quiet surface by default; the
-             "accented" variant (updates available) borrows the marketplace tile's
-             accent-on-hover treatment so it reads as "needs attention". -->
         <Style Selector="Border.extstatchip">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
@@ -361,9 +335,6 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
         </Style>
 
-        <!-- Card that wraps the Installed tab's rows, giving the management list the
-             same elevated-surface language as the Marketplace tiles (and Home/Settings)
-             instead of floating loose against the page background. -->
         <Style Selector="Border.extensionlistcard">
             <Setter Property="Background" Value="{Binding CardBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
@@ -372,10 +343,6 @@
             <Setter Property="Padding" Value="6" />
         </Style>
 
-        <!-- Installed-extension list row: flat, hover-highlighted - a management list,
-             deliberately distinct from the Marketplace card grid below. Hover now matches
-             every other hover surface in the app (ButtonHoverBrush, not the resting
-             ButtonBrush it used before). -->
         <Style Selector="Border.extensionrow">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="CornerRadius" Value="10" />
@@ -386,8 +353,6 @@
             <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
         </Style>
 
-        <!-- Marketplace extension tile: a product card in a responsive grid - the
-             storefront counterpart to the Installed tab's management rows. -->
         <Style Selector="Border.extensiontile">
             <Setter Property="CornerRadius" Value="16" />
             <Setter Property="Padding" Value="18,16" />
@@ -464,8 +429,6 @@
             <Setter Property="ToolTip.HorizontalOffset" Value="8" />
         </Style>
 
-        <!-- Status-bar clickable items: same hover/press colours as the sidebar but
-             no fixed size - the button shrinks to wrap its text content. -->
         <Style Selector="Button.statusitem">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
@@ -756,9 +719,7 @@
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="Opacity" Value="0.8" />
         </Style>
-        <!-- Checkmark glyph sits on top of the accent-filled box, so it needs the
-             same WCAG-contrast foreground as the Pinned pill / active tab text
-             instead of a fixed white, or it can wash out against a light accent. -->
+        
         <Style Selector="CheckBox:checked /template/ Path#CheckGlyph">
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
@@ -1178,8 +1139,7 @@
                                                     Orientation="Horizontal"
                                                     Spacing="6"
                                                     Margin="0,4">
-                                            <!-- Folder SVG icon (open/closed), same rounded-tab body as the
-                                                 Open/Close Folder and Explorer toggle icons -->
+                                            
                                             <Viewbox Width="32" Height="15"
                                                      VerticalAlignment="Center"
                                                      IsVisible="{Binding IsDirectory}">
@@ -1194,8 +1154,7 @@
                                                             </MultiBinding>
                                                         </Path.IsVisible>
                                                     </Path>
-                                                    <!-- Open folder: same tab/back shape as the closed folder, sitting
-                                                         above a wider flap tilted forward to read as "open" -->
+                                                    
                                                     <Path Fill="{Binding #RootWindow.MutedTextBrush}"
                                                           Data="M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C22.0132 9.2 21.98 9.55 21.6 9.85C21.2 10.15 20.55 10.3 19.5 10.3H4.5C3.45 10.3 2.8 10.15 2.4 9.85C2.02 9.55 1.99 9.2 2 9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z M1.75 12.3L22.25 10.6L22.25 18.5C22.25 19.6 21.35 20.5 20.25 20.5L3.75 20.5C2.65 20.5 1.75 19.6 1.75 18.5Z">
                                                         <Path.IsVisible>
@@ -1207,8 +1166,7 @@
                                                     </Path>
                                                 </Canvas>
                                             </Viewbox>
-                                            <!-- File badge: Viewbox with explicit inner dimensions gives Avalonia a real
-                                                 viewport to scale from; fits 4 chars at FontSize 13 without clipping. -->
+                                            
                                             <Viewbox Width="32" Height="15"
                                                      IsVisible="{Binding !IsDirectory}"
                                                      VerticalAlignment="Center"
@@ -1887,7 +1845,7 @@
                                                                Foreground="{Binding PrimaryTextBrush}"
                                                                VerticalAlignment="Center"
                                                                Text="Marketplace" />
-                                                    <!-- Connection error indicator: only visible when marketplace has a connectivity issue -->
+                                                    
                                                     <Border Width="8" Height="8"
                                                             CornerRadius="4"
                                                             Background="#E05252"
@@ -1981,8 +1939,7 @@
                                     </Border>
 
                                     <!-- Recently Edited card -->
-                                    <!-- Height is fixed to fit exactly 6 recent-file rows:
-                                         48px card padding + 28px header + 12px spacing + 6×38px rows = 308px -->
+                                    
                                     <Border Padding="24"
                                             Height="308"
                                             Background="{Binding CardBrush}"
@@ -2065,13 +2022,9 @@
                                                                     </TextBlock>
                                                                 </StackPanel>
                                                             </ToolTip.Tip>
-                                                            <!-- Auto = icon, * = filename (flexes), the two trailing
-                                                                 fixed-width columns keep file-type and timestamp
-                                                                 lined up in neat columns across every row. -->
+                                                            
                                                             <Grid ColumnDefinitions="Auto,*,110,64,40" ColumnSpacing="14">
 
-                                                                <!-- Icon: folder icon, or the same file-type badge
-                                                                     (and fallback) the Explorer tree uses -->
                                                                 <Grid Grid.Column="0" VerticalAlignment="Center">
                                                                     <Viewbox IsVisible="{Binding IsFolder}"
                                                                              Width="15" Height="15"
@@ -2086,9 +2039,7 @@
                                                                              Width="15" Height="15"
                                                                              VerticalAlignment="Center">
                                                                         <Canvas Width="24" Height="24">
-                                                                            <!-- Generic file icon (Heroicons "document", solid) - keeps the
-                                                                                 same visual weight/style as the folder icon above rather
-                                                                                 than a per-language text badge. -->
+                                                                            
                                                                             <Path Fill="{Binding #RootWindow.MutedTextBrush}"
                                                                                   Opacity="0.55"
                                                                                   Data="F0 M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625ZM7.5 15a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 7.5 15Zm.75 2.25a.75.75 0 0 0 0 1.5H12a.75.75 0 0 0 0-1.5H8.25Z" />
@@ -2160,9 +2111,6 @@
 
                                 </StackPanel>
 
-                                <!-- RIGHT COLUMN: two stacked cards totalling the left column height.
-                                     News (348px) + gap (16px) + What's New (329px) = 693px total,
-                                     matching the left column's Get Started + Marketplace + Recent (308px). -->
                                 <StackPanel Grid.Column="1"
                                             Spacing="16"
                                             VerticalAlignment="Top">
@@ -2452,8 +2400,6 @@
 
                     </Grid>
                 </Border>
-
-
 
                 <Border Grid.Row="3"
                         x:Name="TerminalPanelSplitter"
@@ -2765,9 +2711,6 @@
                             </TextBlock.IsVisible>
                         </TextBlock>
 
-                        <!-- All status items right-aligned, reading left→right with pipe separators.
-                             Every "|" carries Margin="8,0" so each item sits symmetrically centred
-                             between its neighbours. Content elements carry no extra left/right margin. -->
                         <StackPanel Grid.Column="1"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
@@ -2779,9 +2722,6 @@
                                        IsVisible="{Binding IsDocumentViewVisible}"
                                        Text="{Binding LanguageDisplayText}" />
 
-                            <!-- | (between Language and whatever comes next - Encoding, Word count,
-                                 or Editor stats - document open, not just file-on-disk open, so it
-                                 still shows for unsaved/untitled documents). -->
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
                                        Opacity="0.4"
@@ -2789,7 +2729,6 @@
                                        IsVisible="{Binding IsDocumentViewVisible}"
                                        Text="|" />
 
-                            <!-- Encoding button (file open only, and only while the document view itself is showing) -->
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
                                     VerticalContentAlignment="Center"
@@ -3616,7 +3555,6 @@
 
                                     </Grid>
 
-                                    <!-- Privacy Policy card - shown once, until scrolled through and accepted. No decline path. -->
                                     <Border IsVisible="{Binding IsPrivacyPolicyPromptVisible}"
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3695,13 +3633,8 @@
 
                                 </StackPanel>
 
-
                             </Panel>
 
-                            <!-- Shared nav row - lives outside both IsVisible panels so there
-                                 is only ever one Next button in the tree. This prevents the
-                                 flicker caused by both panels briefly rendering during the
-                                 property-changed notification cycle when switching steps. -->
                             <StackPanel Orientation="Horizontal"
                                         HorizontalAlignment="Right"
                                         Spacing="10">
@@ -3798,9 +3731,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Quick-glance stats - installed count, pending updates (accented
-                             when non-zero), and marketplace size. Same metric-chip language
-                             the home screen uses for its own summary numbers. -->
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Border Classes="extstatchip">
                                 <StackPanel Spacing="0">
@@ -3859,8 +3789,7 @@
                                      Height="36"
                                      Padding="12,0"
                                      VerticalContentAlignment="Center" />
-                            <!-- Content filter: All / Extensions / Compilers - Installed tab only, so installed
-                                 compilers can surface alongside installed Kodo extensions in one place. -->
+                            
                             <Border Grid.Column="1"
                                     MinWidth="96"
                                     MaxWidth="180"
@@ -3929,9 +3858,7 @@
                         </Grid>
 
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}" Spacing="12">
-                            <!-- Installed extensions and installed compilers now render as one continuous
-                                 list card, sharing the same flat "extensionrow" look - see extensionrow
-                                 DataTemplates below. -->
+                            
                             <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensionsOrCompilers}">
                             <StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledExtensions}" ItemsSource="{Binding FilteredInstalledExtensions}">
@@ -3949,8 +3876,7 @@
                                                 </StackPanel>
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
-                                                <!-- Signature accent bar - the same anchor motif used on every
-                                                     section header, repurposed here as the row's identity mark. -->
+                                                
                                                 <Border Grid.Column="0"
                                                         Width="3"
                                                         VerticalAlignment="Stretch"
@@ -4044,12 +3970,6 @@
                                     Margin="0,4"
                                     Background="{Binding SurfaceBorderBrush}" />
 
-                            <!-- Installed compilers - same flat "extensionrow" template as installed
-                                 extensions above, so both render as one continuous list. Compilers come
-                                 from CompilerExtensions.IsInstalled (installed-compilers.json), not a
-                                 LoadedExtension record, hence the separate ItemsControl/DataTemplate -
-                                 but visually they now match exactly. Hidden entirely when the content
-                                 filter is "Extensions". -->
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
                                           ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
                                 <ItemsControl.ItemTemplate>
@@ -4176,9 +4096,7 @@
                                                Text="Browse the Marketplace to add language support and themes." />
                                 </StackPanel>
                             </Border>
-                            <!-- Search active, but nothing installed matches it - previously
-                                 indistinguishable from "no extensions installed" above, which
-                                 also incorrectly stayed hidden/shown regardless of search text. -->
+                            
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -4220,10 +4138,6 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- Manually add a compiler by filepath - only shown in the Installed
-                                 tab while its content filter is scoped to Compilers, not All or
-                                 Extensions. Auto-detected default compilers land in the same list
-                                 above without needing this. -->
                             <Grid IsVisible="{Binding IsInstalledCompilersFilterSelected}"
                                   ColumnDefinitions="*,Auto"
                                   ColumnSpacing="10"
@@ -4411,9 +4325,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <!-- True empty state: the index loaded successfully but has nothing
-                                 in it (distinct from IsMarketplaceUnavailableVisible above, which
-                                 covers fetch/connectivity failure instead). -->
+                            
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -4434,9 +4346,7 @@
                                                Text="{Binding MarketplaceEmptyStateText}" />
                                 </StackPanel>
                             </Border>
-                            <!-- Search active, but nothing in the marketplace matches it - this used
-                                 to be wired to IsMarketplaceEmptyVisible above, so it only ever fired
-                                 when the marketplace was completely empty, never on a search miss. -->
+                            
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -4459,9 +4369,6 @@
                             </Border>
                         </StackPanel>
 
-                        <!-- Compilers tab: reuses the MarketplaceExtension card template, sourced from
-                             CompilerIndex.json instead of ExtensionsIndex.json. Installs launch a
-                             downloaded installer exe rather than extracting a Kodo extension package. -->
                         <StackPanel IsVisible="{Binding IsCompilersTabSelected}">
                             <ItemsControl ItemsSource="{Binding FilteredCompilerExtensions}">
                                 <ItemsControl.ItemsPanel>
@@ -4508,10 +4415,7 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding Name}"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        <!-- The "compiler" tag is intentionally omitted here - the Compilers
-                                                             tab is already scoped to compilers, so it's redundant on every
-                                                             single card. It's still shown in the Installed section, where
-                                                             compilers are mixed in alongside other extension types. -->
+                                                        
                                                     </StackPanel>
                                                 </Grid>
 
@@ -4580,7 +4484,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <!-- Empty state: no compilers matched the current filter/search, or the index is empty. -->
+                            
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -6026,10 +5930,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Search active, but nothing matches it - mirrors the extensions
-                             search-empty pattern (IsInstalledSearchEmptyVisible etc.). Named so
-                             the generic card-visibility pass in code-behind skips it - it's the
-                             empty-state indicator, not a settings card. -->
                         <Border x:Name="SettingsSearchEmptyPlaceholder"
                                 IsVisible="{Binding IsSettingsSearchEmptyVisible}"
                                 Background="{Binding CardBrush}"
@@ -6100,7 +6000,6 @@
                             </ScrollViewer>
                         </Border>
 
-                        <!-- Privacy Policy card - only shown until scrolled through and accepted. No decline path. -->
                         <Border IsVisible="{Binding IsPrivacyPolicyPromptVisible}"
                                 Background="{Binding ButtonBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -6169,8 +6068,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Plain dismiss button - only shown once both the consent question and
-                             the Privacy Policy prompt are already settled -->
                         <Button IsVisible="{Binding AreAllConsentPromptsResolved}"
                                 Classes="marketaction"
                                 Click="DismissUpdateSplashButton_OnClick"

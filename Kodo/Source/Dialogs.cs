@@ -350,16 +350,12 @@ public partial class MainWindow
         catch (Exception dialogEx)
         {
             KodoDiagnostics.LogDebug($"ShowConfirmationDialogAsync failed to display for '{title}'.", dialogEx);
-            // If the dialog itself fails to render, fail safe by not
-            // performing the (potentially destructive) action it was gating.
             return false;
         }
     }
 
     private async Task ShowWarningDialogAsync(string context, Exception exception, bool isCritical = false)
     {
-        // Classify automatically: file-save and auto-save failures always
-        // get the critical tier since unsaved data may be at risk.
         isCritical = isCritical
             || context.StartsWith("File save", StringComparison.OrdinalIgnoreCase)
             || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);
@@ -382,7 +378,6 @@ public partial class MainWindow
             var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath      = KodoDiagnostics.MainLogFilePath;
 
-            // --- Header ---
             var titleText = new TextBlock
             {
                 Text         = titleLabel,
@@ -401,8 +396,6 @@ public partial class MainWindow
                 Margin       = new Thickness(0, 4, 0, 0),
             };
 
-            // Amber banner - only shown for critical tier so the visual weight
-            // matches the severity (mirrors the terminating-crash amber banner).
             var criticalBanner = new Border
             {
                 IsVisible       = isCritical,
@@ -494,7 +487,6 @@ public partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
             };
 
-            // --- Action buttons ---
             var copyButton = new Button
             {
                 Content             = "Copy to Clipboard",
@@ -598,7 +590,6 @@ public partial class MainWindow
             {
                 try
                 {
-                    // Pre-fill a GitHub issue with the context as the title, mirroring the crash dialog.
                     var title = Uri.EscapeDataString($"[Warning] {context}: {exception.Message}"
                         .Replace("\r", "").Replace("\n", " ").Trim());
                     var body = Uri.EscapeDataString(KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true));
@@ -632,8 +623,6 @@ public partial class MainWindow
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            // Re-raise as TimeoutException so callers can distinguish a
-            // deliberate 7-second timeout from a user-initiated cancellation.
             throw new TimeoutException(
                 $"GitHub operation '{operationName}' did not complete within " +
                 $"{GitHubOperationTimeout.TotalSeconds:0} seconds and was cancelled.");
