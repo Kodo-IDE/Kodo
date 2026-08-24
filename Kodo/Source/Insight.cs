@@ -250,7 +250,8 @@ public sealed class InsightEngine
         "git", "npm", "npx", "yarn", "pnpm", "pip", "python", "python3", "node", "dotnet",
         "cargo", "go", "make", "cmake", "gradle", "mvn", "docker", "kubectl", "brew", "apt",
         "build", "publish", "install", "run", "test", "clean", "deploy", "restore", "release",
-        "debug",
+        "debug", "lock", "fixed", "checked", "unchecked", "synchronized", "with", "unsafe",
+        "when", "while", "func",
     };
 
     private static readonly Regex TrailingLineComment = new(
@@ -322,6 +323,7 @@ public sealed class InsightEngine
         var inMulti = false;
         char delim = '\0';
         var isInterpolated = false;
+        var isVerbatim = false;
         var inInterpolationCode = false;
         var interpolationDepth = 0;
 
@@ -431,9 +433,9 @@ public sealed class InsightEngine
                     }
                 }
 
-                if (c == '\\' && !inMulti && !isInterpolated)
+                if (c == '\\' && !inMulti && !isVerbatim)
                 {
-                    // escaped char - blank both (verbatim interpolated uses "" not \ )
+                    // escaped char - blank both (verbatim strings use "" not \ to escape)
                     masked[i] = ' ';
                     if (i + 1 < chars.Length && chars[i + 1] != '\n' && chars[i + 1] != '\r')
                     {
@@ -443,12 +445,13 @@ public sealed class InsightEngine
                     continue;
                 }
 
-                if (c == '\n' && !inMulti)
+                if (c == '\n' && !inMulti && !isVerbatim)
                 {
                     // unterminated single-line string - treat newline as terminator for masking
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
+                    isVerbatim = false;
                     inInterpolationCode = false;
                     continue;
                 }
@@ -457,7 +460,20 @@ public sealed class InsightEngine
                 if (inMulti)
                     closing = multiDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
                 else if (delim != '\0' && MatchesAt(documentText, i, delim.ToString()))
+                {
+                    // Verbatim strings escape a literal quote by doubling it (`""`),
+                    // which does NOT close the string - without this, a quote inside a
+                    // Windows path or similar in an `@"..."` string prematurely ends
+                    // masking and corrupts everything scanned after it.
+                    if (isVerbatim && i + 1 < chars.Length && chars[i + 1] == delim)
+                    {
+                        masked[i] = ' ';
+                        masked[i + 1] = ' ';
+                        i++;
+                        continue;
+                    }
                     closing = delim.ToString();
+                }
 
                 if (closing is not null)
                 {
@@ -465,6 +481,7 @@ public sealed class InsightEngine
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
+                    isVerbatim = false;
                     inInterpolationCode = false;
                     i += closing.Length - 1;
                     continue;
@@ -502,6 +519,7 @@ public sealed class InsightEngine
                 inString = true;
                 inMulti = true;
                 isInterpolated = false;
+                isVerbatim = false;
                 // check if this multi-line delimiter is interpolated (e.g., $""" )
                 if (i > 0 && chars[i - 1] == '$')
                     isInterpolated = true;
@@ -514,17 +532,27 @@ public sealed class InsightEngine
 
             if (c == '"' || (c == '\'' && !disableSingle))
             {
-                // check for interpolated prefix: $", $@", @$"
+                // check for interpolated / verbatim prefix: $", $@", @$", @"
                 var interpolated = false;
+                var verbatim = false;
                 if (i > 0 && chars[i - 1] == '$')
                     interpolated = true;
-                else if (i > 1 && ((chars[i - 2] == '$' && chars[i - 1] == '@') || (chars[i - 2] == '@' && chars[i - 1] == '$')))
+                else if (i > 0 && chars[i - 1] == '@')
+                    verbatim = true;
+                else if (i > 0 && (chars[i - 1] == 'r' || chars[i - 1] == 'R') &&
+                         (i < 2 || !char.IsLetterOrDigit(chars[i - 2])))
+                    verbatim = true; // Python/Rust raw string: backslash is literal, no doubled-quote escape
+                if (i > 1 && ((chars[i - 2] == '$' && chars[i - 1] == '@') || (chars[i - 2] == '@' && chars[i - 1] == '$')))
+                {
                     interpolated = true;
+                    verbatim = true;
+                }
 
                 inString = true;
                 inMulti = false;
                 delim = c;
                 isInterpolated = interpolated;
+                isVerbatim = verbatim;
                 inInterpolationCode = false;
                 interpolationDepth = 0;
                 // keep opening delimiter
@@ -734,14 +762,6 @@ public sealed class InsightEngine
             return count;
         }
 
-        int CountCallSites(string name)
-        {
-            var count = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\s*\(").Count;
-            if (folderMaskedText is not null)
-                count += Regex.Matches(folderMaskedText, $@"\b{Regex.Escape(name)}\s*\(").Count;
-            return count;
-        }
-
         // Depth for property-vs-variable distinction: properties like `Child =` or
         // `FileName =` inside `new Foo { ... }` are at depth >0 and start with
         // uppercase. They are not variables and must not be flagged as "Unused variable".
@@ -804,8 +824,13 @@ public sealed class InsightEngine
             if (entryPoints is not null && entryPoints.Contains(name)) continue;
             if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
-            var callSites = CountCallSites(name);
-            if (callSites > 1) continue;
+            // Reference count, not just call-sites with parens: a function used only as a
+            // delegate/event-handler/callback (`Button.Click += Handler;`, `list.map(handler)`
+            // passed by name, etc.) has no `name(` call site but is very much in use, so
+            // relying on CountCallSites alone produces a false "Unused function" on any
+            // event-driven or callback-style code.
+            var refCount = CountWholeWord(name);
+            if (refCount > 1) continue;
 
             var endLine = i;
             var depth = CountChar(line, '{') - CountChar(line, '}');
@@ -1048,6 +1073,7 @@ public sealed class InsightEngine
         var stringOpenOffset = -1;
         var stringDelimiter = '\0';
         var inMultiLineString = false;
+        var inVerbatimString = false;
 
         for (var i = 0; i < documentText.Length; i++)
         {
@@ -1067,11 +1093,27 @@ public sealed class InsightEngine
 
             if (inString)
             {
-                if (c == '\\' && !inMultiLineString) { i++; continue; }
-                if (c == '\n' && !inMultiLineString)
+                // Verbatim/raw strings (C# `@"..."`, Python/Rust `r"..."`) don't treat
+                // backslash as an escape character, so a Windows path or regex like
+                // `@"C:\Users\foo"` must not be read as an escaped closing quote.
+                if (c == '\\' && !inMultiLineString && !inVerbatimString) { i++; continue; }
+                if (c == '\n' && !inMultiLineString && !inVerbatimString)
                 {
                     spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal"));
                     inString = false;
+                    continue;
+                }
+                if (inVerbatimString && c == stringDelimiter)
+                {
+                    // C#-style verbatim strings escape a literal quote by doubling it (`""`),
+                    // which does NOT close the string.
+                    if (i + 1 < documentText.Length && documentText[i + 1] == stringDelimiter)
+                    {
+                        i++;
+                        continue;
+                    }
+                    inString = false;
+                    inVerbatimString = false;
                     continue;
                 }
                 var closingDelim = inMultiLineString
@@ -1101,8 +1143,18 @@ public sealed class InsightEngine
 
             if (c is '"' or '\'')
             {
+                // Recognize a raw/verbatim string prefix immediately before the quote:
+                // C# `@"..."` / `$@"..."` / `@$"..."`, and Python/Rust `r"..."` / `r'...'`.
+                var prefixStart = i;
+                while (prefixStart > 0 && documentText[prefixStart - 1] is '@' or '$')
+                    prefixStart--;
+                var hasAtPrefix = prefixStart < i && documentText[prefixStart..i].Contains('@');
+                var hasRPrefix = i > 0 && (documentText[i - 1] is 'r' or 'R') &&
+                                  (i < 2 || !char.IsLetterOrDigit(documentText[i - 2]));
+
                 inString = true;
                 inMultiLineString = false;
+                inVerbatimString = hasAtPrefix || hasRPrefix;
                 stringDelimiter = c;
                 stringOpenOffset = i;
                 continue;
