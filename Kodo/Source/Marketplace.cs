@@ -436,6 +436,15 @@ public partial class MainWindow
     private void NotifyExtensionFiltersChanged()
     {
         OnPropertyChanged(nameof(FilteredInstalledExtensions));
+        OnPropertyChanged(nameof(FilteredInstalledLanguageExtensions));
+        OnPropertyChanged(nameof(FilteredInstalledPluginExtensions));
+        OnPropertyChanged(nameof(FilteredInstalledThemeExtensions));
+        OnPropertyChanged(nameof(HasVisibleInstalledLanguageExtensions));
+        OnPropertyChanged(nameof(HasVisibleInstalledPluginExtensions));
+        OnPropertyChanged(nameof(HasVisibleInstalledThemeExtensions));
+        OnPropertyChanged(nameof(IsInstalledLanguageDividerVisible));
+        OnPropertyChanged(nameof(IsInstalledPluginDividerVisible));
+        OnPropertyChanged(nameof(IsInstalledThemeDividerVisible));
         OnPropertyChanged(nameof(FilteredMarketplaceExtensions));
         OnPropertyChanged(nameof(FilteredCompilerExtensions));
         OnPropertyChanged(nameof(FilteredInstalledCompilerExtensions));

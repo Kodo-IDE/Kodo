@@ -3907,8 +3907,13 @@
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}" Spacing="12">
                             
                             <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensionsOrCompilers}">
-                            <StackPanel>
-                            <ItemsControl IsVisible="{Binding HasVisibleInstalledExtensions}" ItemsSource="{Binding FilteredInstalledExtensions}">
+                            <StackPanel Spacing="0">
+                            <!-- Languages -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" Margin="14,12,14,6" VerticalAlignment="Center">
+                                <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Languages" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" ItemsSource="{Binding FilteredInstalledLanguageExtensions}">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension">
                                         <Border Classes="extensionrow">
@@ -3923,14 +3928,11 @@
                                                 </StackPanel>
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
-                                                
                                                 <Border Grid.Column="0"
                                                         Width="3"
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-
-                                                <!-- Icon: image if available, accent box with abbreviation otherwise -->
                                                 <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
@@ -3956,7 +3958,6 @@
                                                                  IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                                     </Panel>
                                                 </Border>
-
                                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
                                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <TextBlock FontSize="14"
@@ -3971,7 +3972,6 @@
                                                                TextTrimming="CharacterEllipsis"
                                                                MaxLines="1" />
                                                 </StackPanel>
-
                                                 <StackPanel Grid.Column="3"
                                                             Orientation="Horizontal"
                                                             Spacing="14"
@@ -4011,23 +4011,22 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-
-                            <Border IsVisible="{Binding HasVisibleInstalledExtensionsAndCompilers}"
-                                    Height="2"
-                                    Margin="0,4"
-                                    Background="{Binding SurfaceBorderBrush}" />
-
-                            <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
-                                          ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
+                            <Border IsVisible="{Binding IsInstalledLanguageDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
+                            <!-- Plugins -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledPluginExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
+                                <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Plugins" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledPluginExtensions}" ItemsSource="{Binding FilteredInstalledPluginExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
                                                     <TextBlock Text="{Binding Name}"
                                                                FontWeight="SemiBold"
                                                                FontSize="12" />
-                                                    <TextBlock Text="{Binding Author}"
+                                                    <TextBlock Text="{Binding SourcePath}"
                                                                FontSize="11"
                                                                Opacity="0.7" />
                                                 </StackPanel>
@@ -4038,7 +4037,6 @@
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-
                                                 <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
@@ -4064,7 +4062,6 @@
                                                                  IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                                     </Panel>
                                                 </Border>
-
                                                 <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
                                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                                         <TextBlock FontSize="14"
@@ -4079,7 +4076,215 @@
                                                                TextTrimming="CharacterEllipsis"
                                                                MaxLines="1" />
                                                 </StackPanel>
-
+                                                <StackPanel Grid.Column="3"
+                                                            Orientation="Horizontal"
+                                                            Spacing="14"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Spacing="6"
+                                                                HorizontalAlignment="Right"
+                                                                VerticalAlignment="Center">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   FontSize="12"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button Classes="chrome"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                Tag="{Binding}"
+                                                                Click="UpdateInstalledExtensionButton_OnClick"
+                                                                Content="Update"
+                                                                IsVisible="{Binding IsUpdateAvailable}" />
+                                                        <Button Classes="uninstall"
+                                                                Tag="{Binding}"
+                                                                Click="UninstallExtensionButton_OnClick"
+                                                                Content="Uninstall" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border IsVisible="{Binding IsInstalledPluginDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
+                            <!-- Themes -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledThemeExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
+                                <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Themes" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledThemeExtensions}" ItemsSource="{Binding FilteredInstalledThemeExtensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                        <Border Classes="extensionrow">
+                                            <ToolTip.Tip>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="12" />
+                                                    <TextBlock Text="{Binding SourcePath}"
+                                                               FontSize="11"
+                                                               Opacity="0.7" />
+                                                </StackPanel>
+                                            </ToolTip.Tip>
+                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
+                                                <Border Grid.Column="0"
+                                                        Width="3"
+                                                        VerticalAlignment="Stretch"
+                                                        CornerRadius="2"
+                                                        Background="{Binding #RootWindow.AccentBrush}" />
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        Background="{Binding #RootWindow.AccentBrush}"
+                                                        IsVisible="{Binding !HasIcon}">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                                               Text="{Binding NameAbbreviation}" />
+                                                </Border>
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        IsVisible="{Binding HasIcon}"
+                                                        ClipToBounds="True">
+                                                    <Panel>
+                                                        <Image Source="{Binding IconImage}"
+                                                               Width="40"
+                                                               Height="40"
+                                                               Stretch="Uniform"
+                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <svg:Svg Source="{Binding SvgData}"
+                                                                 Width="40"
+                                                                 Height="40"
+                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </Panel>
+                                                </Border>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="14"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Description}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxLines="1" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="3"
+                                                            Orientation="Horizontal"
+                                                            Spacing="14"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal"
+                                                                Spacing="6"
+                                                                HorizontalAlignment="Right"
+                                                                VerticalAlignment="Center">
+                                                        <Border Width="6" Height="6" CornerRadius="3"
+                                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsUpdateAvailable}"
+                                                                ToolTip.Tip="Update available" />
+                                                        <TextBlock Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   FontSize="12"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Version}" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Button Classes="chrome"
+                                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                Tag="{Binding}"
+                                                                Click="UpdateInstalledExtensionButton_OnClick"
+                                                                Content="Update"
+                                                                IsVisible="{Binding IsUpdateAvailable}" />
+                                                        <Button Classes="uninstall"
+                                                                Tag="{Binding}"
+                                                                Click="UninstallExtensionButton_OnClick"
+                                                                Content="Uninstall" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Border IsVisible="{Binding IsInstalledThemeDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
+                            <!-- Compilers -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledCompilerExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
+                                <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Compilers" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
+                                          ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
+                                        <Border Classes="extensionrow">
+                                            <ToolTip.Tip>
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}"
+                                                               FontWeight="SemiBold"
+                                                               FontSize="12" />
+                                                    <TextBlock Text="{Binding Author}"
+                                                               FontSize="11"
+                                                               Opacity="0.7" />
+                                                </StackPanel>
+                                            </ToolTip.Tip>
+                                            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
+                                                <Border Grid.Column="0"
+                                                        Width="3"
+                                                        VerticalAlignment="Stretch"
+                                                        CornerRadius="2"
+                                                        Background="{Binding #RootWindow.AccentBrush}" />
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        Background="{Binding #RootWindow.AccentBrush}"
+                                                        IsVisible="{Binding !HasIcon}">
+                                                    <TextBlock HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                                               Text="{Binding NameAbbreviation}" />
+                                                </Border>
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                        IsVisible="{Binding HasIcon}"
+                                                        ClipToBounds="True">
+                                                    <Panel>
+                                                        <Image Source="{Binding IconImage}"
+                                                               Width="40"
+                                                               Height="40"
+                                                               Stretch="Uniform"
+                                                               IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                        <svg:Svg Source="{Binding SvgData}"
+                                                                 Width="40"
+                                                                 Height="40"
+                                                                 IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                    </Panel>
+                                                </Border>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="2">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="14"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                   Text="{Binding Name}"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12"
+                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                               Text="{Binding Description}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxLines="1" />
+                                                </StackPanel>
                                                 <StackPanel Grid.Column="3"
                                                             Orientation="Horizontal"
                                                             Spacing="14"

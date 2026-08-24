@@ -3277,14 +3277,65 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_selectedInstalledContentFilter == InstalledContentFilters.Compilers)
                 return [];
 
-            var source = string.IsNullOrWhiteSpace(_extensionSearchText)
-                ? VisibleLoadedExtensions
-                : VisibleLoadedExtensions.Where(e =>
+            IEnumerable<LoadedExtension> source = VisibleLoadedExtensions;
+
+            // Respect granular type filters
+            if (_selectedInstalledContentFilter == InstalledContentFilters.Languages)
+                source = source.Where(e => string.Equals(e.Type, "language", StringComparison.OrdinalIgnoreCase));
+            else if (_selectedInstalledContentFilter == InstalledContentFilters.Plugins)
+                source = source.Where(e => string.Equals(e.Type, "plugin", StringComparison.OrdinalIgnoreCase));
+            else if (_selectedInstalledContentFilter == InstalledContentFilters.Themes)
+                source = source.Where(e => string.Equals(e.Type, "theme", StringComparison.OrdinalIgnoreCase));
+            else if (_selectedInstalledContentFilter == InstalledContentFilters.Extensions)
+                source = source.Where(e => !string.Equals(e.Type, "compiler", StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrWhiteSpace(_extensionSearchText))
+            {
+                source = source.Where(e =>
                     e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
                     e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
             return SortInstalledExtensions(source);
         }
     }
+
+    public IEnumerable<LoadedExtension> FilteredInstalledLanguageExtensions => FilterInstalledExtensionsByType("language");
+    public IEnumerable<LoadedExtension> FilteredInstalledPluginExtensions => FilterInstalledExtensionsByType("plugin");
+    public IEnumerable<LoadedExtension> FilteredInstalledThemeExtensions => FilterInstalledExtensionsByType("theme");
+
+    private IEnumerable<LoadedExtension> FilterInstalledExtensionsByType(string type)
+    {
+        if (_selectedInstalledContentFilter == InstalledContentFilters.Compilers)
+            return [];
+
+        // If a specific extension type filter is active, hide other types
+        if (_selectedInstalledContentFilter == InstalledContentFilters.Languages && !string.Equals(type, "language", StringComparison.OrdinalIgnoreCase))
+            return [];
+        if (_selectedInstalledContentFilter == InstalledContentFilters.Plugins && !string.Equals(type, "plugin", StringComparison.OrdinalIgnoreCase))
+            return [];
+        if (_selectedInstalledContentFilter == InstalledContentFilters.Themes && !string.Equals(type, "theme", StringComparison.OrdinalIgnoreCase))
+            return [];
+
+        var source = VisibleLoadedExtensions.Where(e => string.Equals(e.Type, type, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_extensionSearchText))
+        {
+            source = source.Where(e =>
+                e.Name.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase) ||
+                e.Description.Contains(_extensionSearchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return SortInstalledExtensions(source);
+    }
+
+    public bool HasVisibleInstalledLanguageExtensions => FilteredInstalledLanguageExtensions.Any();
+    public bool HasVisibleInstalledPluginExtensions => FilteredInstalledPluginExtensions.Any();
+    public bool HasVisibleInstalledThemeExtensions => FilteredInstalledThemeExtensions.Any();
+
+    public bool IsInstalledLanguageDividerVisible => HasVisibleInstalledLanguageExtensions && (HasVisibleInstalledPluginExtensions || HasVisibleInstalledThemeExtensions || HasVisibleInstalledCompilerExtensions);
+    public bool IsInstalledPluginDividerVisible => HasVisibleInstalledPluginExtensions && (HasVisibleInstalledThemeExtensions || HasVisibleInstalledCompilerExtensions);
+    public bool IsInstalledThemeDividerVisible => HasVisibleInstalledThemeExtensions && HasVisibleInstalledCompilerExtensions;
 
     public IEnumerable<MarketplaceExtension> FilteredMarketplaceExtensions
     {
@@ -3314,7 +3365,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IReadOnlyList<string> InstalledContentFilterOptions { get; } =
     [
         InstalledContentFilters.All,
-        InstalledContentFilters.Extensions,
+        InstalledContentFilters.Languages,
+        InstalledContentFilters.Plugins,
+        InstalledContentFilters.Themes,
         InstalledContentFilters.Compilers
     ];
 
@@ -3353,7 +3406,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
-            if (_selectedInstalledContentFilter == InstalledContentFilters.Extensions)
+            // Only show compilers when filter is All or Compilers
+            if (_selectedInstalledContentFilter == InstalledContentFilters.Languages ||
+                _selectedInstalledContentFilter == InstalledContentFilters.Plugins ||
+                _selectedInstalledContentFilter == InstalledContentFilters.Themes ||
+                _selectedInstalledContentFilter == InstalledContentFilters.Extensions)
                 return [];
 
             IEnumerable<MarketplaceExtension> source = GetDeduplicatedInstalledCompilerSourceNoFilter();
@@ -3372,7 +3429,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasVisibleInstalledCompilerExtensions => FilteredInstalledCompilerExtensions.Any();
     public bool IsInstalledCompilersEmptyStateVisible =>
-        !HasVisibleInstalledCompilerExtensions && _selectedInstalledContentFilter != InstalledContentFilters.Extensions;
+        !HasVisibleInstalledCompilerExtensions && (_selectedInstalledContentFilter == InstalledContentFilters.All || _selectedInstalledContentFilter == InstalledContentFilters.Compilers);
 
     public IEnumerable<MarketplaceExtension> FilteredCompilerExtensions
     {

@@ -39,8 +39,11 @@ internal sealed class VersionNumberSequenceComparer : IComparer<int[]>
 public static class InstalledContentFilters
 {
     public const string All = "All";
-    public const string Extensions = "Extensions";
+    public const string Languages = "Languages";
+    public const string Plugins = "Plugins";
+    public const string Themes = "Themes";
     public const string Compilers = "Compilers";
+    public const string Extensions = "Extensions";
 }
 
 internal sealed record ExtensionScanResult(
