@@ -5798,7 +5798,7 @@
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
                                                 ToolTip.Tip="Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
-                                                Content="Export Kodo Data" />
+                                                Content="Export Kodo Data" />            
                                         <Button Classes="chrome red"
                                                 Click="ResetKodoButton_OnClick"
                                                 ToolTip.Tip="Reset all Kodo data and relaunch the application"

@@ -315,6 +315,8 @@ public partial class MainWindow
         await OpenFileFromPathAsync(path);
     }
 
+    private const long MaxFileSizeForFullLoad = 5_000_000; // 5MB
+
     private async Task OpenFileFromPathAsync(string path)
     {
         EnsureCurrentDocumentHasTab();
@@ -350,7 +352,16 @@ public partial class MainWindow
 
                 isCorrupted = corrupted;
                 _currentFileEncoding = encoding;
-                content = isCorrupted ? string.Empty : await File.ReadAllTextAsync(path, encoding);
+
+                if (File.Exists(path) && new FileInfo(path).Length > MaxFileSizeForFullLoad)
+                {
+                    // For large files, read in chunks to avoid UI lag
+                    content = await ReadLargeFileAsync(path, encoding);
+                }
+                else
+                {
+                    content = isCorrupted ? string.Empty : await File.ReadAllTextAsync(path, encoding);
+                }
             }
         }
         catch (Exception ex)
@@ -359,7 +370,6 @@ public partial class MainWindow
             return;
         }
 
-        // Navigates away from Home before adding the tab (mirrors NewFile()).
         NavigateTo(AppPage.Editor);
 
         var tab = new EditorTab(path, Path.GetFileName(path), content);
@@ -368,6 +378,20 @@ public partial class MainWindow
         OpenTabs.Add(tab);
         AddRecentFile(path);
         ActivateTab(tab);
+    }
+
+    private static async Task<string> ReadLargeFileAsync(string path, System.Text.Encoding encoding)
+    {
+        var sb = new StringBuilder();
+        const int chunkSize = 65536; // 64KB chunks
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var buffer = new byte[chunkSize];
+        int bytesRead;
+        while ((bytesRead = await fs.ReadAsync(buffer.AsMemory())) > 0)
+        {
+            sb.Append(encoding.GetString(buffer, 0, bytesRead));
+        }
+        return sb.ToString();
     }
 
     private async Task OpenFolderAsync()
