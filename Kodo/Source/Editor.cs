@@ -542,8 +542,9 @@ public partial class MainWindow
         {
             MaxHeight = InsightRowHeight * InsightVisibleRows
                 + InsightListVerticalPadding + InsightBorderThickness,
-            MaxWidth = 560,
-            Width = 560,
+            MaxWidth = 480,
+            Width = 440,
+            MinWidth = 360,
             WindowManagerAddShadowHint = true,
         };
 
@@ -554,45 +555,65 @@ public partial class MainWindow
         window.CompletionList.FontFamily = EditorTextBox.FontFamily;
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        // Rounds the popup panel to match every other card/flyout in the app.
+        // Refined panel: tighter 10px radius, layered soft shadow, matches app cards
+        // but feels like an editor popup - not a full dialog.
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
-        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(12)));
-        panelCornerStyle.Setters.Add(new Setter(Border.BoxShadowProperty, new BoxShadows(new BoxShadow { OffsetX = 0, OffsetY = 8, Blur = 32, Spread = 0, Color = Color.FromArgb(64, 0, 0, 0) })));
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(10)));
+        panelCornerStyle.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush));
+        panelCornerStyle.Setters.Add(new Setter(Border.BoxShadowProperty, new BoxShadows(
+            new BoxShadow { OffsetX = 0, OffsetY = 8, Blur = 28, Spread = 0, Color = Color.FromArgb(38, 0, 0, 0) },
+            new BoxShadow[] { new BoxShadow { OffsetX = 0, OffsetY = 2, Blur = 10, Spread = 0, Color = Color.FromArgb(20, 0, 0, 0) } })));
         window.Styles.Add(panelCornerStyle);
 
         if (window.CompletionList.ListBox is { } listBox)
         {
-            // Opaque background so editor text can't bleed through the gaps between rows.
             listBox.Background = panelBrush;
-            listBox.Padding = new Thickness(0, 4);
+            listBox.BorderThickness = new Thickness(0);
+            listBox.Padding = new Thickness(6, 4);
             listBox.Margin = new Thickness(0);
             listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+            listBox.ClipToBounds = true;
         }
 
+        // No transitions on virtualized rows prevents flash when the list rebuilds on
+        // every keystroke; hover/selected remain instantaneous and calm.
         var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
         noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
         window.Styles.Add(noTransitionStyle);
 
+        // Base row: transparent canvas so the card shows through; only hover/selected
+        // paint a rounded chip. Inset margin gives breathing room around each row.
         var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
-        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, panelBrush));
+        baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, Brushes.Transparent));
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
+        baseRowStyle.Setters.Add(new Setter(Layoutable.MarginProperty, new Thickness(0, 1)));
         window.Styles.Add(baseRowStyle);
 
+        // Rounded chip for every row - ensures hover/selected backgrounds are pill-shaped.
+        var itemCornerStyle = new Style(x => x.OfType<ListBoxItem>().Template().OfType<Border>());
+        itemCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(7)));
+        window.Styles.Add(itemCornerStyle);
+
         var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
-            ? new SolidColorBrush(accentSolid.Color, 0.28)
+            ? new SolidColorBrush(accentSolid.Color, 0.16)
             : AccentBrush;
+
         var selectedRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected"));
         selectedRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
         window.Styles.Add(selectedRowStyle);
 
-        // Hover row: reuses the app's own button-hover color instead of a hardcoded gray.
+        // Keep selected accent even when pointer is over the selected row.
+        var selectedHoverStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected").Class(":pointerover"));
+        selectedHoverStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
+        window.Styles.Add(selectedHoverStyle);
+
         var hoverRowStyle = new Style(x => x.OfType<ListBoxItem>().Class(":pointerover"));
         hoverRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, ButtonHoverBrush));
         window.Styles.Add(hoverRowStyle);
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(10, 6)));
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 28d));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(10, 7)));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 32d));
         window.Styles.Add(rowPaddingStyle);
 
         window.Closed += (_, _) => _completionWindow = null;

@@ -7543,10 +7543,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.Redraw();
     }
 
-    private const double InsightRowHeight = 26d;
-    private const double InsightListVerticalPadding = 8d;  // ListBox Padding(0,4) top+bottom
-    private const double InsightBorderThickness = 2d;      // 1px top + 1px bottom
-    private const int InsightVisibleRows = 8;
+    private const double InsightRowHeight = 32d;
+    private const double InsightListVerticalPadding = 12d; // ListBox Padding(6,4) + margin breathing
+    private const double InsightBorderThickness = 2d;       // 1px top + 1px bottom
+    private const int InsightVisibleRows = 7;
 
 
 

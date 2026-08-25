@@ -110,7 +110,8 @@ public sealed class InsightSuggestion : ICompletionData
         "C3 16.3747 3 16.7823 3.13495 17.1308C3.25414 17.4386 3.44766 17.7121 3.69824 17.9269" +
         "C3.98195 18.1702 4.36629 18.3058 5.13498 18.5771Z");
 
-    // [icon chip] [name] [kind label, right-aligned], themed to Kodo's live colors.
+    // Refined row: [22px rounded chip] [name @ 13px medium mono] [kind @ 11px muted, right-aligned]
+    // Tighter metrics, softer chip, and looser row padding give a calmer, production feel.
     private Control BuildContentVisual()
     {
         var iconGeometry = Kind switch
@@ -126,20 +127,22 @@ public sealed class InsightSuggestion : ICompletionData
 
         var iconChip = new Border
         {
-            Width = 20,
-            Height = 20,
-            CornerRadius = new CornerRadius(6),
+            Width = 22,
+            Height = 22,
+            CornerRadius = new CornerRadius(7),
             Background = GlyphBrushes[Kind],
+            BorderBrush = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)),
+            BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
             Child = new Path
             {
                 Data = iconGeometry,
                 Stretch = Stretch.Uniform,
-                Width = 12,
-                Height = 12,
+                Width = 11,
+                Height = 11,
                 Fill = Brushes.White,
                 Stroke = Brushes.White,
-                StrokeThickness = 1.5,
+                StrokeThickness = 1.25,
                 StrokeLineCap = PenLineCap.Round,
                 StrokeJoin = PenLineJoin.Round,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -153,7 +156,8 @@ public sealed class InsightSuggestion : ICompletionData
             Foreground = PanelForeground,
             FontFamily = MonoFontFamily,
             FontSize = 13,
-            Margin = new Thickness(8, 0, 16, 0),
+            FontWeight = FontWeight.Medium,
+            Margin = new Thickness(10, 0, 12, 0),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -164,17 +168,21 @@ public sealed class InsightSuggestion : ICompletionData
             Text = KindLabel(Kind),
             Foreground = MutedForeground,
             FontSize = 11,
+            FontWeight = FontWeight.Normal,
+            Opacity = 0.84,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
-            MaxWidth = 160,
+            MaxWidth = 120,
+            Margin = new Thickness(0, 0, 2, 0),
         };
 
         var row = new Grid
         {
             VerticalAlignment = VerticalAlignment.Center,
             ClipToBounds = true,
+            ColumnSpacing = 0,
         };
         row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
         row.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)) { MinWidth = 40 });
