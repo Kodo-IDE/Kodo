@@ -49,6 +49,11 @@
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
         </Style>
 
+        <Style Selector="Button.chrome.red">
+            <Setter Property="Background" Value="Red" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+
         <Style Selector="Border.runbuildgroup">
             <Setter Property="CornerRadius" Value="12" />
             <Setter Property="ClipToBounds" Value="True" />
@@ -5787,9 +5792,18 @@
                                                 ToolTip.Tip="Delete kodo.log and crash.log from disk"
                                                 Content="Clear Logs" />
                                         <Button Classes="chrome"
+                                                Click="ClearCacheButton_OnClick"
+                                                ToolTip.Tip="Clear all cache files from disk"
+                                                Content="Clear Cache" />
+                                        <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
                                                 ToolTip.Tip="Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
                                                 Content="Export Kodo Data" />
+                                        <Button Classes="chrome red"
+                                                Click="ResetKodoButton_OnClick"
+                                                ToolTip.Tip="Reset all Kodo data and relaunch the application"
+                                                Content="Reset Kodo"
+                                                HorizontalAlignment="Right" />
                                     </StackPanel>
 
                                     <TextBlock VerticalAlignment="Center"

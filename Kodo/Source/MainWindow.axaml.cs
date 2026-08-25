@@ -6536,6 +6536,88 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : "No logs to clear.";
     }
 
+    private async void ClearCacheButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Clear cache?",
+            "This permanently deletes cache files from disk. This can't be undone.",
+            confirmLabel: "Clear",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        var clearedAny = false;
+        var failures = new List<string>();
+
+        var kodoDir = KodoDiagnostics.LogDirectoryPath;
+        if (Directory.Exists(kodoDir))
+        {
+            foreach (var file in Directory.GetFiles(kodoDir, "*", SearchOption.AllDirectories))
+            {
+                var fileName = Path.GetFileName(file);
+                try
+                {
+                    // Preserve log files and settings - those are handled separately
+                    if (fileName == "kodo.log" || fileName == "crash.log" || fileName == "kodosettings.json") continue;
+                    File.Delete(file);
+                    clearedAny = true;
+                }
+                catch (Exception ex)
+                {
+                    failures.Add($"{fileName} ({ex.Message})");
+                }
+            }
+        }
+
+        DeveloperOptionsStatusText = failures.Count > 0
+            ? $"Couldn't clear: {string.Join(", ", failures)}"
+            : clearedAny
+                ? "Cache cleared."
+                : "No cache to clear.";
+    }
+
+    private async void ResetKodoButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Reset Kodo?",
+            "This permanently deletes ALL Kodo data (logs, cache, settings) and relaunches the application. This can't be undone.",
+            confirmLabel: "Reset",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        var kodoDir = KodoDiagnostics.LogDirectoryPath;
+        if (Directory.Exists(kodoDir))
+        {
+            foreach (var file in Directory.GetFiles(kodoDir, "*", SearchOption.AllDirectories))
+            {
+                var fileName = Path.GetFileName(file);
+                try
+                {
+                    // Preserve nothing - delete everything
+                    File.Delete(file);
+                }
+                catch { /* best effort */ }
+            }
+        }
+
+        DeveloperOptionsStatusText = "Kodo data reset. Relaunching...";
+
+        // Close current window and restart
+        this.Close();
+
+        // Relaunch using the executable path
+        var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
+        if (!string.IsNullOrEmpty(exePath))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+            }
+            catch { /* best effort */ }
+        }
+    }
+
     private string BuildDiagnosticReport()
     {
         var sb = new StringBuilder();
