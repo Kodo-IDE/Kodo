@@ -592,7 +592,7 @@ public partial class MainWindow
 
         var rowPaddingStyle = new Style(x => x.OfType<ListBoxItem>());
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.PaddingProperty, new Thickness(10, 6)));
-        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 28));
+        rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 28d));
         window.Styles.Add(rowPaddingStyle);
 
         window.Closed += (_, _) => _completionWindow = null;
