@@ -6586,6 +6586,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!confirmed) return;
 
+        // Delete settings file (separate from logs/cache directory)
+        var settingsFilePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Kodo", "kodosettings.json");
+        if (File.Exists(settingsFilePath))
+        {
+            try { File.Delete(settingsFilePath); }
+            catch { /* best effort */ }
+        }
+
         var kodoDir = KodoDiagnostics.LogDirectoryPath;
         if (Directory.Exists(kodoDir))
         {
@@ -6594,7 +6604,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var fileName = Path.GetFileName(file);
                 try
                 {
-                    // Preserve nothing - delete everything
+                    // Preserve nothing - delete everything (logs, cache files)
+                    // kodo.log and crash.log are excluded by ClearCacheButton logic,
+                    // but Reset deletes everything
                     File.Delete(file);
                 }
                 catch { /* best effort */ }
