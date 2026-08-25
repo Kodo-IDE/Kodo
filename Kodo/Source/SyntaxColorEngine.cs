@@ -37,10 +37,15 @@ public sealed class CompiledSyntaxProfile
         SingleLineCommentRegex = singleLineCommentRegex;
     }
 
+    private static bool IsBatchExtension(LoadedExtension extension) =>
+        extension.Extensions.Any(ext => string.Equals(ext, ".bat", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".cmd", StringComparison.OrdinalIgnoreCase)) ||
+        extension.Id.IndexOf("batch", StringComparison.OrdinalIgnoreCase) >= 0;
+
     public static CompiledSyntaxProfile Create(LoadedExtension extension)
     {
         var rules = new List<CompiledSyntaxRule>();
         var traits = SyntaxLanguageTraits.From(extension);
+        var isBatch = IsBatchExtension(extension);
 
         if (extension.Keywords.Length > 0)
             rules.Add(CreateTokenRule(extension.Keywords, traits, SyntaxTokenKind.Keyword, "keyword", "#569CD6"));
@@ -97,7 +102,16 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(@"=>|->|::|\+\+|--|\+=|-=|\*=|/=|%=|&&|\|\||<<|>>|<=|>=|==|!=|=|\+|-|\*|/|%|!|\?|:|<|>|&|\||\^|~", RegexOptions.Compiled), "operator", "#D4D4D4"));
             rules.Add(new(new Regex(@"[{}\[\]();,.]", RegexOptions.Compiled), "punctuation", "#D4D4D4"));
             rules.Add(new(new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled), "namespace", "#4FC1FF"));
-            rules.Add(new(BuildVariableRegex(extension.Keywords.Concat(extension.Types).Concat(extension.Functions).Concat(extension.Properties).Concat(extension.Namespaces)), "variable", "#A0DBFD"));
+            if (isBatch)
+            {
+                // Batch variables are explicit expansions like %VAR%, !VAR!, %%a, %~dp0, %1 etc.
+                // Use a precise pattern instead of the generic bare-word variable regex.
+                rules.Add(new(new Regex(@"%[0-9*]|%~[a-zA-Z\$]*\d*|%[A-Za-z_][A-Za-z0-9_]*%|![A-Za-z_][A-Za-z0-9_]*!|%%[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled | RegexOptions.IgnoreCase), "variable", "#A0DBFD"));
+            }
+            else
+            {
+                rules.Add(new(BuildVariableRegex(extension.Keywords.Concat(extension.Types).Concat(extension.Functions).Concat(extension.Properties).Concat(extension.Namespaces)), "variable", "#A0DBFD"));
+            }
         }
 
         if (traits.IsCssLike)
@@ -119,9 +133,20 @@ public sealed class CompiledSyntaxProfile
             stringRegexes.Add(BuildSingleLineStringRegex(delimiter));
         }
 
-        var singleLineCommentRegex = string.IsNullOrWhiteSpace(extension.CommentLine)
-            ? null
-            : new Regex(Regex.Escape(extension.CommentLine) + @".*$", RegexOptions.Compiled);
+        Regex? singleLineCommentRegex;
+        if (string.IsNullOrWhiteSpace(extension.CommentLine))
+        {
+            singleLineCommentRegex = null;
+        }
+        else if (isBatch)
+        {
+            // Batch: REM is case-insensitive and :: is also a comment
+            singleLineCommentRegex = new Regex(@"(?:(?i)rem|::).*$", RegexOptions.Compiled);
+        }
+        else
+        {
+            singleLineCommentRegex = new Regex(Regex.Escape(extension.CommentLine) + @".*$", RegexOptions.Compiled);
+        }
 
         return new CompiledSyntaxProfile(extension, rules, stringRegexes, singleLineCommentRegex);
     }
@@ -353,6 +378,10 @@ public sealed class EmbeddedSyntaxProfile
         _ = Process(text, initialState, (start, end, brush) => applyBrush(lineOffset + start, lineOffset + end, brush), rainbowBrushResolver);
     }
 
+    private static bool IsBatchExtension(LoadedExtension ext) =>
+        ext.Extensions.Any(e => string.Equals(e, ".bat", StringComparison.OrdinalIgnoreCase) || string.Equals(e, ".cmd", StringComparison.OrdinalIgnoreCase)) ||
+        ext.Id.IndexOf("batch", StringComparison.OrdinalIgnoreCase) >= 0;
+
     private EmbeddedSyntaxState Process(
         string text,
         EmbeddedSyntaxState initialState,
@@ -362,6 +391,7 @@ public sealed class EmbeddedSyntaxProfile
         if (string.IsNullOrEmpty(text))
             return initialState;
 
+        var isBatch = IsBatchExtension(Extension);
         var protectedRanges = new bool[text.Length];
         var stack = new Stack<char>(initialState.BracketStack.Reverse());
         var mode = initialState.Mode;
@@ -426,12 +456,36 @@ public sealed class EmbeddedSyntaxProfile
                 continue;
             }
 
-            if (!string.IsNullOrEmpty(Extension.CommentLine) && MatchesAt(text, index, Extension.CommentLine))
+            if (!string.IsNullOrEmpty(Extension.CommentLine) && (isBatch ? MatchesAtIgnoreCase(text, index, Extension.CommentLine) : MatchesAt(text, index, Extension.CommentLine)))
             {
                 mode = EmbeddedSyntaxScanMode.LineComment;
                 activeDelimiter = null;
                 segmentStart = index;
                 index += Extension.CommentLine.Length - 1;
+                continue;
+            }
+
+            if (isBatch && MatchesAt(text, index, "::"))
+            {
+                mode = EmbeddedSyntaxScanMode.LineComment;
+                activeDelimiter = null;
+                segmentStart = index;
+                index += 1; // :: is 2 chars, loop will increment; we consumed 2
+                continue;
+            }
+
+            if (isBatch && IsBatchEchoStart(text, index))
+            {
+                // Reserve the literal echoed text so it is not highlighted as variables etc.
+                var lineEnd = text.IndexOf('\n', index);
+                if (lineEnd < 0) lineEnd = text.Length;
+                else if (lineEnd > 0 && text[lineEnd - 1] == '\r') lineEnd--; // keep \r out
+                var echoPrefixLen = GetBatchEchoPrefixLength(text, index);
+                var contentStart = index + echoPrefixLen;
+                if (contentStart < lineEnd)
+                    TryReserveRange(protectedRanges, contentStart, lineEnd);
+                // Skip to end of line
+                index = lineEnd - 1;
                 continue;
             }
 
@@ -652,6 +706,49 @@ public sealed class EmbeddedSyntaxProfile
         index + token.Length <= text.Length &&
         string.CompareOrdinal(text, index, token, 0, token.Length) == 0;
 
+    private static bool MatchesAtIgnoreCase(string text, int index, string token) =>
+        index >= 0 &&
+        index + token.Length <= text.Length &&
+        string.Compare(text, index, token, 0, token.Length, StringComparison.OrdinalIgnoreCase) == 0;
+
+    private static bool IsBatchEchoStart(string text, int index)
+    {
+        // Must be at line start (after optional whitespace) and match @?echo[.:()]? (case-insensitive)
+        var lineStart = index;
+        while (lineStart > 0 && text[lineStart - 1] != '\n' && text[lineStart - 1] != '\r')
+            lineStart--;
+        // check only whitespace between lineStart and index
+        for (var i = lineStart; i < index; i++)
+            if (!char.IsWhiteSpace(text[i]))
+                return false;
+        var remaining = text.Length - index;
+        if (remaining < 4) return false;
+        var atOffset = 0;
+        if (text[index] == '@')
+        {
+            atOffset = 1;
+            if (remaining < 5) return false;
+        }
+        if (string.Compare(text, index + atOffset, "echo", 0, 4, StringComparison.OrdinalIgnoreCase) != 0)
+            return false;
+        var after = index + atOffset + 4;
+        if (after < text.Length && text[after] is '.' or ':' or '(')
+            after++;
+        // ensure next char is whitespace, end, or we still treat as echo even if immediate text like echo.hello
+        return true;
+    }
+
+    private static int GetBatchEchoPrefixLength(string text, int index)
+    {
+        var len = 0;
+        var atOffset = text[index] == '@' ? 1 : 0;
+        len = atOffset + 4; // echo
+        var after = index + len;
+        if (after < text.Length && text[after] is '.' or ':' or '(')
+            len++;
+        return len;
+    }
+
     private static bool IsEscaped(string text, int index)
     {
         var slashCount = 0;
@@ -871,6 +968,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
     private string _commentBlockEnd = "*/";
     private string[] _stringDelimiters = ["\"", "'"];
     private string[] _multiLineStringDelimiters = [];
+    private bool _isBatch;
 
     public bool IsEnabled { get; set; } = true;
 
@@ -884,6 +982,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             _commentBlockEnd = "*/";
             _stringDelimiters = ["\"", "'"];
             _multiLineStringDelimiters = [];
+            _isBatch = false;
         }
         else
         {
@@ -899,6 +998,8 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
                 .Where(d => !string.IsNullOrEmpty(d))
                 .Distinct()
                 .ToArray();
+            _isBatch = extension.Extensions.Any(ext => string.Equals(ext, ".bat", StringComparison.OrdinalIgnoreCase) || string.Equals(ext, ".cmd", StringComparison.OrdinalIgnoreCase)) ||
+                       extension.Id.IndexOf("batch", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         InvalidateCache();
@@ -918,12 +1019,27 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var snapshot = EnsureSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
+        // Batch: echo lines are literal output – don't rainbow brackets in the echoed text.
+        int batchEchoContentStart = -1;
+        if (_isBatch)
+        {
+            var echoMatch = Regex.Match(text, @"^\s*@?echo[\.:\(]?", RegexOptions.IgnoreCase);
+            if (echoMatch.Success)
+                batchEchoContentStart = echoMatch.Length;
+            else if (Regex.IsMatch(text, @"^\s*::"))
+                return; // comment line – no brackets
+            else if (Regex.IsMatch(text.TrimStart(), @"^rem\b", RegexOptions.IgnoreCase))
+                return;
+        }
         var stack = new Stack<char>(lineState.BracketStack);
         var mode = lineState.Mode;
         var activeDelimiter = lineState.Delimiter;
 
         for (var index = 0; index < text.Length; index++)
         {
+            if (batchEchoContentStart >= 0 && index >= batchEchoContentStart)
+                break;
+
             var nextMode = mode;
             var nextDelimiter = activeDelimiter;
 
@@ -3008,6 +3124,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         return new HighlightingColor { Foreground = new SimpleHighlightingBrush(Color.Parse(hex)) };
     }
 
+    private static bool IsBatchExtension(LoadedExtension ext) =>
+        ext.Extensions.Any(e => string.Equals(e, ".bat", StringComparison.OrdinalIgnoreCase) || string.Equals(e, ".cmd", StringComparison.OrdinalIgnoreCase)) ||
+        ext.Id.IndexOf("batch", StringComparison.OrdinalIgnoreCase) >= 0;
+
     private static HighlightingRuleSet BuildRuleSet(LoadedExtension ext, CompiledSyntaxProfile syntaxProfile)
     {
         var commentColor     = ColorFor(ext, "comment",      "#6A9955");
@@ -3024,6 +3144,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         var punctuationColor = ColorFor(ext, "punctuation",  "#D4D4D4");
         var preprocessorColor = ColorFor(ext, "preprocessor", "#C586C0");
         var variableColor    = ColorFor(ext, "variable",      "#A0DBFD");
+        var isBatch          = IsBatchExtension(ext);
         var supportsCommonStringPrefixes =
             ext.StringDelimiters.Contains("\"") ||
             ext.StringDelimiters.Contains("'") ||
@@ -3116,12 +3237,67 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         // Single-line comment to end-of-line; $ anchors so the whole remainder is colored.
         if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
+            var commentOptions = isBatch ? RegexOptions.IgnoreCase : RegexOptions.None;
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(Regex.Escape(ext.CommentLine), RegexOptions.Compiled),
+                StartExpression        = new Regex(Regex.Escape(ext.CommentLine), RegexOptions.Compiled | commentOptions),
                 EndExpression          = new Regex("$", RegexOptions.Compiled),
                 SpanColor              = commentColor,
                 SpanColorIncludesStart = true,
+                SpanColorIncludesEnd   = false,
+                RuleSet                = emptyRuleSet
+            });
+
+            if (isBatch)
+            {
+                // Batch also uses :: as a comment (alternative to REM) – always at line start-ish
+                mainRuleSet.Spans.Add(new HighlightingSpan
+                {
+                    StartExpression        = new Regex(@"::", RegexOptions.Compiled),
+                    EndExpression          = new Regex("$", RegexOptions.Compiled),
+                    SpanColor              = commentColor,
+                    SpanColorIncludesStart = true,
+                    SpanColorIncludesEnd   = false,
+                    RuleSet                = emptyRuleSet
+                });
+
+                // Batch echo: everything after the echo command is literal output and must not
+                // be highlighted as variables / keywords / numbers etc.
+                // The span starts after the echo keyword (optional @, optional . : ( ) so
+                // the keyword itself remains colored as a function.
+                mainRuleSet.Spans.Add(new HighlightingSpan
+                {
+                    StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                    EndExpression          = new Regex("$", RegexOptions.Compiled),
+                    SpanColor              = ColorFor(ext, "plain", "#D4D4D4"),
+                    SpanColorIncludesStart = false,
+                    SpanColorIncludesEnd   = false,
+                    RuleSet                = emptyRuleSet
+                });
+
+                // echo. / echo: with no trailing space – dot/colon is part of the command
+                // Also handle lines where echo is followed immediately by text (e.g. echo.hello)
+                // The previous span already covers those because it includes the punctuation.
+            }
+        }
+        else if (!isMarkdown && isBatch)
+        {
+            // Fallback when CommentLine is empty but we still want :: support
+            mainRuleSet.Spans.Add(new HighlightingSpan
+            {
+                StartExpression        = new Regex(@"::", RegexOptions.Compiled),
+                EndExpression          = new Regex("$", RegexOptions.Compiled),
+                SpanColor              = commentColor,
+                SpanColorIncludesStart = true,
+                SpanColorIncludesEnd   = false,
+                RuleSet                = emptyRuleSet
+            });
+            mainRuleSet.Spans.Add(new HighlightingSpan
+            {
+                StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                EndExpression          = new Regex("$", RegexOptions.Compiled),
+                SpanColor              = ColorFor(ext, "plain", "#D4D4D4"),
+                SpanColorIncludesStart = false,
                 SpanColorIncludesEnd   = false,
                 RuleSet                = emptyRuleSet
             });
