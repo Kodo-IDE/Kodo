@@ -22,7 +22,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
 
     private int _cachedLineNumber = -1;
     private string _cachedLineText = string.Empty;
-    private List<Match> _cachedMatches = [];
+    private MatchCollection _cachedMatches = default!;
 
     public bool IsEnabled { get; set; } = true;
 
@@ -39,11 +39,11 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             _cachedLineNumber = lineNumber;
             _cachedLineText = lineText;
-            _cachedMatches = HexColorRegex.Matches(lineText).Cast<Match>().ToList();
+            _cachedMatches = HexColorRegex.Matches(lineText);
         }
 
         var relativeStart = startOffset - line.FirstDocumentLine.Offset;
-        foreach (var match in _cachedMatches)
+        foreach (Match match in _cachedMatches)
         {
             if (match.Index >= relativeStart)
                 return line.FirstDocumentLine.Offset + match.Index;
@@ -63,7 +63,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             _cachedLineNumber = lineNumber;
             _cachedLineText = lineText;
-            _cachedMatches = HexColorRegex.Matches(lineText).Cast<Match>().ToList();
+            _cachedMatches = HexColorRegex.Matches(lineText);
         }
 
         var relativeOffset = offset - line.FirstDocumentLine.Offset;

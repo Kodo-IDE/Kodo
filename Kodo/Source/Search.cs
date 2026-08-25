@@ -1259,13 +1259,27 @@ public partial class MainWindow
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
+    private Regex? _cachedFindRegex;
+    private string _cachedFindText = "";
+    private bool _cachedFindMatchCase;
+    private bool _cachedFindRegexEnabled;
+
     private Regex? BuildFindRegex()
     {
         if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText)) return null;
+        if (_cachedFindText == FindText && _cachedFindMatchCase == IsSearchMatchCaseEnabled && _cachedFindRegexEnabled == IsSearchRegexEnabled)
+        {
+            return _cachedFindRegex!;
+        }
+        _cachedFindText = FindText;
+        _cachedFindMatchCase = IsSearchMatchCaseEnabled;
+        _cachedFindRegexEnabled = IsSearchRegexEnabled;
         try
         {
             var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;
-            return new Regex(FindText, options | RegexOptions.Compiled);
+            var regex = new Regex(FindText, options | RegexOptions.Compiled);
+            _cachedFindRegex = regex;
+            return regex;
         }
         catch
         {

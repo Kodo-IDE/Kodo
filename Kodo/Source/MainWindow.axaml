@@ -4746,6 +4746,7 @@
                     <StackPanel x:Name="SettingsCardsPanel"
                                 Margin="32,28,32,36"
                                 Spacing="16"
+                                Width="760"
                                 MaxWidth="760"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Top">

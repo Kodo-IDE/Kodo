@@ -89,9 +89,28 @@ public partial class MainWindow
         }
 
         var text = EditorTextBox.Document.Text;
-        var wordCount = string.IsNullOrWhiteSpace(text)
-            ? 0
-            : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            WordCountText = "0 words";
+            return;
+        }
+
+        // Count words via Span enumeration - zero allocations vs Split(array+Length)
+        var chars = text.AsSpan();
+        int wordCount = 0;
+        bool inWord = false;
+        for (var i = 0; i < chars.Length; i++)
+        {
+            if (char.IsWhiteSpace(chars[i]))
+            {
+                inWord = false;
+            }
+            else if (!inWord)
+            {
+                inWord = true;
+                wordCount++;
+            }
+        }
         WordCountText = $"{wordCount} words";
     }
 
