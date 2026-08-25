@@ -839,9 +839,15 @@ public partial class MainWindow
         }
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        foreach (var line in lines.OrderByDescending(l => l.Offset))
-            doc.Insert(line.Offset, GetIndentUnit());
-
+        // Build indented text for all selected lines, then replace the segment
+        // in a single operation to batch the undo unit instead of one per line.
+        var indentedLines = lines.OrderByDescending(l => l.Offset)
+            .Select(l => GetIndentUnit() + doc.GetText(l));
+        var newText = string.Join(Environment.NewLine, indentedLines);
+        
+        // Replace the entire selection segment with indented text as one undo unit
+        doc.Replace(segment, newText);
+        
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
@@ -856,7 +862,11 @@ public partial class MainWindow
             if (removable <= 0)
                 return;
 
-            doc.Remove(line.Offset, removable);
+            // Remove leading whitespace from the single line in a single operation
+            // to batch the undo/redo unit instead of separate calls.
+            var outdentedText = lineText.TrimStart();
+            doc.Replace(line.Offset, line.Length, outdentedText);
+            
             SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
             return;
         }
@@ -866,19 +876,16 @@ public partial class MainWindow
             return;
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        var removed = 0;
-        foreach (var line in lines.OrderByDescending(l => l.Offset))
-        {
-            var lineText = doc.GetText(line);
-            var removable = GetOutdentLength(lineText, lineText.Length);
-            if (removable <= 0)
-                continue;
-
-            doc.Remove(line.Offset, removable);
-            removed += removable;
-        }
-
-        SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - removed));
+        // Collect the text of each line, remove leading whitespace, and join
+        // to replace the selection segment in a single undo unit.
+        var linesText = lines.OrderByDescending(l => l.Offset)
+            .Select(l => doc.GetText(l).TrimStart());
+        var replacedText = string.Join(Environment.NewLine, linesText);
+        
+        // Replace the entire selection segment with outdented text as one undo unit
+        doc.Replace(segment, replacedText);
+        
+        SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
     }
 
     private static string GetLeadingWhitespace(string text)
