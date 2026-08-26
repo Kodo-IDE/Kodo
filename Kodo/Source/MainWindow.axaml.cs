@@ -1,5 +1,6 @@
 // Licensed under GPL-v3.0
 using System;
+using System.Collections.Concurrent;
 using System.Reflection;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -238,6 +239,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _marketplaceSvgCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);

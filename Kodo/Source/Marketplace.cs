@@ -428,7 +428,14 @@ public partial class MainWindow
             _iconFetchSemaphore.Release();
         }
 
-        return DecodeCachedIconBytes(bytes);
+        var icon = DecodeCachedIconBytes(bytes);
+        if (icon.SvgData is not null)
+        {
+            var svgData = _marketplaceSvgCache.GetOrAdd(iconUrl, icon.SvgData);
+            return new IconResult(null, svgData);
+        }
+
+        return icon;
     }
 
     private static IconResult DecodeCachedIconBytes(byte[] bytes)
