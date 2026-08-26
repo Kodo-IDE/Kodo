@@ -11,6 +11,7 @@ using Avalonia.Threading;
 using Microsoft.Win32;
 using System;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
@@ -46,7 +47,14 @@ public partial class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // desktop.Args[0] is the file path when launched via "Open with" / double-click.
-            var startupFilePath = desktop.Args?.Length > 0 ? desktop.Args[0] : null;
+            var resetRequested = desktop.Args?.Any(arg =>
+                string.Equals(arg, "--reset-kodo", StringComparison.OrdinalIgnoreCase)) == true;
+            if (resetRequested)
+                DeleteKodoDataBeforeStartup();
+
+            var startupFilePath = resetRequested
+                ? null
+                : desktop.Args?.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
             var mainWindow = new MainWindow(startupFilePath);
             desktop.MainWindow = mainWindow;
 
@@ -72,6 +80,30 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void DeleteKodoDataBeforeStartup()
+    {
+        var directories = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo"),
+            KodoDiagnostics.LogDirectoryPath,
+        }.Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var directory in directories)
+        {
+            for (var attempt = 0; attempt < 12 && Directory.Exists(directory); attempt++)
+            {
+                try
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+                catch when (attempt < 11)
+                {
+                    Thread.Sleep(250);
+                }
+            }
+        }
     }
 
 

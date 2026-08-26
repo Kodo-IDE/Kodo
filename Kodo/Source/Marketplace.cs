@@ -539,8 +539,7 @@ public partial class MainWindow
         var rawDownloadUrl = NormalizeGitHubBlobViewerUrl(
             item.TryGetProperty("downloadUrl", out var downloadUrlElement) ? downloadUrlElement.GetString() ?? string.Empty : string.Empty);
         var declaredFileName = item.TryGetProperty("fileName", out var fileNameElement) ? fileNameElement.GetString() ?? string.Empty : string.Empty;
-        var iconUrl = NormalizeGitHubUrl(
-            item.TryGetProperty("iconUrl", out var iconUrlElement) ? iconUrlElement.GetString() ?? string.Empty : string.Empty);
+        var iconUrl = NormalizeMarketplaceIconUrl(item);
         var urlFileName = TryGetFileNameFromUrl(rawDownloadUrl);
         var bestKnownVersion = GetHighestKnownExtensionVersion(declaredVersion, declaredFileName, urlFileName);
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
@@ -558,6 +557,30 @@ public partial class MainWindow
             FileName = canonicalFileName,
             IconUrl = iconUrl
         };
+    }
+
+    private static string NormalizeMarketplaceIconUrl(JsonElement item)
+    {
+        var rawIcon = string.Empty;
+        foreach (var propertyName in new[] { "iconUrl", "icon", "iconPath" })
+        {
+            if (item.TryGetProperty(propertyName, out var iconElement) &&
+                iconElement.ValueKind == JsonValueKind.String)
+            {
+                rawIcon = iconElement.GetString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(rawIcon))
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(rawIcon))
+            return string.Empty;
+
+        if (Uri.TryCreate(rawIcon, UriKind.Absolute, out _))
+            return NormalizeGitHubUrl(rawIcon);
+
+        var relativePath = rawIcon.Trim().TrimStart('/');
+        return $"https://api.github.com/repos/{KodoExtensionsOwner}/{KodoExtensionsRepo}/contents/{relativePath}";
     }
 
     private void SyncMarketplaceInstallStates()

@@ -6596,47 +6596,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!confirmed) return;
 
-        var localKodoDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Kodo");
-        var roamingKodoDir = KodoDiagnostics.LogDirectoryPath;
+        // Prevent closing prompts and settings writes while handing reset to a clean process.
+        _isConfirmedClose = true;
+        _suppressSettingsSave = true;
+        _settingsSaveDebounceTimer.Stop();
 
-        // Settings are persisted while the window shuts down, so close first.
-        this.Close();
-        await Task.Delay(500);
-
-        var resetFailures = new List<string>();
-        foreach (var directory in new[] { localKodoDir, roamingKodoDir }.Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            for (var attempt = 0; attempt < 5 && Directory.Exists(directory); attempt++)
-            {
-                try
-                {
-                    Directory.Delete(directory, true);
-                }
-                catch (Exception) when (attempt < 4)
-                {
-                    await Task.Delay(250);
-                }
-                catch (Exception ex)
-                {
-                    resetFailures.Add($"{directory} ({ex.Message})");
-                }
-            }
-        }
-
-        if (resetFailures.Count > 0)
-        {
-            KodoDiagnostics.LogDebug($"Reset Kodo could not remove all data: {string.Join(", ", resetFailures)}");
-        }
-
-        // Relaunch using the executable path
-        var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
+        // The next process removes data before constructing MainWindow or loading settings.
+        var exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
         if (!string.IsNullOrEmpty(exePath))
         {
             try
             {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(exePath) { UseShellExecute = true });
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exePath,
+                    Arguments = "--reset-kodo",
+                    UseShellExecute = true,
+                });
+                Environment.Exit(0);
             }
             catch { /* best effort */ }
         }
