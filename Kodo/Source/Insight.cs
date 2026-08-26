@@ -110,8 +110,7 @@ public sealed class InsightSuggestion : ICompletionData
         "C3 16.3747 3 16.7823 3.13495 17.1308C3.25414 17.4386 3.44766 17.7121 3.69824 17.9269" +
         "C3.98195 18.1702 4.36629 18.3058 5.13498 18.5771Z");
 
-    // Refined row: [22px rounded chip] [name @ 13px medium mono] [kind @ 11px muted, right-aligned]
-    // Tighter metrics, softer chip, and looser row padding give a calmer, production feel.
+    // Compact suggestion row with a rounded chip and muted kind label.
     private Control BuildContentVisual()
     {
         var iconGeometry = Kind switch

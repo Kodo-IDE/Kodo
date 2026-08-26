@@ -36,10 +36,7 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
-  <!-- KodoUpdater is a separate, sibling project that happens to live in a
-       subfolder of Source\ (next to Kodo.csproj). The SDK's default
-       **/*.cs glob would otherwise pull KodoUpdater/Program.cs into THIS
-       project too, giving Kodo.exe two Main methods. -->
+  <!-- Keep the sibling updater out of this project's compile glob. -->
   <ItemGroup>
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />

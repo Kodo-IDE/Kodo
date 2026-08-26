@@ -574,8 +574,7 @@ public partial class MainWindow
         window.CompletionList.FontFamily = EditorTextBox.FontFamily;
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        // Refined panel: tighter 10px radius, layered soft shadow, matches app cards
-        // but feels like an editor popup - not a full dialog.
+        // Match app cards while keeping the panel compact.
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
         panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(10)));
         panelCornerStyle.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush));
@@ -594,14 +593,12 @@ public partial class MainWindow
             listBox.ClipToBounds = true;
         }
 
-        // No transitions on virtualized rows prevents flash when the list rebuilds on
-        // every keystroke; hover/selected remain instantaneous and calm.
+        // Avoid row-transition flashes while the list rebuilds.
         var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
         noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
         window.Styles.Add(noTransitionStyle);
 
-        // Base row: transparent canvas so the card shows through; only hover/selected
-        // paint a rounded chip. Inset margin gives breathing room around each row.
+        // Keep the base row transparent; style hover and selection as chips.
         var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, Brushes.Transparent));
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
@@ -839,8 +836,7 @@ public partial class MainWindow
         }
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        // Build indented text for all selected lines, then replace the segment
-        // in a single operation to batch the undo unit instead of one per line.
+        // Replace the selection in one undoable operation.
         var indentedLines = lines.OrderByDescending(l => l.Offset)
             .Select(l => GetIndentUnit() + doc.GetText(l));
         var newText = string.Join(Environment.NewLine, indentedLines);
@@ -862,8 +858,7 @@ public partial class MainWindow
             if (removable <= 0)
                 return;
 
-            // Remove leading whitespace from the single line in a single operation
-            // to batch the undo/redo unit instead of separate calls.
+            // Replace the line in one undoable operation.
             var outdentedText = lineText.TrimStart();
             doc.Replace(line.Offset, line.Length, outdentedText);
             
@@ -876,8 +871,7 @@ public partial class MainWindow
             return;
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        // Collect the text of each line, remove leading whitespace, and join
-        // to replace the selection segment in a single undo unit.
+        // Replace the selected lines in one undoable operation.
         var linesText = lines.OrderByDescending(l => l.Offset)
             .Select(l => doc.GetText(l).TrimStart());
         var replacedText = string.Join(Environment.NewLine, linesText);

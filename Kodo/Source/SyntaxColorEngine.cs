@@ -104,8 +104,7 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled), "namespace", "#4FC1FF"));
             if (isBatch)
             {
-                // Batch variables are explicit expansions like %VAR%, !VAR!, %%a, %~dp0, %1 etc.
-                // Use a precise pattern instead of the generic bare-word variable regex.
+                // Match batch-specific variable expansions precisely.
                 rules.Add(new(new Regex(@"%[0-9*]|%~[a-zA-Z\$]*\d*|%[A-Za-z_][A-Za-z0-9_]*%|![A-Za-z_][A-Za-z0-9_]*!|%%[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled | RegexOptions.IgnoreCase), "variable", "#A0DBFD"));
             }
             else
@@ -3261,10 +3260,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet                = emptyRuleSet
                 });
 
-                // Batch echo: everything after the echo command is literal output and must not
-                // be highlighted as variables / keywords / numbers etc.
-                // The span starts after the echo keyword (optional @, optional . : ( ) so
-                // the keyword itself remains colored as a function.
+            // Treat text after echo as literal output, leaving the command highlighted.
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
                     StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
@@ -3275,9 +3271,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet                = emptyRuleSet
                 });
 
-                // echo. / echo: with no trailing space – dot/colon is part of the command
-                // Also handle lines where echo is followed immediately by text (e.g. echo.hello)
-                // The previous span already covers those because it includes the punctuation.
+                // Handle echo. and echo: forms where punctuation is part of the command.
             }
         }
         else if (!isMarkdown && isBatch)
