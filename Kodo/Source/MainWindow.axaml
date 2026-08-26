@@ -776,7 +776,7 @@
                             Opacity="0.6"
                             HorizontalAlignment="Center"
                             Margin="0,2,0,2" />
-                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="New File (Ctrl+N)">
+                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="{Binding NewFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -784,7 +784,7 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="Open File (Ctrl+O)">
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="{Binding OpenFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -794,7 +794,7 @@
                     </Button>
                     <Button Classes="activity"
                             Click="OpenFolderButton_OnClick"
-                            ToolTip.Tip="Open Folder (Ctrl+K)"
+                            ToolTip.Tip="{Binding OpenFolderTooltip}"
                             IsVisible="{Binding !IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -805,7 +805,7 @@
                     </Button>
                     <Button Classes="activity"
                             Click="CollapseExplorerButton_OnClick"
-                            ToolTip.Tip="Toggle Explorer (Ctrl+B)"
+                            ToolTip.Tip="{Binding ToggleExplorerTooltip}"
                             IsVisible="{Binding IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -820,7 +820,7 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="Marketplace (Ctrl+E)">
+                    <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="{Binding OpenExtensionsTooltip}">
                         <Viewbox Width="20" Height="20"
                                  HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -916,7 +916,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="CloseFolderButton_OnClick"
-                                ToolTip.Tip="Close Folder (Ctrl+Shift+K)">
+                                ToolTip.Tip="{Binding CloseFolderTooltip}">
                             <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{Binding $parent[Button].Foreground}"
@@ -1352,13 +1352,13 @@
                                     IsVisible="{Binding IsEditorTabsVisible}">
                             
                             <Button Classes="chrome"
-                                    ToolTip.Tip="Save (Ctrl+S)"
+                                    ToolTip.Tip="{Binding SaveTooltip}"
                                     IsEnabled="{Binding HasOpenEditors}"
                                     Click="ToolbarSaveButton_OnClick"
                                     Content="Save" />
 
                             <Button Classes="chrome"
-                                    ToolTip.Tip="Save As (Ctrl+Shift+S)"
+                                    ToolTip.Tip="{Binding SaveAsTooltip}"
                                     IsEnabled="{Binding HasOpenEditors}"
                                     Click="ToolbarSaveAsButton_OnClick"
                                     Content="Save As" />
@@ -1837,7 +1837,7 @@
                                                 
                                                 <Button Classes="chrome"
                                                         Click="NewFileButton_OnClick"
-                                                        ToolTip.Tip="New File (Ctrl+N)">
+                                                        ToolTip.Tip="{Binding NewFileTooltip}">
                                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                                         <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                                             <Canvas Width="24" Height="24">
@@ -1851,7 +1851,7 @@
                                                 
                                                 <Button Classes="chrome"
                                                         Click="OpenFileButton_OnClick"
-                                                        ToolTip.Tip="Open File (Ctrl+O)">
+                                                        ToolTip.Tip="{Binding OpenFileTooltip}">
                                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                                         <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                                             <Canvas Width="24" Height="24">
@@ -1865,7 +1865,7 @@
                                                 
                                                 <Button Classes="chrome"
                                                         Click="OpenFolderButton_OnClick"
-                                                        ToolTip.Tip="Open Folder (Ctrl+K)">
+                                                        ToolTip.Tip="{Binding OpenFolderTooltip}">
                                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                                         <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                                             <Canvas Width="24" Height="24">
@@ -1911,7 +1911,7 @@
                                             <Button Grid.Column="1"
                                                     Classes="chrome"
                                                     Click="OpenMarketplaceButton_OnClick"
-                                                    ToolTip.Tip="Browse extensions in the marketplace (Ctrl+E)"
+                                                    ToolTip.Tip="{Binding OpenExtensionsTooltip}"
                                                     VerticalAlignment="Center"
                                                     Content="Browse" />
                                         </Grid>
@@ -2514,7 +2514,7 @@
                                     <Button Classes="chrome"
                                             Focusable="False"
                                             Click="NewTerminalButton_OnClick"
-                                            ToolTip.Tip="New terminal (Ctrl+Shift+`)"
+                                            ToolTip.Tip="{Binding NewTerminalTooltip}"
                                             Content="+" />
                                     <Button Classes="chrome"
                                             Focusable="False"
@@ -2531,7 +2531,7 @@
                                     <Button Classes="chrome"
                                             Focusable="False"
                                             Click="ToggleTerminalButton_OnClick"
-                                            ToolTip.Tip="Hide terminal (Ctrl+` or Ctrl+J)">
+                                            ToolTip.Tip="{Binding ToggleTerminalTooltip}">
                                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Canvas Width="24" Height="24">
                                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -2674,7 +2674,7 @@
                                 <Button Classes="chrome"
                                         Click="NewTerminalButton_OnClick"
                                         HorizontalAlignment="Center"
-                                        ToolTip.Tip="New terminal (Ctrl+Shift+`)"
+                                        ToolTip.Tip="{Binding NewTerminalTooltip}"
                                         Content="Create terminal" />
                             </StackPanel>
                         </Border>
@@ -2819,7 +2819,7 @@
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
                                     Click="ToggleTerminalButton_OnClick"
-                                    ToolTip.Tip="Toggle terminal (Ctrl+` or Ctrl+J)">
+                                    ToolTip.Tip="{Binding ToggleTerminalTooltip}">
                                 <TextBlock FontSize="12"
                                            Text="{Binding TerminalStatusBarText}" />
                             </Button>
@@ -2838,7 +2838,7 @@
                                     Padding="4,0"
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding CanShowFindInFile}"
-                                    ToolTip.Tip="Find in file (Ctrl+F)"
+                                    ToolTip.Tip="{Binding FindInFileTooltip}"
                                     Click="OpenSearchMenu_OnClick">
                                 <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
@@ -2863,13 +2863,13 @@
                     
                     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="Find in current file (Ctrl+F)">
+                        <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="{Binding FindInFileTooltip}">
                                 <TextBlock Text="Find" />
                             </Button>
                             <Button Classes="searchmode" Classes.selected="{Binding IsFileByNameSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeFileByNameButton_OnClick" ToolTip.Tip="Find files by name">
                                 <TextBlock Text="Files" />
                             </Button>
-                            <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="Find in project (Ctrl+Shift+F)">
+                            <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="{Binding FindInProjectTooltip}">
                                 <TextBlock Text="Project" />
                             </Button>
                         </StackPanel>

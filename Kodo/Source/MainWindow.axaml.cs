@@ -4639,6 +4639,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _ => key.ToString(),
     };
 
+    private string ShortcutText(string id) =>
+        _keybinds.TryGetValue(id, out var gesture) ? FormatGesture(gesture) : string.Empty;
+
+    public string NewFileTooltip => $"New file ({ShortcutText("NewFile")})";
+    public string OpenFileTooltip => $"Open file ({ShortcutText("OpenFile")})";
+    public string OpenFolderTooltip => $"Open folder ({ShortcutText("OpenFolder")})";
+    public string CloseFolderTooltip => $"Close folder ({ShortcutText("CloseFolder")})";
+    public string ToggleExplorerTooltip => $"Toggle Explorer ({ShortcutText("ToggleFileExplorer")})";
+    public string OpenExtensionsTooltip => $"Marketplace ({ShortcutText("OpenExtensions")})";
+    public string SaveTooltip => $"Save ({ShortcutText("Save")})";
+    public string SaveAsTooltip => $"Save As ({ShortcutText("SaveAs")})";
+    public string ToggleTerminalTooltip => $"Toggle terminal ({ShortcutText("ToggleTerminal")})";
+    public string NewTerminalTooltip => $"New terminal ({ShortcutText("NewTerminalSession")})";
+    public string FindInFileTooltip => $"Find in file ({ShortcutText("FindInFile")})";
+    public string FindInProjectTooltip => $"Find in project ({ShortcutText("FindInProject")})";
+
     private bool MatchesKeybind(KeyEventArgs e, string id) =>
         _keybinds.TryGetValue(id, out var gesture) &&
         e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
@@ -6348,6 +6364,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var id = capturingId;
             _keybinds[id] = newGesture;
+            RaiseMany(nameof(NewFileTooltip), nameof(OpenFileTooltip), nameof(OpenFolderTooltip), nameof(CloseFolderTooltip),
+                nameof(ToggleExplorerTooltip), nameof(OpenExtensionsTooltip), nameof(SaveTooltip), nameof(SaveAsTooltip),
+                nameof(ToggleTerminalTooltip), nameof(NewTerminalTooltip), nameof(FindInFileTooltip), nameof(FindInProjectTooltip));
             RefreshRow(id);
             SaveSettings(immediate: true);
 
