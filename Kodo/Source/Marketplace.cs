@@ -213,8 +213,12 @@ public partial class MainWindow
                     continue;
                 }
 
-                pluginExtensions.Clear();
-                pluginLoadErrors.Clear();
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    SyncMarketplaceExtensionCollection(MarketplaceExtensions, MarketplaceExtensions.Concat(pluginExtensions).ToList());
+                    SyncMarketplaceInstallStates();
+                });
+
                 TryWritePluginsIndexCache(remoteJson);
                 if (newETag is not null)
                 {

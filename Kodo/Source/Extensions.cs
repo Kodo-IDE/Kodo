@@ -162,6 +162,7 @@ public partial class MainWindow
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
+            await LoadPluginsIndexAsync();
             await LoadCompilerExtensionsAsync(forceResolve: force);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
