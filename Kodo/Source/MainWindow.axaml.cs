@@ -4447,22 +4447,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string? GetDiscordLanguageLabel()
     {
-        var extension = CurrentLanguageExtension;
-        if (extension is null)
+        if (!HasDocumentOpen)
             return null;
 
-        var name = extension.Name
-            .Replace("Language Support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("Support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Trim();
-        if (!string.IsNullOrWhiteSpace(name))
-            return name;
-
-        return extension.Id
-            .Replace("-kodo-extension", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("-language-support", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("-", " ", StringComparison.OrdinalIgnoreCase)
-            .Trim();
+        return string.IsNullOrWhiteSpace(LanguageDisplayText) ? null : LanguageDisplayText;
     }
 
     private string GetDiscordPresenceStateImproved()
