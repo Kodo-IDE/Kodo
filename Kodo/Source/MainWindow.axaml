@@ -1330,7 +1330,7 @@
                                     Height="28"
                                     CornerRadius="8"
                                     ClipToBounds="True">
-                                <Image Source="/Assets/kodo-logo.png"
+                                <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                        Stretch="UniformToFill" />
                             </Border>
 
@@ -3039,7 +3039,7 @@
                                 ClipToBounds="True"
                                 HorizontalAlignment="Center"
                                 Margin="0,0,0,28">
-                            <Image Source="/Assets/kodo-logo.png"
+                            <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                    Stretch="UniformToFill" />
                         </Border>
 
@@ -5914,7 +5914,7 @@
                                                 Height="48"
                                                 CornerRadius="12"
                                                 ClipToBounds="True">
-                                            <Image Source="/Assets/kodo-logo.png"
+                                            <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                                    Stretch="UniformToFill" />
                                         </Border>
                                         <StackPanel Spacing="2" VerticalAlignment="Center">
@@ -5998,7 +5998,7 @@
                                                 CornerRadius="12"
                                                 ClipToBounds="True"
                                                 VerticalAlignment="Center">
-                                            <Image Source="/Assets/kodo-logo.png"
+                                            <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                                    Stretch="UniformToFill" />
                                         </Border>
                                         <StackPanel Spacing="2"
@@ -6209,7 +6209,7 @@
                                     CornerRadius="12"
                                     ClipToBounds="True"
                                     VerticalAlignment="Center">
-                                <Image Source="/Assets/kodo-logo.png"
+                                <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                        Stretch="UniformToFill" />
                             </Border>
                             <StackPanel Spacing="2" VerticalAlignment="Center">

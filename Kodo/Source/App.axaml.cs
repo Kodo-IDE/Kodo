@@ -282,7 +282,8 @@ public partial class App : Application
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                for (var i = 0; i < 300 && _isCrashDialogOpen == 1; i++)
+                // Keep the terminating process alive until the report is dismissed.
+                for (var i = 0; _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
             else
