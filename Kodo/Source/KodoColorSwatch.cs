@@ -100,6 +100,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Margin = new Thickness(0, 0, 3, 1),
             Cursor = new Cursor(StandardCursorType.Hand)
         };
+        ToolTip.SetTip(swatchBorder, "Edit color");
 
         const double svWidth = 200;
         const double svHeight = 130;
@@ -191,7 +192,12 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             BorderThickness = new Thickness(1)
         };
 
-        var hexBox = new TextBox { Width = 140, Text = FormatHex(initialColor, hasAlpha) };
+        var hexBox = new TextBox
+        {
+            Width = 140,
+            Text = FormatHex(initialColor, hasAlpha),
+            PlaceholderText = hasAlpha ? "#RRGGBBAA" : "#RRGGBB",
+        };
 
         Slider? alphaSlider = null;
         TextBlock? alphaValueText = null;
@@ -206,7 +212,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
                 Spacing = 6,
                 Children =
                 {
-                    new TextBlock { Text = "A", Width = 12, VerticalAlignment = VerticalAlignment.Center },
+                    new TextBlock { Text = "Opacity", Width = 48, VerticalAlignment = VerticalAlignment.Center },
                     alphaSlider,
                     alphaValueText
                 }
@@ -307,8 +313,22 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             UpdatePreview(writeHex: true);
         };
 
+        hexBox.GotFocus += (_, _) => hexBox.SelectAll();
+
         var pickerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { svPad, hueBar } };
-        var pickerChildren = new List<Control> { previewBorder, hexBox, pickerRow };
+        var hexRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock { Text = "HEX", Width = 40, VerticalAlignment = VerticalAlignment.Center },
+                hexBox,
+                previewBorder
+            }
+        };
+        var pickerChildren = new List<Control> { hexRow, pickerRow };
         if (alphaRow is not null) pickerChildren.Add(alphaRow);
 
         var pickerHeader = new StackPanel
