@@ -605,11 +605,33 @@ public class FileNode
 public class FileTreeItem : INotifyPropertyChanged
 {
     private bool _isExpanded;
+    private bool _isRenaming;
+    private string _renameText = string.Empty;
 
-    public string Name { get; init; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
+
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
+    }
+
+    public string RenameText
+    {
+        get => _renameText;
+        set { if (_renameText == value) return; _renameText = value; OnPropertyChanged(); }
+    }
+
+    public void ApplyRenamedName(string name)
+    {
+        Name = name;
+        RenameText = name;
+        OnPropertyChanged(nameof(Name));
+        OnPropertyChanged(nameof(Icon));
+    }
 
     public double IndentWidth => Depth * 14.0;
 

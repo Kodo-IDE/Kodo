@@ -6971,12 +6971,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    private async void RenameFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private void RenameFileMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
 
-        var newName = await ShowRenameDialogAsync(item.Name);
-        if (newName is null || string.Equals(newName, item.Name, StringComparison.Ordinal)) return;
+        BeginInlineRename(item);
+    }
+
+    private void BeginInlineRename(FileTreeItem item)
+    {
+        item.RenameText = item.Name;
+        item.IsRenaming = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            var textBox = this.GetVisualDescendants().OfType<TextBox>()
+                .FirstOrDefault(control => ReferenceEquals(control.DataContext, item));
+            textBox?.Focus();
+            textBox?.SelectAll();
+        });
+    }
+
+    private async void InlineRenameTextBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && sender is TextBox textBox && textBox.DataContext is FileTreeItem item)
+        {
+            item.IsRenaming = false;
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Enter && sender is TextBox enterTextBox && enterTextBox.DataContext is FileTreeItem enterItem)
+        {
+            e.Handled = true;
+            await CompleteInlineRenameAsync(enterItem);
+        }
+    }
+
+    private async void InlineRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox && textBox.DataContext is FileTreeItem item && item.IsRenaming)
+            await CompleteInlineRenameAsync(item);
+    }
+
+    private async Task CompleteInlineRenameAsync(FileTreeItem item)
+    {
+        if (!item.IsRenaming) return;
+        item.IsRenaming = false;
+
+        var newName = item.RenameText.Trim();
+        if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, item.Name, StringComparison.Ordinal)) return;
 
         var newPath = Path.Combine(Path.GetDirectoryName(item.FullPath)!, newName);
 

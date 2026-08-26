@@ -1175,7 +1175,23 @@
                                                            Text="{Binding Icon}"
                                                            Foreground="{Binding #RootWindow.MutedTextBrush}" />
                                             </Viewbox>
+                                            <TextBox FontSize="13"
+                                                     IsVisible="{Binding IsRenaming}"
+                                                     Text="{Binding RenameText, Mode=TwoWay}"
+                                                     KeyDown="InlineRenameTextBox_OnKeyDown"
+                                                     LostFocus="InlineRenameTextBox_OnLostFocus"
+                                                     MinWidth="0"
+                                                     Padding="4,1"
+                                                     VerticalContentAlignment="Center">
+                                                <TextBox.Width>
+                                                    <MultiBinding Converter="{x:Static kodoModels:ExplorerItemNameMaxWidthConverter.Instance}">
+                                                        <Binding ElementName="RootWindow" Path="ExplorerPanelWidth" />
+                                                        <Binding Path="IndentWidth" />
+                                                    </MultiBinding>
+                                                </TextBox.Width>
+                                            </TextBox>
                                             <TextBlock FontSize="13"
+                                                       IsVisible="{Binding !IsRenaming}"
                                                        VerticalAlignment="Center"
                                                        Text="{Binding Name}"
                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
