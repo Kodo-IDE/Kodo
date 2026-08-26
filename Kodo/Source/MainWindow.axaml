@@ -742,7 +742,7 @@
             <DockPanel>
                 
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="Settings (Ctrl+,)">
+                    <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
                         <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -753,7 +753,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="Home (Ctrl+H)">
+                    <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -761,7 +761,7 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="Editor (Ctrl+Shift+E)">
+                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="{Binding EditorTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -1670,7 +1670,7 @@
                                         Padding="0"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Zoom Out (Ctrl+−)"
+                                        ToolTip.Tip="{Binding ZoomOutTooltip}"
                                         Click="ZoomOutButton_OnClick">
                                     <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Canvas Width="24" Height="24">
@@ -1684,7 +1684,7 @@
                                         Padding="8,0"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Reset Zoom (Ctrl+0)"
+                                        ToolTip.Tip="{Binding ZoomResetTooltip}"
                                         Click="ZoomResetButton_OnClick">
                                     <TextBlock Text="{Binding ImageZoomPercent}"
                                                FontSize="12"
@@ -1698,7 +1698,7 @@
                                         Padding="0"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Zoom In (Ctrl++)"
+                                        ToolTip.Tip="{Binding ZoomInTooltip}"
                                         Click="ZoomInButton_OnClick">
                                     <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Canvas Width="24" Height="24">

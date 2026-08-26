@@ -4654,6 +4654,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string NewTerminalTooltip => $"New terminal ({ShortcutText("NewTerminalSession")})";
     public string FindInFileTooltip => $"Find in file ({ShortcutText("FindInFile")})";
     public string FindInProjectTooltip => $"Find in project ({ShortcutText("FindInProject")})";
+    public string SettingsTooltip => $"Settings ({ShortcutText("OpenSettings")})";
+    public string HomeTooltip => $"Home ({ShortcutText("GoHome")})";
+    public string EditorTooltip => $"Editor ({ShortcutText("GoEditor")})";
+    public string ZoomOutTooltip => $"Zoom out ({ShortcutText("ZoomOut")})";
+    public string ZoomResetTooltip => $"Reset zoom ({ShortcutText("ZoomReset")})";
+    public string ZoomInTooltip => $"Zoom in ({ShortcutText("ZoomIn")})";
 
     private bool MatchesKeybind(KeyEventArgs e, string id) =>
         _keybinds.TryGetValue(id, out var gesture) &&
@@ -6366,7 +6372,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _keybinds[id] = newGesture;
             RaiseMany(nameof(NewFileTooltip), nameof(OpenFileTooltip), nameof(OpenFolderTooltip), nameof(CloseFolderTooltip),
                 nameof(ToggleExplorerTooltip), nameof(OpenExtensionsTooltip), nameof(SaveTooltip), nameof(SaveAsTooltip),
-                nameof(ToggleTerminalTooltip), nameof(NewTerminalTooltip), nameof(FindInFileTooltip), nameof(FindInProjectTooltip));
+                nameof(ToggleTerminalTooltip), nameof(NewTerminalTooltip), nameof(FindInFileTooltip), nameof(FindInProjectTooltip),
+                nameof(SettingsTooltip), nameof(HomeTooltip), nameof(EditorTooltip), nameof(ZoomOutTooltip),
+                nameof(ZoomResetTooltip), nameof(ZoomInTooltip));
             RefreshRow(id);
             SaveSettings(immediate: true);
 
