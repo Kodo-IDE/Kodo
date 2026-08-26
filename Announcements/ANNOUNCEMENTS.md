@@ -37,3 +37,8 @@ Kodo's code has been migrated and we are monitoring performance. Let us know if 
 > August 4, 2026
 We have not noticed any performance issues within just over 24 hours of testing and monitoring, so you are unlikely to experience issues relating to the migration. Thanks for your patience!
 ---
+
+## v2.0.0 is almost here!
+> August 26, 2026
+Join us on August 30th for the release of Kodo v2.0.0!
+---
