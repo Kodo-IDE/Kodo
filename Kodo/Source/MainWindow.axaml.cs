@@ -6601,28 +6601,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             "Kodo");
         var roamingKodoDir = KodoDiagnostics.LogDirectoryPath;
 
-        if (Directory.Exists(localKodoDir))
-        {
-            try
-            {
-                Directory.Delete(localKodoDir, true);
-            }
-            catch { /* best effort */ }
-        }
-
-        if (Directory.Exists(roamingKodoDir))
-        {
-            try
-            {
-                Directory.Delete(roamingKodoDir, true);
-            }
-            catch { /* best effort */ }
-        }
-
-        DeveloperOptionsStatusText = "Kodo data reset. Relaunching...";
-
-        // Close current window and restart
+        // Settings are persisted while the window shuts down, so close first.
         this.Close();
+        await Task.Delay(500);
+
+        var resetFailures = new List<string>();
+        foreach (var directory in new[] { localKodoDir, roamingKodoDir }.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            for (var attempt = 0; attempt < 5 && Directory.Exists(directory); attempt++)
+            {
+                try
+                {
+                    Directory.Delete(directory, true);
+                }
+                catch (Exception) when (attempt < 4)
+                {
+                    await Task.Delay(250);
+                }
+                catch (Exception ex)
+                {
+                    resetFailures.Add($"{directory} ({ex.Message})");
+                }
+            }
+        }
+
+        if (resetFailures.Count > 0)
+        {
+            KodoDiagnostics.LogDebug($"Reset Kodo could not remove all data: {string.Join(", ", resetFailures)}");
+        }
 
         // Relaunch using the executable path
         var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
