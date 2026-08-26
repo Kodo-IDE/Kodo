@@ -17,6 +17,11 @@ namespace Kodo;
 
 public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
 {
+    public IBrush PanelBrush { get; set; } = Brush.Parse("#1E1E1E");
+    public IBrush BorderBrush { get; set; } = Brush.Parse("#3A3A3A");
+    public IBrush TextBrush { get; set; } = Brushes.White;
+    public IBrush AccentBrush { get; set; } = Brush.Parse("#8C00FF");
+
     private static readonly Regex HexColorRegex =
         new(@"#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])", RegexOptions.Compiled);
 
@@ -76,7 +81,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         return new InlineObjectElement(0, swatch);
     }
 
-    private static Control BuildSwatch(TextDocument document, int offset, int initialLength, bool hasAlpha, Color initialColor)
+    private Control BuildSwatch(TextDocument document, int offset, int initialLength, bool hasAlpha, Color initialColor)
     {
         var anchor = document.CreateAnchor(offset);
         anchor.SurviveDeletion = true;
@@ -87,6 +92,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         var currentS = initialS;
         var currentV = initialV;
         var currentA = initialColor.A;
+        var currentHasAlpha = hasAlpha;
 
         var swatchBorder = new Border
         {
@@ -94,7 +100,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Height = 12,
             CornerRadius = new CornerRadius(6),
             Background = new SolidColorBrush(initialColor),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(0, 0, 3, 1),
@@ -107,10 +113,13 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         const double hueBarWidth = 18;
 
         var svBase = new Border { Width = svWidth, Height = svHeight, CornerRadius = new CornerRadius(8), IsHitTestVisible = false };
+        const double svCornerRadius = 8;
         var svWhiteOverlay = new Rectangle
         {
             Width = svWidth,
             Height = svHeight,
+            RadiusX = svCornerRadius,
+            RadiusY = svCornerRadius,
             IsHitTestVisible = false,
             Fill = new LinearGradientBrush
             {
@@ -123,6 +132,8 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = svWidth,
             Height = svHeight,
+            RadiusX = svCornerRadius,
+            RadiusY = svCornerRadius,
             IsHitTestVisible = false,
             Fill = new LinearGradientBrush
             {
@@ -140,7 +151,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             IsHitTestVisible = false
         };
 
-        var svPad = new Canvas { Width = svWidth, Height = svHeight, ClipToBounds = true, Background = Brushes.Transparent };
+        var svPad = new Canvas { Width = svWidth, Height = svHeight, Background = Brushes.Transparent };
         svPad.Children.Add(svBase);
         svPad.Children.Add(svWhiteOverlay);
         svPad.Children.Add(svBlackOverlay);
@@ -188,7 +199,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Height = 24,
             CornerRadius = new CornerRadius(6),
             Background = new SolidColorBrush(initialColor),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1)
         };
 
@@ -197,28 +208,31 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Width = 140,
             Text = FormatHex(initialColor, hasAlpha),
             PlaceholderText = hasAlpha ? "#RRGGBBAA" : "#RRGGBB",
+            Foreground = TextBrush,
+            Background = PanelBrush,
+            BorderBrush = PanelBrush,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(8, 4),
         };
-
-        Slider? alphaSlider = null;
-        TextBlock? alphaValueText = null;
-        StackPanel? alphaRow = null;
-        if (hasAlpha)
+        var rgbValueText = new TextBlock
         {
-            alphaValueText = new TextBlock { Width = 28, Text = currentA.ToString(), VerticalAlignment = VerticalAlignment.Center };
-            alphaSlider = new Slider { Minimum = 0, Maximum = 255, Value = currentA, Width = 140 };
-            alphaRow = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 6,
-                Children =
-                {
-                    new TextBlock { Text = "Opacity", Width = 48, VerticalAlignment = VerticalAlignment.Center },
-                    alphaSlider,
-                    alphaValueText
-                }
-            };
-        }
-
+            Width = 140,
+            Text = $"{initialColor.R}, {initialColor.G}, {initialColor.B}",
+            Foreground = TextBrush,
+            FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,Monospace"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var hexValueText = new TextBlock
+        {
+            Width = 72,
+            Text = FormatHex(initialColor, hasAlpha),
+            Foreground = TextBrush,
+            FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,Monospace"),
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
         void UpdatePreview(bool writeHex)
         {
             var (r, g, b) = HsvToRgb(currentH, currentS, currentV);
@@ -234,23 +248,40 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Canvas.SetTop(svIndicator, (1 - currentV) * svHeight - svIndicator.Height / 2);
             Canvas.SetTop(hueIndicator, currentH / 360.0 * svHeight - hueIndicator.Height / 2);
 
-            if (alphaValueText is not null) alphaValueText.Text = currentA.ToString();
+            rgbValueText.Text = $"{r}, {g}, {b}";
 
-            if (writeHex) hexBox.Text = FormatHex(color, hasAlpha);
+            if (writeHex)
+            {
+                hexBox.Text = FormatHex(color, currentHasAlpha);
+                hexValueText.Text = hexBox.Text;
+            }
         }
 
         void CommitToDocument()
         {
             if (anchor.IsDeleted) return;
 
-            var (r, g, b) = HsvToRgb(currentH, currentS, currentV);
-            var color = new Color(currentA, r, g, b);
-            var newText = FormatHex(color, hasAlpha);
+            try
+            {
+                var availableLength = document.TextLength - anchor.Offset;
+                if (anchor.Offset < 0 || availableLength < 0)
+                    return;
 
-            if (newText == document.GetText(anchor.Offset, currentLength)) return;
+                var safeLength = Math.Min(currentLength, availableLength);
+                var (r, g, b) = HsvToRgb(currentH, currentS, currentV);
+                var color = new Color(currentA, r, g, b);
+                var newText = FormatHex(color, currentHasAlpha);
 
-            document.Replace(anchor.Offset, currentLength, newText);
-            currentLength = newText.Length;
+                if (safeLength != currentLength || newText == document.GetText(anchor.Offset, safeLength))
+                    return;
+
+                document.Replace(anchor.Offset, safeLength, newText);
+                currentLength = newText.Length;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // The editor changed while the popup was closing; abandon this stale edit.
+            }
         }
 
         void UpdateFromSvPointer(Point p)
@@ -292,24 +323,15 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         };
         hueBar.PointerReleased += (_, e) => e.Pointer.Capture(null);
 
-        if (alphaSlider is not null)
-        {
-            alphaSlider.PropertyChanged += (_, e) =>
-            {
-                if (e.Property != RangeBase.ValueProperty) return;
-                currentA = (byte)alphaSlider.Value;
-                UpdatePreview(writeHex: true);
-            };
-        }
-
         hexBox.KeyDown += (_, e) =>
         {
             if (e.Key != Key.Enter) return;
-            if (!TryParseHexColor(hexBox.Text ?? string.Empty, out var parsed)) return;
+            var text = hexBox.Text ?? string.Empty;
+            if (!TryParseHexColor(text, out var parsed)) return;
 
             currentA = parsed.A;
+            currentHasAlpha = text.TrimStart('#').Length == 8;
             (currentH, currentS, currentV) = RgbToHsv(parsed.R, parsed.G, parsed.B);
-            if (alphaSlider is not null) alphaSlider.Value = currentA;
             UpdatePreview(writeHex: true);
         };
 
@@ -323,13 +345,24 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
-                new TextBlock { Text = "HEX", Width = 40, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = "HEX", Width = 40, Foreground = TextBrush, VerticalAlignment = VerticalAlignment.Center },
+                hexValueText,
                 hexBox,
                 previewBorder
             }
         };
-        var pickerChildren = new List<Control> { hexRow, pickerRow };
-        if (alphaRow is not null) pickerChildren.Add(alphaRow);
+        var rgbRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children =
+            {
+                new TextBlock { Text = "RGB", Width = 40, Foreground = TextBrush, VerticalAlignment = VerticalAlignment.Center },
+                rgbValueText
+            }
+        };
+        var pickerChildren = new List<Control> { hexRow, rgbRow, pickerRow };
 
         var pickerHeader = new StackPanel
         {
@@ -337,20 +370,20 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Spacing = 8,
             Children =
             {
-                new Border { Width = 3, Height = 14, CornerRadius = new CornerRadius(2), Background = new SolidColorBrush(Color.Parse("#8C00FF")), VerticalAlignment = VerticalAlignment.Center },
-                new TextBlock { Text = "Color", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = Brushes.White, VerticalAlignment = VerticalAlignment.Center }
+                new Border { Width = 3, Height = 14, CornerRadius = new CornerRadius(2), Background = AccentBrush, VerticalAlignment = VerticalAlignment.Center },
+                new TextBlock { Text = "Color Picker", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = TextBrush, VerticalAlignment = VerticalAlignment.Center }
             }
         };
-        var pickerDivider = new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#3A3A3A")), Opacity = 0.9, Margin = new Thickness(0, 4) };
-        var pickerDivider2 = new Border { Height = 1, Background = new SolidColorBrush(Color.Parse("#3A3A3A")), Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var pickerDivider = new Border { Height = 1, Background = BorderBrush, Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var pickerDivider2 = new Border { Height = 1, Background = BorderBrush, Opacity = 0.9, Margin = new Thickness(0, 4) };
         var picker = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#3A3A3A")),
+            Background = PanelBrush,
+            BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(12),
+            ClipToBounds = true,
             Padding = new Thickness(16),
-            BoxShadow = new BoxShadows(new BoxShadow { OffsetX = 0, OffsetY = 12, Blur = 28, Spread = 0, Color = Color.FromArgb(120, 0, 0, 0) }),
             Child = new StackPanel { Spacing = 10 }
         };
         var pickerStack = (StackPanel)picker.Child!;

@@ -60,6 +60,10 @@ public partial class MainWindow
     private void ApplyThemeToEditor()
     {
         if (EditorTextBox is null) return;
+        _colorSwatchGenerator.PanelBrush = WindowBackgroundBrush;
+        _colorSwatchGenerator.BorderBrush = SurfaceBorderBrush;
+        _colorSwatchGenerator.TextBrush = PrimaryTextBrush;
+        _colorSwatchGenerator.AccentBrush = AccentBrush;
         EditorTextBox.Background = EditorBackgroundBrush;
         EditorTextBox.Foreground = PrimaryTextBrush;
         EditorTextBox.LineNumbersForeground = MutedTextBrush;
