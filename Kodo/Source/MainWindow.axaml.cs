@@ -455,7 +455,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ["zsh"] = "sh",
         ["yml"] = "yml",
         ["yaml"] = "yml",
-        ["jsonc"] = "json",
+        ["json"] = "json",
         ["md"] = "md",
         ["markdown"] = "md",
         // Explicit plain-text markers - map to empty string so no extension is matched
