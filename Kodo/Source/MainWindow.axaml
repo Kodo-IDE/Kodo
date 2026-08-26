@@ -870,7 +870,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="ExplorerHeaderNewFileButton_OnClick"
-                                ToolTip.Tip="New File in Folder">
+                                ToolTip.Tip="Create a new file in this folder">
                             <Viewbox Width="16" Height="16"
                                      HorizontalAlignment="Center"
                                      VerticalAlignment="Center">
@@ -886,7 +886,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="ExplorerHeaderNewFolderButton_OnClick"
-                                ToolTip.Tip="New Folder in Folder">
+                                ToolTip.Tip="Create a new folder in this folder">
                             <Viewbox Width="16" Height="16"
                                      HorizontalAlignment="Center"
                                      VerticalAlignment="Center">
@@ -902,7 +902,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="CollapseAllTreeButton_OnClick"
-                                ToolTip.Tip="Collapse / Expand All">
+                                ToolTip.Tip="Expand or collapse all folders">
                             <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{Binding MutedTextBrush}"
@@ -1001,7 +1001,7 @@
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
-                                                    ToolTip.Tip="{Binding DisplayName}"
+                                                    ToolTip.Tip="{Binding Path}"
                                                     HorizontalContentAlignment="Stretch">
                                                 <Grid ColumnDefinitions="Auto,*">
                                                     <Viewbox Grid.Column="0"
@@ -1028,7 +1028,7 @@
                                                     Tag="{Binding}"
                                                     Click="CloseEditorTabButton_OnClick"
                                                     Margin="4,0,3,0"
-                                                    ToolTip.Tip="Close tab">
+                                                    ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
                                                         <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
@@ -1263,7 +1263,7 @@
                                 Padding="6,4"
                                 VerticalAlignment="Center"
                                 Click="DismissUpdateBanner_OnClick"
-                                ToolTip.Tip="Dismiss">
+                                ToolTip.Tip="Dismiss this update notification">
                             <Viewbox Width="11" Height="11">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{Binding AccentForegroundBrush}"
@@ -1296,7 +1296,7 @@
                                 Padding="6,4"
                                 VerticalAlignment="Center"
                                 Click="DismissExtensionUpdateBanner_OnClick"
-                                ToolTip.Tip="Dismiss">
+                                ToolTip.Tip="Dismiss this extension update notification">
                             <Viewbox Width="11" Height="11">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{Binding AccentForegroundBrush}"
@@ -1527,7 +1527,7 @@
                                                     Margin="0,0,6,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
-                                                    ToolTip.Tip="Close tab">
+                                                    ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
                                                         <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
@@ -2558,7 +2558,8 @@
                                     <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:TerminalSession" x:CompileBindings="True">
                                             <Border Classes="tabwrap"
-                                                    Classes.active="{Binding IsSelected}">
+                                                    Classes.active="{Binding IsSelected}"
+                                                    ToolTip.Tip="{Binding WorkingDirectory}">
                                                 <Border.ContextMenu>
                                                     <ContextMenu>
                                                         <MenuItem Header="Rename"
@@ -2965,7 +2966,7 @@
                                                 </Grid>
                                             </Button>
                                             
-                                            <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True">
+                                            <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True" ToolTip.Tip="{Binding Result.Path}">
                                                 <Grid.ContextMenu>
                                                     <ContextMenu>
                                                         <MenuItem Header="Open"
