@@ -970,7 +970,11 @@ public partial class MainWindow
         Action<T, T>? merge = null)
         where TKey : notnull
     {
-        var sourceByKey = source.ToDictionary(keySelector);
+        var dedupedSource = source
+            .GroupBy(keySelector)
+            .Select(group => group.First())
+            .ToList();
+        var sourceByKey = dedupedSource.ToDictionary(keySelector);
 
         for (var i = target.Count - 1; i >= 0; i--)
         {
@@ -986,9 +990,9 @@ public partial class MainWindow
         for (var i = 0; i < target.Count; i++)
             targetIndexByKey[keySelector(target[i])] = i;
 
-        for (var i = 0; i < source.Count; i++)
+        for (var i = 0; i < dedupedSource.Count; i++)
         {
-            var item = source[i];
+            var item = dedupedSource[i];
             var key = keySelector(item);
             var existingIndex = targetIndexByKey.TryGetValue(key, out var foundIndex) ? foundIndex : -1;
 
