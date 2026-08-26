@@ -983,16 +983,16 @@
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
                                                 <Separator />
-                                                <MenuItem Header="Close"
+                                                <MenuItem Header="Close File"
                                                           Tag="{Binding}"
                                                           Click="CloseEditorTabButton_OnClick" />
-                                                <MenuItem Header="Close Others"
+                                                <MenuItem Header="Close Other Files"
                                                           Tag="{Binding}"
                                                           Click="CloseOtherTabsButton_OnClick" />
-                                                <MenuItem Header="Close Tabs to the Right"
+                                                <MenuItem Header="Close Files Below"
                                                           Tag="{Binding}"
                                                           Click="CloseTabsToTheRightMenuItem_OnClick" />
-                                                <MenuItem Header="Close All"
+                                                <MenuItem Header="Close All Files"
                                                           Click="CloseAllTabsButton_OnClick" />
                                             </ContextMenu>
                                         </Border.ContextMenu>
