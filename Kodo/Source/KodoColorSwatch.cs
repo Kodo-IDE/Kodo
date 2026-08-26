@@ -400,6 +400,14 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             IsLightDismissEnabled = true,
             Child = picker
         };
+        popup.Opened += (_, _) =>
+        {
+            if (TopLevel.GetTopLevel(picker) is not TopLevel popupRoot) return;
+
+            popupRoot.Background = Brushes.Transparent;
+            popupRoot.TransparencyBackgroundFallback = Brushes.Transparent;
+            popupRoot.CornerRadius = new CornerRadius(12);
+        };
         popup.Closed += (_, _) => CommitToDocument();
 
         UpdatePreview(writeHex: false);
