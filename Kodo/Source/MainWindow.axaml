@@ -9,8 +9,9 @@
         xmlns:kodoModels="clr-namespace:Kodo.Models"
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
+        x:DataType="kodo:MainWindow"
         x:Name="RootWindow"
-        x:CompileBindings="False"
+        x:CompileBindings="True"
         Width="1100"
         Height="810"
         MinWidth="900"
@@ -950,7 +951,7 @@
                                 </ControlTheme>
                             </ItemsControl.ItemContainerTheme>
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="kodoModels:EditorTab">
+                            <DataTemplate x:DataType="kodoModels:EditorTab" x:CompileBindings="True">
                                     <Border Classes="tabwrap"
                                             Classes.active="{Binding IsSelected}"
                                             Margin="0,0,0,2"
@@ -1049,7 +1050,8 @@
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="kodoModels:FileTreeItem">
+                            <DataTemplate x:DataType="kodoModels:FileTreeItem"
+                                          x:CompileBindings="True">
                                 <Button Classes="fileitem"
                                         Tag="{Binding}"
                                         Click="FileTreeItem_OnClick"
@@ -1454,7 +1456,7 @@
                                 </ItemsPanelTemplate>
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="kodoModels:EditorTab">
+                                <DataTemplate x:DataType="kodoModels:EditorTab" x:CompileBindings="True">
                                     <Border Classes="tabwrap"
                                             Classes.active="{Binding IsSelected}">
                                         <Border.ContextMenu>
@@ -2046,7 +2048,7 @@
                                                     </ControlTheme>
                                                 </ItemsControl.ItemContainerTheme>
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodoModels:RecentFileItem">
+                                                    <DataTemplate x:DataType="kodoModels:RecentFileItem" x:CompileBindings="True">
                                                         <Button Classes="recent"
                                                                 Tag="{Binding}"
                                                                 Click="RecentFileButton_OnClick"
@@ -2261,7 +2263,7 @@
                                                                   HorizontalScrollBarVisibility="Disabled">
                                                         <ItemsControl ItemsSource="{Binding NewsItems}">
                                                             <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="kodoModels:NewsItem">
+                                                                <DataTemplate x:DataType="kodoModels:NewsItem" x:CompileBindings="True">
                                                                     <Border BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                                                             BorderThickness="0,0,0,1"
                                                                             Padding="4,12">
@@ -2383,7 +2385,7 @@
                                                                   HorizontalScrollBarVisibility="Disabled">
                                                         <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                             <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="kodoModels:FormattedParagraph">
+                                                                <DataTemplate x:DataType="kodoModels:FormattedParagraph" x:CompileBindings="True">
                                                                     <Grid Margin="{Binding TopMargin}"
                                                                           ColumnDefinitions="Auto,*">
                                                                         <TextBlock Grid.Column="0"
@@ -2401,7 +2403,7 @@
                                                                                 </ItemsPanelTemplate>
                                                                             </ItemsControl.ItemsPanel>
                                                                             <ItemsControl.ItemTemplate>
-                                                                                <DataTemplate x:DataType="kodoModels:FormattedRun">
+                                                                                <DataTemplate x:DataType="kodoModels:FormattedRun" x:CompileBindings="True">
                                                                                     <TextBlock Text="{Binding Text}"
                                                                                                TextWrapping="Wrap"
                                                                                                FontSize="12"
@@ -2504,7 +2506,7 @@
                                             </Style>
                                         </ComboBox.Styles>
                                         <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:TerminalShellOption">
+                                            <DataTemplate x:DataType="kodo:TerminalShellOption" x:CompileBindings="True">
                                                 <TextBlock Text="{Binding DisplayName}" />
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
@@ -2554,7 +2556,7 @@
                                         </ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="kodoModels:TerminalSession">
+                                    <DataTemplate x:DataType="kodoModels:TerminalSession" x:CompileBindings="True">
                                             <Border Classes="tabwrap"
                                                     Classes.active="{Binding IsSelected}">
                                                 <Border.ContextMenu>
@@ -2948,7 +2950,7 @@
                                      DoubleTapped="SearchResultsListBox_OnDoubleTapped"
                                      SelectionChanged="SearchResultsListBox_OnSelectionChanged">
                                 <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="kodoModels:SearchDisplayItem">
+                                    <DataTemplate DataType="kodoModels:SearchDisplayItem" x:CompileBindings="True">
                                         <Border Background="Transparent">
                                             <Panel>
                                             
@@ -3286,7 +3288,7 @@
                                                             </ItemsPanelTemplate>
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup">
+                                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                                 <StackPanel Spacing="6">
 
                                                                     <!-- Collapsible header - only shown for multi-theme groups -->
@@ -3322,7 +3324,7 @@
                                                                             </ItemsPanelTemplate>
                                                                         </ItemsControl.ItemsPanel>
                                                                         <ItemsControl.ItemTemplate>
-                                                                                <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                                                                <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                                                                     <Button Classes="chrome"
                                                                                             Background="{Binding #RootWindow.ButtonBrush}"
                                                                                             BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
@@ -3875,7 +3877,7 @@
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" ItemsSource="{Binding FilteredInstalledLanguageExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -3979,7 +3981,7 @@
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledPluginExtensions}" ItemsSource="{Binding FilteredInstalledPluginExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -4083,7 +4085,7 @@
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledThemeExtensions}" ItemsSource="{Binding FilteredInstalledThemeExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                    <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -4188,7 +4190,7 @@
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
                                           ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
                                             <ToolTip.Tip>
                                                 <StackPanel Spacing="2">
@@ -4424,7 +4426,7 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
@@ -4587,7 +4589,7 @@
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension">
+                                    <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
@@ -4903,7 +4905,7 @@
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>
                                         <ItemsControl.ItemTemplate>
-                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup">
+                                                            <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                 <StackPanel Spacing="6">
 
                                                     <!-- Collapsible header - only shown for multi-theme groups -->
@@ -4939,7 +4941,7 @@
                                                             </ItemsPanelTemplate>
                                                         </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
-                                                            <DataTemplate x:DataType="kodoModels:LoadedExtension">
+                                                            <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                                                 <Button Classes="chrome"
                                                                         Background="{Binding #RootWindow.ButtonBrush}"
                                                                         BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
@@ -5362,7 +5364,7 @@
                                               BorderBrush="{Binding SurfaceBorderBrush}"
                                               CornerRadius="8">
                                         <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:TerminalShellOption">
+                                            <DataTemplate x:DataType="kodo:TerminalShellOption" x:CompileBindings="True">
                                                 <TextBlock Text="{Binding DisplayName}" />
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
@@ -6100,7 +6102,7 @@
                                                       IsVisible="{Binding !IsWhatsNewDisabled}">
                                             <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodoModels:FormattedParagraph">
+                                                    <DataTemplate x:DataType="kodoModels:FormattedParagraph" x:CompileBindings="True">
                                                         <Grid Margin="{Binding TopMargin}"
                                                               ColumnDefinitions="Auto,*">
                                                             <TextBlock Grid.Column="0"
@@ -6118,7 +6120,7 @@
                                                                     </ItemsPanelTemplate>
                                                                 </ItemsControl.ItemsPanel>
                                                                 <ItemsControl.ItemTemplate>
-                                                                    <DataTemplate x:DataType="kodoModels:FormattedRun">
+                                                                    <DataTemplate x:DataType="kodoModels:FormattedRun" x:CompileBindings="True">
                                                                         <TextBlock Text="{Binding Text}"
                                                                                    TextWrapping="Wrap"
                                                                                    FontSize="13"
@@ -6142,7 +6144,7 @@
                                                        Text="Links" />
                                             <ItemsControl ItemsSource="{Binding LatestReleaseLinks}">
                                                 <ItemsControl.ItemTemplate>
-                                                    <DataTemplate x:DataType="kodoModels:ReleaseLinkItem">
+                                                    <DataTemplate x:DataType="kodoModels:ReleaseLinkItem" x:CompileBindings="True">
                                                         <Button Classes="chrome"
                                                                 Tag="{Binding Url}"
                                                                 Click="OpenReleaseLinkButton_OnClick"
