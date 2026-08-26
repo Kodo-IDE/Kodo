@@ -6596,31 +6596,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!confirmed) return;
 
-        // Delete settings file (separate from logs/cache directory)
-        var settingsFilePath = Path.Combine(
+        var localKodoDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Kodo", "kodosettings.json");
-        if (File.Exists(settingsFilePath))
+            "Kodo");
+        var roamingKodoDir = KodoDiagnostics.LogDirectoryPath;
+
+        if (Directory.Exists(localKodoDir))
         {
-            try { File.Delete(settingsFilePath); }
+            try
+            {
+                Directory.Delete(localKodoDir, true);
+            }
             catch { /* best effort */ }
         }
 
-        var kodoDir = KodoDiagnostics.LogDirectoryPath;
-        if (Directory.Exists(kodoDir))
+        if (Directory.Exists(roamingKodoDir))
         {
-            foreach (var file in Directory.GetFiles(kodoDir, "*", SearchOption.AllDirectories))
+            try
             {
-                var fileName = Path.GetFileName(file);
-                try
-                {
-                    // Preserve nothing - delete everything (logs, cache files)
-                    // kodo.log and crash.log are excluded by ClearCacheButton logic,
-                    // but Reset deletes everything
-                    File.Delete(file);
-                }
-                catch { /* best effort */ }
+                Directory.Delete(roamingKodoDir, true);
             }
+            catch { /* best effort */ }
         }
 
         DeveloperOptionsStatusText = "Kodo data reset. Relaunching...";

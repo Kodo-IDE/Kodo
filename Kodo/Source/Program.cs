@@ -1,3 +1,4 @@
+// Licensed under GPL-v3.0
 using Avalonia;
 using System;
 using System.IO;
