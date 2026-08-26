@@ -457,7 +457,7 @@ internal sealed class UpdateDialog : Window
         {
             Text         = "View release notes",
             FontSize     = 12,
-            Foreground   = new SolidColorBrush(Color.Parse("#9CDCFE")),
+            Foreground   = new SolidColorBrush(_accentColor),
             Cursor       = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
         notesLink.PointerPressed += (_, _) => OpenUrl(update.ReleaseNotesUrl);
@@ -658,6 +658,7 @@ internal static class DialogPalette
     public static readonly Color SurfaceDeep = Color.Parse("#1A1A1A");
     public static readonly Color Border      = Color.Parse("#3A3A3A");
     public static readonly Color BadgeBg     = Color.Parse("#2B2B2B");
+    public static readonly Color Text        = Color.Parse("#F4F4F4");
     public static readonly Color TextMuted   = Color.Parse("#A0A0A0");
     public static readonly Color TextDim     = Color.Parse("#606060");
     public static readonly Color TokenBlue   = Color.Parse("#9CDCFE");  // source badge

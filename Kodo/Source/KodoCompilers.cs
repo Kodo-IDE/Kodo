@@ -3237,7 +3237,7 @@ internal sealed class CompilerRunWindow : Window
             Text = _commandDisplay,
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
-            Foreground = Brushes.White,
+            Foreground = new SolidColorBrush(DialogPalette.Text),
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         };
