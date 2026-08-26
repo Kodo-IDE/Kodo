@@ -141,7 +141,12 @@ public partial class MainWindow
         Dictionary<string, string> marketplaceIconMap = [];
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            SyncMarketplaceExtensionCollection(MarketplaceExtensions, marketplaceExtensions);
+            var combinedMarketplaceEntries = marketplaceExtensions
+                .Where(entry => !string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase))
+                .Concat(_pluginsIndexEntries)
+                .ToList();
+
+            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedMarketplaceEntries);
             SyncObservableCollection(
                 ExtensionLoadErrors,
                 ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
@@ -213,12 +218,6 @@ public partial class MainWindow
                     continue;
                 }
 
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    SyncMarketplaceExtensionCollection(MarketplaceExtensions, MarketplaceExtensions.Concat(pluginExtensions).ToList());
-                    SyncMarketplaceInstallStates();
-                });
-
                 TryWritePluginsIndexCache(remoteJson);
                 if (newETag is not null)
                 {
@@ -244,8 +243,29 @@ public partial class MainWindow
         Dictionary<string, string> pluginIconMap = [];
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            // Sync plugin extensions - could integrate with installed plugins UI here
+            _pluginsIndexEntries = pluginExtensions;
+            var combinedMarketplaceEntries = MarketplaceExtensions
+                .Where(entry => !string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase))
+                .Concat(_pluginsIndexEntries)
+                .ToList();
+
+            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedMarketplaceEntries);
+            SyncObservableCollection(
+                ExtensionLoadErrors,
+                ExtensionLoadErrors.Concat(pluginLoadErrors).Distinct().ToList(),
+                error => error);
+
+            SyncMarketplaceInstallStates();
+            RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
+            NotifyExtensionFiltersChanged();
+
+            pluginIconMap = MarketplaceExtensions
+                .Where(entry => string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(entry.IconUrl))
+                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
         });
+
+        _ = FetchMarketplaceIconsAsync(pluginIconMap);
+        _ = FetchInstalledExtensionIconsAsync(pluginIconMap);
     }
 
     private string? TryReadPluginsIndexCache()

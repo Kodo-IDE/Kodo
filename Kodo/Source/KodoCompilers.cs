@@ -148,7 +148,14 @@ public partial class MainWindow
         Dictionary<string, string> compilerIconMap = [];
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            SyncMarketplaceExtensionCollection(CompilerExtensions, compilerExtensions);
+            var combinedCompilerEntries = CompilerExtensions
+                .Where(entry => !entry.IsInstalled)
+                .Concat(compilerExtensions)
+                .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+
+            SyncMarketplaceExtensionCollection(CompilerExtensions, combinedCompilerEntries);
             SyncObservableCollection(
                 ExtensionLoadErrors,
                 ExtensionLoadErrors.Concat(loadErrors).Distinct().ToList(),
