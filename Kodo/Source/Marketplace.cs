@@ -159,6 +159,123 @@ public partial class MainWindow
         _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
     }
 
+    private async Task LoadPluginsIndexAsync()
+    {
+        var pluginExtensions = new List<MarketplaceExtension>();
+        var pluginLoadErrors = new List<string>();
+
+        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
+
+        var diskJson = TryReadPluginsIndexCache();
+        if (diskJson is not null)
+            ParseAndApplyMarketplaceIndex(diskJson, pluginExtensions, pluginLoadErrors);
+
+        try
+        {
+            _pluginsIndexETag ??= TryReadPluginsIndexETag();
+            var hasLocalDataToReuseOn304 = pluginExtensions.Count > 0;
+            foreach (var indexUrl in PluginsIndexUrls)
+            {
+                using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
+                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (hasLocalDataToReuseOn304 && _pluginsIndexETag is not null)
+                    indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _pluginsIndexETag);
+
+                var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
+                    "Plugins index fetch",
+                    async ct =>
+                    {
+                        using var indexResponse = await MarketplaceHttpClient.SendAsync(indexRequest, ct);
+                        if ((int)indexResponse.StatusCode == 304)
+                            return (304, (string?)null, (string?)null);
+                        if (!indexResponse.IsSuccessStatusCode)
+                            return (0, (string?)null, (string?)null);
+                        var body = await indexResponse.Content.ReadAsStringAsync(ct);
+                        var etag = indexResponse.Headers.ETag?.Tag;
+                        return (200, body, etag);
+                    });
+
+                if (statusCode == 304)
+                {
+                    KodoDiagnostics.LogDebug("Plugins index: 304 Not Modified - reusing cached data.");
+                    break;
+                }
+
+                if (remoteJson is null)
+                    continue;
+
+                var parsedErrors = new List<string>();
+                ParseAndApplyMarketplaceIndex(remoteJson, pluginExtensions, parsedErrors);
+
+                if (pluginExtensions.Count == 0)
+                {
+                    pluginLoadErrors.Add($"Plugins index at {indexUrl} did not contain any plugins.");
+                    continue;
+                }
+
+                pluginExtensions.Clear();
+                pluginLoadErrors.Clear();
+                TryWritePluginsIndexCache(remoteJson);
+                if (newETag is not null)
+                {
+                    _pluginsIndexETag = newETag;
+                    TryWritePluginsIndexETag(newETag);
+                }
+                break;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (diskJson is not null)
+            {
+                pluginLoadErrors.Add($"Plugins index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
+                KodoDiagnostics.LogDebug("Plugins index fetch failed; using disk cache.", ex);
+            }
+            else
+            {
+                pluginLoadErrors.Add($"Failed to load remote plugins index: {DescribeFetchFailure(ex)}");
+            }
+        }
+
+        Dictionary<string, string> pluginIconMap = [];
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            // Sync plugin extensions - could integrate with installed plugins UI here
+        });
+    }
+
+    private string? TryReadPluginsIndexCache()
+    {
+        try { return File.Exists(PluginsIndexCachePath) ? File.ReadAllText(PluginsIndexCachePath, System.Text.Encoding.UTF8) : null; }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not read plugins index cache.", ex); return null; }
+    }
+
+    private string? TryReadPluginsIndexETag()
+    {
+        try { return File.Exists(PluginsIndexETagPath) ? File.ReadAllText(PluginsIndexETagPath).Trim() : null; }
+        catch { return null; }
+    }
+
+    private void TryWritePluginsIndexCache(string json)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(PluginsIndexCachePath)!);
+            File.WriteAllText(PluginsIndexCachePath, json, System.Text.Encoding.UTF8);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write plugins index cache.", ex); }
+    }
+
+    private void TryWritePluginsIndexETag(string etag)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(PluginsIndexETagPath)!);
+            File.WriteAllText(PluginsIndexETagPath, etag);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Could not write plugins index ETag.", ex); }
+    }
+
     private async Task FetchInstalledExtensionIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
         var tasks = LoadedExtensions
@@ -328,11 +445,26 @@ public partial class MainWindow
             CommentHandling = JsonCommentHandling.Skip
         };
         using var doc = JsonDocument.Parse(json, jsonOptions);
-        if (!doc.RootElement.TryGetProperty(rootPropertyName, out var extensionsElement) ||
-            extensionsElement.ValueKind != JsonValueKind.Array)
+
+        JsonElement? extensionsElement = null;
+        var triedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        do
+        {
+            if (triedProperties.Add(rootPropertyName) &&
+                doc.RootElement.TryGetProperty(rootPropertyName, out var element) &&
+                element.ValueKind == JsonValueKind.Array)
+            {
+                extensionsElement = element;
+                break;
+            }
+            rootPropertyName = rootPropertyName == "extensions" ? "plugins" : "extensions";
+        } while (true);
+
+        if (extensionsElement is null)
             return;
 
-        foreach (var item in extensionsElement.EnumerateArray())
+        foreach (var item in extensionsElement.Value.EnumerateArray())
         {
             try
             {

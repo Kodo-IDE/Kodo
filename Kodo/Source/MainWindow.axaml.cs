@@ -71,6 +71,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/CompilerIndex.json",
     ];
+    private static readonly string[] PluginsIndexUrls =
+    [
+        "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/PluginsIndex.json",
+    ];
     private static readonly string[] LatestReleaseApiUrls =
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest",
@@ -247,7 +251,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string CompilerIndexETagPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json.etag");
     private string? _compilerIndexETag;
+    private string PluginsIndexCachePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "plugins-index.json");
+    private string PluginsIndexETagPath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "plugins-index.json.etag");
+    private string? _pluginsIndexETag;
     private List<CompilerIndexEntry> _compilerIndexEntries = [];
+    private List<MarketplaceExtension> _pluginsIndexEntries = [];
     private string CompilerInstallRegistryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "installed-compilers.json");
     private string CompilersFolderPath =>
