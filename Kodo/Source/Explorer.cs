@@ -468,6 +468,8 @@ public partial class MainWindow
     private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _fileTreeRefreshTimer.Stop();
+        if (_newFileInlineRenameItem?.IsRenaming == true)
+            return;
         _searchFileCache = null;
         await RefreshFileTreePreservingExpansionAsync();
     }
@@ -952,7 +954,11 @@ public partial class MainWindow
             CloseTab(tab);
     }
 
-    private async Task<string?> ShowRenameDialogAsync(string currentName)
+    private async Task<string?> ShowRenameDialogAsync(
+        string currentName,
+        string title = "Rename",
+        string action = "Rename",
+        string prompt = "Enter a new name:")
     {
         string? result = null;
         Window? dialog = null;
@@ -968,7 +974,7 @@ public partial class MainWindow
             CaretBrush       = PrimaryTextBrush,
         };
 
-        var confirmButton = CreateDialogButton("Rename", AccentBrush, AccentBrush, AccentForegroundBrush, () =>
+        var confirmButton = CreateDialogButton(action, AccentBrush, AccentBrush, AccentForegroundBrush, () =>
         {
             result = inputBox.Text?.Trim();
             dialog!.Close();
@@ -996,7 +1002,7 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
-                    Text = "Rename",
+                    Text = title,
                     FontSize = 15,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = PrimaryTextBrush,
@@ -1019,7 +1025,7 @@ public partial class MainWindow
             Children =
             {
                 headerRow,
-                new TextBlock { Text = "Enter a new name:", FontSize = 13, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap },
+                new TextBlock { Text = prompt, FontSize = 13, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap },
                 inputBox,
                 divider,
                 new StackPanel
@@ -1046,7 +1052,7 @@ public partial class MainWindow
             CanResize               = false,
             ShowInTaskbar           = false,
             WindowStartupLocation   = WindowStartupLocation.CenterOwner,
-            Title                   = "Rename",
+            Title                   = title,
             Background              = WindowBackgroundBrush,
             Content = new Border
             {
@@ -1095,9 +1101,19 @@ public partial class MainWindow
         try
         {
             var path = CreateUniqueChildPath(directory, baseName, ext ?? string.Empty);
+
             if (isFile) await File.WriteAllTextAsync(path, string.Empty); else Directory.CreateDirectory(path);
             await RefreshExplorerTreeAsync();
-            if (isFile) await OpenFileFromPathAsync(path);
+            if (isFile)
+            {
+                var newItem = FileTreeItems.FirstOrDefault(item =>
+                    string.Equals(item.FullPath, path, StringComparison.OrdinalIgnoreCase));
+                if (newItem is not null)
+                {
+                    _newFileInlineRenameItem = newItem;
+                    BeginInlineRename(newItem);
+                }
+            }
         }
         catch (Exception ex)
         {

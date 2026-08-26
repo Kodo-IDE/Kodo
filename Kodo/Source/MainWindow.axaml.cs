@@ -6987,16 +6987,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         BeginInlineRename(item);
     }
 
+    private FileTreeItem? _inlineRenameFocusPending;
+    private FileTreeItem? _newFileInlineRenameItem;
+
     private void BeginInlineRename(FileTreeItem item)
     {
         item.RenameText = item.Name;
         item.IsRenaming = true;
+        _inlineRenameFocusPending = item;
         Dispatcher.UIThread.Post(() =>
         {
             var textBox = this.GetVisualDescendants().OfType<TextBox>()
                 .FirstOrDefault(control => ReferenceEquals(control.DataContext, item));
-            textBox?.Focus();
-            textBox?.SelectAll();
+            if (textBox is not null)
+            {
+                textBox.Focus();
+                textBox.SelectAll();
+                _inlineRenameFocusPending = null;
+            }
         });
     }
 
@@ -7005,6 +7013,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (e.Key == Key.Escape && sender is TextBox textBox && textBox.DataContext is FileTreeItem item)
         {
             item.IsRenaming = false;
+            if (ReferenceEquals(_newFileInlineRenameItem, item))
+                _newFileInlineRenameItem = null;
             e.Handled = true;
         }
         else if (e.Key == Key.Enter && sender is TextBox enterTextBox && enterTextBox.DataContext is FileTreeItem enterItem)
@@ -7014,16 +7024,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void InlineRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
+    private void InlineRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is TextBox textBox && textBox.DataContext is FileTreeItem item && item.IsRenaming)
-            await CompleteInlineRenameAsync(item);
+        // Commit explicitly with Enter; tree refreshes can cause transient focus loss.
     }
 
     private async Task CompleteInlineRenameAsync(FileTreeItem item)
     {
         if (!item.IsRenaming) return;
         item.IsRenaming = false;
+        if (ReferenceEquals(_newFileInlineRenameItem, item))
+            _newFileInlineRenameItem = null;
 
         var newName = item.RenameText.Trim();
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, item.Name, StringComparison.Ordinal)) return;
