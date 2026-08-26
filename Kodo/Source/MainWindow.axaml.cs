@@ -4987,7 +4987,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         _ = RefreshExtensionsAndAutoUpdateAsync();
         _ = RefreshLatestReleaseAsync(forceNetwork: false);
-        _ = FetchAnnouncementsAsync(forceNetwork: false);
+        _ = FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
 
         var isReturningUser = _hasCompletedTutorial;
 
