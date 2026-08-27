@@ -2160,7 +2160,11 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
 
-        if (HasDotnetProject(folder))
+        var projectRoot = FindProjectRoot(folder);
+        if (projectRoot is null)
+            return false;
+
+        if (HasDotnetProject(projectRoot))
         {
             fallback = BuildProjectFallbackExtension(
                 id: "project:dotnet",
@@ -2170,59 +2174,99 @@ public partial class MainWindow
                 build: "dotnet build",
                 iconSourceId: "dotnet-sdk",
                 forExt: forExt,
-                folder: folder);
+                folder: projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "Cargo.toml")))
+        if (File.Exists(Path.Combine(projectRoot, "Cargo.toml")))
         {
-            fallback = BuildProjectFallbackExtension("project:cargo", "Cargo Project", "Project", "cargo run", "cargo build", "rust-rustup", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:cargo", "Cargo Project", "Project", "cargo run", "cargo build", "rust-rustup", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "go.mod")))
+        if (File.Exists(Path.Combine(projectRoot, "go.mod")))
         {
-            fallback = BuildProjectFallbackExtension("project:go", "Go Module", "Project", "go run .", "go build ./...", "go", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:go", "Go Module", "Project", "go run .", "go build ./...", "go", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "package.json")))
+        if (File.Exists(Path.Combine(projectRoot, "package.json")))
         {
-            fallback = BuildProjectFallbackExtension("project:node", "Node Project", "Project", "npm start", "npm run build", "nodejs", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:node", "Node Project", "Project", "npm start", "npm run build", "nodejs", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "pom.xml")))
+        if (File.Exists(Path.Combine(projectRoot, "pom.xml")))
         {
-            fallback = BuildProjectFallbackExtension("project:maven", "Maven Project", "Project", "mvn exec:java", "mvn package", "temurin-jdk", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:maven", "Maven Project", "Project", "mvn exec:java", "mvn package", "temurin-jdk", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "build.gradle")) || File.Exists(Path.Combine(folder, "build.gradle.kts")))
+        if (File.Exists(Path.Combine(projectRoot, "build.gradle")) || File.Exists(Path.Combine(projectRoot, "build.gradle.kts")))
         {
-            fallback = BuildProjectFallbackExtension("project:gradle", "Gradle Project", "Project", "gradle run", "gradle build", "temurin-jdk", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:gradle", "Gradle Project", "Project", "gradle run", "gradle build", "temurin-jdk", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "CMakeLists.txt")))
+        if (File.Exists(Path.Combine(projectRoot, "CMakeLists.txt")))
         {
-            fallback = BuildProjectFallbackExtension("project:cmake", "CMake Project", "Project", null, "cmake --build build", "llvm-clang", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:cmake", "CMake Project", "Project", null, "cmake --build build", "llvm-clang", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "Makefile")) || File.Exists(Path.Combine(folder, "makefile")) || File.Exists(Path.Combine(folder, "GNUmakefile")))
+        if (File.Exists(Path.Combine(projectRoot, "Makefile")) || File.Exists(Path.Combine(projectRoot, "makefile")) || File.Exists(Path.Combine(projectRoot, "GNUmakefile")))
         {
-            fallback = BuildProjectFallbackExtension("project:make", "Make Project", "Project", "make run", "make", "msys2-mingw", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:make", "Make Project", "Project", "make run", "make", "msys2-mingw", forExt, projectRoot);
             return true;
         }
 
-        if (File.Exists(Path.Combine(folder, "pyproject.toml")) || File.Exists(Path.Combine(folder, "requirements.txt")) || File.Exists(Path.Combine(folder, "setup.py")) || File.Exists(Path.Combine(folder, "Pipfile")))
+        if (File.Exists(Path.Combine(projectRoot, "pyproject.toml")) || File.Exists(Path.Combine(projectRoot, "requirements.txt")) || File.Exists(Path.Combine(projectRoot, "setup.py")) || File.Exists(Path.Combine(projectRoot, "Pipfile")))
         {
-            fallback = BuildProjectFallbackExtension("project:python", "Python Project", "Project", "python {file}", null, "python", forExt, folder);
+            fallback = BuildProjectFallbackExtension("project:python", "Python Project", "Project", "python {file}", null, "python", forExt, projectRoot);
             return true;
         }
 
         return false;
+    }
+
+    private string? FindProjectRoot(string startFolder)
+    {
+        try
+        {
+            var current = Path.GetFullPath(startFolder);
+            while (!string.IsNullOrWhiteSpace(current))
+            {
+                if (HasDotnetProject(current) ||
+                    File.Exists(Path.Combine(current, "Cargo.toml")) ||
+                    File.Exists(Path.Combine(current, "go.mod")) ||
+                    File.Exists(Path.Combine(current, "package.json")) ||
+                    File.Exists(Path.Combine(current, "pom.xml")) ||
+                    File.Exists(Path.Combine(current, "build.gradle")) ||
+                    File.Exists(Path.Combine(current, "build.gradle.kts")) ||
+                    File.Exists(Path.Combine(current, "CMakeLists.txt")) ||
+                    File.Exists(Path.Combine(current, "Makefile")) ||
+                    File.Exists(Path.Combine(current, "makefile")) ||
+                    File.Exists(Path.Combine(current, "GNUmakefile")) ||
+                    File.Exists(Path.Combine(current, "pyproject.toml")) ||
+                    File.Exists(Path.Combine(current, "requirements.txt")) ||
+                    File.Exists(Path.Combine(current, "setup.py")) ||
+                    File.Exists(Path.Combine(current, "Pipfile")))
+                {
+                    return current;
+                }
+
+                var parent = Directory.GetParent(current);
+                if (parent is null)
+                    break;
+
+                current = parent.FullName;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
     }
 
     private bool HasDotnetProject(string folder)
