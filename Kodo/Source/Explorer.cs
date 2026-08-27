@@ -1096,6 +1096,42 @@ public partial class MainWindow
         await OpenPathInSystemExplorer(tab.Path, selectItem: true);
     }
 
+    private void EditorTabContextMenu_OnOpening(object? sender, CancelEventArgs e)
+    {
+        if (sender is not ContextMenu contextMenu ||
+            contextMenu.DataContext is not EditorTab pivotTab)
+            return;
+
+        var pivotIndex = OpenTabs.IndexOf(pivotTab);
+        var hasTabsToRight = pivotIndex >= 0 && pivotIndex < OpenTabs.Count - 1;
+        var hasOtherTabs = OpenTabs.Count > 1;
+
+        foreach (var item in contextMenu.Items.OfType<MenuItem>())
+        {
+            switch (item.Header?.ToString())
+            {
+                case "Close Other Files":
+                case "Close Others":
+                    item.IsVisible = hasOtherTabs;
+                    break;
+                case "Close Files Below":
+                case "Close Tabs to the Right":
+                    item.IsVisible = hasTabsToRight;
+                    break;
+            }
+        }
+    }
+
+    private void OpenEditorTabInTerminalMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
+
+        var directory = Path.GetDirectoryName(tab.Path);
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
+
+        CreateTerminalSession(workingDirectoryOverride: directory);
+    }
+
     private async Task CreateExplorerEntryAsync(string directory, string baseName, string? ext, bool isFile)
     {
         try

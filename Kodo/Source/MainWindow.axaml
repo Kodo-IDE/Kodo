@@ -962,7 +962,7 @@
                                             </Style>
                                         </Border.Styles>
                                         <Border.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opening="EditorTabContextMenu_OnOpening">
                                                 <MenuItem Header="Save"
                                                           Tag="{Binding}"
                                                           Click="SaveEditorTabMenuItem_OnClick" />
@@ -982,6 +982,9 @@
                                                 <MenuItem Header="Reveal in File Explorer"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
+                                                <MenuItem Header="Open in Integrated Terminal"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabInTerminalMenuItem_OnClick" />
                                                 <Separator />
                                                 <MenuItem Header="Close File"
                                                           Tag="{Binding}"
@@ -1460,7 +1463,7 @@
                                     <Border Classes="tabwrap"
                                             Classes.active="{Binding IsSelected}">
                                         <Border.ContextMenu>
-                                            <ContextMenu>
+                                            <ContextMenu Opening="EditorTabContextMenu_OnOpening">
                                                 <MenuItem Header="Save"
                                                           Tag="{Binding}"
                                                           Click="SaveEditorTabMenuItem_OnClick" />
@@ -1480,6 +1483,9 @@
                                                 <MenuItem Header="Reveal in File Explorer"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
+                                                <MenuItem Header="Open in Integrated Terminal"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabInTerminalMenuItem_OnClick" />
                                                 <Separator />
                                                 <MenuItem Header="Close"
                                                           Tag="{Binding}"
