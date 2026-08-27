@@ -3,18 +3,28 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
+
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
     <AssemblyName>KodoUpdater</AssemblyName>
     <RootNamespace>KodoUpdater</RootNamespace>
-    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Application -->
     <ApplicationIcon>..\..\Assets\kodo_logo.ico</ApplicationIcon>
-    <!-- Single-file, self-contained publish keeps this a standalone background
-         process with no dependency on the main Kodo install folder layout. -->
-    <SelfContained>true</SelfContained>
+
+    <!-- Windows x64 standalone updater -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+
+    <!-- Single-file publishing -->
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Release optimization -->
+    <Optimize>true</Optimize>
+    <DebugType>None</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,5 +33,18 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.1" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
   </ItemGroup>
+
+  <!-- Remove debugging symbols from the release publish output -->
+  <Target Name="RemovePdbFilesFromPublish"
+          AfterTargets="Publish"
+          Condition="'$(Configuration)' == 'Release'">
+
+    <ItemGroup>
+      <PdbFiles Include="$(PublishDir)**\*.pdb" />
+    </ItemGroup>
+
+    <Delete Files="@(PdbFiles)" />
+
+  </Target>
 
 </Project>

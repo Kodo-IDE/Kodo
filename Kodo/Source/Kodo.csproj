@@ -18,13 +18,13 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
-    	<IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
-    	<PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
     <PackageReference Include="Svg.Controls.Skia.Avalonia" Version="12.0.0.16" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <AvaloniaResource Include="..\Assets\**" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
@@ -34,4 +34,15 @@
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
   </ItemGroup>
+
+  <!-- Remove debugging symbols from the release publish directory. -->
+  <Target Name="RemovePdbFilesFromPublish"
+          AfterTargets="Publish"
+          Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
+      <PdbFiles Include="$(PublishDir)**\*.pdb" />
+    </ItemGroup>
+
+    <Delete Files="@(PdbFiles)" />
+  </Target>
 </Project>
