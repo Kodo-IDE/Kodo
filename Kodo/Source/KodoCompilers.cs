@@ -2151,6 +2151,17 @@ public partial class MainWindow
                 return fallbackScoreZero;
             return null;
         }
+
+        // A language/compiler extension can claim a file type without providing
+        // a runnable command. In a project, let the project command take over.
+        if (ResolveCommandTemplate(best.Compiler, isBuild: false, ext) is null &&
+            ResolveCommandTemplate(best.Compiler, isBuild: true, ext) is null)
+        {
+            var folder = ResolveWorkingDirectory();
+            if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))
+                return projectFallback;
+        }
+
         return best.Compiler;
     }
 
@@ -2160,7 +2171,14 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
 
-        var projectRoot = FindProjectRoot(folder);
+        // The folder opened in the explorer can be broader than the project
+        // containing the active file, so anchor project discovery to the file.
+        var fileFolder = Path.GetDirectoryName(_currentFilePath ?? string.Empty);
+        var projectRoot = !string.IsNullOrWhiteSpace(fileFolder) && Directory.Exists(fileFolder)
+            ? FindProjectRoot(fileFolder)
+            : FindProjectRoot(folder);
+
+        projectRoot ??= FindProjectRoot(folder);
         if (projectRoot is null)
             return false;
 
@@ -2300,7 +2318,9 @@ public partial class MainWindow
 
     private MarketplaceExtension BuildProjectFallbackExtension(string id, string name, string author, string? run, string? build, string iconSourceId, string forExt, string folder)
     {
-        var iconUrl = CompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
+        var iconSource = CompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))
+            ?? ManualCompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase));
+        var iconUrl = iconSource?.IconUrl ?? string.Empty;
         if (string.IsNullOrWhiteSpace(iconUrl))
         {
             // Try manual compilers for icon fallback
@@ -2322,6 +2342,8 @@ public partial class MainWindow
             LanguageExtensionIds = [],
             RunCommandTemplate = run,
             BuildCommandTemplate = build,
+            IconImage = iconSource?.IconImage,
+            SvgData = iconSource?.SvgData,
         };
         ext.SetCompilerInstalledState("Project", DateTime.UtcNow, isUpdateAvailable: false);
         return ext;
@@ -2488,8 +2510,20 @@ public partial class MainWindow
         return template is null ? null : ExpandCommandTemplate(template, extraArgs: null);
     }
 
-    private string ResolveWorkingDirectory() =>
-        _currentFolderPath ?? Path.GetDirectoryName(_currentFilePath ?? string.Empty) ?? string.Empty;
+    private string ResolveWorkingDirectory()
+    {
+        // Commands belong to the active file, not necessarily the folder opened
+        // in the explorer. This keeps nested project files rooted at their own
+        // containing directory when run or built.
+        if (!string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            var fileFolder = Path.GetDirectoryName(_currentFilePath);
+            if (!string.IsNullOrWhiteSpace(fileFolder) && Directory.Exists(fileFolder))
+                return fileFolder;
+        }
+
+        return _currentFolderPath ?? string.Empty;
+    }
 
     private string ExpandCommandTemplate(string template, string? extraArgs)
     {
@@ -2921,7 +2955,8 @@ public partial class MainWindow
             menu.Items.Add(item);
         }
 
-        if (!anyAdded)
+        // Keep the project-level compiler available even when the file type also
+        // has a language extension, so the active fallback is visible/selectable.
         {
             var folder = ResolveWorkingDirectory();
             if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))
