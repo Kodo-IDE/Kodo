@@ -179,7 +179,7 @@ Supports: `themeId`, `displayName`, `baseTheme` (`"Dark"` or `"Light"`), and col
 
 ## Submitting an Extension
 
-If you want your extension in the official marketplace, open a PR adding your `.kox` to `Official_Extensions/` and the relevant entry to `Indexs/ExtensionsIndex.json`.
+If you want your extension in the official marketplace, open a PR adding your `.kox` to the `Extensions` folder in the [Kodo-Extensions](https://github.com/Kodo-IDE/Kodo-Extensions) repository and the relevant entry to `Indexs/ExtensionsIndex.json`.
 
 Rule 1B applies when submitting extensions.
 
