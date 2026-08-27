@@ -21,6 +21,8 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
     public IBrush BorderBrush { get; set; } = Brush.Parse("#3A3A3A");
     public IBrush TextBrush { get; set; } = Brushes.White;
     public IBrush AccentBrush { get; set; } = Brush.Parse("#8C00FF");
+    public string PickerTitle { get; set; } = "Colour Picker";
+    public string EditColorTooltip { get; set; } = "Edit Colour";
 
     private static readonly Regex HexColorRegex =
         new(@"#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])", RegexOptions.Compiled);
@@ -106,7 +108,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Margin = new Thickness(0, 0, 3, 1),
             Cursor = new Cursor(StandardCursorType.Hand)
         };
-        ToolTip.SetTip(swatchBorder, "Edit color");
+        ToolTip.SetTip(swatchBorder, EditColorTooltip);
 
         const double svWidth = 200;
         const double svHeight = 130;
@@ -371,7 +373,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Children =
             {
                 new Border { Width = 3, Height = 14, CornerRadius = new CornerRadius(2), Background = AccentBrush, VerticalAlignment = VerticalAlignment.Center },
-                new TextBlock { Text = "Color Picker", FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = TextBrush, VerticalAlignment = VerticalAlignment.Center }
+                new TextBlock { Text = PickerTitle, FontSize = 12, FontWeight = FontWeight.SemiBold, Foreground = TextBrush, VerticalAlignment = VerticalAlignment.Center }
             }
         };
         var pickerDivider = new Border { Height = 1, Background = BorderBrush, Opacity = 0.9, Margin = new Thickness(0, 4) };

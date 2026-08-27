@@ -2018,7 +2018,7 @@
 
                                             <!-- Content row: empty state OR file list, both in row 1 -->
 
-                                            <!-- Empty state - vertically and horizontally centered in remaining height -->
+                                            <!-- Empty state - vertically and horizontally centred in remaining height -->
                                             <StackPanel Grid.Row="1"
                                                         IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
@@ -3028,7 +3028,7 @@
                     </Grid>
                 </Border>
 
-                <!-- ═══ Welcome splash - full-bleed centered, no scroll ═══ -->
+                <!-- ═══ Welcome splash - full-bleed centred, no scroll ═══ -->
                 <Grid Grid.Row="1"
                       IsVisible="{Binding IsTutorialWelcomeStep}">
                     <StackPanel Spacing="0"
@@ -3495,7 +3495,7 @@
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
                                                            VerticalAlignment="Center"
-                                                           Text="PERSONALIZATION" />
+                                                           Text="{Binding LabelPersonalization}" />
                                             </StackPanel>
 
                                             <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
@@ -5644,7 +5644,7 @@
                                        LetterSpacing="1"
                                        Foreground="{Binding AccentBrush}"
                                        VerticalAlignment="Center"
-                                       Text="PERSONALIZATION" />
+                                       Text="{Binding LabelPersonalization}" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
@@ -5816,7 +5816,7 @@
                                                 Content="Clear Cache" />
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
-                                                ToolTip.Tip="Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
+                                                ToolTip.Tip="{Binding PersonalizationExportTooltip}"
                                                 Content="Export Kodo Data" />            
                                         <Button Classes="chrome red"
                                                 Click="ResetKodoButton_OnClick"

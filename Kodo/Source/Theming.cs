@@ -516,7 +516,7 @@ public partial class MainWindow
             Children =
             {
                 headerRow,
-                new TextBlock { Text = IsAmericanEnglish ? "Pick a colour for highlights, selections and buttons" : "Pick a colour for highlights, selections and buttons", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                new TextBlock { Text = IsAmericanEnglish ? "Pick a color for highlights, selections and buttons" : "Pick a colour for highlights, selections and buttons", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
                 headerDivider,
                 new Border
                 {

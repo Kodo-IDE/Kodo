@@ -2228,7 +2228,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
         }
 
-        // Code spans bind tighter than any inline construct, so they're colorized first.
+        // Code spans bind tighter than any inline construct, so they're colourized first.
         foreach (Match match in InlineCodeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -2472,7 +2472,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        // Tries to recognize the snippet language, falling back to a flat color.
+        // Tries to recognise the snippet language, falling back to a flat colour.
         var profile = ResolveInlineEmbeddedProfile(content.Value);
         if (profile is null)
         {
@@ -3233,7 +3233,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Single-line comment to end-of-line; $ anchors so the whole remainder is colored.
+        // Single-line comment to end-of-line; $ anchors so the whole remainder is coloured.
         if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
             var commentOptions = isBatch ? RegexOptions.IgnoreCase : RegexOptions.None;

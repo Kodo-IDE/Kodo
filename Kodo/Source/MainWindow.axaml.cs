@@ -2259,7 +2259,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool IsDevBuild =>
         CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
 
-    // Pre-release suffix ranking: -DEV < -ALPHA < -BETA < unrecognized < -RC < stable.
+    // Pre-release suffix ranking: -DEV < -ALPHA < -BETA < unrecognised < -RC < stable.
     private static int VersionPriority(string tag)
     {
         var dash = tag.IndexOf('-');
@@ -3821,7 +3821,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationDescription), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
+            _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
+            _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
@@ -3835,6 +3837,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
     public string TooltipAccentCustom      => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
     public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
+    public string PersonalizationExportTooltip => IsAmericanEnglish
+        ? "Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
+        : "Save a formatted .txt file with all of Kodo's settings, personalisation, open/recent files, and installed extensions";
     public string LabelPersonalizationDescription => IsAmericanEnglish
         ? "These settings personalize the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible."
         : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
@@ -7913,7 +7918,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Recognizes GitHub's 403/429 responses and swaps in a clearer message.
+    // Recognises GitHub's 403/429 responses and swaps in a clearer message.
 
 
 
