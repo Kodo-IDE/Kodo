@@ -152,6 +152,10 @@ internal static class AptabaseClient
         if (string.IsNullOrWhiteSpace(key))
         {
             Console.WriteLine("[Aptabase] WARNING: No key found, check if the file is there or if the key is set correctly.");
+            KodoDiagnostics.LogWarning(
+                "AptabaseClient.GetAptabaseKey",
+                new InvalidOperationException("KEYS.AptabaseKey was null/empty at startup"),
+                "resolving app key");
             return null;
         }
 
@@ -177,6 +181,7 @@ internal static class AptabaseClient
         catch (Exception ex)
         {
             Console.WriteLine($"[Aptabase] CONNECTIVITY TEST FAILED: {ex.GetType().Name}: {ex.Message}");
+            KodoDiagnostics.LogWarning("AptabaseClient.TestConnectivityAsync", ex, "Aptabase connectivity check");
         }
     }
 
@@ -204,6 +209,7 @@ internal static class AptabaseClient
         catch (Exception ex)
         {
             Console.WriteLine($"[Aptabase] Error in TrackEvent: {ex.Message}");
+            KodoDiagnostics.LogWarning("AptabaseClient.TrackEvent", ex, $"event={eventName}");
         }
     }
 
@@ -240,6 +246,7 @@ internal static class AptabaseClient
         catch (Exception ex)
         {
             Console.WriteLine($"[Aptabase] Error in FlushAsync: {ex.Message}");
+            KodoDiagnostics.LogWarning("AptabaseClient.FlushAsync", ex, "flushing queued events");
         }
     }
 
@@ -268,11 +275,16 @@ internal static class AptabaseClient
             {
                 var body = await response.Content.ReadAsStringAsync();
                 Console.WriteLine($"[Aptabase] Response body: {body}");
+                KodoDiagnostics.LogWarning(
+                    "AptabaseClient.SendBatchAsync",
+                    new InvalidOperationException($"Aptabase returned {(int)response.StatusCode} {response.StatusCode}: {body}"),
+                    $"eventCount={events.Count}");
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Aptabase] Error: {ex.GetType().Name}: {ex.Message}");
+            KodoDiagnostics.LogWarning("AptabaseClient.SendBatchAsync", ex, $"eventCount={events.Count}");
         }
     }
 }

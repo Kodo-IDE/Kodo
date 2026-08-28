@@ -44,6 +44,10 @@ public partial class App : Application
     // Called once the framework finishes initializing; creates the main window.
     public override void OnFrameworkInitializationCompleted()
     {
+        // Must run before anything touches AptabaseClient (TrackEvent/SetEnabled),
+        // since it's what populates the app key and session used by both.
+        AptabaseClient.Initialize();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             // desktop.Args[0] is the file path when launched via "Open with" / double-click.
