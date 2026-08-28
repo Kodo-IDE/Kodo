@@ -87,7 +87,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string ReleasesPageUrl = "https://github.com/Kodo-IDE/Kodo/releases";
     private static readonly string PrivacyPolicyUrl = "https://github.com/Kodo-IDE/Kodo/blob/main/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
-    private const string WebsiteUrl = "https://kodo-ide.github.io/Kodo-Website/";
+    private const string WebsiteUrl = "https://kodo-ide.github.io/";
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
     private static readonly string NewsCachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
