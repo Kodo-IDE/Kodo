@@ -5234,8 +5234,8 @@
                                                 Foreground="{Binding PrimaryTextBrush}"
                                                 ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
                                                 Content="Error Detection (Experimental)" />
-                                     <Border Background="#33FFA500"
-                                              BorderBrush="#55FFA500"
+                                     <Border Background="{Binding CardBrush}"
+                                              BorderBrush="{Binding AccentBrush}"
                                               BorderThickness="1"
                                               CornerRadius="6"
                                               Padding="10,8"
@@ -5243,6 +5243,7 @@
                                          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                              <TextBlock Text="⚠"
                                                          FontSize="14"
+                                                         Foreground="{Binding AccentBrush}"
                                                          VerticalAlignment="Center" />
                                              <TextBlock FontSize="11"
                                                          Foreground="{Binding PrimaryTextBrush}"
