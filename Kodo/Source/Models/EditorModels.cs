@@ -707,6 +707,7 @@ public class FileTreeItem : INotifyPropertyChanged
             ".gitignore" => "IGNR",
             ".shine" => "SHINE",
             ".asm" or ".s" or ".S" => "ASM",
+            ".iss" => "ISS",
             _ => "..",
         };
     }

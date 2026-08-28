@@ -63,7 +63,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string AutoSaveSavingMessage = "Saving...";
     private const string AutoSaveFailedMessagePrefix = "Save failed:";
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
-    public string CopyrightText => $"© {DateTime.Now.Year} Kodo, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
+    public string CopyrightText => $"© {DateTime.Now.Year} Kodo-IDE, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
     private static readonly string[] MarketplaceIndexUrls =
     [
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/ExtensionsIndex.json",
