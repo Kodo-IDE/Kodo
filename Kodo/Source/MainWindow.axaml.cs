@@ -5102,6 +5102,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RefreshCurrentFileSyntaxHighlighting();
         }
 
+        // Capture what's actually being saved *before* the await below. ActiveEditorTab,
+        // _currentFilePath, and the document's content can all change if the user
+        // switches tabs while the write is in flight (very plausible with autosave
+        // running in the background) - reading them again after the await would apply
+        // the result of THIS save to whatever tab happens to be active by then,
+        // silently marking a different (still-unsaved) tab as clean.
+        var savingTab = ActiveEditorTab;
+        var savingPath = _currentFilePath;
+        var savingContent = EditorTextBox.Document.Text;
+
         try
         {
             _isSaving = true;
@@ -5112,19 +5122,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 OnPropertyChanged(nameof(FileSummaryText));
             }
 
-            await File.WriteAllTextAsync(_currentFilePath!, EditorTextBox.Document.Text);
-            _isDirty = false;
-            if (ActiveEditorTab is not null)
-            {
-                ActiveEditorTab.Content = EditorTextBox.Document.Text;
-                ActiveEditorTab.IsDirty = false;
-                if (ActiveEditorTab.IsUntitled)
-                    ActiveEditorTab.IsUntitled = false;
-            }
-            AddRecentFile(_currentFilePath);
-            RefreshCurrentFileSyntaxHighlighting();
+            await File.WriteAllTextAsync(savingPath!, savingContent);
 
-            if (IsAutoSaveEnabled && HasFileOpen)
+            if (savingTab is not null)
+            {
+                savingTab.Content = savingContent;
+                savingTab.IsDirty = false;
+                if (savingTab.IsUntitled)
+                    savingTab.IsUntitled = false;
+            }
+            // Only touch the "live" editor state if the tab we just saved is still
+            // the one on screen - otherwise this save has nothing to do with what
+            // the user is currently looking at.
+            if (ReferenceEquals(ActiveEditorTab, savingTab))
+            {
+                _isDirty = false;
+                RefreshCurrentFileSyntaxHighlighting();
+            }
+            AddRecentFile(savingPath);
+
+            if (IsAutoSaveEnabled && HasFileOpen && ReferenceEquals(ActiveEditorTab, savingTab))
             {
                 _autoSaveStatusMessage = AutoSaveSavedMessage;
                 _autoSaveStatusTimer.Stop();
