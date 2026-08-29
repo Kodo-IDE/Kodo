@@ -65,12 +65,12 @@ public partial class MainWindow
         _InsightRefreshTimer.Start();
     }
 
-    private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
+    private async void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
-        UpdateInsight();
-        UpdateDeadCodeHighlighting();
-        UpdateErrorHighlighting();
+        await UpdateInsightAsync();
+        await UpdateDeadCodeHighlightingAsync();
+        await UpdateErrorHighlightingAsync();
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -246,7 +246,7 @@ public partial class MainWindow
         }
     }
 
-    private void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
+    private async void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
     {
         var lineText = _hoveredDiagnosticLineText;
         var filePath = _currentFilePath;
@@ -289,8 +289,8 @@ public partial class MainWindow
         ToolTip.SetTip(EditorTextBox.TextArea.TextView, null);
 
         // Force immediate unhighlight instead of waiting for debounce timer
-        UpdateErrorHighlighting();
-        UpdateDeadCodeHighlighting();
+        await UpdateErrorHighlightingAsync();
+        await UpdateDeadCodeHighlightingAsync();
 
         _hoveredDiagnosticLineText = null;
         _hoveredDiagnosticMessage = null;
@@ -346,22 +346,49 @@ public partial class MainWindow
 
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
+        _insightDocVersion++;
         HideDiagnosticPopup();
-        _rainbowBracketColorizer.InvalidateCache();
-        _markdownColorizer.InvalidateCache();
-        _htmlEmbeddedColorizer.InvalidateCache();
+        // Debounce heavy colorizer snapshot rebuilds: previously every keystroke
+        // synchronously cleared caches causing UI-thread allocations (document.Text
+        // copies + per-line regex state) that stalled typing in large XAML/HTML.
+        // Now stale snapshots are reused for ~40ms while typing; highlight catches
+        // up shortly after pause. This is the primary fix for remaining XAML lag.
+        _syntaxHighlightDebounceTimer.Stop();
+        _syntaxHighlightDebounceTimer.Start();
+
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
         _isDirty = true;
         if (ActiveEditorTab is not null)
         {
-            ActiveEditorTab.Content = EditorTextBox.Document.Text;
             ActiveEditorTab.IsDirty = true;
         }
         QueueRefreshState(fullRefresh: true);
         QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
         QueueInsightRefresh();
+        if (IsFindInFileSearchMode && IsSearchPanelVisible)
+        {
+            _findHighlightDebounceTimer.Stop();
+            _findHighlightDebounceTimer.Start();
+        }
+    }
+
+    private void SyntaxHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _syntaxHighlightDebounceTimer.Stop();
+        _rainbowBracketColorizer.InvalidateCache();
+        _markdownColorizer.InvalidateCache();
+        _htmlEmbeddedColorizer.InvalidateCache();
+        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+        // BackgroundRenderer (indent guides) is cheap now (visible-lines only)
+        // but still benefits from coalesced invalidation.
+        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    }
+
+    private void FindHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _findHighlightDebounceTimer.Stop();
         if (IsFindInFileSearchMode && IsSearchPanelVisible)
             UpdateFindHighlights();
     }
@@ -436,7 +463,7 @@ public partial class MainWindow
         caret.Offset = offset;
     }
 
-    private void UpdateInsight()
+    private async Task UpdateInsightAsync()
     {
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
         {
@@ -476,12 +503,26 @@ public partial class MainWindow
         }
 
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
-        _InsightEngine.ScanDocument(fileKey, text);
+        var languageExtension = CurrentLanguageExtension;
+        var scanVersion = _insightDocVersion;
+
+        // ScanDocument + GetSuggestions are pure text/regex work with no Avalonia
+        // dependency, so run them off the UI thread - this is the part that stalls
+        // typing on large files.
+        var suggestions = await Task.Run(() =>
+        {
+            _InsightEngine.ScanDocument(fileKey, text, languageExtension);
+            return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
+        });
+
+        // The document moved on while we were scanning - a fresh scan is already
+        // queued for the newer text, so don't apply these stale results.
+        if (scanVersion != _insightDocVersion) return;
+        if (EditorTextBox?.TextArea is null) return;
 
         InsightSuggestion.PanelForeground = PrimaryTextBrush;
         InsightSuggestion.MutedForeground = MutedTextBrush;
 
-        var suggestions = _InsightEngine.GetSuggestions(prefix, fileKey, CurrentLanguageExtension, text, offset);
         if (suggestions.Count == 0)
         {
             CloseCompletionWindow();
@@ -511,7 +552,7 @@ public partial class MainWindow
         _completionWindow = null;
     }
 
-    private void UpdateDeadCodeHighlighting()
+    private async Task UpdateDeadCodeHighlightingAsync()
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
             EditorTextBox?.Document is null ||
@@ -525,7 +566,17 @@ public partial class MainWindow
             return;
         }
 
-        var rawSpans = _InsightEngine.FindDeadCode(EditorTextBox.Document.Text, CurrentLanguageExtension, _currentFolderPath, _currentFilePath);
+        var text = EditorTextBox.Document.Text;
+        var languageExtension = CurrentLanguageExtension;
+        var folderPath = _currentFolderPath;
+        var filePath = _currentFilePath;
+        var scanVersion = _insightDocVersion;
+
+        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(text, languageExtension, folderPath, filePath));
+
+        if (scanVersion != _insightDocVersion) return;
+        if (EditorTextBox?.Document is null) return;
+
         var spans = FilterDismissedDeadCodeSpans(rawSpans, EditorTextBox.Document, _currentFilePath);
         _deadCodeHighlightRenderer.SetSpans(spans);
         _deadCodeTextBrightener.SetSpans(spans);

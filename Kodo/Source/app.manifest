@@ -19,7 +19,7 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:security.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:security.v3">
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>

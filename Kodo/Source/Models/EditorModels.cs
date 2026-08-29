@@ -32,6 +32,8 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
     public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
 
+    private static readonly DashStyle GuideDashStyle = new([2, 2], 0);
+
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
         if (!IsEnabled)
@@ -51,30 +53,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         if (!textView.VisualLines.Any())
             return;
 
-        // Pre-compute indent depth (in tab-stop levels) for every document line.
-        var totalLines = document.LineCount;
-        var lineDepths = new int[totalLines + 1]; // 1-based index
-
-        for (var i = 1; i <= totalLines; i++)
-        {
-            var docLine = document.GetLineByNumber(i);
-            var text    = document.GetText(docLine);
-            lineDepths[i] = string.IsNullOrWhiteSpace(text) ? -1 : GetIndentColumns(text) / TabSize;
-        }
-
-        // Fill blank lines from surrounding context so guides are continuous
-        for (var i = 1; i <= totalLines; i++)
-        {
-            if (lineDepths[i] != -1) continue;
-            var above = 0;
-            for (var a = i - 1; a >= 1; a--)
-                if (lineDepths[a] >= 0) { above = lineDepths[a]; break; }
-            var below = 0;
-            for (var b = i + 1; b <= totalLines; b++)
-                if (lineDepths[b] >= 0) { below = lineDepths[b]; break; }
-            lineDepths[i] = Math.Min(above, below);
-        }
-
         var scrollX = textView.ScrollOffset.X;
         var scrollY = textView.ScrollOffset.Y;
 
@@ -83,13 +61,16 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
             VisualYPosition.LineTop).X - scrollX;
 
-        var dashStyle = new DashStyle([2, 2], 0);
-        var pen = new Pen(GuideBrush, 1, dashStyle);
+        var pen = new Pen(GuideBrush, 1, GuideDashStyle);
 
+        // Only compute indent for visible lines - previous implementation scanned the entire
+        // document (O(N)) and used nested O(N²) blank-line filling on every Draw, which
+        // caused severe input lag on large XAML/HTML files. Now we resolve depth per
+        // visible line with bounded local look-around for blank lines.
         foreach (var visualLine in textView.VisualLines)
         {
             var lineNumber = visualLine.FirstDocumentLine.LineNumber;
-            var depth = lineDepths[lineNumber];
+            var depth = GetVisibleLineDepth(document, lineNumber);
             if (depth <= 0) continue;
 
             var top    = visualLine.VisualTop - scrollY;
@@ -103,6 +84,43 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
                 drawingContext.DrawLine(pen, new Point(x, top), new Point(x, bottom));
             }
         }
+    }
+
+    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber)
+    {
+        var docLine = document.GetLineByNumber(lineNumber);
+        var text = document.GetText(docLine);
+        if (!string.IsNullOrWhiteSpace(text))
+            return GetIndentColumns(text) / TabSize;
+
+        // Blank line - look locally for surrounding context (bounded scan avoids O(N²))
+        const int maxLookAround = 32;
+        var above = 0;
+        for (var a = lineNumber - 1; a >= 1 && lineNumber - a <= maxLookAround; a--)
+        {
+            var aboveLine = document.GetLineByNumber(a);
+            var aboveText = document.GetText(aboveLine);
+            if (!string.IsNullOrWhiteSpace(aboveText))
+            {
+                above = GetIndentColumns(aboveText) / TabSize;
+                break;
+            }
+        }
+        var below = 0;
+        for (var b = lineNumber + 1; b <= document.LineCount && b - lineNumber <= maxLookAround; b++)
+        {
+            var belowLine = document.GetLineByNumber(b);
+            var belowText = document.GetText(belowLine);
+            if (!string.IsNullOrWhiteSpace(belowText))
+            {
+                below = GetIndentColumns(belowText) / TabSize;
+                break;
+            }
+        }
+        if (above == 0 && below == 0) return 0;
+        if (above == 0) return below;
+        if (below == 0) return above;
+        return Math.Min(above, below);
     }
 
     private int GetIndentColumns(string lineText)

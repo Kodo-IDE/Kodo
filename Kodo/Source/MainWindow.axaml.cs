@@ -120,6 +120,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(750) };
+    private readonly DispatcherTimer _syntaxHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
+    private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
@@ -136,6 +138,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
+    // Bumped on every keystroke; background Insight scans compare it after finishing
+    // to discard results that were computed against text that's since changed.
+    private long _insightDocVersion;
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
@@ -813,6 +818,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
         _InsightRefreshTimer.Tick += InsightRefreshTimer_OnTick;
         _diagnosticPopupHideTimer.Tick += DiagnosticPopupHideTimer_OnTick;
+        _syntaxHighlightDebounceTimer.Tick += SyntaxHighlightDebounceTimer_OnTick;
+        _findHighlightDebounceTimer.Tick += FindHighlightDebounceTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
@@ -826,6 +833,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetupExtensionFolderWatchers();
         LoadExtensions();
         ApplyThemeBrushes(_requestedThemeName);
+
+        // Ensure debounced highlight timers don't fire after window closed
+        Closed += (_, _) =>
+        {
+            _syntaxHighlightDebounceTimer.Stop();
+            _findHighlightDebounceTimer.Stop();
+        };
 
         // Migration: legacy "kodo" mode with an active theme is upgraded to "theme" mode.
         if (_accentColorMode == "kodo" && _hasThemeAccent)
@@ -7650,7 +7664,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox?.TextArea.TextView.Redraw();
     }
 
-    private void UpdateErrorHighlighting()
+    private async Task UpdateErrorHighlightingAsync()
     {
         if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled ||
             EditorTextBox?.Document is null ||
@@ -7664,7 +7678,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var rawSpans = _InsightEngine.FindErrors(EditorTextBox.Document.Text, CurrentLanguageExtension);
+        var text = EditorTextBox.Document.Text;
+        var languageExtension = CurrentLanguageExtension;
+        var scanVersion = _insightDocVersion;
+
+        var rawSpans = await Task.Run(() => _InsightEngine.FindErrors(text, languageExtension));
+
+        if (scanVersion != _insightDocVersion) return;
+        if (EditorTextBox?.Document is null) return;
+
         var spans = FilterDismissedErrorSpans(rawSpans, EditorTextBox.Document, _currentFilePath);
         _errorHighlightRenderer.SetSpans(spans);
         _errorHighlightRenderer.SetDeadCodeSpans(_deadCodeHighlightRenderer.Spans);

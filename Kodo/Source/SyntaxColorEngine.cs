@@ -47,16 +47,29 @@ public sealed class CompiledSyntaxProfile
         var traits = SyntaxLanguageTraits.From(extension);
         var isBatch = IsBatchExtension(extension);
 
-        if (extension.Keywords.Length > 0)
-            rules.Add(CreateTokenRule(extension.Keywords, traits, SyntaxTokenKind.Keyword, "keyword", "#569CD6"));
-        if (extension.Types.Length > 0)
-            rules.Add(CreateTokenRule(extension.Types, traits, SyntaxTokenKind.Type, "type", "#4EC9B0"));
-        if (extension.Namespaces.Length > 0)
-            rules.Add(CreateTokenRule(extension.Namespaces, traits, SyntaxTokenKind.Namespace, "namespace", "#4FC1FF"));
-        if (extension.Properties.Length > 0)
-            rules.Add(CreateTokenRule(extension.Properties, traits, SyntaxTokenKind.Property, "property", "#9CDCFE"));
-        if (extension.Functions.Length > 0)
-            rules.Add(CreateTokenRule(extension.Functions, traits, SyntaxTokenKind.Function, "function", "#DCDCAA"));
+        if (traits.IsMarkupLike)
+        {
+            // Markup files (html/xaml/xml) previously built huge alternation regexes
+            // (e.g. 191 keywords + 224 properties for XAML) evaluated on every visible
+            // line per keystroke. Replace with cheap generic patterns that match any
+            // tag/attribute - same visual quality (all tags highlighted) but O(1).
+            rules.Add(new(new Regex(@"(?<=</?|<!)[\p{L}_:-][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "keyword", "#569CD6"));
+            rules.Add(new(new Regex(@"(?<=\s)[\p{L}_:-][\p{L}\p{Nd}_:-]*(?:[:.][\p{L}_:-][\p{L}\p{Nd}_:-]*)*(?=\s*=)", RegexOptions.Compiled), "property", "#9CDCFE"));
+            rules.Add(new(new Regex(@"(?<=\s)[\p{L}_-][\p{L}\p{Nd}_-]*(?=:[^<>]*\s*=)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
+        }
+        else
+        {
+            if (extension.Keywords.Length > 0)
+                rules.Add(CreateTokenRule(extension.Keywords, traits, SyntaxTokenKind.Keyword, "keyword", "#569CD6"));
+            if (extension.Types.Length > 0)
+                rules.Add(CreateTokenRule(extension.Types, traits, SyntaxTokenKind.Type, "type", "#4EC9B0"));
+            if (extension.Namespaces.Length > 0)
+                rules.Add(CreateTokenRule(extension.Namespaces, traits, SyntaxTokenKind.Namespace, "namespace", "#4FC1FF"));
+            if (extension.Properties.Length > 0)
+                rules.Add(CreateTokenRule(extension.Properties, traits, SyntaxTokenKind.Property, "property", "#9CDCFE"));
+            if (extension.Functions.Length > 0)
+                rules.Add(CreateTokenRule(extension.Functions, traits, SyntaxTokenKind.Function, "function", "#DCDCAA"));
+        }
 
         if (extension.StringDelimiters.Contains("\"") ||
             extension.StringDelimiters.Contains("'") ||
@@ -66,13 +79,13 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(CommonStringPrefixPattern, RegexOptions.Compiled), "string", "#CE9178"));
         }
 
-        if (traits.IsMarkupLike)
-            rules.Add(new(new Regex(@"(?<=>)\s*v?\d[\d._-]*[A-Za-z0-9]*\s*(?=<)", RegexOptions.Compiled), "number", "#B5CEA8"));
+        // Removed markup-specific number/text between-tags regexes (previously
+        // `(?<=>)\s*v?\d...` and `(?<=>)[^<>]+(?=<)`) that were evaluated on every
+        // visible line and caused severe lag on XAML/HTML with many tags. Text
+        // between tags now falls back to default foreground; numeric literals
+        // are still caught by the generic number regex below.
 
         rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\p{L}\p{Nd}_])", RegexOptions.Compiled), "number", "#B5CEA8"));
-
-        if (traits.IsMarkupLike)
-            rules.Add(new(new Regex(@"(?<=>)[^<>]+(?=<)", RegexOptions.Compiled), MarkupTextToken, MarkupTextFallback));
 
         if (traits.IsCssLike)
         {
@@ -971,6 +984,16 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; set; } = true;
 
+    private static bool IsMarkupLikeExtension(LoadedExtension ext) =>
+        ext.CommentBlockStart == "<!--" ||
+        ext.Extensions.Any(e =>
+            string.Equals(e, ".html", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e, ".htm", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e, ".xml", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e, ".svg", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e, ".xaml", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e, ".axaml", StringComparison.OrdinalIgnoreCase));
+
     public void UpdateSyntax(LoadedExtension? extension)
     {
         if (extension is null)
@@ -981,6 +1004,26 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             _commentBlockEnd = "*/";
             _stringDelimiters = ["\"", "'"];
             _multiLineStringDelimiters = [];
+            _isBatch = false;
+        }
+        else if (IsMarkupLikeExtension(extension))
+        {
+            // Rainbow brackets are not useful for markup (braces live inside quoted
+            // attribute values which are treated as strings and skipped), but the
+            // snapshot scan on every keystroke was a major source of input lag for
+            // large XAML/HTML files. Disable for markup without visual loss.
+            IsEnabled = false;
+            _commentLine = extension.CommentLine;
+            _commentBlockStart = extension.CommentBlockStart;
+            _commentBlockEnd = extension.CommentBlockEnd;
+            _stringDelimiters = extension.StringDelimiters
+                .Where(d => !string.IsNullOrEmpty(d))
+                .Distinct()
+                .ToArray();
+            _multiLineStringDelimiters = extension.MultiLineStringDelimiters
+                .Where(d => !string.IsNullOrEmpty(d))
+                .Distinct()
+                .ToArray();
             _isBatch = false;
         }
         else
@@ -1015,7 +1058,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         if (document is null || line.Length <= 0)
             return;
 
-        var snapshot = EnsureSnapshot(document.Text ?? string.Empty);
+        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
         // Batch: echo lines are literal output – don't rainbow brackets in the echoed text.
@@ -1157,17 +1200,23 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     private IBrush GetBrushForDepth(int depth) => RainbowBrushes[Math.Abs(depth) % RainbowBrushes.Length];
 
-    private ParseSnapshot EnsureSnapshot(string text)
-    {
-        if (_snapshot is { } snapshot && string.Equals(snapshot.Text, text, StringComparison.Ordinal))
-            return snapshot;
-
-        _snapshot = BuildSnapshot(text);
-        return _snapshot;
-    }
-
     private ParseSnapshot BuildSnapshot(string text)
     {
+        // Fast path: file contains no brackets at all - return trivial snapshot
+        // without scanning every char for string/comment boundaries (saves lag on
+        // large markup-ish files that slipped through IsEnabled check).
+        if (text.IndexOfAny(['(', ')', '[', ']', '{', '}']) < 0)
+        {
+            var emptyLineCount = 1;
+            for (var c = 0; c < text.Length; c++)
+                if (text[c] == '\n') emptyLineCount++;
+            var emptyStates = new List<LineState>(emptyLineCount);
+            emptyStates.Add(new(string.Empty, ScanMode.Normal, null));
+            for (var i = 1; i < emptyLineCount; i++)
+                emptyStates.Add(new(string.Empty, ScanMode.Normal, null));
+            return new ParseSnapshot(text, emptyStates);
+        }
+
         var lineStates = new List<LineState> { new(string.Empty, ScanMode.Normal, null) };
         var stack = new Stack<char>();
         var mode = ScanMode.Normal;
@@ -1455,7 +1504,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         if (document is null || line.Length <= 0)
             return;
 
-        var snapshot = EnsureSnapshot(document.Text ?? string.Empty);
+        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
         ScanLine(text, line.Offset, lineState.ActiveInterpolation);
@@ -1488,15 +1537,6 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             stringDelimiters.Contains("\"");
 
         return new InterpolationSupport(supportsJavaScriptTemplate, supportsPythonStyleInterpolation, supportsDollarPrefixedInterpolation);
-    }
-
-    private InterpolationSnapshot EnsureSnapshot(string text)
-    {
-        if (_snapshot is { } snapshot && string.Equals(snapshot.Text, text, StringComparison.Ordinal))
-            return snapshot;
-
-        _snapshot = BuildSnapshot(text);
-        return _snapshot;
     }
 
     private InterpolationSnapshot BuildSnapshot(string text)
@@ -2111,7 +2151,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
 
         var text = document.GetText(line.Offset, line.Length);
-        var state = EnsureSnapshot(document.Text ?? string.Empty).GetLineState(line.LineNumber);
+        var state = (_snapshot ??= BuildSnapshot(document.Text ?? string.Empty)).GetLineState(line.LineNumber);
 
         if (state.Delimiter is not null)
         {
@@ -2388,15 +2428,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
             ApplyBrush(lineOffset, match.Index, match.Index + match.Length, brush);
         }
-    }
-
-    private MarkdownSnapshot EnsureSnapshot(string text)
-    {
-        if (_snapshot is { } snapshot && string.Equals(snapshot.Text, text, StringComparison.Ordinal))
-            return snapshot;
-
-        _snapshot = BuildSnapshot(text);
-        return _snapshot;
     }
 
     private MarkdownSnapshot BuildSnapshot(string text)
@@ -2861,7 +2892,11 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             return;
 
         var text = document.GetText(line.Offset, line.Length);
-        var state = EnsureSnapshot(document.Text ?? string.Empty).GetLineState(line.LineNumber);
+        // Build the snapshot at most once per invalidation (i.e. once per edit), not once
+        // per visible line - re-materializing document.Text here on every line is what made
+        // this colorizer expensive specifically for markup files (.xaml/.html) that enable it.
+        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
+        var state = snapshot.GetLineState(line.LineNumber);
 
         foreach (var segment in state.Segments)
         {
@@ -2900,17 +2935,24 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         }
     }
 
-    private HtmlSnapshot EnsureSnapshot(string text)
-    {
-        if (_snapshot is { } snapshot && string.Equals(snapshot.Text, text, StringComparison.Ordinal))
-            return snapshot;
-
-        _snapshot = BuildSnapshot(text);
-        return _snapshot;
-    }
-
     private HtmlSnapshot BuildSnapshot(string text)
     {
+        // Fast path: most XAML/HTML files never contain <script>/<style>/<x:code> blocks.
+        // Previously we still split the entire document and ran per-line regexes on every
+        // invalidation, causing noticeable lag on large markup files with no embedded content.
+        if (text.IndexOf("<script", StringComparison.OrdinalIgnoreCase) < 0 &&
+            text.IndexOf("<style", StringComparison.OrdinalIgnoreCase) < 0 &&
+            text.IndexOf("<x:code", StringComparison.OrdinalIgnoreCase) < 0)
+        {
+            var lineCount = 1;
+            for (var i = 0; i < text.Length; i++)
+                if (text[i] == '\n') lineCount++;
+            var emptyStates = new List<HtmlLineState>(lineCount);
+            for (var i = 0; i < lineCount; i++)
+                emptyStates.Add(new HtmlLineState([]));
+            return new HtmlSnapshot(text, emptyStates);
+        }
+
         var lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
         var states = new List<HtmlLineState>(lines.Length);
         ActiveHtmlBlock? active = null;
