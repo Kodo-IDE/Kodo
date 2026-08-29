@@ -5304,6 +5304,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
+        // This document is shared across all tabs (and reused when a file is
+        // opened/closed), but AvaloniaEdit's UndoStack isn't tied to "which file is
+        // loaded" - without clearing it, Ctrl+Z after switching tabs walks back into
+        // edits from whatever was previously open, and can even undo this content
+        // swap itself, dropping the wrong file's text into the current tab.
+        EditorTextBox.Document.UndoStack.ClearAll();
         EditorTextBox.TextArea.ClearSelection();
         EditorTextBox.TextArea.Caret.Offset = 0;
         Dispatcher.UIThread.Post(
