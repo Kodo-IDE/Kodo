@@ -417,13 +417,26 @@ public partial class MainWindow
             }
         }
 
-        if (!ClosingChars.Contains(ch)) return;
+        // Any character that will trigger an auto-inserted closer in OnTextEntered
+        // (i.e. every BracketPairs key that isn't being skipped-over below) needs its
+        // default insertion and the closer's insertion merged into one undo group -
+        // otherwise a single Undo removes only the closer and leaves the opener behind.
+        var isPairOpener = BracketPairs.ContainsKey(ch);
+
+        if (!ClosingChars.Contains(ch))
+        {
+            if (isPairOpener) BeginAutoCloseUndoGroup(doc);
+            return;
+        }
 
         if (ch == '}' && TryAlignClosingDelimiterBeforeInsert(doc, caret, '}'))
             offset = caret.Offset;
 
-        if (offset >= doc.TextLength) return;
-        if (doc.GetCharAt(offset) != ch) return;
+        if (offset >= doc.TextLength || doc.GetCharAt(offset) != ch)
+        {
+            if (isPairOpener) BeginAutoCloseUndoGroup(doc);
+            return;
+        }
 
         // Asymmetric pairs are always safe to skip; symmetric pairs only skip mid-pair.
         bool skip = ch is ')' or ']' or '}' or '>';
@@ -435,32 +448,62 @@ public partial class MainWindow
             caret.Offset = offset + 1;
             e.Handled = true;
         }
+        else if (isPairOpener)
+        {
+            BeginAutoCloseUndoGroup(doc);
+        }
+    }
+
+    private bool _autoCloseUndoGroupOpen;
+
+    private void BeginAutoCloseUndoGroup(AvaloniaEdit.Document.TextDocument doc)
+    {
+        // Guard against a stray double-open leaving the UndoStack's group counter unbalanced.
+        if (_autoCloseUndoGroupOpen) return;
+        doc.UndoStack.StartUndoGroup();
+        _autoCloseUndoGroupOpen = true;
+    }
+
+    private void EndAutoCloseUndoGroupIfOpen(AvaloniaEdit.Document.TextDocument doc)
+    {
+        if (!_autoCloseUndoGroupOpen) return;
+        doc.UndoStack.EndUndoGroup();
+        _autoCloseUndoGroupOpen = false;
     }
 
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
-        if (!IsSmartSyntaxEnabled()) return;
-        if (IsMarkdownFile(_currentFilePath)) return;
-        if (string.IsNullOrEmpty(e.Text)) return;
-        var ch = e.Text[0];
-
-        if (!BracketPairs.TryGetValue(ch, out var closing)) return;
-
-        var caret  = EditorTextBox.TextArea.Caret;
-        var doc    = EditorTextBox.Document;
-        var offset = caret.Offset;
-
-        if (ch == '"' || ch == '\'' || ch == '`')
+        // Whatever branch we take below, if OnTextEntering opened an auto-close undo
+        // group for this keystroke, it must be closed here so Undo/Redo stay balanced.
+        var doc = EditorTextBox.Document;
+        try
         {
-            if (offset < doc.TextLength)
-            {
-                var next = doc.GetCharAt(offset);
-                if (char.IsLetterOrDigit(next) || next == ch) return;
-            }
-        }
+            if (!IsSmartSyntaxEnabled()) return;
+            if (IsMarkdownFile(_currentFilePath)) return;
+            if (string.IsNullOrEmpty(e.Text)) return;
+            var ch = e.Text[0];
 
-        doc.Insert(offset, closing.ToString());
-        caret.Offset = offset;
+            if (!BracketPairs.TryGetValue(ch, out var closing)) return;
+
+            var caret  = EditorTextBox.TextArea.Caret;
+            var offset = caret.Offset;
+
+            if (ch == '"' || ch == '\'' || ch == '`')
+            {
+                if (offset < doc.TextLength)
+                {
+                    var next = doc.GetCharAt(offset);
+                    if (char.IsLetterOrDigit(next) || next == ch) return;
+                }
+            }
+
+            doc.Insert(offset, closing.ToString());
+            caret.Offset = offset;
+        }
+        finally
+        {
+            EndAutoCloseUndoGroupIfOpen(doc);
+        }
     }
 
     private async Task UpdateInsightAsync()
@@ -1066,34 +1109,44 @@ public partial class MainWindow
             });
 
         var delta = 0;
-        foreach (var line in lines.OrderByDescending(l => l.Offset))
+        // Each line below is its own Insert/Remove call, which would otherwise force
+        // one Undo press per line to fully reverse a single comment-toggle action.
+        doc.UndoStack.StartUndoGroup();
+        try
         {
-            var text = doc.GetText(line);
-            if (string.IsNullOrWhiteSpace(text))
-                continue;
-
-            var indent = GetLeadingWhitespace(text);
-            var commentOffset = line.Offset + indent.Length;
-            if (shouldUncomment)
+            foreach (var line in lines.OrderByDescending(l => l.Offset))
             {
-                if (text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal))
-                {
-                    var removedForLine = lineCommentToken.Length;
-                    doc.Remove(commentOffset, lineCommentToken.Length);
-                    if (text.Length > indent.Length + lineCommentToken.Length && text[indent.Length + lineCommentToken.Length] == ' ')
-                    {
-                        doc.Remove(commentOffset, 1);
-                        removedForLine++;
-                    }
+                var text = doc.GetText(line);
+                if (string.IsNullOrWhiteSpace(text))
+                    continue;
 
-                    delta -= removedForLine;
+                var indent = GetLeadingWhitespace(text);
+                var commentOffset = line.Offset + indent.Length;
+                if (shouldUncomment)
+                {
+                    if (text[indent.Length..].StartsWith(lineCommentToken, StringComparison.Ordinal))
+                    {
+                        var removedForLine = lineCommentToken.Length;
+                        doc.Remove(commentOffset, lineCommentToken.Length);
+                        if (text.Length > indent.Length + lineCommentToken.Length && text[indent.Length + lineCommentToken.Length] == ' ')
+                        {
+                            doc.Remove(commentOffset, 1);
+                            removedForLine++;
+                        }
+
+                        delta -= removedForLine;
+                    }
+                }
+                else
+                {
+                    doc.Insert(commentOffset, lineCommentToken + " ");
+                    delta += lineCommentToken.Length + 1;
                 }
             }
-            else
-            {
-                doc.Insert(commentOffset, lineCommentToken + " ");
-                delta += lineCommentToken.Length + 1;
-            }
+        }
+        finally
+        {
+            doc.UndoStack.EndUndoGroup();
         }
 
         if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
