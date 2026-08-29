@@ -10,7 +10,6 @@ using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
-using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 
 namespace Kodo.Models;
