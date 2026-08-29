@@ -5651,7 +5651,7 @@
                                        LetterSpacing="1"
                                        Foreground="{Binding AccentBrush}"
                                        VerticalAlignment="Center"
-                                       Text="{Binding LabelPersonalization}" />
+                                       Text="{Binding LabelPersonalizationHeader}" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
