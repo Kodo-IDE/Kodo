@@ -1912,7 +1912,7 @@
                                                            TextWrapping="Wrap"
                                                            FontSize="13"
                                                            LineHeight="20"
-                                                           Text="Explore extensions, syntax highlighting packs, and themes." />
+                                                           Text="Explore language extensions, plugins, compilers, and themes." />
                                             </StackPanel>
                                             <Button Grid.Column="1"
                                                     Classes="chrome"
