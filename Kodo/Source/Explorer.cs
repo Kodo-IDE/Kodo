@@ -524,12 +524,25 @@ public partial class MainWindow
 
     private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
     {
+        // Smoothness: per-item Add fires CollectionChanged N times -> N layout passes.
+        // Bulk update with single Reset lets Avalonia layout once.
         _suppressExplorerWidthRefresh = true;
         try
         {
-            FileTreeItems.Clear();
-            foreach (var item in items)
-                FileTreeItems.Add(item);
+            FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
+            try
+            {
+                FileTreeItems.Clear();
+                foreach (var item in items)
+                    FileTreeItems.Add(item);
+            }
+            finally
+            {
+                FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
+            }
+            // Single Reset notifies ItemsControl to rebuild once, not N times
+            FileTreeItems_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            OnPropertyChanged(nameof(FileTreeItems));
         }
         finally
         {

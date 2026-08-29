@@ -202,6 +202,14 @@ public partial class MainWindow
         ApplyLoadedExtensionsResult(ScanInstalledExtensions());
     }
 
+    private async Task LoadExtensionsAsync()
+    {
+        var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
+        await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(scan), DispatcherPriority.Background);
+        // Give renderer a chance to pump one frame after extensions + theme refresh
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+    }
+
     private ExtensionScanResult ScanInstalledExtensions()
     {
         var loadedExtensions = new List<LoadedExtension>();
@@ -264,7 +272,9 @@ public partial class MainWindow
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
-        // Decodes icon bitmaps on the UI thread, then clears the staged raw bytes.
+        // Smoothness: decode icon bitmaps off UI thread in staggered chunks, yielding between batches.
+        // SVGs are tiny (string decode) so handle inline; PNGs are decoded on pool then assigned at Background.
+        var pngExtensions = new List<LoadedExtension>();
         foreach (var ext in LoadedExtensions)
         {
             if (ext.IconImage is null && ext.SvgData is null && ext.IconBytes is not null)
@@ -273,14 +283,58 @@ public partial class MainWindow
                 {
                     try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
                     catch { /* malformed SVG - leave icon absent */ }
+                    ext.IconBytes = null;
+                    ext.NotifyIconChanged();
                 }
                 else
                 {
-                    ext.IconImage = DecodeBitmapOnUiThread(ext.IconBytes);
+                    pngExtensions.Add(ext);
                 }
-                ext.IconBytes = null;
-                ext.NotifyIconChanged();
             }
+        }
+
+        if (pngExtensions.Count > 0)
+        {
+            // Offload PNG Skia decode off UI thread, assign at Background priority with yields
+            _ = Task.Run(async () =>
+            {
+                const int batchSize = 4;
+                for (var i = 0; i < pngExtensions.Count; i += batchSize)
+                {
+                    var batch = pngExtensions.Skip(i).Take(batchSize).ToList();
+                    var decoded = new List<(LoadedExtension ext, Bitmap? bmp)>();
+                    foreach (var ext in batch)
+                    {
+                        var bytes = ext.IconBytes;
+                        if (bytes is null) continue;
+                        try
+                        {
+                            using var ms = new MemoryStream(bytes);
+                            var bmp = new Bitmap(ms);
+                            if (bmp.PixelSize.Width != bmp.PixelSize.Height)
+                            {
+                                bmp.Dispose();
+                                bmp = null;
+                            }
+                            decoded.Add((ext, bmp));
+                        }
+                        catch { decoded.Add((ext, null)); }
+                    }
+
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        foreach (var (ext, bmp) in decoded)
+                        {
+                            ext.IconImage = bmp;
+                            ext.IconBytes = null;
+                            ext.NotifyIconChanged();
+                        }
+                    }, DispatcherPriority.Background);
+
+                    // Yield to renderer between batches
+                    await Task.Delay(16);
+                }
+            });
         }
 
         foreach (var ext in ThemeExtensions)

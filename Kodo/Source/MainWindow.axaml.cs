@@ -340,6 +340,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isResizingExplorerPanel;
     private double _explorerPanelDragStartPointerX;
     private double _explorerPanelDragStartWidth;
+    private string? _deferredPreferredShellId;
+    private static readonly IBrush SharedLinkTextBrush = Brush.Parse("#5BA3D9");
 
     private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
         new(ReferenceEqualityComparer.Instance);
@@ -708,7 +710,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_emojiTypefaceColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_deadCodeTextBrightener);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_errorTextDarkener);
-        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
+        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = SharedLinkTextBrush;
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         var defaultLinkGen = EditorTextBox.TextArea.TextView.ElementGenerators.OfType<LinkElementGenerator>().FirstOrDefault();
         if (defaultLinkGen is not null)
@@ -810,7 +812,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _compilerOverrides[pair.Key] = pair.Value;
         foreach (var pair in settings.CustomBuildScripts)
             _customBuildScripts[pair.Key] = pair.Value;
-        RefreshAvailableTerminalShells(settings.PreferredTerminalShellId);
+        // Deferred: terminal shell PATH scan is CERTAINLY not needed before first paint
+        // (terminal starts hidden). Remember preference for deferred init.
+        _deferredPreferredShellId = settings.PreferredTerminalShellId;
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
@@ -830,7 +834,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
-        SetupExtensionFolderWatchers();
         LoadExtensions();
         ApplyThemeBrushes(_requestedThemeName);
 
@@ -848,25 +851,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DataContext = this;
         IsHomePageVisible = true;
 
-        UpdateDiscordRichPresenceLifecycle();
-        UpdateExtensionAutoUpdateLifecycle();
-        _appUpdateScheduler.UpdateLifecycle();
-        _marketplaceRefreshTimer.Start();
-        _ = RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
         ApplyEditorSettings();
-        NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
-        NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
-        RefreshMarketplaceConnectivityState();
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
-            _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
-            _windowsAccentPollTimer.Start();
-
-            _lastSeenWindowsThemeName = ResolveSystemThemeName();
-            _windowsThemePollTimer.Tick += WindowsThemePollTimer_OnTick;
-            _windowsThemePollTimer.Start();
-        }
         Opened += MainWindow_OnOpened;
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
@@ -928,7 +913,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (!forceNetwork && LoadCachedLatestRelease())
+            if (!forceNetwork && await LoadCachedLatestReleaseAsync().ConfigureAwait(false))
             {
                 LatestReleaseStatusText = HasLatestRelease
                     ? $"Latest release: {LatestReleaseDisplayName}"
@@ -976,7 +961,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (!forceNetwork && LoadCachedAnnouncements())
+            if (!forceNetwork && await LoadCachedAnnouncementsAsync().ConfigureAwait(false))
                 return;
 
             foreach (var url in new[]
@@ -1059,20 +1044,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void SaveNewsCache()
+    private async Task<bool> LoadCachedAnnouncementsAsync()
     {
         try
         {
-            var dir = Path.GetDirectoryName(NewsCachePath);
-            if (!string.IsNullOrWhiteSpace(dir))
-                Directory.CreateDirectory(dir);
+            var items = await Task.Run(() =>
+            {
+                try
+                {
+                    if (!File.Exists(NewsCachePath))
+                        return null;
+                    var json = File.ReadAllText(NewsCachePath);
+                    return JsonSerializer.Deserialize<List<NewsItem>>(json);
+                }
+                catch { return null; }
+            }).ConfigureAwait(false);
 
-            var json = JsonSerializer.Serialize(NewsItems.ToList());
-            File.WriteAllText(NewsCachePath, json);
+            if (items is null || items.Count == 0)
+                return false;
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                foreach (var item in items)
+                    NewsItems.Add(item);
+            }, DispatcherPriority.Background);
+            return true;
         }
-        catch
+        catch { return false; }
+    }
+
+    private void SaveNewsCache()
+    {
+        var snapshot = NewsItems.ToList();
+        _ = Task.Run(() =>
         {
-        }
+            try
+            {
+                var dir = Path.GetDirectoryName(NewsCachePath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
+                var json = JsonSerializer.Serialize(snapshot);
+                File.WriteAllText(NewsCachePath, json);
+            }
+            catch { }
+        });
     }
 
     private bool LoadCachedLatestRelease()
@@ -1099,23 +1114,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void SaveLatestReleaseCache()
+    private async Task<bool> LoadCachedLatestReleaseAsync()
     {
         try
         {
-            if (LatestRelease is null)
-                return;
+            var cached = await Task.Run(() =>
+            {
+                try
+                {
+                    if (!File.Exists(LatestReleaseCachePath))
+                        return null;
+                    var json = File.ReadAllText(LatestReleaseCachePath);
+                    return JsonSerializer.Deserialize<ReleaseInfo>(json);
+                }
+                catch { return null; }
+            }).ConfigureAwait(false);
 
-            var dir = Path.GetDirectoryName(LatestReleaseCachePath);
-            if (!string.IsNullOrWhiteSpace(dir))
-                Directory.CreateDirectory(dir);
+            if (cached is null ||
+                (string.IsNullOrWhiteSpace(cached.Name) &&
+                 string.IsNullOrWhiteSpace(cached.Tag) &&
+                 string.IsNullOrWhiteSpace(cached.Notes)))
+                return false;
 
-            var json = JsonSerializer.Serialize(LatestRelease);
-            File.WriteAllText(LatestReleaseCachePath, json);
+            await Dispatcher.UIThread.InvokeAsync(() => LatestRelease = cached, DispatcherPriority.Background);
+            return true;
         }
-        catch
+        catch { return false; }
+    }
+
+    private void SaveLatestReleaseCache()
+    {
+        var snapshot = LatestRelease;
+        if (snapshot is null) return;
+        _ = Task.Run(() =>
         {
-        }
+            try
+            {
+                var dir = Path.GetDirectoryName(LatestReleaseCachePath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
+                var json = JsonSerializer.Serialize(snapshot);
+                File.WriteAllText(LatestReleaseCachePath, json);
+            }
+            catch { }
+        });
     }
 
     private static List<NewsItem> ParseAnnouncementsMd(string md)
@@ -4963,8 +5005,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
+        // Smoothness: yield one frame before heavy editor theme invalidation so window can paint
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        await Task.Yield();
+
         // Applies the editor theme now that the window and editor exist.
         ApplyThemeToEditor();
+
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        await Task.Yield();
 
         // _suppressSettingsSave stays true while tabs restore, cleared in a finally block.
         try
@@ -4975,11 +5024,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
                 {
                     await OpenFolderFromPathAsync(_startupFolderPath!);
+                    // Smoothness: yield to renderer after file tree layout before opening tabs
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                    await Task.Yield();
                 }
 
                 foreach (var path in _startupOpenTabPaths)
                 {
                     await OpenFileFromPathAsync(path);
+                    // Smoothness: yield one frame between tabs so 5-6 tabs don't freeze UI
+                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+                    await Task.Yield();
                 }
 
                 if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
@@ -5011,9 +5066,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        _ = RefreshExtensionsAndAutoUpdateAsync();
-        _ = RefreshLatestReleaseAsync(forceNetwork: false);
-        _ = FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
+        // Deferred startup work: CERTAINLY not needed before first paint.
+        // Staggered with delays so they don't contend with tab restore / first frame.
+        InitializeDeferredStartupWork();
 
         var isReturningUser = _hasCompletedTutorial;
 
@@ -5034,6 +5089,104 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 IsUpdateSplashVisible = true;
             }
         }
+    }
+
+    private void InitializeDeferredStartupWork()
+    {
+        // CERTAINLY deferrable: none of this is needed before first paint.
+        // Staggered delays keep startup I/O/network off the critical path.
+
+        // 1) Extension folder watchers - FileSystemWatcher handle alloc (1.5s)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1.5));
+                await Dispatcher.UIThread.InvokeAsync(SetupExtensionFolderWatchers);
+            }
+            catch { }
+        });
+
+        // 2) Network connectivity + periodic schedules + Windows polling (2s)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    NetworkChange.NetworkAvailabilityChanged += NetworkChange_OnNetworkAvailabilityChanged;
+                    NetworkChange.NetworkAddressChanged += NetworkChange_OnNetworkAddressChanged;
+                    RefreshMarketplaceConnectivityState();
+
+                    UpdateExtensionAutoUpdateLifecycle();
+                    _appUpdateScheduler.UpdateLifecycle();
+                    _marketplaceRefreshTimer.Start();
+
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
+                        _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
+                        _windowsAccentPollTimer.Start();
+
+                        _lastSeenWindowsThemeName = ResolveSystemThemeName();
+                        _windowsThemePollTimer.Tick += WindowsThemePollTimer_OnTick;
+                        _windowsThemePollTimer.Start();
+                    }
+                });
+            }
+            catch { }
+        });
+
+        // 3) Terminal PATH scan - enumerates PATH (20-40 dirs * File.Exists), defer 3s off UI thread
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                var shells = await Task.Run(() => TerminalShellSupport.DetectTerminalShells(_isPSReadLinePredictionEnabled).ToList());
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    var preferred = _deferredPreferredShellId;
+                    AvailableTerminalShells.Clear();
+                    foreach (var shell in shells)
+                        AvailableTerminalShells.Add(shell);
+                    SelectedTerminalShell = AvailableTerminalShells.FirstOrDefault(s =>
+                            string.Equals(s.Id, preferred, StringComparison.OrdinalIgnoreCase))
+                        ?? AvailableTerminalShells.FirstOrDefault(s =>
+                            string.Equals(s.Id, "powershell", StringComparison.OrdinalIgnoreCase))
+                        ?? AvailableTerminalShells.FirstOrDefault();
+                });
+            }
+            catch { }
+        });
+
+        // 4) Discord RPC IPC connect - can block 100-300ms, defer 4s
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                await Dispatcher.UIThread.InvokeAsync(UpdateDiscordRichPresenceLifecycle);
+            }
+            catch { }
+        });
+
+        // 5) Marketplace / latest release / news - network+disk heavy, defer 3s (replaces ctor duplicate)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    _ = RefreshExtensionsAndAutoUpdateAsync();
+                    _ = RefreshLatestReleaseAsync(forceNetwork: false);
+                    _ = FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
+                });
+            }
+            catch { }
+        });
     }
 
     private void NewFile()

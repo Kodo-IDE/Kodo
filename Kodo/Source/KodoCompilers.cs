@@ -66,18 +66,22 @@ public partial class MainWindow
         var compilerEntries = new List<CompilerIndexEntry>();
         var loadErrors = new List<string>();
 
-        LoadInstalledCompilerRegistry();
-        LoadManualCompilerRegistry();
-        RefreshManualCompilerExtensions();
+        // Smoothness: registry + cache reads off UI thread
+        await Task.Run(() =>
+        {
+            LoadInstalledCompilerRegistry();
+            LoadManualCompilerRegistry();
+        }).ConfigureAwait(false);
+        await Dispatcher.UIThread.InvokeAsync(RefreshManualCompilerExtensions, DispatcherPriority.Background);
         if (!_hasRunCompilerAutoDetect)
         {
             _hasRunCompilerAutoDetect = true;
             _ = AutoDetectDefaultCompilersAsync();
         }
 
-        var diskJson = TryReadCacheFile(CompilerIndexCachePath);
+        var diskJson = await Task.Run(() => TryReadCacheFile(CompilerIndexCachePath)).ConfigureAwait(false);
         if (diskJson is not null)
-            compilerEntries = ParseCompilerIndexEntries(diskJson, loadErrors);
+            compilerEntries = await Task.Run(() => ParseCompilerIndexEntries(diskJson, loadErrors)).ConfigureAwait(false);
 
         try
         {

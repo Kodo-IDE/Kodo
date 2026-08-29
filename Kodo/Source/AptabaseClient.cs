@@ -62,7 +62,16 @@ internal static class AptabaseClient
             return;
         }
 
-        _ = TestConnectivityAsync();
+        // CERTAINLY deferrable: connectivity probe not needed before first paint
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                await TestConnectivityAsync();
+            }
+            catch { }
+        });
     }
 
     // Strips user-identifying substrings from exception messages

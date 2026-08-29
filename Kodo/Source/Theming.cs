@@ -57,6 +57,8 @@ public partial class MainWindow
     private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
         theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
 
+    private static readonly IBrush CachedLinkBrush = Brush.Parse("#5BA3D9");
+
     private void ApplyThemeToEditor()
     {
         if (EditorTextBox is null) return;
@@ -71,7 +73,7 @@ public partial class MainWindow
             ? new SolidColorBrush(b.Color, 0.3)
             : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
         EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
-        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = Brush.Parse("#5BA3D9");
+        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = CachedLinkBrush;
         EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
         _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
             ? new SolidColorBrush(mutedBrush.Color, 0.4)

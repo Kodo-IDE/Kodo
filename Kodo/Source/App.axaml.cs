@@ -65,22 +65,30 @@ public partial class App : Application
             SingleInstance.StartListening(handoffPath =>
                 Dispatcher.UIThread.Post(() => mainWindow.ActivateFromSecondaryInstance(handoffPath)));
 
-            AptabaseClient.TrackEvent("app_launched");
+            // CERTAINLY deferrable: analytics not needed before first paint
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(3));
+                    AptabaseClient.TrackEvent("app_launched");
+                }
+                catch { }
+            });
             desktop.Exit += async (_, _) => await AptabaseClient.FlushAsync();
         }
 
+        // CERTAINLY deferrable: none of this needs to block first paint
 #if !DEBUG
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            RegisterFileAssociations();
+            DeferFileAssociationsRegistration();
         }
 #endif
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            if (!CheckPendingUpdateSentinel())
-                CheckForUpdatesInBackground();
-
-            LaunchStandaloneUpdaterIfNeeded();
+            DeferUpdateChecks();
+            DeferStandaloneUpdaterLaunch();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -189,6 +197,50 @@ public partial class App : Application
             {
                 // Update checking must never crash the app.
             }
+        });
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void DeferFileAssociationsRegistration()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                RegisterFileAssociations();
+            }
+            catch { }
+        });
+    }
+
+    private static void DeferUpdateChecks()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                var hasPending = false;
+                await Dispatcher.UIThread.InvokeAsync(() => { hasPending = CheckPendingUpdateSentinel(); });
+                if (!hasPending)
+                    CheckForUpdatesInBackground();
+            }
+            catch { }
+        });
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static void DeferStandaloneUpdaterLaunch()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(6));
+                LaunchStandaloneUpdaterIfNeeded();
+            }
+            catch { }
         });
     }
 

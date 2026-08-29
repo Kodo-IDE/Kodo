@@ -58,11 +58,12 @@ public partial class MainWindow
         var marketplaceExtensions = new List<MarketplaceExtension>();
         var extensionLoadErrors = new List<string>();
 
-        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
+        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        var diskJson = TryReadMarketplaceIndexCache();
+        // Smoothness: cache read + JSON parse off UI thread so deferred 3s work doesn't jank render
+        var diskJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
         if (diskJson is not null)
-            ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors);
+            await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors)).ConfigureAwait(false);
 
         try
         {
@@ -169,11 +170,11 @@ public partial class MainWindow
         var pluginExtensions = new List<MarketplaceExtension>();
         var pluginLoadErrors = new List<string>();
 
-        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState());
+        await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        var diskJson = TryReadPluginsIndexCache();
+        var diskJson = await Task.Run(() => TryReadPluginsIndexCache()).ConfigureAwait(false);
         if (diskJson is not null)
-            ParseAndApplyMarketplaceIndex(diskJson, pluginExtensions, pluginLoadErrors);
+            await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, pluginExtensions, pluginLoadErrors)).ConfigureAwait(false);
 
         try
         {
