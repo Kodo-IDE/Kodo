@@ -17,7 +17,6 @@ using Kodo.Models;
 namespace Kodo;
 
 
-// Avalonia control hosting a shell via ConPTY, rendering VT/ANSI output.
 public sealed class ConsoleTerminal : Control
 {
     private static readonly Color[] AnsiPalette =
@@ -239,7 +238,7 @@ public sealed class ConsoleTerminal : Control
     // Process handle from the most recent Start() call; zero if none running.
     public IntPtr CurrentProcessHandle => _hProcess;
 
-    // Captures the screen buffer and cursor state for restoring this session later.
+    // Captures the screen buffer and cursor state for restoring this
     public TerminalSnapshot SaveSnapshot()
     {
         lock (_lock)
@@ -801,7 +800,7 @@ public sealed class ConsoleTerminal : Control
                 var text = Encoding.UTF8.GetString(buf, 0, n);
                 lock (_lock)
                 {
-                    // Drains the pipe while suppressed, discarding bytes until the window expires.
+                    // Drains the pipe while suppressed, discarding bytes
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
                         foreach (var ch in text) ProcessChar(ch);
                 }
@@ -1174,7 +1173,7 @@ public sealed class ConsoleTerminal : Control
             Key.Tab    => shift ? "\x1b[Z" : "\t",
             Key.Return => "\r",
             Key.Escape => "\x1b",
-            // Backspace: Ctrl+Backspace → word-erase (^H = 0x08); plain → DEL (0x7f)
+            // Backspace: Ctrl+Backspace → word-erase (^H = 0x08); plain →
             Key.Back => ctrl ? "\x08" : "\x7f",
             _ => null
         };
@@ -1373,7 +1372,7 @@ internal static class NativeConPty
     }
 }
 
-// One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can launch.
+// One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can
 public sealed class TerminalShellOption
 {
     public string Id { get; init; } = string.Empty;
@@ -1412,7 +1411,7 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Disables PSReadLine's predictive IntelliSense unless enabled via Settings.
+            // Disables PSReadLine's predictive IntelliSense unless enabled
             var disablePredictiveIntelliSenseCommand = enablePSReadLinePrediction
                 ? string.Empty
                 : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
@@ -1444,7 +1443,7 @@ public static class TerminalShellSupport
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
                     ?? ResolveExecutable("cmd.exe"),
-                // $E is cmd's escape-char macro; $P$G restores the normal prompt after.
+                // $E is cmd's escape-char macro; $P$G restores the normal
                 "/K prompt $E]1337;CurrentDir=$P\a$P$G");
             AddShell(
                 "bash",
@@ -1452,7 +1451,7 @@ public static class TerminalShellSupport
                 ResolveExecutable("bash.exe",
                     @"C:\Program Files\Git\bin\bash.exe",
                     @"C:\Program Files\Git\usr\bin\bash.exe"),
-                // PROMPT_COMMAND is exported to survive the exec into a login shell.
+                // PROMPT_COMMAND is exported to survive the exec into a
                 $"--login -i -c \"{BashCwdHookCommand}\"");
         }
         else

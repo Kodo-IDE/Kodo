@@ -32,7 +32,6 @@ internal static class AptabaseClient
 
     private static AptabaseSystemProps? _systemProps;
 
-    // Off by default until settings load
     private static bool _isEnabled;
 
     private static bool _isDevBuild;
@@ -40,7 +39,6 @@ internal static class AptabaseClient
     public static bool IsEnabled => _isEnabled;
     public static bool IsDevBuild => _isDevBuild;
 
-    // Enables/disables analytics; disabling discards queued events
     public static void SetEnabled(bool enabled)
     {
         if (enabled && (_isDevBuild || string.IsNullOrWhiteSpace(_appKey)))
@@ -157,7 +155,7 @@ internal static class AptabaseClient
     {
         var key = KEYS.AptabaseKey;
         
-        // Check and warn if the KEYS.cs file is missing or if the key is whitespace.
+        // Check and warn if the KEYS.cs file is missing or if the key is
         if (string.IsNullOrWhiteSpace(key))
         {
             Console.WriteLine("[Aptabase] WARNING: No key found, check if the file is there or if the key is set correctly.");

@@ -1458,7 +1458,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            // If the install folder is already gone, don't error out - just forget it.
+            // If the install folder is already gone, don't error out - just
             var folder = FindCompilerUninstaller(compilerExtension.Name)?.InstallFolder;
             if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
             {
@@ -2154,8 +2154,7 @@ public partial class MainWindow
             return null;
         }
 
-        // A language/compiler extension can claim a file type without providing
-        // a runnable command. In a project, let the project command take over.
+        // Fall back to project command if no runnable command
         if (ResolveCommandTemplate(best.Compiler, isBuild: false, ext) is null &&
             ResolveCommandTemplate(best.Compiler, isBuild: true, ext) is null)
         {
@@ -2173,8 +2172,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
 
-        // The folder opened in the explorer can be broader than the project
-        // containing the active file, so anchor project discovery to the file.
+        // Anchor project discovery to active file
         var fileFolder = Path.GetDirectoryName(_currentFilePath ?? string.Empty);
         var projectRoot = !string.IsNullOrWhiteSpace(fileFolder) && Directory.Exists(fileFolder)
             ? FindProjectRoot(fileFolder)
@@ -2514,9 +2512,7 @@ public partial class MainWindow
 
     private string ResolveWorkingDirectory()
     {
-        // Commands belong to the active file, not necessarily the folder opened
-        // in the explorer. This keeps nested project files rooted at their own
-        // containing directory when run or built.
+        // Root commands at active file's directory
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
             var fileFolder = Path.GetDirectoryName(_currentFilePath);
@@ -2572,7 +2568,7 @@ public partial class MainWindow
                 return sibling;
         }
 
-        // Check common install locations for Go even if not on PATH yet (needs restart)
+        // Check common install locations for Go even if not on PATH yet
         if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase))
         {
             var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", "go.exe");
@@ -2957,8 +2953,7 @@ public partial class MainWindow
             menu.Items.Add(item);
         }
 
-        // Keep the project-level compiler available even when the file type also
-        // has a language extension, so the active fallback is visible/selectable.
+        // Keep project compiler as fallback
         {
             var folder = ResolveWorkingDirectory();
             if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))

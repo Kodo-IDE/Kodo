@@ -215,7 +215,7 @@ public partial class MainWindow
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
         OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
 
-        // In "kodo" mode, always use the fixed Kodo purple regardless of any active theme.
+        // In "kodo" mode, always use the fixed Kodo purple regardless of
         if (_accentColorMode == "kodo")
         {
             try { AccentBrush = GetCachedBrush("#8C00FF"); }

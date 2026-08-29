@@ -170,7 +170,7 @@ public partial class MainWindow
     {
         var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(scan), DispatcherPriority.Background);
-        // Give renderer a chance to pump one frame after extensions + theme refresh
+        // Give renderer a chance to pump one frame after extensions + theme
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
@@ -236,8 +236,7 @@ public partial class MainWindow
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
-        // Smoothness: decode icon bitmaps off UI thread in staggered chunks, yielding between batches.
-        // SVGs are tiny (string decode) so handle inline; PNGs are decoded on pool then assigned at Background.
+        // Decode icons off UI thread in batches
         var pngExtensions = new List<LoadedExtension>();
         foreach (var ext in LoadedExtensions)
         {
@@ -259,7 +258,7 @@ public partial class MainWindow
 
         if (pngExtensions.Count > 0)
         {
-            // Offload PNG Skia decode off UI thread, assign at Background priority with yields
+            // Offload PNG Skia decode off UI thread, assign at Background
             _ = Task.Run(async () =>
             {
                 const int batchSize = 4;
@@ -360,7 +359,7 @@ public partial class MainWindow
         var themePath = Path.Combine(folderPath, "theme.json");
         if (!File.Exists(themePath))
         {
-            // No theme file - yield the extension as-is (language extension, etc.)
+            // No theme file - yield the extension as-is (language
             yield return baseExt;
             yield break;
         }
@@ -577,7 +576,7 @@ public partial class MainWindow
             if (sniffed is null)
                 return null;
 
-            // Content-sniffed match: use the base extension as-is (no profile narrowing).
+            // Content-sniffed match: use the base extension as-is (no
             return sniffed;
         }
 
@@ -666,7 +665,7 @@ public partial class MainWindow
             return url; // third-party raw.githubusercontent.com URL - already serves raw bytes, leave alone
         }
 
-        // Already a Contents API URL or a non-GitHub third-party URL - leave unchanged.
+        // Already a Contents API URL or a non-GitHub third-party URL -
         return url;
     }
 
@@ -878,7 +877,7 @@ public partial class MainWindow
     {
         yield return ExtensionsFolderPath;
 
-        // Also search the project source tree when running from the build output directory
+        // Also search the project source tree when running from the build
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
         var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
         if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))

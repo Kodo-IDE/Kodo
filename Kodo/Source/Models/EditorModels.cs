@@ -62,10 +62,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
         var pen = new Pen(GuideBrush, 1, GuideDashStyle);
 
-        // Only compute indent for visible lines - previous implementation scanned the entire
-        // document (O(N)) and used nested O(N²) blank-line filling on every Draw, which
-        // caused severe input lag on large XAML/HTML files. Now we resolve depth per
-        // visible line with bounded local look-around for blank lines.
+        // Compute indent for visible lines only
         foreach (var visualLine in textView.VisualLines)
         {
             var lineNumber = visualLine.FirstDocumentLine.LineNumber;
@@ -92,7 +89,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         if (!string.IsNullOrWhiteSpace(text))
             return GetIndentColumns(text) / TabSize;
 
-        // Blank line - look locally for surrounding context (bounded scan avoids O(N²))
+        // Blank line - look locally for surrounding context (bounded scan
         const int maxLookAround = 32;
         var above = 0;
         for (var a = lineNumber - 1; a >= 1 && lineNumber - a <= maxLookAround; a--)
@@ -231,7 +228,7 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
     // Instance (not static/const) so ApplyThemeToEditor can swap it per theme.
     public IBrush TextBrush { get; set; } = Brushes.Black;
 
-    // Only darkens in light themes - in dark themes the red wash preserves contrast.
+    // Only darkens in light themes - in dark themes the red wash preserves
     public bool IsLightTheme { get; set; }
 
     private IReadOnlyList<InsightEngine.ErrorSpan> _errorSpans = Array.Empty<InsightEngine.ErrorSpan>();

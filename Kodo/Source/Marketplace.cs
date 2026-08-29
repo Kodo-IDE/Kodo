@@ -28,7 +28,7 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        // Smoothness: cache read + JSON parse off UI thread so deferred 3s work doesn't jank render
+        // Smoothness: cache read + JSON parse off UI thread so deferred 3s
         var diskJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
         if (diskJson is not null)
             await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors)).ConfigureAwait(false);
@@ -100,7 +100,7 @@ public partial class MainWindow
             }
             else
             {
-                // No cache at all - propagate so the caller shows the error dialog.
+                // No cache at all - propagate so the caller shows the error
                 extensionLoadErrors.Add($"Failed to load remote marketplace index: {DescribeFetchFailure(ex)}");
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
                 throw;
@@ -284,14 +284,14 @@ public partial class MainWindow
                     {
                         if (icon.HasValue)
                         {
-                            // Index icon fetched successfully - use it, replacing any kox icon.
+                            // Index icon fetched successfully - use it
                             ReplaceLoadedExtensionIcon(pair.ext, icon);
                         }
                     });
                 }
                 catch (Exception ex)
                 {
-                    // Network failure for this icon - leave the kox icon (or abbreviation) in place.
+                    // Network failure for this icon - leave the kox icon
                     KodoDiagnostics.LogDebug($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
                 }
             });
@@ -638,7 +638,7 @@ public partial class MainWindow
             await File.WriteAllBytesAsync(outputPath, bytes);
             NormalizeKoxManifestVersion(outputPath);
 
-            // suppressWatchdog=true: the download already has its own timeout guard.
+            // suppressWatchdog=true: the download already has its own
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
         }
@@ -1247,7 +1247,7 @@ public partial class MainWindow
         }
         else if (exception is not null)
         {
-            // Shows a message for any exception when online, not just connectivity failures.
+            // Shows a message for any exception when online, not just
             message = IsGitHubRateLimitException(exception)
                 ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
                 : hasWirelessConnection

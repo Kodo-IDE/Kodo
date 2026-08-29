@@ -113,12 +113,12 @@ internal static class SingleInstance
                     using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
                     var payload = await reader.ReadToEndAsync();
 
-                    // Empty payload just means "bring the window to front", no file to open.
+                    // Empty payload just means "bring the window to front"
                     onActivationRequested(string.IsNullOrWhiteSpace(payload) ? null : payload);
                 }
                 catch
                 {
-                    // Pipe hiccup - brief backoff so a persistent failure doesn't spin the loop.
+                    // Pipe hiccup - brief backoff so a persistent failure
                     await Task.Delay(500);
                 }
             }

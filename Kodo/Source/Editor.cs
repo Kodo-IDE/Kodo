@@ -65,7 +65,7 @@ public partial class MainWindow
             return;
         }
 
-        // Count words via Span enumeration - zero allocations vs Split(array+Length)
+        // Count words via Span enumeration - zero allocations vs
         var chars = text.AsSpan();
         int wordCount = 0;
         bool inWord = false;
@@ -309,7 +309,7 @@ public partial class MainWindow
         }
         catch
         {
-            // Document may be null or line out of range during rapid edits - treat as no hit.
+            // Document may be null or line out of range during rapid edits
             return null;
         }
     }
@@ -318,11 +318,7 @@ public partial class MainWindow
     {
         _insightDocVersion++;
         HideDiagnosticPopup();
-        // Debounce heavy colorizer snapshot rebuilds: previously every keystroke
-        // synchronously cleared caches causing UI-thread allocations (document.Text
-        // copies + per-line regex state) that stalled typing in large XAML/HTML.
-        // Now stale snapshots are reused for ~40ms while typing; highlight catches
-        // up shortly after pause. This is the primary fix for remaining XAML lag.
+        // Debounce snapshot rebuild 40ms to avoid XAML lag
         _syntaxHighlightDebounceTimer.Stop();
         _syntaxHighlightDebounceTimer.Start();
 
@@ -351,8 +347,7 @@ public partial class MainWindow
         _markdownColorizer.InvalidateCache();
         _htmlEmbeddedColorizer.InvalidateCache();
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
-        // BackgroundRenderer (indent guides) is cheap now (visible-lines only)
-        // but still benefits from coalesced invalidation.
+        // Coalesce BackgroundRenderer invalidation
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
@@ -387,10 +382,7 @@ public partial class MainWindow
             }
         }
 
-        // Any character that will trigger an auto-inserted closer in OnTextEntered
-        // (i.e. every BracketPairs key that isn't being skipped-over below) needs its
-        // default insertion and the closer's insertion merged into one undo group -
-        // otherwise a single Undo removes only the closer and leaves the opener behind.
+        // Merge opener + auto-closer into one undo group
         var isPairOpener = BracketPairs.ContainsKey(ch);
 
         if (!ClosingChars.Contains(ch))
@@ -408,7 +400,7 @@ public partial class MainWindow
             return;
         }
 
-        // Asymmetric pairs are always safe to skip; symmetric pairs only skip mid-pair.
+        // Asymmetric pairs are always safe to skip; symmetric pairs only
         bool skip = ch is ')' or ']' or '}' or '>';
         if (!skip && (ch == '"' || ch == '\''))
             skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
@@ -428,7 +420,7 @@ public partial class MainWindow
 
     private void BeginAutoCloseUndoGroup(AvaloniaEdit.Document.TextDocument doc)
     {
-        // Guard against a stray double-open leaving the UndoStack's group counter unbalanced.
+        // Guard against a stray double-open leaving the UndoStack's group
         if (_autoCloseUndoGroupOpen) return;
         doc.UndoStack.StartUndoGroup();
         _autoCloseUndoGroupOpen = true;
@@ -443,8 +435,7 @@ public partial class MainWindow
 
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
-        // Whatever branch we take below, if OnTextEntering opened an auto-close undo
-        // group for this keystroke, it must be closed here so Undo/Redo stay balanced.
+        // Close auto-close undo group if opened
         var doc = EditorTextBox.Document;
         try
         {
@@ -519,17 +510,14 @@ public partial class MainWindow
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
 
-        // ScanDocument + GetSuggestions are pure text/regex work with no Avalonia
-        // dependency, so run them off the UI thread - this is the part that stalls
-        // typing on large files.
+        // Offload Insight scan off UI thread
         var suggestions = await Task.Run(() =>
         {
             _InsightEngine.ScanDocument(fileKey, text, languageExtension);
             return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
         });
 
-        // The document moved on while we were scanning - a fresh scan is already
-        // queued for the newer text, so don't apply these stale results.
+        // Discard stale scan if doc version changed
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.TextArea is null) return;
 
@@ -669,7 +657,7 @@ public partial class MainWindow
         baseRowStyle.Setters.Add(new Setter(Layoutable.MarginProperty, new Thickness(0, 1)));
         window.Styles.Add(baseRowStyle);
 
-        // Rounded chip for every row - ensures hover/selected backgrounds are pill-shaped.
+        // Rounded chip for every row - ensures hover/selected backgrounds
         var itemCornerStyle = new Style(x => x.OfType<ListBoxItem>().Template().OfType<Border>());
         itemCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(7)));
         window.Styles.Add(itemCornerStyle);
@@ -702,7 +690,7 @@ public partial class MainWindow
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Any editor interaction should hide the diagnostic popup - don't require X click
+        // Any editor interaction should hide the diagnostic popup - don't
         if (DiagnosticPopup.IsOpen && IsEditorKeyEvent(e))
             HideDiagnosticPopup();
 
@@ -905,7 +893,7 @@ public partial class MainWindow
             .Select(l => GetIndentUnit() + doc.GetText(l));
         var newText = string.Join(Environment.NewLine, indentedLines);
         
-        // Replace the entire selection segment with indented text as one undo unit
+        // Replace the entire selection segment with indented text as one
         doc.Replace(segment, newText);
         
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
@@ -940,7 +928,7 @@ public partial class MainWindow
             .Select(l => doc.GetText(l).TrimStart());
         var replacedText = string.Join(Environment.NewLine, linesText);
         
-        // Replace the entire selection segment with outdented text as one undo unit
+        // Replace the entire selection segment with outdented text as one
         doc.Replace(segment, replacedText);
         
         SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
@@ -1079,8 +1067,7 @@ public partial class MainWindow
             });
 
         var delta = 0;
-        // Each line below is its own Insert/Remove call, which would otherwise force
-        // one Undo press per line to fully reverse a single comment-toggle action.
+        // Group per-line edits into one undo
         doc.UndoStack.StartUndoGroup();
         try
         {

@@ -15,7 +15,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-// Source of an InsightSuggestion - drives sort order and label.
 public enum InsightKind { Variable, Function, Property, Type, Namespace, Keyword }
 
 public sealed class InsightSuggestion : ICompletionData
@@ -444,7 +443,7 @@ public sealed class InsightEngine
 
                 if (c == '\\' && !inMulti && !isVerbatim)
                 {
-                    // escaped char - blank both (verbatim strings use "" not \ to escape)
+                    // escaped char - blank both (verbatim strings use ""
                     masked[i] = ' ';
                     if (i + 1 < chars.Length && chars[i + 1] != '\n' && chars[i + 1] != '\r')
                     {
@@ -456,7 +455,7 @@ public sealed class InsightEngine
 
                 if (c == '\n' && !inMulti && !isVerbatim)
                 {
-                    // unterminated single-line string - treat newline as terminator for masking
+                    // unterminated single-line string - treat newline as
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
@@ -482,7 +481,7 @@ public sealed class InsightEngine
 
                 if (closing is not null)
                 {
-                    // keep closing delimiters as-is (so `x = "a"` still has quotes)
+                    // keep closing delimiters as-is (so `x = "a"` still has
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
@@ -524,7 +523,7 @@ public sealed class InsightEngine
                 inMulti = true;
                 isInterpolated = false;
                 isVerbatim = false;
-                // check if this multi-line delimiter is interpolated (e.g., $""" )
+                // check if this multi-line delimiter is interpolated (e.g
                 if (i > 0 && chars[i - 1] == '$')
                     isInterpolated = true;
                 else if (i > 1 && chars[i - 2] == '$' && chars[i - 1] == '@')
@@ -651,7 +650,7 @@ public sealed class InsightEngine
                     firstToken = firstToken.TrimEnd('?');
                     if (firstToken.Length > 0 && char.IsLower(firstToken[0]) && !KnownColonTypes.Contains(firstToken))
                     {
-                        // If type part is exactly one identifier with no type syntax, reject
+                        // If type part is exactly one identifier with no
                         var tokens = typePart.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                         if (tokens.Length == 1 && !typePart.Contains("<") && !typePart.Contains("[") && !typePart.Contains("|"))
                             return true;
@@ -669,7 +668,7 @@ public sealed class InsightEngine
                 var nameIdx = beforeEq.LastIndexOf(name, StringComparison.Ordinal);
                 if (nameIdx > 0 && beforeEq.Substring(0, nameIdx).Contains('.'))
                     return true;
-                // Also reject bracket-like `arr[0] =` where LHS is not a simple identifier.
+                // Also reject bracket-like `arr[0] =` where LHS is not a
                 if (beforeEq.Contains('[') || beforeEq.Contains(']'))
                     return true;
             }
@@ -755,12 +754,12 @@ public sealed class InsightEngine
                     var t = maskedLine.Trim();
                     if (!IsVarDeclPrefix(t) && !t.Contains(";"))
                     {
-                        // If the line looks like `prop = value,` with no semicolon, treat as property
+                        // If the line looks like `prop = value,` with no
                         var eqIdx = t.IndexOf('=');
                         if (eqIdx > 0)
                         {
                             var lhs = t.Substring(0, eqIdx).Trim();
-                            // If lhs is single identifier without type keywords, likely property
+                            // If lhs is single identifier without type
                             if (System.Text.RegularExpressions.Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$") && !lhs.Contains(" "))
                                 continue;
                         }
@@ -1096,7 +1095,7 @@ public sealed class InsightEngine
                 return true;
             if (next.StartsWith("{") && trimmedEnd.Contains("=") && !trimmedEnd.Contains(";") && trimmedEnd.Contains("new"))
                 return true;
-            // Ternary continuation: `Text = isTerminating` + `? "..."` or `? "..."` + `:`
+            // Ternary continuation: `Text = isTerminating` + `? "..."` or
             if ((next.StartsWith("?") || next.StartsWith(":") || next.StartsWith(".")) && trimmedEnd.Contains("="))
                 return true;
             if ((next.StartsWith(".") || next.StartsWith("+")) && !trimmedEnd.EndsWith(";", StringComparison.Ordinal) && !trimmedEnd.EndsWith("{", StringComparison.Ordinal))
@@ -1106,7 +1105,7 @@ public sealed class InsightEngine
                 trimmedNoIndent.Contains("interface") || trimmedNoIndent.Contains("enum") ||
                 trimmedNoIndent.Contains("record") || trimmedNoIndent.Contains("namespace")))
                 return true;
-            // Control header with `)` + `{` like `if (x)` + `{` or `void Foo()` + `{`
+            // Control header with `)` + `{` like `if (x)` + `{` or `void
             if (trimmedEnd.EndsWith(")", StringComparison.Ordinal) && next.StartsWith("{"))
                 return true;
             // Fallback: any `class`/`struct` etc without `=`/`;` before `{`
@@ -1119,7 +1118,7 @@ public sealed class InsightEngine
                 return true;
         }
 
-        // Line itself ends with `=` (e.g. `Children =`) – continuation, not missing `;`
+        // Line itself ends with `=` (e.g. `Children =`) – continuation, not
         if (trimmedEnd.EndsWith("=", StringComparison.Ordinal))
             return true;
 

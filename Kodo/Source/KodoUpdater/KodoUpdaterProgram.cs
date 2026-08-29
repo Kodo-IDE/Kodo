@@ -174,7 +174,7 @@ internal static class Program
                     appLifetime = lt;
                     dialog.Show();
                 });
-                // Blocks here until appLifetime.Shutdown() is called from the installer thread.
+                // Blocks here until appLifetime.Shutdown() is called from
             });
             if (OperatingSystem.IsWindows())
             {
@@ -186,7 +186,7 @@ internal static class Program
             var progressCts = new CancellationTokenSource();
             var pollTask = Task.Run(() => PollInstallProgressAsync(dialog, progressFilePath, progressCts.Token));
 
-            // Run the installer on a background thread while the UI pumps messages.
+            // Run the installer on a background thread while the UI pumps
             await Task.Run(() =>
             {
                 try
@@ -283,7 +283,7 @@ internal static class Program
         }
         catch
         {
-            // Best-effort - if this fails, Kodo just doesn't restart after update.
+            // Best-effort - if this fails, Kodo just doesn't restart after
         }
     }
 

@@ -41,16 +41,13 @@ public partial class App : Application
         AvaloniaXamlLoader.Load(this);
     }
 
-    // Called once the framework finishes initializing; creates the main window.
     public override void OnFrameworkInitializationCompleted()
     {
-        // Must run before anything touches AptabaseClient (TrackEvent/SetEnabled),
-        // since it's what populates the app key and session used by both.
+        // Init KEYS before AptabaseClient
         AptabaseClient.Initialize();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // desktop.Args[0] is the file path when launched via "Open with" / double-click.
             var resetRequested = desktop.Args?.Any(arg =>
                 string.Equals(arg, "--reset-kodo", StringComparison.OrdinalIgnoreCase)) == true;
             if (resetRequested)
@@ -126,7 +123,7 @@ public partial class App : Application
         {
             if (!UpdateService.IsAutoUpdateEnabledInSettings())
             {
-                // User has auto-update off entirely; make sure no logon task is left resident.
+                // User has auto-update off entirely; make sure no logon
                 UpdateService.RemoveAutostartRegistration();
                 return;
             }
@@ -308,7 +305,7 @@ public partial class App : Application
 
     private static void DispatcherUiThread_OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        // Critical: exception on the UI thread - may leave the UI in a broken state.
+        // Critical: exception on the UI thread - may leave the UI in a
         KodoDiagnostics.LogCritical("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         e.Handled = true;
@@ -338,7 +335,7 @@ public partial class App : Application
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                // Keep the terminating process alive until the report is dismissed.
+                // Keep the terminating process alive until the report is
                 for (var i = 0; _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
@@ -361,7 +358,7 @@ public partial class App : Application
         Interlocked.Exchange(ref _isCrashDialogOpen, 1);
         try
         {
-            // Uses the main window as owner only when it is still open and visible.
+            // Uses the main window as owner only when it is still open and
             Window? owner = null;
             if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {

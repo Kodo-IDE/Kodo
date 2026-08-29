@@ -49,10 +49,7 @@ public sealed class CompiledSyntaxProfile
 
         if (traits.IsMarkupLike)
         {
-            // Markup files (html/xaml/xml) previously built huge alternation regexes
-            // (e.g. 191 keywords + 224 properties for XAML) evaluated on every visible
-            // line per keystroke. Replace with cheap generic patterns that match any
-            // tag/attribute - same visual quality (all tags highlighted) but O(1).
+            // Markup: generic tag/attr regex for O(1) highlighting
             rules.Add(new(new Regex(@"(?<=</?|<!)[\p{L}_:-][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "keyword", "#569CD6"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_:-][\p{L}\p{Nd}_:-]*(?:[:.][\p{L}_:-][\p{L}\p{Nd}_:-]*)*(?=\s*=)", RegexOptions.Compiled), "property", "#9CDCFE"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_-][\p{L}\p{Nd}_-]*(?=:[^<>]*\s*=)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
@@ -79,11 +76,7 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(CommonStringPrefixPattern, RegexOptions.Compiled), "string", "#CE9178"));
         }
 
-        // Removed markup-specific number/text between-tags regexes (previously
-        // `(?<=>)\s*v?\d...` and `(?<=>)[^<>]+(?=<)`) that were evaluated on every
-        // visible line and caused severe lag on XAML/HTML with many tags. Text
-        // between tags now falls back to default foreground; numeric literals
-        // are still caught by the generic number regex below.
+        // Text between tags uses default foreground; numbers via generic regex
 
         rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\p{L}\p{Nd}_])", RegexOptions.Compiled), "number", "#B5CEA8"));
 
@@ -102,7 +95,7 @@ public sealed class CompiledSyntaxProfile
         }
         else
         {
-            // Rule order matters: specific rules must precede the catch-all "variable" rule.
+            // Rule order matters: specific rules must precede the catch-all
             rules.Add(new(new Regex(
                 traits.IsCssLike
                     ? @"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])"
@@ -488,7 +481,7 @@ public sealed class EmbeddedSyntaxProfile
 
             if (isBatch && IsBatchEchoStart(text, index))
             {
-                // Reserve the literal echoed text so it is not highlighted as variables etc.
+                // Reserve the literal echoed text so it is not highlighted
                 var lineEnd = text.IndexOf('\n', index);
                 if (lineEnd < 0) lineEnd = text.Length;
                 else if (lineEnd > 0 && text[lineEnd - 1] == '\r') lineEnd--; // keep \r out
@@ -725,7 +718,7 @@ public sealed class EmbeddedSyntaxProfile
 
     private static bool IsBatchEchoStart(string text, int index)
     {
-        // Must be at line start (after optional whitespace) and match @?echo[.:()]? (case-insensitive)
+        // Must be at line start (after optional whitespace) and match
         var lineStart = index;
         while (lineStart > 0 && text[lineStart - 1] != '\n' && text[lineStart - 1] != '\r')
             lineStart--;
@@ -746,7 +739,7 @@ public sealed class EmbeddedSyntaxProfile
         var after = index + atOffset + 4;
         if (after < text.Length && text[after] is '.' or ':' or '(')
             after++;
-        // ensure next char is whitespace, end, or we still treat as echo even if immediate text like echo.hello
+        // ensure next char is whitespace, end, or we still treat as echo
         return true;
     }
 
@@ -1008,10 +1001,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         }
         else if (IsMarkupLikeExtension(extension))
         {
-            // Rainbow brackets are not useful for markup (braces live inside quoted
-            // attribute values which are treated as strings and skipped), but the
-            // snapshot scan on every keystroke was a major source of input lag for
-            // large XAML/HTML files. Disable for markup without visual loss.
+            // Disable rainbow brackets for markup
             IsEnabled = false;
             _commentLine = extension.CommentLine;
             _commentBlockStart = extension.CommentBlockStart;
@@ -1061,7 +1051,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
-        // Batch: echo lines are literal output – don't rainbow brackets in the echoed text.
+        // Batch: echo lines are literal output – don't rainbow brackets in
         int batchEchoContentStart = -1;
         if (_isBatch)
         {
@@ -1202,9 +1192,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     private ParseSnapshot BuildSnapshot(string text)
     {
-        // Fast path: file contains no brackets at all - return trivial snapshot
-        // without scanning every char for string/comment boundaries (saves lag on
-        // large markup-ish files that slipped through IsEnabled check).
+        // Fast path: no brackets -> trivial snapshot
         if (text.IndexOfAny(['(', ')', '[', ']', '{', '}']) < 0)
         {
             var emptyLineCount = 1;
@@ -2268,7 +2256,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
         }
 
-        // Code spans bind tighter than any inline construct, so they're colourized first.
+        // Code spans bind tighter than any inline construct, so they're
         foreach (Match match in InlineCodeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -2542,7 +2530,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return profile;
     }
 
-    // Detects an inline snippet's language and resolves the matching syntax profile.
+    // Detects an inline snippet's language and resolves the matching syntax
     private EmbeddedSyntaxProfile? ResolveInlineEmbeddedProfile(string content)
     {
         if (string.IsNullOrWhiteSpace(content) || _inlineLanguageResolver is null)
@@ -2892,9 +2880,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             return;
 
         var text = document.GetText(line.Offset, line.Length);
-        // Build the snapshot at most once per invalidation (i.e. once per edit), not once
-        // per visible line - re-materializing document.Text here on every line is what made
-        // this colorizer expensive specifically for markup files (.xaml/.html) that enable it.
+        // Build snapshot once per edit, not per line
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var state = snapshot.GetLineState(line.LineNumber);
 
@@ -2937,9 +2923,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     private HtmlSnapshot BuildSnapshot(string text)
     {
-        // Fast path: most XAML/HTML files never contain <script>/<style>/<x:code> blocks.
-        // Previously we still split the entire document and ran per-line regexes on every
-        // invalidation, causing noticeable lag on large markup files with no embedded content.
+        // Fast path: skip embedded scan if no blocks
         if (text.IndexOf("<script", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<style", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<x:code", StringComparison.OrdinalIgnoreCase) < 0)
@@ -3226,7 +3210,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"~~", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Link/image opening bracket only - closing ] ) are left as default text colour
+            // Link/image opening bracket only - closing ] ) are left as
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"!?\[", RegexOptions.Compiled),
@@ -3275,7 +3259,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Single-line comment to end-of-line; $ anchors so the whole remainder is coloured.
+        // Single-line comment to end-of-line; $ anchors so the whole
         if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
             var commentOptions = isBatch ? RegexOptions.IgnoreCase : RegexOptions.None;
@@ -3291,7 +3275,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
             if (isBatch)
             {
-                // Batch also uses :: as a comment (alternative to REM) – always at line start-ish
+                // Batch also uses :: as a comment (alternative to REM) –
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
                     StartExpression        = new Regex(@"::", RegexOptions.Compiled),
@@ -3302,7 +3286,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet                = emptyRuleSet
                 });
 
-            // Treat text after echo as literal output, leaving the command highlighted.
+            // Treat text after echo as literal output, leaving the command
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
                     StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
@@ -3313,7 +3297,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet                = emptyRuleSet
                 });
 
-                // Handle echo. and echo: forms where punctuation is part of the command.
+                // Handle echo. and echo: forms where punctuation is part of
             }
         }
         else if (!isMarkdown && isBatch)
@@ -3356,7 +3340,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         if (ext.DisableSingleQuoteStrings && ext.StringDelimiters.Contains("\""))
         {
-            // Interpolated verbatim strings escape only via doubled quotes, never backslash.
+            // Interpolated verbatim strings escape only via doubled quotes
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"\$""", @"""", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 

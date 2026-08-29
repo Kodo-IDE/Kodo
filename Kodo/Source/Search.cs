@@ -146,7 +146,7 @@ public partial class MainWindow
         var relativePath = GetRelativePathOrName(_currentFolderPath, item.FullPath);
         if (!string.IsNullOrEmpty(relativePath))
         {
-            // If it's a directory, append /** glob; if it's a file, just use the filename.
+            // If it's a directory, append /** glob; if it's a file, just
             SearchIncludeFilter = item.IsDirectory
                 ? relativePath.Replace('\\', '/') + "/**"
                 : relativePath.Replace('\\', '/');
@@ -756,7 +756,7 @@ public partial class MainWindow
         }
         catch (OperationCanceledException)
         {
-            // A newer search superseded this one (or the panel closed mid-search).
+            // A newer search superseded this one (or the panel closed
             IsSearchBusy = false;
             return;
         }

@@ -103,7 +103,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _settingsSearchPending;
 
     private string? _currentFilePath;
-    // Encoding detected (or chosen) for the currently open file. Defaults to UTF-8.
+    // Encoding detected (or chosen) for the currently open file. Defaults
     private System.Text.Encoding _currentFileEncoding = System.Text.Encoding.UTF8;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
@@ -131,8 +131,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
-    // Bumped on every keystroke; background Insight scans compare it after finishing
-    // to discard results that were computed against text that's since changed.
+    // Doc version discards stale Insight results
     private long _insightDocVersion;
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
@@ -173,7 +172,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
-    // Defaults to true - predictive completion is on unless the user turns it off.
+    // Defaults to true - predictive completion is on unless the user turns
     private bool _isInsightEnabled = true;
     private bool _isInsightCodeSuggestionsEnabled = true;
     private bool _isInsightDeadCodeEnabled = true;
@@ -300,7 +299,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _searchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer _searchFilterDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
-    // Find-in-file highlight state: tracks all match offsets for live highlighting.
+    // Find-in-file highlight state: tracks all match offsets for live
     private readonly FindHighlightRenderer _findHighlightRenderer = new();
     private List<int> _findMatchOffsets = new();
     private int _currentFindMatchIndex = -1;
@@ -459,7 +458,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ["json"] = "json",
         ["md"] = "md",
         ["markdown"] = "md",
-        // Explicit plain-text markers - map to empty string so no extension is matched
+        // Explicit plain-text markers - map to empty string so no extension
         ["text"] = "",
         ["plain"] = "",
         ["txt"] = "",
@@ -723,7 +722,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
-        // TextEditor uses EventHandler (not RoutedEventHandler), so hook up in code-behind
+        // TextEditor uses EventHandler (not RoutedEventHandler), so hook up
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => { HideDiagnosticPopup(); QueueRefreshState(); };
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
@@ -805,8 +804,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _compilerOverrides[pair.Key] = pair.Value;
         foreach (var pair in settings.CustomBuildScripts)
             _customBuildScripts[pair.Key] = pair.Value;
-        // Deferred: terminal shell PATH scan is CERTAINLY not needed before first paint
-        // (terminal starts hidden). Remember preference for deferred init.
+        // Defer terminal PATH scan
         _deferredPreferredShellId = settings.PreferredTerminalShellId;
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
@@ -837,7 +835,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _findHighlightDebounceTimer.Stop();
         };
 
-        // Migration: legacy "kodo" mode with an active theme is upgraded to "theme" mode.
+        // Migration: legacy "kodo" mode with an active theme is upgraded to
         if (_accentColorMode == "kodo" && _hasThemeAccent)
             _accentColorMode = "theme";
 
@@ -1175,7 +1173,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else if (title is not null && updatedAt is null && line.StartsWith("> "))
                 {
-                    // Blockquote after the heading is the date; parsed as yyyy-MM-dd, or kept raw.
+                    // Blockquote after the heading is the date; parsed as
                     var raw = line[2..].Trim();
                     updatedAt = DateTime.TryParseExact(
                         raw,
@@ -1335,7 +1333,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Like SyncObservableCollection, but carries over the already-fetched icon bitmap.
+    // Like SyncObservableCollection, but carries over the already-fetched
 
 
 
@@ -1504,7 +1502,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // If we cannot normalize the package metadata, fall back to reading it as-is.
+            // If we cannot normalize the package metadata, fall back to
         }
     }
 
@@ -2309,7 +2307,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static bool IsDevBuild =>
         CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
 
-    // Pre-release suffix ranking: -DEV < -ALPHA < -BETA < unrecognised < -RC < stable.
+    // Pre-release suffix ranking: -DEV < -ALPHA < -BETA < unrecognised <
     private static int VersionPriority(string tag)
     {
         var dash = tag.IndexOf('-');
@@ -2359,7 +2357,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Banner visibility - collapses when dismissed, reappears if the app restarts.
+    // Banner visibility - collapses when dismissed, reappears if the app
     public bool IsAppUpdateAvailable => IsNewerVersionAvailable && !_updateBannerDismissed;
     public int AvailableExtensionUpdatesCount => MarketplaceExtensions.Count(e => e.IsUpdateAvailable);
     public bool IsExtensionUpdateBannerVisible => AvailableExtensionUpdatesCount > 0 && !_extensionUpdateBannerDismissed;
@@ -2527,7 +2525,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             line = line.Trim();
             if (string.IsNullOrEmpty(line)) continue;
 
-            // Splits the line into bold/normal runs; the list marker is tracked separately.
+            // Splits the line into bold/normal runs; the list marker is
             var runs = new List<FormattedRun>();
 
             var marker = isBullet ? "•"
@@ -2612,9 +2610,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string RefreshExtensionsButtonText => IsRefreshingExtensions ? "Refreshing..." : "Refresh";
 
-    // True when the marketplace has NO entries and there was a connectivity error.
+    // True when the marketplace has NO entries and there was a connectivity
     public bool IsMarketplaceUnavailableVisible => MarketplaceExtensions.Count == 0 && IsMarketplaceConnectivityWarningVisible;
-    // True when the marketplace has entries but some failed to load (partial error).
+    // True when the marketplace has entries but some failed to load
     public bool IsMarketplacePartialErrorVisible => MarketplaceExtensions.Count > 0 && IsMarketplaceConnectivityWarningVisible;
 
     public bool IsInstalledSearchEmptyVisible =>
@@ -2684,7 +2682,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? CurrentTutorialStep.HighlightTwo.Replace("tab behavior", "tab behaviour")
         : CurrentTutorialStep.HighlightTwo;
 
-    // Step 5 ("Set up") HighlightThree contains "accent colour" - swap for US users.
+    // Step 5 ("Set up") HighlightThree contains "accent colour" - swap for
     public string TutorialHighlightThree => IsAmericanEnglish
         ? CurrentTutorialStep.HighlightThree.Replace("accent colour", "accent color")
         : CurrentTutorialStep.HighlightThree;
@@ -3659,7 +3657,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     try
                     {
-                        // Unhooks the previous handler before Start() so it can't fire on the new session.
+                        // Unhooks the previous handler before Start() so it
                         if (_activeSessionExitedHandler is not null)
                         {
                             TerminalHostControl.SessionExited -= _activeSessionExitedHandler;
@@ -3673,7 +3671,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         _activeTerminalSession.IsRunning = true;
                         _activeTerminalSession.StatusText = "Ready";
 
-                        // Captures the handle Start() launched to reject stale SessionExited posts.
+                        // Captures the handle Start() launched to reject
                         var expectedHandle = TerminalHostControl.CurrentProcessHandle;
 
                         var watchedSession = _activeTerminalSession;
@@ -3700,7 +3698,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }
                 }
 
-                // Restores the saved screen buffer once Start() finishes initialising the grid.
+                // Restores the saved screen buffer once Start() finishes
                 if (_activeTerminalSession.Snapshot is not null)
                     TerminalHostControl.RestoreSnapshot(_activeTerminalSession.Snapshot);
             }
@@ -4028,7 +4026,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsDarkThemeActive  => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
 
-    // True when the user picked "follow Windows"; tracked off _requestedThemeName.
+    // True when the user picked "follow Windows"; tracked off
     public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
 
     public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
@@ -4415,7 +4413,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
 
-        // Compares primitive inputs first to avoid rebuilding presence strings every tick.
+        // Compares primitive inputs first to avoid rebuilding presence
         var currentKey = GetDiscordPresenceKey();
         if (currentKey == _lastDiscordPresenceKey) return;
         _lastDiscordPresenceKey = currentKey;
@@ -4863,7 +4861,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var dir = Path.GetDirectoryName(SettingsFilePath);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
 
-                // Writes to a temp file first, then atomically replaces the real file.
+                // Writes to a temp file first, then atomically replaces the
                 var tempPath = SettingsFilePath + ".tmp";
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(toWrite));
                 File.Move(tempPath, SettingsFilePath, overwrite: true);
@@ -4998,7 +4996,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
-        // Smoothness: yield one frame before heavy editor theme invalidation so window can paint
+        // Smoothness: yield one frame before heavy editor theme
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
         await Task.Yield();
 
@@ -5008,7 +5006,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
         await Task.Yield();
 
-        // _suppressSettingsSave stays true while tabs restore, cleared in a finally block.
+        // _suppressSettingsSave stays true while tabs restore, cleared in a
         try
         {
             if (IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0)
@@ -5017,7 +5015,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
                 {
                     await OpenFolderFromPathAsync(_startupFolderPath!);
-                    // Smoothness: yield to renderer after file tree layout before opening tabs
+                    // Smoothness: yield to renderer after file tree layout
                     await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
                     await Task.Yield();
                 }
@@ -5025,7 +5023,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 foreach (var path in _startupOpenTabPaths)
                 {
                     await OpenFileFromPathAsync(path);
-                    // Smoothness: yield one frame between tabs so 5-6 tabs don't freeze UI
+                    // Smoothness: yield one frame between tabs so 5-6 tabs
                     await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
                     await Task.Yield();
                 }
@@ -5042,7 +5040,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
             }
 
-            // Open the file passed on the command line (e.g. via "Open with" or double-click)
+            // Open the file passed on the command line (e.g. via "Open
             if (!string.IsNullOrWhiteSpace(_startupFilePath))
             {
                 await OpenFileFromPathAsync(_startupFilePath);
@@ -5059,8 +5057,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // Deferred startup work: CERTAINLY not needed before first paint.
-        // Staggered with delays so they don't contend with tab restore / first frame.
+        // Defer non-critical startup work
         InitializeDeferredStartupWork();
 
         var isReturningUser = _hasCompletedTutorial;
@@ -5086,8 +5083,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void InitializeDeferredStartupWork()
     {
-        // CERTAINLY deferrable: none of this is needed before first paint.
-        // Staggered delays keep startup I/O/network off the critical path.
+        // Deferrable startup work
 
         // 1) Extension folder watchers - FileSystemWatcher handle alloc (1.5s)
         _ = Task.Run(async () =>
@@ -5131,7 +5127,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch { }
         });
 
-        // 3) Terminal PATH scan - enumerates PATH (20-40 dirs * File.Exists), defer 3s off UI thread
+        // 3) Terminal PATH scan - enumerates PATH (20-40 dirs *
         _ = Task.Run(async () =>
         {
             try
@@ -5165,7 +5161,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch { }
         });
 
-        // 5) Marketplace / latest release / news - network+disk heavy, defer 3s (replaces ctor duplicate)
+        // 5) Marketplace / latest release / news - network+disk heavy
         _ = Task.Run(async () =>
         {
             try
@@ -5248,12 +5244,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RefreshCurrentFileSyntaxHighlighting();
         }
 
-        // Capture what's actually being saved *before* the await below. ActiveEditorTab,
-        // _currentFilePath, and the document's content can all change if the user
-        // switches tabs while the write is in flight (very plausible with autosave
-        // running in the background) - reading them again after the await would apply
-        // the result of THIS save to whatever tab happens to be active by then,
-        // silently marking a different (still-unsaved) tab as clean.
+        // Snapshot saved state before await; tab may change during write
         var savingTab = ActiveEditorTab;
         var savingPath = _currentFilePath;
         var savingContent = EditorTextBox.Document.Text;
@@ -5277,9 +5268,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (savingTab.IsUntitled)
                     savingTab.IsUntitled = false;
             }
-            // Only touch the "live" editor state if the tab we just saved is still
-            // the one on screen - otherwise this save has nothing to do with what
-            // the user is currently looking at.
+            // Only update live editor if still active tab
             if (ReferenceEquals(ActiveEditorTab, savingTab))
             {
                 _isDirty = false;
@@ -5462,16 +5451,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return $"Kodo{birthday}";
     }
 
-    // Writes content into the TextEditor document without triggering dirty tracking
+    // Writes content into the TextEditor document without triggering dirty
     private void SetEditorContent(string content)
     {
         _suppressDirtyTracking = true;
         EditorTextBox.Document.Text = content;
-        // This document is shared across all tabs (and reused when a file is
-        // opened/closed), but AvaloniaEdit's UndoStack isn't tied to "which file is
-        // loaded" - without clearing it, Ctrl+Z after switching tabs walks back into
-        // edits from whatever was previously open, and can even undo this content
-        // swap itself, dropping the wrong file's text into the current tab.
+        // Clear UndoStack: shared document would undo wrong tab
         EditorTextBox.Document.UndoStack.ClearAll();
         EditorTextBox.TextArea.ClearSelection();
         EditorTextBox.TextArea.Caret.Offset = 0;
@@ -5649,12 +5634,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshTerminalWindows()
     {
-        // ConsoleTerminal handles its own layout; kept only so call-sites still compile.
+        // ConsoleTerminal handles its own layout; kept only so call-sites
     }
 
     private void FocusActiveTerminal()
     {
-        // Posts at Background priority so Focus() wins after Avalonia's layout pass.
+        // Posts at Background priority so Focus() wins after Avalonia's
         Dispatcher.UIThread.Post(() =>
         {
             if (IsTerminalVisible && ActiveTerminalSession is not null)
@@ -6265,7 +6250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             fixedGrid.Children.Add(descText);
         }
 
-        // Conflict/status line shown under the editable list while capturing or on error.
+        // Conflict/status line shown under the editable list while
         var statusText = new TextBlock
         {
             Text         = string.Empty,
@@ -6702,7 +6687,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // Ignore browser launch failures quietly; the release info remains visible in-app.
+            // Ignore browser launch failures quietly; the release info
         }
     }
 
@@ -6776,7 +6761,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var fileName = Path.GetFileName(file);
                 try
                 {
-                    // Preserve log files and settings - those are handled separately
+                    // Preserve log files and settings - those are handled
                     if (fileName == "kodo.log" || fileName == "crash.log" || fileName == "kodosettings.json") continue;
                     File.Delete(file);
                     clearedAny = true;
@@ -6805,12 +6790,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (!confirmed) return;
 
-        // Prevent closing prompts and settings writes while handing reset to a clean process.
+        // Prevent closing prompts and settings writes while handing reset
         _isConfirmedClose = true;
         _suppressSettingsSave = true;
         _settingsSaveDebounceTimer.Stop();
 
-        // The next process removes data before constructing MainWindow or loading settings.
+        // The next process removes data before constructing MainWindow or
         var exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
         if (!string.IsNullOrEmpty(exePath))
         {
@@ -6999,7 +6984,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task RestoreExpandedPathsAsync(HashSet<string> expandedPaths)
     {
-        // Keep expanding until no more progress can be made (handles nested directories).
+        // Keep expanding until no more progress can be made (handles nested
         bool anyExpanded;
         do
         {
@@ -7226,7 +7211,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void InlineRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
     {
-        // Commit explicitly with Enter; tree refreshes can cause transient focus loss.
+        // Commit explicitly with Enter; tree refreshes can cause transient
     }
 
     private async Task CompleteInlineRenameAsync(FileTreeItem item)
@@ -7407,7 +7392,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
-        // Build the list defensively: skip any encoding the current runtime can't supply.
+        // Build the list defensively: skip any encoding the current runtime
         var candidateEncodings = new (string Label, Func<System.Text.Encoding> Factory)[]
         {
             ("UTF-8",          () => new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)),
@@ -7567,7 +7552,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (chosen is null) return;
 
-        // Preamble length distinguishes UTF-8 vs UTF-8 BOM even when CodePage matches.
+        // Preamble length distinguishes UTF-8 vs UTF-8 BOM even when
         if (chosen.CodePage == _currentFileEncoding.CodePage &&
             chosen.GetPreamble().Length == _currentFileEncoding.GetPreamble().Length)
             return;
@@ -7736,7 +7721,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Fires hourly to keep the Marketplace tab current, even with auto-update off.
+    // Fires hourly to keep the Marketplace tab current, even with
 
 
 
@@ -7753,7 +7738,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
         if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
-        // Lenient: 650ms + 14px transparent hit border to comfortably reach tooltip
+        // Lenient: 650ms + 14px transparent hit border to comfortably reach
         _diagnosticPopupHideTimer.Stop();
         _diagnosticPopupHideTimer.Start();
     }
@@ -7802,7 +7787,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch
         {
-            // Document may be null or line out of range during rapid edits - treat as no link
+            // Document may be null or line out of range during rapid edits
         }
 
         return false;
@@ -7810,7 +7795,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-	// Fires before the character is written; skips an auto-inserted closing character.
+	// Fires before the character is written; skips an auto-inserted closing
 
 
 
@@ -8045,7 +8030,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // If we already confirmed through the dialog loop, let it through.
         if (_isConfirmedClose) return;
 
-        // Ensure settings are saved before closing, regardless of debounce timer state.
+        // Ensure settings are saved before closing, regardless of debounce
         SaveSettings(immediate: true);
 
         var dirtyTabs = OpenTabs.Where(t => t.IsDirty).ToList();
@@ -8101,7 +8086,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    // Runs every 2s; refreshes the System Default preview on a Windows theme change.
+    // Runs every 2s; refreshes the System Default preview on a Windows
 
 
 

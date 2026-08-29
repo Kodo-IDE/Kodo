@@ -18,7 +18,6 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// Result of an update check: nothing newer, or a downloadable release found.
 internal sealed record UpdateInfo(
     string Version,        // e.g. "v1.2.0" (raw tag_name from GitHub)
     string ReleaseNotesUrl,
@@ -26,12 +25,10 @@ internal sealed record UpdateInfo(
     string AssetName,
     long AssetSizeBytes);
 
-// Reports download progress back to the UI (0.0 - 1.0, plus a human label).
 internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 
 internal static class UpdateService
 {
-    // Repo that publishes Kodo releases. Update if the repo ever moves.
     private const string LatestReleaseUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest";
     private const string ReleaseNotesUrl = "https://github.com/Kodo-IDE/Kodo/releases";
     private const string UserAgent = "Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)";
@@ -547,7 +544,6 @@ internal sealed class UpdateDialog : Window
         };
     }
 
-    // Prevents the dialog from being closed while an update is in progress.
     protected override void OnClosing(WindowClosingEventArgs e)
     {
         if (!_canClose)
@@ -648,7 +644,7 @@ internal sealed class UpdateDialog : Window
         }
         catch
         {
-            // Opening the browser is a convenience action; never let it crash the dialog.
+            // Opening the browser is a convenience action; never let it
         }
     }
 }
@@ -982,7 +978,7 @@ internal sealed class AppUpdateScheduler
     }
     public void Stop() => _timer.Stop();
 
-    // Fires every six hours while enabled; skips while a manual check is in flight.
+    // Fires every six hours while enabled; skips while a manual check is in
     private async Task OnTickAsync()
     {
         if (!_isEnabled() || _isManualCheckInProgress())

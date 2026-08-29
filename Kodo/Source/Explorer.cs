@@ -498,8 +498,7 @@ public partial class MainWindow
 
     private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
     {
-        // Smoothness: per-item Add fires CollectionChanged N times -> N layout passes.
-        // Bulk update with single Reset lets Avalonia layout once.
+        // Bulk Reset avoids N layout passes
         _suppressExplorerWidthRefresh = true;
         try
         {
@@ -674,7 +673,7 @@ public partial class MainWindow
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         if (!hasControl) return;
 
-        // Ctrl+wheel → zoom. Mark handled so the ScrollViewer does NOT also scroll.
+        // Ctrl+wheel → zoom. Mark handled so the ScrollViewer does NOT also
         if (e.Delta.Y > 0)
             ZoomImageIn();
         else if (e.Delta.Y < 0)
@@ -685,7 +684,7 @@ public partial class MainWindow
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Only toggles panel visibility - previously wiped folder state via CloseFolder().
+        // Only toggles panel visibility - previously wiped folder state via
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 

@@ -203,7 +203,6 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
-    // Emits a Debug trace; only reaches kodo.log while Debug Logging is enabled
     public static void LogDebug(string message, Exception? exception = null)
     {
         try

@@ -24,7 +24,7 @@ internal sealed class AppSettings
     public bool InsightCodeSuggestionsEnabled { get; set; } = true;
     public bool InsightDeadCodeEnabled { get; set; } = true;
     public bool InsightErrorDetectionEnabled { get; set; } = true;
-    // Comma-separated file extensions (e.g. ".txt,.md") where Insight is disabled.
+    // Comma-separated file extensions (e.g. ".txt,.md") where Insight is
     public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
 
     [System.Text.Json.Serialization.JsonIgnore]

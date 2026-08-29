@@ -529,7 +529,6 @@ public partial class MainWindow
                 },
             };
 
-            // Context badge (e.g. "File save", "Extension install - MyLang")
             var contextBadge = new Border
             {
                 Background      = ButtonBrush,
@@ -556,7 +555,6 @@ public partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
             };
 
-            // Human-readable error message above the raw stack trace.
             var errorMessageText = new TextBlock
             {
                 Text         = string.IsNullOrWhiteSpace(exception.Message)
@@ -567,7 +565,6 @@ public partial class MainWindow
                 TextWrapping = TextWrapping.Wrap,
             };
 
-            // Scrollable, selectable stack trace.
             var exceptionText = new SelectableTextBlock
             {
                 Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),

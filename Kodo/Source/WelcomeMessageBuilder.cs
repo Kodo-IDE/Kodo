@@ -4,7 +4,6 @@ using System.Collections.Generic;
 
 namespace Kodo;
 
-// Home screen welcome-pool logic: holiday detection and the message-pool builder.
 internal static class WelcomeMessageBuilder
 {
 
@@ -155,7 +154,6 @@ internal static class WelcomeMessageBuilder
 
         return null;
     }
-    // Computes Easter Sunday for a given year using the Anonymous Gregorian algorithm.
     private static DateTime ComputeEaster(int year)
     {
         int a = year % 19, b = year / 100, c = year % 100;
@@ -213,7 +211,6 @@ internal static class WelcomeMessageBuilder
 
     private static double Rad(double deg) => deg * Math.PI / 180.0;
 
-    // Converts a Julian Day Number to a Gregorian DateTime (UTC noon).
     private static DateTime JdnToDateTime(double jdn)
     {
         int j = (int)(jdn + 0.5);
@@ -387,7 +384,7 @@ internal static class WelcomeMessageBuilder
 
     private static DateTime? DiwaliDate(int year)
     {
-        // Kartika new moon is always in the second half of October or early November.
+        // Kartika new moon is always in the second half of October or early
         var oct = MoonInMonth(year, 10, fullMoon: false);
         if (oct != null && oct.Value.Day >= 14) return oct;
         var nov = MoonInMonth(year, 11, fullMoon: false);
@@ -424,7 +421,7 @@ internal static class WelcomeMessageBuilder
         bool isKodoBirthday,
         int kodoBirthdayAge)
     {
-        // Resolve effective local time, honouring the user's timezone override when set.
+        // Resolve effective local time, honouring the user's timezone
         DateTime now;
         if (!string.IsNullOrWhiteSpace(userTimezoneOffset) &&
             double.TryParse(userTimezoneOffset.Replace("+", ""), out var offsetHours))
@@ -449,7 +446,7 @@ internal static class WelcomeMessageBuilder
             for (var i = 0; i < times; i++) messages.Add(text);
         }
 
-        // Prepend the user's name to a subset of greetings so it's not repetitive.
+        // Prepend the user's name to a subset of greetings so it's not
         var name = userName;
         if (!string.IsNullOrWhiteSpace(name))
         {
@@ -472,7 +469,7 @@ internal static class WelcomeMessageBuilder
         if (holiday?.Greeting is not null)
             Add(holiday.Greeting, 8);
 
-        // Kodo birthday (April 18): weighted x5 so it dominates the pool that day.
+        // Kodo birthday (April 18): weighted x5 so it dominates the pool
         if (isKodoBirthday)
         {
             var age = kodoBirthdayAge;
@@ -487,14 +484,14 @@ internal static class WelcomeMessageBuilder
         if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
             Add("11:11! Make a wish!", 8);
 
-        // Friday the 13th: easter egg weighted x8, same pattern as the 11:11 check.
+        // Friday the 13th: easter egg weighted x8, same pattern as the
         if (dow == DayOfWeek.Friday && now.Day == 13)
         {
             Add("Friday the 13th... may your builds stay bug-free! 🖤", 8);
             messages.Add("Unlucky for some, lucky for your commit history?");
         }
 
-        // Leap Day: Feb 29 only exists every 4 years, so it gets its own one-off greeting.
+        // Leap Day: Feb 29 only exists every 4 years, so it gets its own
         if (now.Month == 2 && now.Day == 29)
             Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.", 8);
 
