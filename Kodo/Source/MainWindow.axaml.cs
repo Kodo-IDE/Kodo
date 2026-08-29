@@ -88,6 +88,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string PrivacyPolicyUrl = "https://github.com/Kodo-IDE/Kodo/blob/main/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kodo-ide.github.io/";
+    private const string InstagramUrl = "https://www.instagram.com/kodo.ide/";
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
     private static readonly string NewsCachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -3823,7 +3824,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
             _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
@@ -3837,7 +3838,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
     public string TooltipAccentCustom      => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
     public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
-    public string LabelPersonalizationHeader => IsAmericanEnglish ? "PERSONALIZATION"   : "PERSONALISATION";
     public string PersonalizationExportTooltip => IsAmericanEnglish
         ? "Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
         : "Save a formatted .txt file with all of Kodo's settings, personalisation, open/recent files, and installed extensions";
@@ -5904,6 +5904,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenDiscordButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(DiscordServerUrl);
+
+    private void OpenInstagramButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(InstagramUrl);
 
     private void OpenWebsiteButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(WebsiteUrl);
