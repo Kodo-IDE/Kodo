@@ -19,11 +19,23 @@
 
 Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a few simple ideas: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding. We want to make coding human again; no bloat, but still a good user experience.
 
-Kodo is around **~70% lighter** than VSCode with no extensions installed. 
+**v2.0.0 is here** - Insight, Build/Run, plugin extensions, and a compiler marketplace, all while staying around **~70% lighter** than VSCode with no extensions installed.
 
 Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE).
 
-**[🌐 Website](https://kodo-ide.github.io/Kodo-Website/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
+**[🌐 Website](https://kodo-ide.github.io/)  ·  [💬 Join The Discord](https://discord.gg/cUQ6C88Z9C)**
+
+---
+
+## What's New in v2.0.0
+
+- **Insight** - rebranded CodePredict with error detection, dead/unused code highlighting, per-extension `deadCodeIgnore`/`deadCodeEntryPoints`, and a dedicated settings panel (with `.md`/`.txt` blacklist)
+- **Build / Run** - one-click Build/Run for projects with custom commands, Batch support, and dropdown editing
+- **Plugin Extensions** - extensions can now add UI and C# code via `IKodoPlugin` (`type: plugin` + `plugin: MyPlugin.dll`, collectible `AssemblyLoadContext`)
+- **Editor Experience** - overhauled Search system, improved smart syntax, and improved syntax highlighting, as well as new features.
+- **Compiler Marketplace** - downloadable compilers (21 toolchains) in their own Marketplace tab, plus "add installed compiler via path"
+- **UI Overhaul** - Reworked dialogs, UI elements and screens.
+- **Optimizations** - Significant improvements to code and performance optimization, as well as improved startup times and lag reduction.
 
 ---
 
@@ -31,21 +43,24 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 | Feature | Description |
 |---|---|
-| 🧩 **Extension Marketplace** | Install syntax highlighting and themes via `.kox` files |
+| 🧩 **Extension Marketplace** | Install languages, themes, and **plugins** via `.kox` files and **compilers** via standalone installers |
+| 🔍 **Insight** | Code completion, error detection, and dead-code highlighting - configurable per file type |
+| 🔨 **Build / Run** | Compile and run projects from within Kodo with custom commands |
 | 🧑‍💻 **Integrated Terminal** | Run code from within Kodo, no extra terminal needed |
-| ✍️ **CodePredict** | Built-in code completion that pulls from `.kox` profiles |
 | 🎨 **Themes** | Built-in Dark, Light, and System Default modes + custom extension themes |
-| 📁 **Folder Support** | Open and browse entire project folders in the file explorer |
+| 📁 **Folder Support** | Browse, auto-refresh, and resize the file explorer; rename inline |
+| 🔎 **Search** | Find in file, file-name search, and project-wide search (`Ctrl+Shift+F`) |
 | 💾 **Autosave** | Configurable autosave so you never lose work |
 | 🔤 **Syntax Highlighting** | Language support delivered through the extension system |
+| 🎨 **Color Picker & Smart Editing** | Built-in color picker, change-all-occurrences, auto-closing brackets, auto-indent |
+| 🖼️ **Image Preview** | View image files directly in the editor, with zoom |
 | 🕓 **Recent Files** | Jump back into recent files from the home screen |
 | 🎮 **Discord Rich Presence** | Show what you're working on in Discord (optional, toggle in Settings) |
-| ⌨️ **Smart Editing** | Auto-closing brackets, auto-indent, and find-in-file |
-| 🖼️ **Image Preview** | View image files directly in the editor, with zoom |
-| 🔄 **Background Auto-Updates** | Kodo checks GitHub releases on its own and keeps both the app and your installed extensions up to date |
-| 🚀 **Guided Tutorial** | A short built-in walkthrough for first-time setup, revisitable any time from Settings |
+| ⚡ **Performance Mode** | Disable live GitHub panels and debounce search for large projects |
+| 🔄 **Background Auto-Updates** | Kodo checks GitHub releases and keeps the app and extensions up to date (with progress bar) |
+| 🚀 **Guided Tutorial** | Short built-in walkthrough for first-time setup, revisitable from Settings |
 
-**Coming soon:** real-time collaborative editing · downloadable compilers (v2.0.0) · UI and C# additions through .kox extensions (v2.0.0) · and much more!
+**Coming soon:** real-time collaborative editing · Linux and macOS support · experimental code optimization · improved .kox language packages · and more!
 
 ---
 
@@ -57,7 +72,7 @@ Releases are available through installers on the [Releases page](https://github.
 
 Source users, please refer to [CONTRIBUTING.md](https://github.com/Kodo-IDE/Kodo/blob/main/CONTRIBUTING.md) for required packages.
 
-If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0 and the rules in the [CONTRIBUTING.md](https://github.com/Kodo-IDE/Kodo/blob/main/CONTRIBUTING.md). Feedback, PRs and discussions are always and will always be welcome!
+If you're running from source, feel free to clone the repository and modify code. Make sure all submissions comply with GPL v3.0 and the rules in [CONTRIBUTING.md](https://github.com/Kodo-IDE/Kodo/blob/main/CONTRIBUTING.md). Feedback, PRs and discussions are always and will always be welcome!
 
 ---
 
@@ -67,7 +82,7 @@ Contributions are welcome. The best ways to help:
 
 - **Bug reports** - open an Issue with steps to reproduce
 - **Pull Requests** - keep them focused; one change or fix per PR
-- **Extensions** - build a `.kox` and submit it to the marketplace
+- **Extensions** - build a `.kox` (language / theme / plugin) or add a compiler and submit it to the marketplace
 
 See [CONTRIBUTING.md](https://github.com/Kodo-IDE/Kodo/blob/main/CONTRIBUTING.md) for full details and rules, including how to build and submit extensions.
 
