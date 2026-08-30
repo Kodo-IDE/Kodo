@@ -282,6 +282,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ".webp", ".ico", ".cur", ".tif", ".tiff"
     };
     private DateTime _lastExtensionsRefreshUtc = DateTime.MinValue;
+    private int _extensionFilterBatchDepth;
+    private bool _pendingExtensionFilterNotify;
+    private readonly List<Action> _deferredExtensionUiActions = new();
+    private void BeginExtensionFilterBatch() => _extensionFilterBatchDepth++;
+    private void EndExtensionFilterBatch()
+    {
+        if (--_extensionFilterBatchDepth > 0) return;
+        if (_deferredExtensionUiActions.Count > 0)
+        {
+            var actions = _deferredExtensionUiActions.ToList();
+            _deferredExtensionUiActions.Clear();
+            Dispatcher.UIThread.Post(() =>
+            {
+                foreach (var a in actions) a();
+                if (_pendingExtensionFilterNotify)
+                {
+                    _pendingExtensionFilterNotify = false;
+                    NotifyExtensionFiltersChangedCore();
+                }
+            }, DispatcherPriority.Background);
+        }
+        else if (_pendingExtensionFilterNotify)
+        {
+            _pendingExtensionFilterNotify = false;
+            NotifyExtensionFiltersChangedCore();
+        }
+    }
+    private void NotifyExtensionFiltersChangedCore()
+    {
+        RaiseMany(nameof(FilteredInstalledExtensions), nameof(FilteredInstalledLanguageExtensions), nameof(FilteredInstalledPluginExtensions), nameof(FilteredInstalledThemeExtensions), nameof(HasVisibleInstalledLanguageExtensions), nameof(HasVisibleInstalledPluginExtensions), nameof(HasVisibleInstalledThemeExtensions), nameof(IsInstalledLanguageDividerVisible), nameof(IsInstalledPluginDividerVisible), nameof(IsInstalledThemeDividerVisible), nameof(FilteredMarketplaceExtensions), nameof(FilteredCompilerExtensions), nameof(FilteredInstalledCompilerExtensions), nameof(IsNoExtensionsVisible), nameof(IsInstalledSearchEmptyVisible), nameof(IsMarketplaceSearchEmptyVisible), nameof(IsMarketplaceEmptyVisible), nameof(InstalledExtensionsCount), nameof(InstalledCompilersCount), nameof(MarketplaceEmptyStateText), nameof(HasVisibleInstalledExtensions), nameof(HasVisibleMarketplaceExtensions), nameof(HasVisibleCompilerExtensions), nameof(HasVisibleInstalledCompilerExtensions), nameof(HasVisibleInstalledExtensionsOrCompilers), nameof(HasVisibleInstalledExtensionsAndCompilers), nameof(IsInstalledCompilersEmptyStateVisible));
+    }
+    private async Task InvokeExtensionUiAsync(Action action)
+    {
+        if (_extensionFilterBatchDepth > 0)
+        {
+            _deferredExtensionUiActions.Add(action);
+            return;
+        }
+        await Dispatcher.UIThread.InvokeAsync(action, DispatcherPriority.Background);
+    }
     private string? _startupActiveTabPath;
     private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;

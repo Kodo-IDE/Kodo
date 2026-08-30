@@ -148,7 +148,7 @@ public partial class MainWindow
         var compilerExtensions = BuildCompilerExtensionsFromCacheOrFallback(compilerEntries, resolutionCache);
 
         Dictionary<string, string> compilerIconMap = [];
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await InvokeExtensionUiAsync(() =>
         {
             var combinedCompilerEntries = CompilerExtensions
                 .Where(entry => !entry.IsInstalled)

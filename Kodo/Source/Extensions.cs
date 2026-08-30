@@ -121,13 +121,30 @@ public partial class MainWindow
             }, watchdogToken);
         }
 
+        BeginExtensionFilterBatch();
         try
         {
             var extensionScan = await Task.Run(ScanInstalledExtensions);
-            await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(extensionScan));
+            await InvokeExtensionUiAsync(() => ApplyLoadedExtensionsResult(extensionScan));
             await LoadMarketplaceExtensionsAsync();
             await LoadPluginsIndexAsync();
             await LoadCompilerExtensionsAsync(forceResolve: force);
+            // Flush deferred UI syncs into a single dispatcher frame -> 1 flicker instead of 4
+            if (_deferredExtensionUiActions.Count > 0)
+            {
+                var actions = _deferredExtensionUiActions.ToList();
+                _deferredExtensionUiActions.Clear();
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    foreach (var a in actions) a();
+                }, DispatcherPriority.Background);
+            }
+            _extensionFilterBatchDepth--;
+            if (_pendingExtensionFilterNotify)
+            {
+                _pendingExtensionFilterNotify = false;
+                NotifyExtensionFiltersChangedCore();
+            }
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!string.Equals(CurrentThemeName, _requestedThemeName, StringComparison.OrdinalIgnoreCase) &&
@@ -151,11 +168,22 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            // Ensure batch state is cleared on failure
+            _deferredExtensionUiActions.Clear();
+            _extensionFilterBatchDepth = 0;
+            _pendingExtensionFilterNotify = false;
             await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Couldn't refresh extensions. Check your connection and try again.");
             await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync("Marketplace fetch", ex));
         }
         finally
         {
+            // Safety: clear batch if try block didn't decrement (e.g. early throw before decrement)
+            if (_extensionFilterBatchDepth > 0)
+            {
+                _deferredExtensionUiActions.Clear();
+                _extensionFilterBatchDepth = 0;
+                _pendingExtensionFilterNotify = false;
+            }
             await watchdogCts.CancelAsync();
             await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
         }

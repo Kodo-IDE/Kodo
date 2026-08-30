@@ -108,7 +108,7 @@ public partial class MainWindow
         }
 
         Dictionary<string, string> marketplaceIconMap = [];
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await InvokeExtensionUiAsync(() =>
         {
             var combinedMarketplaceEntries = marketplaceExtensions
                 .Where(entry => !string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase))
@@ -210,7 +210,7 @@ public partial class MainWindow
         }
 
         Dictionary<string, string> pluginIconMap = [];
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await InvokeExtensionUiAsync(() =>
         {
             _pluginsIndexEntries = pluginExtensions;
             var combinedMarketplaceEntries = MarketplaceExtensions
@@ -581,7 +581,12 @@ public partial class MainWindow
 
     private void NotifyExtensionFiltersChanged()
     {
-        RaiseMany(nameof(FilteredInstalledExtensions), nameof(FilteredInstalledLanguageExtensions), nameof(FilteredInstalledPluginExtensions), nameof(FilteredInstalledThemeExtensions), nameof(HasVisibleInstalledLanguageExtensions), nameof(HasVisibleInstalledPluginExtensions), nameof(HasVisibleInstalledThemeExtensions), nameof(IsInstalledLanguageDividerVisible), nameof(IsInstalledPluginDividerVisible), nameof(IsInstalledThemeDividerVisible), nameof(FilteredMarketplaceExtensions), nameof(FilteredCompilerExtensions), nameof(FilteredInstalledCompilerExtensions), nameof(IsNoExtensionsVisible), nameof(IsInstalledSearchEmptyVisible), nameof(IsMarketplaceSearchEmptyVisible), nameof(IsMarketplaceEmptyVisible), nameof(InstalledExtensionsCount), nameof(InstalledCompilersCount), nameof(MarketplaceEmptyStateText), nameof(HasVisibleInstalledExtensions), nameof(HasVisibleMarketplaceExtensions), nameof(HasVisibleCompilerExtensions), nameof(HasVisibleInstalledCompilerExtensions), nameof(HasVisibleInstalledExtensionsOrCompilers), nameof(HasVisibleInstalledExtensionsAndCompilers), nameof(IsInstalledCompilersEmptyStateVisible));
+        if (_extensionFilterBatchDepth > 0)
+        {
+            _pendingExtensionFilterNotify = true;
+            return;
+        }
+        NotifyExtensionFiltersChangedCore();
     }
 
     private static void SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
