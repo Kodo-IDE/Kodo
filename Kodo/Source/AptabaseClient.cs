@@ -36,6 +36,8 @@ internal static class AptabaseClient
 
     private static bool _isDevBuild;
 
+    private static bool _isInitialized;
+
     public static bool IsEnabled => _isEnabled;
     public static bool IsDevBuild => _isDevBuild;
 
@@ -118,6 +120,9 @@ internal static class AptabaseClient
 
     public static void Initialize()
     {
+        if (_isInitialized) return;
+        _isInitialized = true;
+
         var informationalVersion = System.Reflection.Assembly
             .GetExecutingAssembly()
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
