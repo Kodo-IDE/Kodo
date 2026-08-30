@@ -1899,6 +1899,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isSettingsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
             OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
@@ -1912,6 +1913,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isExtensionsPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
             OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
@@ -1925,6 +1927,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isTutorialPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
             OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
@@ -1938,6 +1941,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isWhatsNewPageVisible = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsEditorPageVisible));
+            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
             OnPropertyChanged(nameof(IsSearchPanelActive));
         }
     }
@@ -1950,7 +1954,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
         }
     }
 
@@ -2099,6 +2103,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public bool IsEditorPageVisible => !IsHomePageVisible && !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
+
+    public bool IsHomeOrEditorPageVisible => IsHomePageVisible || IsEditorPageVisible;
 
     public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
 
@@ -5846,7 +5852,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
-        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
     }
 
