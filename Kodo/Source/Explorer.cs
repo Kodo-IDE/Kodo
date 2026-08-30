@@ -1363,7 +1363,7 @@ public partial class MainWindow
             await OpenFolderAsync();
     }
 
-    private bool _isHomeNewsTabActive;
+    private bool _isHomeNewsTabActive = true;
     public bool IsHomeUpdatesTabActive => !_isHomeNewsTabActive;
     public bool IsHomeNewsTabActive => _isHomeNewsTabActive;
 

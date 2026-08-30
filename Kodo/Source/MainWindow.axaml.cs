@@ -240,7 +240,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<string> _startupOpenTabPaths = [];
     private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _marketplaceSvgCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
