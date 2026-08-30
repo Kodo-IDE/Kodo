@@ -90,4 +90,4 @@ See [CONTRIBUTING.md](https://github.com/Kodo-IDE/Kodo/blob/main/CONTRIBUTING.md
 
 ## License
 
-© 2026 KerbalMissile and SS-YYC. Licensed under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE).
+© 2026 KerbalMissile and SS-YYC. Licensed under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE). There is an exception to this, see [EXTENSIONS_LICENSE](EXTENSIONS_LICENSE).
