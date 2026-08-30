@@ -149,6 +149,13 @@ public partial class MainWindow
             _isHomePageVisible = false;
             NavigateTo(AppPage.Editor);
             RefreshState(fullRefresh: true);
+            Dispatcher.UIThread.Post(() =>
+            {
+                var sv2 = this.FindControl<ScrollViewer>("EditorTabScrollViewer");
+                if (sv2 is null) return;
+                var active2 = sv2.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("active") && b.Classes.Contains("tabwrap"));
+                active2?.BringIntoView();
+            }, DispatcherPriority.Background);
             if (focusEditor)
                 FocusEditor();
             return;
@@ -183,6 +190,15 @@ public partial class MainWindow
         _isHomePageVisible = false;
         NavigateTo(AppPage.Editor);
         RefreshState(fullRefresh: true);
+
+        // Ensure active tab is scrolled into view (overflow affordance)
+        Dispatcher.UIThread.Post(() =>
+        {
+            var sv = this.FindControl<ScrollViewer>("EditorTabScrollViewer");
+            if (sv is null) return;
+            var active = sv.GetVisualDescendants().OfType<Border>().FirstOrDefault(b => b.Classes.Contains("active") && b.Classes.Contains("tabwrap"));
+            active?.BringIntoView();
+        }, DispatcherPriority.Background);
 
         if (focusEditor)
             FocusEditor();
@@ -459,7 +475,10 @@ public partial class MainWindow
     {
         _fileTreeRefreshTimer.Stop();
         if (_newFileInlineRenameItem?.IsRenaming == true)
+        {
+            RestartFileTreeRefreshTimer();
             return;
+        }
         _searchFileCache = null;
         await RefreshFileTreePreservingExpansionAsync();
     }
@@ -1299,6 +1318,20 @@ public partial class MainWindow
         var destDir = target.IsDirectory ? target.FullPath : Path.GetDirectoryName(target.FullPath)!;
         var itemName = Path.GetFileName(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar));
         var destPath = CreateUniqueSiblingPath(Path.Combine(destDir, itemName), _clipboardItemIsDirectory);
+
+        // Guard: pasting a folder into itself/descendant would recurse infinitely
+        if (_clipboardItemIsDirectory)
+        {
+            var normalizedSrc = Path.GetFullPath(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            var normalizedDest = Path.GetFullPath(destPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (normalizedDest.Equals(normalizedSrc, StringComparison.OrdinalIgnoreCase) ||
+                normalizedDest.StartsWith(normalizedSrc + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            {
+                ExtensionsStatusText = "Paste failed: cannot paste a folder inside itself.";
+                await ShowWarningDialogAsync("Paste file", new InvalidOperationException("Cannot paste a folder into itself or its descendant."));
+                return;
+            }
+        }
 
         try
         {

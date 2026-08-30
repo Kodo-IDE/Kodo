@@ -1950,7 +1950,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
         }
     }
 
@@ -2098,7 +2098,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsEditorPageVisible => !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
+    public bool IsEditorPageVisible => !IsHomePageVisible && !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
 
     public bool HasDocumentOpen => _currentFilePath is not null || _hasUntitledDocument;
 
@@ -5337,6 +5337,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var newPath = file?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(newPath)) return false;
 
+            // Guard: Save As to path already open in another tab would fork divergent tabs
+            var duplicateTab = OpenTabs.FirstOrDefault(t => !t.IsUntitled && t.Path is not null && t.Path.Equals(newPath, StringComparison.OrdinalIgnoreCase) && t != ActiveEditorTab);
+            if (duplicateTab is not null)
+            {
+                ExtensionsStatusText = $"Save failed: \"{Path.GetFileName(newPath)}\" is already open in another tab.";
+                await ShowWarningDialogAsync("Save File", new InvalidOperationException($"\"{newPath}\" is already open. Close the other tab or save with a different name."));
+                return false;
+            }
+
             _currentFilePath = newPath;
             _hasUntitledDocument = false;
             if (ActiveEditorTab is not null)
@@ -5831,6 +5840,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;
+
+        // Prevent page-overlay glitches: stale popups/layers receiving input when invisible
+        CloseCompletionWindow();
+        HideDiagnosticPopup();
+        IsSearchPanelVisible = false;
 
         RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
@@ -7335,9 +7349,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newName = item.RenameText.Trim();
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, item.Name, StringComparison.Ordinal)) return;
 
-        var newPath = Path.Combine(Path.GetDirectoryName(item.FullPath)!, newName);
+        // Validate illegal characters, trailing dot/space, reserved names
+        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) != -1 || newName.EndsWith(".") || newName.EndsWith(" "))
+        {
+            ExtensionsStatusText = $"Rename failed: '{newName}' contains invalid characters.";
+            return;
+        }
+        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
+        var nameWithoutExt = newName.Contains('.') ? newName[..newName.IndexOf('.')] : newName;
+        if (reserved.Contains(nameWithoutExt) || reserved.Contains(newName))
+        {
+            ExtensionsStatusText = $"Rename failed: '{newName}' is a reserved name.";
+            return;
+        }
 
-        if ((item.IsDirectory ? Directory.Exists(newPath) : File.Exists(newPath)))
+        var parentDir = Path.GetDirectoryName(item.FullPath) ?? _currentFolderPath ?? string.Empty;
+        var newPath = Path.Combine(parentDir, newName);
+
+        // Case-only rename on Windows should be allowed even though Exists returns true
+        var isCaseOnlyRename = string.Equals(item.FullPath, newPath, StringComparison.OrdinalIgnoreCase) && !string.Equals(item.FullPath, newPath, StringComparison.Ordinal);
+        if (!isCaseOnlyRename && (item.IsDirectory ? Directory.Exists(newPath) : File.Exists(newPath)))
         {
             ExtensionsStatusText = $"Rename failed: '{newName}' already exists.";
             return;
@@ -7354,7 +7385,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (item.IsDirectory)
+            if (isCaseOnlyRename)
+            {
+                var tempPath = newPath + ".tmp_rename_" + Guid.NewGuid().ToString("N");
+                if (item.IsDirectory)
+                {
+                    Directory.Move(item.FullPath, tempPath);
+                    Directory.Move(tempPath, newPath);
+                }
+                else
+                {
+                    File.Move(item.FullPath, tempPath);
+                    File.Move(tempPath, newPath);
+                }
+            }
+            else if (item.IsDirectory)
                 Directory.Move(item.FullPath, newPath);
             else
                 File.Move(item.FullPath, newPath);

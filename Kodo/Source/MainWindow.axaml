@@ -645,6 +645,7 @@
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Opacity" Value="0" />
+            <Setter Property="IsHitTestVisible" Value="False" />
         </Style>
         <Style Selector="Button.tabclose:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
@@ -652,14 +653,22 @@
         </Style>
         <Style Selector="Border.tabwrap:pointerover Button.tabclose">
             <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
         </Style>
         <Style Selector="Button.tabclose.active">
             <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
         <Style Selector="Border.tabwrap.active Button.tabclose">
             <Setter Property="Opacity" Value="1" />
+            <Setter Property="IsHitTestVisible" Value="True" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+
+        <!-- Dirty dot: hide on hover so it is replaced by close button instead of overlapping (keep visible when active but not hovered) -->
+        <Style Selector="Border.tabwrap:pointerover Viewbox.dirtydot">
+            <Setter Property="Opacity" Value="0" />
         </Style>
 
         <!-- Underline: hidden by default, shown on hover and always on active tab -->
@@ -905,7 +914,7 @@
                                 ToolTip.Tip="Expand or collapse all folders">
                             <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
-                                    <Path Fill="{Binding MutedTextBrush}"
+                                    <Path Fill="{Binding $parent[Button].Foreground}"
                                           Data="M11.47 4.72a.75.75 0 0 1 1.06 0l3.75 3.75a.75.75 0 0 1-1.06 1.06L12 6.31 8.78 9.53a.75.75 0 0 1-1.06-1.06l3.75-3.75ZM7.72 14.47a.75.75 0 0 1 1.06 0L12 17.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-3.75 3.75a.75.75 0 0 1-1.06 0l-3.75-3.75a.75.75 0 0 1 0-1.06Z" />
                                 </Canvas>
                             </Viewbox>
@@ -1049,6 +1058,7 @@
 
                 <ScrollViewer Grid.Row="2"
                               IsVisible="{Binding IsFolderOpen}"
+                              ClipToBounds="True"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
@@ -1155,7 +1165,8 @@
                                                         </Path.IsVisible>
                                                     </Path>
                                                     
-                                                    <Path Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                    <Path Fill="{Binding #RootWindow.AccentBrush}"
+                                                          Opacity="0.65"
                                                           Data="M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C22.0132 9.2 21.98 9.55 21.6 9.85C21.2 10.15 20.55 10.3 19.5 10.3H4.5C3.45 10.3 2.8 10.15 2.4 9.85C2.02 9.55 1.99 9.2 2 9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z M1.75 12.3L22.25 10.6L22.25 18.5C22.25 19.6 21.35 20.5 20.25 20.5L3.75 20.5C2.65 20.5 1.75 19.6 1.75 18.5Z">
                                                         <Path.IsVisible>
                                                             <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -1322,136 +1333,16 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <Border Grid.Row="0"
-                        Background="{Binding TopBarBrush}"
-                        BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="18,12">
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-                        <StackPanel Orientation="Horizontal" Spacing="12">
-                            <Border Width="28"
-                                    Height="28"
-                                    CornerRadius="8"
-                                    ClipToBounds="True">
-                                <Image Source="avares://Kodo/Assets/kodo-logo.png"
-                                       Stretch="UniformToFill" />
-                            </Border>
-
-                            <StackPanel Spacing="2">
-                                <TextBlock FontSize="18"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           Text="Kodo" />
-                                <TextBlock FontSize="12"
-                                           Foreground="{Binding MutedTextBrush}"
-                                           Text="{Binding FileSummaryText}" />
-                            </StackPanel>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="6"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding IsEditorTabsVisible}">
-                            
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveTooltip}"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveButton_OnClick"
-                                    Content="Save" />
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveAsTooltip}"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveAsButton_OnClick"
-                                    Content="Save As" />
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="Save All"
-                                    IsEnabled="{Binding HasMultipleOpenEditors}"
-                                    Click="ToolbarSaveAllButton_OnClick"
-                                    Content="Save All" />
-                        </StackPanel>
-
-                        <Border Grid.Column="2"
-                                Width="1"
-                                Height="20"
-                                Background="{Binding SurfaceBorderBrush}"
-                                Margin="8,0"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding IsEditorTabsVisible}" />
-
-                        <StackPanel Grid.Column="3"
-                                    Orientation="Horizontal"
-                                    Spacing="12"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding IsEditorTabsVisible}">
-                            
-                            <Border Classes="runbuildgroup">
-                                <Grid ColumnDefinitions="Auto,Auto">
-                                    <Button Classes="runbuildprimary"
-                                            IsEnabled="{Binding IsRunButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunButton_OnClick">
-                                        <TextBlock Text="Run" LineHeight="16"/>
-                                    </Button>
-                                    <Button Grid.Column="1"
-                                            Classes="runbuildarrow"
-                                            IsEnabled="{Binding IsRunButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunMenuButton_OnClick">
-                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <Border Classes="runbuildgroup">
-                                <Grid ColumnDefinitions="Auto,Auto">
-                                    <Button Classes="runbuildprimary"
-                                            IsEnabled="{Binding IsBuildButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildButton_OnClick">
-                                        <TextBlock Text="Build" LineHeight="16"/>
-                                    </Button>
-                                    <Button Grid.Column="1"
-                                            Classes="runbuildarrow"
-                                            IsEnabled="{Binding IsBuildButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildMenuButton_OnClick">
-                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <Button Classes="compilericon"
-                                    IsVisible="{Binding IsCompilerIconVisible}"
-                                    ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                    Click="CompilerIconButton_OnClick">
-                                <Panel>
-                                    <Image Source="{Binding ActiveCompilerExtension.IconImage}"
-                                           Width="22"
-                                           Height="22"
-                                           Stretch="Uniform"
-                                           IsHitTestVisible="False"
-                                           IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                    <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
-                                             Width="22"
-                                             Height="22"
-                                             IsHitTestVisible="False"
-                                             IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                </Panel>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
+                
 
                 <Border Grid.Row="1"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         IsVisible="{Binding IsEditorTabsVisible}">
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                  VerticalScrollBarVisibility="Disabled">
+                    <ScrollViewer x:Name="EditorTabScrollViewer"
+                                   HorizontalScrollBarVisibility="Auto"
+                                   VerticalScrollBarVisibility="Disabled">
                         <ItemsControl ItemsSource="{Binding OpenTabs}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -1515,7 +1406,7 @@
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
                                                                Text="{Binding DisplayName}" />
-                                                    <Viewbox Width="7" Height="7" VerticalAlignment="Center"
+                                                     <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
                                                              IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">
                                                             <Path Fill="{Binding #RootWindow.AccentBrush}"
@@ -1694,7 +1585,7 @@
                                         Click="ZoomResetButton_OnClick">
                                     <TextBlock Text="{Binding ImageZoomPercent}"
                                                FontSize="12"
-                                               Foreground="{Binding MutedTextBrush}"
+                                               Foreground="{Binding AccentBrush}"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center" />
                                 </Button>
@@ -1750,64 +1641,83 @@
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="Auto,*">
 
+                        <!-- Hero banner: card-style to blend with new home cards (12r, CardBrush, accent wash) -->
                         <Border Grid.Row="0"
-                                Background="{Binding TopBarBrush}"
+                                Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="0,0,0,1"
-                                Padding="36,22,36,22">
-                            <Grid ColumnDefinitions="*,Auto">
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Margin="32,24,32,12"
+                                Padding="0"
+                                ClipToBounds="True">
+                            <Panel>
+                                <!-- subtle accent wash to echo expanded folder (0.65) / divider (0.22) accents -->
+                                <Border Background="{Binding AccentBrush}"
+                                        Opacity="0.035"
+                                        CornerRadius="12"
+                                        IsHitTestVisible="False" />
 
-                                <StackPanel Grid.Column="0" Spacing="6" VerticalAlignment="Center">
-                                    <!-- "KODO" label with accent bar -->
-                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <Border Width="3" Height="14" CornerRadius="2"
-                                                Background="{Binding AccentBrush}"
-                                                VerticalAlignment="Center" />
-                                        <TextBlock FontSize="11"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding AccentBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Text="{Binding KodoWordmarkText}" />
-                                        <!-- Birthday flourish: only visible on April 18 -->
-                                        <TextBlock FontSize="13"
-                                                   VerticalAlignment="Center"
-                                                   IsVisible="{Binding IsKodoBirthday}"
-                                                   ToolTip.Tip="{Binding StatusBarBirthdayText}"
-                                                   Text="🎂" />
+                                <Grid ColumnDefinitions="*,Auto"
+                                      Margin="24,20"
+                                      VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="0" Spacing="10" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <Border Width="3" Height="14" CornerRadius="2"
+                                                    Background="{Binding AccentBrush}"
+                                                    VerticalAlignment="Center" />
+                                            <TextBlock FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       LetterSpacing="0.8"
+                                                       Foreground="{Binding AccentBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding KodoWordmarkText}" />
+                                            <TextBlock FontSize="13"
+                                                       VerticalAlignment="Center"
+                                                       IsVisible="{Binding IsKodoBirthday}"
+                                                       ToolTip.Tip="{Binding StatusBarBirthdayText}"
+                                                       Text="🎂" />
+                                        </StackPanel>
+
+                                        <!-- Hero message: larger, bolder, tighter tracking to anchor hero -->
+                                        <StackPanel Spacing="6">
+                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                                     HorizontalAlignment="Left"
+                                                     IsVisible="{Binding !IsTaglineGreeting}">
+                                                <TextBlock FontSize="30"
+                                                           FontWeight="Bold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           Text="{Binding WelcomeMessage}" />
+                                            </Viewbox>
+
+                                            <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
+                                                     HorizontalAlignment="Left"
+                                                     IsVisible="{Binding IsTaglineGreeting}">
+                                                <TextBlock FontSize="30"
+                                                           FontWeight="Bold"
+                                                           xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
+                                            </Viewbox>
+
+                                        </StackPanel>
                                     </StackPanel>
-                                    
-                                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                             HorizontalAlignment="Left"
-                                             IsVisible="{Binding !IsTaglineGreeting}">
-                                        <TextBlock FontSize="28"
-                                                   FontWeight="Bold"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="{Binding WelcomeMessage}" />
-                                    </Viewbox>
-                                    
-                                    <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
-                                             HorizontalAlignment="Left"
-                                             IsVisible="{Binding IsTaglineGreeting}">
-                                        <TextBlock FontSize="28"
-                                                   FontWeight="Bold"
-                                                   xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
-                                    </Viewbox>
-                                </StackPanel>
 
-                                <Border Grid.Column="1"
-                                        Background="{Binding CardBrush}"
-                                        BorderBrush="{Binding SurfaceBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="14"
-                                        Padding="12,5"
-                                        VerticalAlignment="Center">
-                                    <TextBlock x:Name="HomeVersionText"
-                                               FontSize="12"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               PointerPressed="HomeVersionText_OnPointerPressed"
-                                               Text="{Binding CurrentAppVersionDisplay}" />
-                                </Border>
-                            </Grid>
+                                    <!-- version pill: accent-outlined to match tab underlines + card pills -->
+                                    <Border Grid.Column="1"
+                                            Background="{Binding WindowBackgroundBrush}"
+                                            BorderBrush="{Binding AccentBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="14"
+                                            Padding="12,6"
+                                            VerticalAlignment="Center"
+                                            Margin="16,0,0,0">
+                                        <TextBlock x:Name="HomeVersionText"
+                                                   FontSize="12"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   PointerPressed="HomeVersionText_OnPointerPressed"
+                                                   Text="{Binding CurrentAppVersionDisplay}" />
+                                    </Border>
+                                </Grid>
+                            </Panel>
                         </Border>
 
                         <ScrollViewer Grid.Row="1"
@@ -1910,13 +1820,15 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <Viewbox Width="13" Height="13">
                                                         <Canvas Width="24" Height="24">
-                                                            <Path Fill="{Binding MutedTextBrush}"
+                                                            <Path Fill="{Binding AccentBrush}"
+                                                                  Opacity="0.75"
                                                                   Data="M10.5 3a7.5 7.5 0 1 0 4.66 13.39l4.72 4.72a.75.75 0 1 0 1.06-1.06l-4.72-4.72A7.5 7.5 0 0 0 10.5 3Zm-6 7.5a6 6 0 1 1 12 0 6 6 0 0 1-12 0Z" />
                                                         </Canvas>
                                                     </Viewbox>
                                                     <TextBlock Text="{Binding HomeQuickSearchPlaceholderText}"
                                                                FontSize="13"
-                                                               Foreground="{Binding MutedTextBrush}" />
+                                                               Foreground="{Binding PrimaryTextBrush}"
+                                                               Opacity="0.55" />
                                                 </StackPanel>
                                             </Button>
 
@@ -2134,6 +2046,11 @@
                                                                     <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                                         <Canvas Width="24" Height="24">
                                                                             <Path Fill="{Binding #RootWindow.MutedTextBrush}"
+                                                                                  IsVisible="{Binding !IsPinned}"
+                                                                                  Data="M14.53 2.47a1.75 1.75 0 0 1 2.475 0l4.525 4.525a1.75 1.75 0 0 1 0 2.475l-1.128 1.128a2.75 2.75 0 0 1-2.245.79l-.514-.07-3.086 3.086.354 1.32a2.25 2.25 0 0 1-.59 2.164l-1.166 1.166a.75.75 0 0 1-1.06 0l-3.293-3.293-4.72 4.72a.75.75 0 0 1-1.06-1.06l4.72-4.72-3.293-3.293a.75.75 0 0 1 0-1.06l1.166-1.167a2.25 2.25 0 0 1 2.164-.589l1.32.353 3.086-3.085-.07-.514a2.75 2.75 0 0 1 .79-2.246L14.53 2.47Z" />
+                                                                            <Path Fill="{Binding #RootWindow.AccentBrush}"
+                                                                                  Opacity="0.85"
+                                                                                  IsVisible="{Binding IsPinned}"
                                                                                   Data="M14.53 2.47a1.75 1.75 0 0 1 2.475 0l4.525 4.525a1.75 1.75 0 0 1 0 2.475l-1.128 1.128a2.75 2.75 0 0 1-2.245.79l-.514-.07-3.086 3.086.354 1.32a2.25 2.25 0 0 1-.59 2.164l-1.166 1.166a.75.75 0 0 1-1.06 0l-3.293-3.293-4.72 4.72a.75.75 0 0 1-1.06-1.06l4.72-4.72-3.293-3.293a.75.75 0 0 1 0-1.06l1.166-1.167a2.25 2.25 0 0 1 2.164-.589l1.32.353 3.086-3.085-.07-.514a2.75 2.75 0 0 1 .79-2.246L14.53 2.47Z" />
                                                                         </Canvas>
                                                                     </Viewbox>
@@ -2191,7 +2108,7 @@
                                                         Content="Browse" />
                                             </Grid>
 
-                                            <Border BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,1,0,0" />
+                                            <Border BorderBrush="{Binding AccentBrush}" Opacity="0.15" BorderThickness="0,1,0,0" />
 
                                             <StackPanel Orientation="Horizontal" Spacing="10">
                                                 <Button Classes="chrome"
@@ -2266,7 +2183,7 @@
 
                                             <!-- Shared tab header: was two separate cards (What's New, News) -->
                                             <Border Grid.Row="0"
-                                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                                    BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="0,0,0,1"
                                                     Padding="20,14">
                                                 <Grid ColumnDefinitions="*,Auto">
@@ -2385,6 +2302,7 @@
                                                                        Text="{Binding LatestReleaseTag}" />
                                                         </StackPanel>
                                                         <ScrollViewer Grid.Row="1"
+                                                                      ClipToBounds="True"
                                                                       VerticalScrollBarVisibility="Auto"
                                                                       HorizontalScrollBarVisibility="Disabled">
                                                         <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
@@ -2796,7 +2714,7 @@
                         <Border Grid.Row="3"
                                 x:Name="TerminalFooterBar"
                                 Background="{Binding TopBarBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderBrush="{Binding AccentBrush}"
                                 BorderThickness="0,1,0,0"
                                 Padding="12,6"
                                 PointerPressed="StatusBar_OnPointerPressed">
@@ -3012,7 +2930,8 @@
                                     Click="OpenSearchMenu_OnClick">
                                 <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
-                                        <Path Fill="{Binding MutedTextBrush}"
+                                        <Path Fill="{Binding AccentBrush}"
+                                              Opacity="0.9"
                                               Data="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" />
                                     </Canvas>
                                 </Viewbox>
@@ -4956,7 +4875,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5289,7 +5208,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5445,7 +5364,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5505,7 +5424,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5565,7 +5484,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5618,7 +5537,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5692,7 +5611,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5776,7 +5695,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5819,7 +5738,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -5918,7 +5837,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6017,7 +5936,7 @@
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding SurfaceBorderBrush}" />
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6095,8 +6014,7 @@
                                                        Foreground="{Binding PrimaryTextBrush}"
                                                        Text="Kodo" />
                                             <TextBlock FontSize="12"
-                                                       Foreground="{Binding MutedTextBrush}"
-                                                       Text="Code fast. Stay light." />
+                                                       xml:space="preserve"><Run Foreground="{Binding MutedTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
                                         </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="1"
