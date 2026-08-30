@@ -2095,7 +2095,7 @@
                                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                                    FontSize="11"
                                                                    Opacity="0.75"
-                                                                   Text="Extensions and themes" />
+                                                                   Text="Extensions, compilers, and themes" />
                                                     </StackPanel>
                                                 </StackPanel>
                                                 <Button Grid.Column="1"

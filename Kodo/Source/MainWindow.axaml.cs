@@ -2193,7 +2193,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IEnumerable<ThemeExtensionGroup> GroupedThemeExtensions =>
         ThemeExtensions
             .GroupBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new ThemeExtensionGroup(g.Key, g.ToList()));
+            .Select(g => new ThemeExtensionGroup(g.Key, g.ToList()))
+            .OrderBy(g => g.IsMultiTheme)        // Single themes (IsMultiTheme=false) first, then grouped (IsMultiTheme=true)
+            .ThenBy(g => g.GroupName)            // Alphabetical sorting within each group
+            .ToList();
 
     public bool HasGroupedThemeExtensions => ThemeExtensions.Any();
 
