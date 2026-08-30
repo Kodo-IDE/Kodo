@@ -3871,7 +3871,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
             _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
@@ -3885,6 +3885,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
     public string TooltipAccentCustom      => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
     public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
+    public string LabelPersonalizationHeader => IsAmericanEnglish ? "PERSONALIZATION" : "PERSONALISATION";
     public string PersonalizationExportTooltip => IsAmericanEnglish
         ? "Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
         : "Save a formatted .txt file with all of Kodo's settings, personalisation, open/recent files, and installed extensions";
