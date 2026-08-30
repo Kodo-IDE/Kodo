@@ -573,6 +573,18 @@ public partial class MainWindow
         }
     }
 
+    // Home screen: most recently opened item regardless of pin state, for the Continue spotlight.
+    public RecentFileItem? MostRecentFileItem => RecentFiles.OrderByDescending(item => item.LastOpened).FirstOrDefault();
+    public bool HasMostRecentFileItem => MostRecentFileItem is not null;
+
+    // Home screen: pinned items surfaced as a chip row, independent of the Recent list below it.
+    public IEnumerable<RecentFileItem> PinnedRecentFiles => RecentFiles.Where(item => item.IsPinned);
+    public bool HasPinnedRecentFiles => RecentFiles.Any(item => item.IsPinned);
+
+    private void NotifyRecentFilesChanged() => RaiseMany(
+        nameof(HasRecentFiles), nameof(MostRecentFileItem), nameof(HasMostRecentFileItem),
+        nameof(PinnedRecentFiles), nameof(HasPinnedRecentFiles));
+
     private void LoadRecentFiles(IEnumerable<RecentFileEntry>? recentFiles)
     {
         RecentFiles.Clear();
@@ -584,6 +596,8 @@ public partial class MainWindow
         {
             RecentFiles.Add(new RecentFileItem(entry.Path, entry.IsFolder, entry.LastOpened, entry.IsPinned));
         }
+
+        NotifyRecentFilesChanged();
     }
 
     private void AddRecentFile(string? path)
@@ -621,7 +635,7 @@ public partial class MainWindow
 
         ReorderRecentFiles();
         SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
+        NotifyRecentFilesChanged();
     }
 
     private void TogglePinnedRecentFile(string path)
@@ -633,6 +647,7 @@ public partial class MainWindow
         existing.IsPinned = !existing.IsPinned;
         ReorderRecentFiles();
         SaveSettings();
+        NotifyRecentFilesChanged();
     }
 
     private void RemoveRecentFile(string path)
@@ -641,7 +656,7 @@ public partial class MainWindow
         if (existing is null) return;
         RecentFiles.Remove(existing);
         SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
+        NotifyRecentFilesChanged();
     }
 
     private void ReorderRecentFiles()
@@ -1333,7 +1348,35 @@ public partial class MainWindow
             RecentFiles.Remove(item);
 
         SaveSettings();
-        OnPropertyChanged(nameof(HasRecentFiles));
+        NotifyRecentFilesChanged();
+    }
+
+    // FileByName search requires a folder to scan (see CanShowSearchPanelForMode in Search.cs),
+    // so on Home with nothing open there's nothing for it to search - offer to open a folder instead.
+    public string HomeQuickSearchPlaceholderText => IsFolderOpen ? "Jump to file..." : "Open a folder to search files...";
+
+    private async void HomeQuickSearchButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFolderOpen)
+            OpenSearchPanel(SearchMode.FileByName);
+        else
+            await OpenFolderAsync();
+    }
+
+    private bool _isHomeNewsTabActive;
+    public bool IsHomeUpdatesTabActive => !_isHomeNewsTabActive;
+    public bool IsHomeNewsTabActive => _isHomeNewsTabActive;
+
+    private void HomeUpdatesTabButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _isHomeNewsTabActive = false;
+        RaiseMany(nameof(IsHomeUpdatesTabActive), nameof(IsHomeNewsTabActive));
+    }
+
+    private void HomeNewsTabButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        _isHomeNewsTabActive = true;
+        RaiseMany(nameof(IsHomeUpdatesTabActive), nameof(IsHomeNewsTabActive));
     }
 
 }

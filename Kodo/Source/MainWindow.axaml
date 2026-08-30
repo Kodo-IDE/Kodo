@@ -1813,8 +1813,70 @@
                         <ScrollViewer Grid.Row="1"
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Margin="32,28,32,36" Spacing="16">
+
+                            <!-- Continue spotlight: one-click resume of the most recently opened item -->
+                            <Border Padding="18,16"
+                                    Background="{Binding CardBrush}"
+                                    BorderBrush="{Binding AccentBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    IsVisible="{Binding HasMostRecentFileItem}">
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                                    <Border Grid.Column="0"
+                                            Width="3" Height="30" CornerRadius="2"
+                                            Background="{Binding AccentBrush}"
+                                            VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                        <TextBlock FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding AccentBrush}"
+                                                   Text="CONTINUE" />
+                                        <TextBlock FontSize="14"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding MostRecentFileItem.DisplayName}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="2"
+                                            Classes="chrome"
+                                            Tag="{Binding MostRecentFileItem}"
+                                            Click="RecentFileButton_OnClick"
+                                            VerticalAlignment="Center"
+                                            Padding="14,8"
+                                            Content="Resume" />
+                                </Grid>
+                            </Border>
+
+                            <!-- Pinned workspaces: one-click launchers for pinned recents, pulled from the same RecentFiles list -->
+                            <ItemsControl ItemsSource="{Binding PinnedRecentFiles}"
+                                          IsVisible="{Binding HasPinnedRecentFiles}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodoModels:RecentFileItem" x:CompileBindings="True">
+                                        <!-- Style's Button.chrome brushes are plain {Binding ...}, which resolve
+                                             against this item's DataContext, not MainWindow - override explicitly
+                                             with #RootWindow element bindings, same pattern the Recent list uses. -->
+                                        <Button Tag="{Binding}"
+                                                Click="RecentFileButton_OnClick"
+                                                Background="{Binding #RootWindow.ButtonBrush}"
+                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="10"
+                                                Margin="0,0,8,8"
+                                                Padding="12,7"
+                                                Content="{Binding DisplayName}"
+                                                ToolTip.Tip="{Binding Path}" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                         <Grid ColumnDefinitions="*,340"
-                              Margin="32,28,32,36"
                               ColumnSpacing="20">
 
                                 <StackPanel Grid.Column="0" Spacing="16" VerticalAlignment="Top">
@@ -1839,194 +1901,86 @@
                                                        LineHeight="20"
                                                        Text="{Binding GetStartedSubtitleText}" />
 
-                                            <WrapPanel Orientation="Horizontal" ItemSpacing="8" LineSpacing="8">
-                                                
-                                                <Button Classes="chrome"
+                                            <Button Classes="chrome"
+                                                    HorizontalAlignment="Stretch"
+                                                    HorizontalContentAlignment="Left"
+                                                    Padding="12,9"
+                                                    Click="HomeQuickSearchButton_OnClick"
+                                                    ToolTip.Tip="{Binding HomeQuickSearchPlaceholderText}">
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <Viewbox Width="13" Height="13">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding MutedTextBrush}"
+                                                                  Data="M10.5 3a7.5 7.5 0 1 0 4.66 13.39l4.72 4.72a.75.75 0 1 0 1.06-1.06l-4.72-4.72A7.5 7.5 0 0 0 10.5 3Zm-6 7.5a6 6 0 1 1 12 0 6 6 0 0 1-12 0Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                    <TextBlock Text="{Binding HomeQuickSearchPlaceholderText}"
+                                                               FontSize="13"
+                                                               Foreground="{Binding MutedTextBrush}" />
+                                                </StackPanel>
+                                            </Button>
+
+                                            <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+
+                                                <Button Grid.Column="0"
+                                                        Classes="chrome"
+                                                        HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left"
+                                                        Padding="16,14"
                                                         Click="NewFileButton_OnClick"
                                                         ToolTip.Tip="{Binding NewFileTooltip}">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                    <StackPanel Spacing="10">
+                                                        <Viewbox Width="18" Height="18" HorizontalAlignment="Left">
                                                             <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                <Path Fill="{Binding AccentBrush}"
                                                                       Data="M6.75 3A2.25 2.25 0 0 0 4.5 5.25v13.5A2.25 2.25 0 0 0 6.75 21h10.5A2.25 2.25 0 0 0 19.5 18.75V8.56a2.25 2.25 0 0 0-.659-1.591l-3.81-3.81A2.25 2.25 0 0 0 13.44 2.5H6.75Zm6 7.75a.75.75 0 0 0-1.5 0v1.5h-1.5a.75.75 0 0 0 0 1.5h1.5v1.5a.75.75 0 0 0 1.5 0v-1.5h1.5a.75.75 0 0 0 0-1.5h-1.5v-1.5Z" />
                                                             </Canvas>
                                                         </Viewbox>
-                                                        <TextBlock Text="New File" VerticalAlignment="Center" />
+                                                        <TextBlock Text="New File" FontSize="13" FontWeight="SemiBold" Foreground="{Binding $parent[Button].Foreground}" />
                                                     </StackPanel>
                                                 </Button>
-                                                
-                                                <Button Classes="chrome"
+
+                                                <Button Grid.Column="1"
+                                                        Classes="chrome"
+                                                        HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left"
+                                                        Padding="16,14"
                                                         Click="OpenFileButton_OnClick"
                                                         ToolTip.Tip="{Binding OpenFileTooltip}">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                    <StackPanel Spacing="10">
+                                                        <Viewbox Width="18" Height="18" HorizontalAlignment="Left">
                                                             <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                <Path Fill="{Binding AccentBrush}"
                                                                       Data="M11.47 1.72a.75.75 0 0 1 1.06 0l3 3a.75.75 0 0 1-1.06 1.06l-1.72-1.72V7.5h-1.5V4.06L9.53 5.78a.75.75 0 0 1-1.06-1.06l3-3ZM11.25 7.5V15a.75.75 0 0 0 1.5 0V7.5h3.75a3 3 0 0 1 3 3v6.75a3 3 0 0 1-3 3H6.75a3 3 0 0 1-3-3V10.5a3 3 0 0 1 3-3h4.5Z" />
                                                             </Canvas>
                                                         </Viewbox>
-                                                        <TextBlock Text="Open File" VerticalAlignment="Center" />
+                                                        <TextBlock Text="Open File" FontSize="13" FontWeight="SemiBold" Foreground="{Binding $parent[Button].Foreground}" />
                                                     </StackPanel>
                                                 </Button>
-                                                
-                                                <Button Classes="chrome"
+
+                                                <Button Grid.Column="2"
+                                                        Classes="chrome"
+                                                        HorizontalAlignment="Stretch"
+                                                        HorizontalContentAlignment="Left"
+                                                        Padding="16,14"
                                                         Click="OpenFolderButton_OnClick"
                                                         ToolTip.Tip="{Binding OpenFolderTooltip}">
-                                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                                        <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                                    <StackPanel Spacing="10">
+                                                        <Viewbox Width="18" Height="18" HorizontalAlignment="Left">
                                                             <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                <Path Fill="{Binding AccentBrush}"
                                                                       Data="M13 11C13 10.4477 12.5523 10 12 10C11.4477 10 11 10.4477 11 11V12.5L9.5 12.5C8.94772 12.5 8.5 12.9477 8.5 13.5C8.5 14.0523 8.94772 14.5 9.5 14.5L11 14.5V16C11 16.5523 11.4477 17 12 17C12.5523 17 13 16.5523 13 16V14.5L14.5 14.5C15.0523 14.5 15.5 14.0523 15.5 13.5C15.5 12.9477 15.0523 12.5 14.5 12.5L13 12.5V11ZM5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z" />
                                                             </Canvas>
                                                         </Viewbox>
-                                                        <TextBlock Text="Open Folder" VerticalAlignment="Center" />
+                                                        <TextBlock Text="Open Folder" FontSize="13" FontWeight="SemiBold" Foreground="{Binding $parent[Button].Foreground}" />
                                                     </StackPanel>
                                                 </Button>
-                                            </WrapPanel>
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
 
-                                    <Border Padding="24"
-                                            Background="{Binding CardBrush}"
-                                            BorderBrush="{Binding SurfaceBorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="16">
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                                            <StackPanel Grid.Column="0" Spacing="10">
-                                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                    <TextBlock FontSize="18"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding PrimaryTextBrush}"
-                                                               VerticalAlignment="Center"
-                                                               Text="Marketplace" />
-                                                    
-                                                    <Border Width="8" Height="8"
-                                                            CornerRadius="4"
-                                                            Background="#E05252"
-                                                            VerticalAlignment="Center"
-                                                            IsVisible="{Binding IsMarketplaceConnectivityWarningVisible}"
-                                                            ToolTip.Tip="{Binding MarketplaceConnectivityMessage}" />
-                                                </StackPanel>
-                                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                                           TextWrapping="Wrap"
-                                                           FontSize="13"
-                                                           LineHeight="20"
-                                                           Text="Explore extensions, syntax highlighting packs, and themes." />
-                                            </StackPanel>
-                                            <Button Grid.Column="1"
-                                                    Classes="chrome"
-                                                    Click="OpenMarketplaceButton_OnClick"
-                                                    ToolTip.Tip="{Binding OpenExtensionsTooltip}"
-                                                    VerticalAlignment="Center"
-                                                    Content="Browse" />
-                                        </Grid>
-                                    </Border>
-
-                                    <Border Padding="24,18"
-                                            Background="{Binding CardBrush}"
-                                            BorderBrush="{Binding SurfaceBorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="16">
-                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
-                                            <StackPanel Grid.Column="0" Spacing="10">
-                                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                    <TextBlock FontSize="18"
-                                                               FontWeight="SemiBold"
-                                                               Foreground="{Binding PrimaryTextBrush}"
-                                                               VerticalAlignment="Center"
-                                                               Text="Links" />
-                                                </StackPanel>
-                                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                                           FontSize="13"
-                                                           Text="Community, website, and release notes." />
-                                            </StackPanel>
-                                            <StackPanel Grid.Column="1"
-                                                        Orientation="Horizontal"
-                                                        Spacing="8"
-                                                        VerticalAlignment="Center">
-                                                <Button Classes="chrome"
-                                                        Click="OpenDiscordButton_OnClick"
-                                                        ToolTip.Tip="Join the Kodo Discord server">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        
-                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-                                                                    </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock Text="Discord" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Classes="chrome"
-                                                        Click="OpenInstagramButton_OnClick"
-                                                        ToolTip.Tip="Follow Kodo on Instagram">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        
-                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="F0 M12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16Z" />
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="M18 5C17.4477 5 17 5.44772 17 6C17 6.55228 17.4477 7 18 7C18.5523 7 19 6.55228 19 6C19 5.44772 18.5523 5 18 5Z" />
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="F0 M1.65396 4.27606C1 5.55953 1 7.23969 1 10.6V13.4C1 16.7603 1 18.4405 1.65396 19.7239C2.2292 20.8529 3.14708 21.7708 4.27606 22.346C5.55953 23 7.23969 23 10.6 23H13.4C16.7603 23 18.4405 23 19.7239 22.346C20.8529 21.7708 21.7708 20.8529 22.346 19.7239C23 18.4405 23 16.7603 23 13.4V10.6C23 7.23969 23 5.55953 22.346 4.27606C21.7708 3.14708 20.8529 2.2292 19.7239 1.65396C18.4405 1 16.7603 1 13.4 1H10.6C7.23969 1 5.55953 1 4.27606 1.65396C3.14708 2.2292 2.2292 3.14708 1.65396 4.27606ZM13.4 3H10.6C8.88684 3 7.72225 3.00156 6.82208 3.0751C5.94524 3.14674 5.49684 3.27659 5.18404 3.43597C4.43139 3.81947 3.81947 4.43139 3.43597 5.18404C3.27659 5.49684 3.14674 5.94524 3.0751 6.82208C3.00156 7.72225 3 8.88684 3 10.6V13.4C3 15.1132 3.00156 16.2777 3.0751 17.1779C3.14674 18.0548 3.27659 18.5032 3.43597 18.816C3.81947 19.5686 4.43139 20.1805 5.18404 20.564C5.49684 20.7234 5.94524 20.8533 6.82208 20.9249C7.72225 20.9984 8.88684 21 10.6 21H13.4C15.1132 21 16.2777 20.9984 17.1779 20.9249C18.0548 20.8533 18.5032 20.7234 18.816 20.564C19.5686 20.1805 20.1805 19.5686 20.564 18.816C20.7234 18.5032 20.8533 18.0548 20.9249 17.1779C20.9984 16.2777 21 15.1132 21 13.4V10.6C21 8.88684 20.9984 7.72225 20.9249 6.82208C20.8533 5.94524 20.7234 5.49684 20.564 5.18404C20.1805 4.43139 19.5686 3.81947 18.816 3.43597C18.5032 3.27659 18.0548 3.14674 17.1779 3.0751C16.2777 3.00156 15.1132 3 13.4 3Z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock Text="Instagram" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Classes="chrome"
-                                                        Click="OpenWebsiteButton_OnClick"
-                                                        ToolTip.Tip="Open the Kodo website">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        
-                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM4.5 12a7.5 7.5 0 0 1 .222-1.81 19.32 19.32 0 0 0 3.797.617A19.5 19.5 0 0 0 8.625 12c0 .398.034.788.094 1.193a19.32 19.32 0 0 0-3.797.617A7.5 7.5 0 0 1 4.5 12Zm.92 3.314c.31-.057.624-.107.943-.151a16.78 16.78 0 0 0 1.713 3.514A7.52 7.52 0 0 1 5.42 15.314Zm2.873-7.94a16.78 16.78 0 0 1 1.713-3.514A7.52 7.52 0 0 0 5.42 7.374c.31.057.624.107.943.151Zm6.394 6.78a17.93 17.93 0 0 1-3.374 0 17.69 17.69 0 0 1-.105-1.96c0-.66.037-1.314.106-1.96a17.93 17.93 0 0 1 3.373 0c.069.646.106 1.3.106 1.96 0 .66-.037 1.314-.106 1.96Zm1.45.262c.319.044.633.094.943.151a7.52 7.52 0 0 1-2.656 3.363 16.78 16.78 0 0 0 1.713-3.514Zm.943-7.04c-.31.057-.624.107-.943.151a16.78 16.78 0 0 0-1.713-3.514 7.52 7.52 0 0 1 2.656 3.363ZM12 4.51c.642.972 1.187 2.07 1.6 3.27a18.5 18.5 0 0 1-3.2 0c.413-1.2.958-2.298 1.6-3.27Zm0 14.98a16.9 16.9 0 0 1-1.6-3.27 18.5 18.5 0 0 1 3.2 0 16.9 16.9 0 0 1-1.6 3.27Zm-3.794-1.082A16.78 16.78 0 0 1 6.493 15c.319-.057.633-.107.943-.151a16.78 16.78 0 0 0 1.713 3.514l-.943.045Zm6.55-9.408c.319-.044.633-.094.943-.151a7.52 7.52 0 0 0-2.656-3.363c.671 1.13 1.222 2.345 1.713 3.514ZM19.5 12a7.5 7.5 0 0 1-.222 1.81 19.32 19.32 0 0 0-3.797-.617c.06-.405.094-.795.094-1.193 0-.398-.034-.788-.094-1.193a19.32 19.32 0 0 0 3.797-.617A7.5 7.5 0 0 1 19.5 12Z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock Text="Website" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Classes="chrome"
-                                                        Click="OpenGitHubButton_OnClick"
-                                                        ToolTip.Tip="View Kodo IDE on GitHub">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        
-                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
-                                                            <Canvas Width="20" Height="20">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="M10,0 C15.523,0 20,4.59 20,10.253 C20,14.782 17.138,18.624 13.167,19.981 C12.66,20.082 12.48,19.762 12.48,19.489 C12.48,19.151 12.492,18.047 12.492,16.675 C12.492,15.719 12.172,15.095 11.813,14.777 C14.04,14.523 16.38,13.656 16.38,9.718 C16.38,8.598 15.992,7.684 15.35,6.966 C15.454,6.707 15.797,5.664 15.252,4.252 C15.252,4.252 14.414,3.977 12.505,5.303 C11.706,5.076 10.85,4.962 10,4.958 C9.15,4.962 8.295,5.076 7.497,5.303 C5.586,3.977 4.746,4.252 4.746,4.252 C4.203,5.664 4.546,6.707 4.649,6.966 C4.01,7.684 3.619,8.598 3.619,9.718 C3.619,13.646 5.954,14.526 8.175,14.785 C7.889,15.041 7.63,15.493 7.54,16.156 C6.97,16.418 5.522,16.871 4.63,15.304 C4.63,15.304 4.101,14.319 3.097,14.247 C3.097,14.247 2.122,14.234 3.029,14.87 C3.029,14.87 3.684,15.185 4.139,16.37 C4.139,16.37 4.726,18.2 7.508,17.58 C7.513,18.437 7.522,19.245 7.522,19.489 C7.522,19.76 7.338,20.077 6.839,19.982 C2.865,18.627 0,14.783 0,10.253 C0,4.59 4.478,0 10,0" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock Text="GitHub" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                                <Button Classes="chrome"
-                                                        Click="OpenReleasesPageButton_OnClick"
-                                                        ToolTip.Tip="View releases on GitHub">
-                                                    <StackPanel Orientation="Horizontal" Spacing="6">
-                                                        
-                                                        <Viewbox Width="13" Height="13" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                                      Data="M17.707 3.293A1 1 0 0 0 17 3h-5a1 1 0 0 0-.707.293l-9 9a1 1 0 0 0 0 1.414l5 5A1 1 0 0 0 8 19a1 1 0 0 0 .707-.293l9-9A1 1 0 0 0 18 9V4a1 1 0 0 0-.293-.707ZM15 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock Text="Releases" VerticalAlignment="Center" />
-                                                    </StackPanel>
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-
                                     <Border Padding="20"
-                                            MinHeight="280"
-                                            MaxHeight="348"
+                                            MinHeight="380"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
@@ -2195,39 +2149,244 @@
                                             Spacing="16"
                                             VerticalAlignment="Top">
 
+                                    <!-- Community: merged Marketplace + Links (was two stacked cards) -->
+                                    <Border Padding="16,14"
+                                            Background="{Binding CardBrush}"
+                                            BorderBrush="{Binding SurfaceBorderBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12">
+                                        <StackPanel Spacing="12">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                                <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <TextBlock FontSize="13"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                                   Text="Marketplace" />
+                                                        <Border Width="6" Height="6"
+                                                                CornerRadius="3"
+                                                                Background="#E05252"
+                                                                VerticalAlignment="Center"
+                                                                IsVisible="{Binding IsMarketplaceConnectivityWarningVisible}"
+                                                                ToolTip.Tip="{Binding MarketplaceConnectivityMessage}" />
+                                                    </StackPanel>
+                                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                                               FontSize="11"
+                                                               Opacity="0.75"
+                                                               Text="Extensions and themes" />
+                                                </StackPanel>
+                                                <Button Grid.Column="1"
+                                                        Classes="chrome"
+                                                        Click="OpenMarketplaceButton_OnClick"
+                                                        ToolTip.Tip="{Binding OpenExtensionsTooltip}"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Padding="10,5"
+                                                        Content="Browse" />
+                                            </Grid>
+
+                                            <Border BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,1,0,0" />
+
+                                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                                <Button Classes="chrome"
+                                                        Padding="8"
+                                                        Click="OpenDiscordButton_OnClick"
+                                                        ToolTip.Tip="Join the Kodo Discord server">
+                                                    <Viewbox Width="14" Height="14">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.032.053a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Padding="8"
+                                                        Click="OpenGitHubButton_OnClick"
+                                                        ToolTip.Tip="View Kodo IDE on GitHub">
+                                                    <Viewbox Width="14" Height="14">
+                                                        <Canvas Width="20" Height="20">
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="M10,0 C15.523,0 20,4.59 20,10.253 C20,14.782 17.138,18.624 13.167,19.981 C12.66,20.082 12.48,19.762 12.48,19.489 C12.48,19.151 12.492,18.047 12.492,16.675 C12.492,15.719 12.172,15.095 11.813,14.777 C14.04,14.523 16.38,13.656 16.38,9.718 C16.38,8.598 15.992,7.684 15.35,6.966 C15.454,6.707 15.797,5.664 15.252,4.252 C15.252,4.252 14.414,3.977 12.505,5.303 C11.706,5.076 10.85,4.962 10,4.958 C9.15,4.962 8.295,5.076 7.497,5.303 C5.586,3.977 4.746,4.252 4.746,4.252 C4.203,5.664 4.546,6.707 4.649,6.966 C4.01,7.684 3.619,8.598 3.619,9.718 C3.619,13.646 5.954,14.526 8.175,14.785 C7.889,15.041 7.63,15.493 7.54,16.156 C6.97,16.418 5.522,16.871 4.63,15.304 C4.63,15.304 4.101,14.319 3.097,14.247 C3.097,14.247 2.122,14.234 3.029,14.87 C3.029,14.87 3.684,15.185 4.139,16.37 C4.139,16.37 4.726,18.2 7.508,17.58 C7.513,18.437 7.522,19.245 7.522,19.489 C7.522,19.76 7.338,20.077 6.839,19.982 C2.865,18.627 0,14.783 0,10.253 C0,4.59 4.478,0 10,0" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Padding="8"
+                                                        Click="OpenWebsiteButton_OnClick"
+                                                        ToolTip.Tip="Open the Kodo website">
+                                                    <Viewbox Width="14" Height="14">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM4.5 12a7.5 7.5 0 0 1 .222-1.81 19.32 19.32 0 0 0 3.797.617A19.5 19.5 0 0 0 8.625 12c0 .398.034.788.094 1.193a19.32 19.32 0 0 0-3.797.617A7.5 7.5 0 0 1 4.5 12Zm.92 3.314c.31-.057.624-.107.943-.151a16.78 16.78 0 0 0 1.713 3.514A7.52 7.52 0 0 1 5.42 15.314Zm2.873-7.94a16.78 16.78 0 0 1 1.713-3.514A7.52 7.52 0 0 0 5.42 7.374c.31.057.624.107.943.151Zm6.394 6.78a17.93 17.93 0 0 1-3.374 0 17.69 17.69 0 0 1-.105-1.96c0-.66.037-1.314.106-1.96a17.93 17.93 0 0 1 3.373 0c.069.646.106 1.3.106 1.96 0 .66-.037 1.314-.106 1.96Zm1.45.262c.319.044.633.094.943.151a7.52 7.52 0 0 1-2.656 3.363 16.78 16.78 0 0 0 1.713-3.514Zm.943-7.04c-.31.057-.624.107-.943.151a16.78 16.78 0 0 0-1.713-3.514 7.52 7.52 0 0 1 2.656 3.363ZM12 4.51c.642.972 1.187 2.07 1.6 3.27a18.5 18.5 0 0 1-3.2 0c.413-1.2.958-2.298 1.6-3.27Zm0 14.98a16.9 16.9 0 0 1-1.6-3.27 18.5 18.5 0 0 1 3.2 0 16.9 16.9 0 0 1-1.6 3.27Zm-3.794-1.082A16.78 16.78 0 0 1 6.493 15c.319-.057.633-.107.943-.151a16.78 16.78 0 0 0 1.713 3.514l-.943.045Zm6.55-9.408c.319-.044.633-.094.943-.151a7.52 7.52 0 0 0-2.656-3.363c.671 1.13 1.222 2.345 1.713 3.514ZM19.5 12a7.5 7.5 0 0 1-.222 1.81 19.32 19.32 0 0 0-3.797-.617c.06-.405.094-.795.094-1.193 0-.398-.034-.788-.094-1.193a19.32 19.32 0 0 0 3.797-.617A7.5 7.5 0 0 1 19.5 12Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Padding="8"
+                                                        Click="OpenReleasesPageButton_OnClick"
+                                                        ToolTip.Tip="View releases on GitHub">
+                                                    <Viewbox Width="14" Height="14">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="M17.707 3.293A1 1 0 0 0 17 3h-5a1 1 0 0 0-.707.293l-9 9a1 1 0 0 0 0 1.414l5 5A1 1 0 0 0 8 19a1 1 0 0 0 .707-.293l9-9A1 1 0 0 0 18 9V4a1 1 0 0 0-.293-.707ZM15 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                                <Button Classes="chrome"
+                                                        Padding="8"
+                                                        Click="OpenInstagramButton_OnClick"
+                                                        ToolTip.Tip="Follow Kodo on Instagram">
+                                                    <Viewbox Width="14" Height="14">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="F0 M12 18C15.3137 18 18 15.3137 18 12C18 8.68629 15.3137 6 12 6C8.68629 6 6 8.68629 6 12C6 15.3137 8.68629 18 12 18ZM12 16C14.2091 16 16 14.2091 16 12C16 9.79086 14.2091 8 12 8C9.79086 8 8 9.79086 8 12C8 14.2091 9.79086 16 12 16Z" />
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="M18 5C17.4477 5 17 5.44772 17 6C17 6.55228 17.4477 7 18 7C18.5523 7 19 6.55228 19 6C19 5.44772 18.5523 5 18 5Z" />
+                                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                                  Data="F0 M1.65396 4.27606C1 5.55953 1 7.23969 1 10.6V13.4C1 16.7603 1 18.4405 1.65396 19.7239C2.2292 20.8529 3.14708 21.7708 4.27606 22.346C5.55953 23 7.23969 23 10.6 23H13.4C16.7603 23 18.4405 23 19.7239 22.346C20.8529 21.7708 21.7708 20.8529 22.346 19.7239C23 18.4405 23 16.7603 23 13.4V10.6C23 7.23969 23 5.55953 22.346 4.27606C21.7708 3.14708 20.8529 2.2292 19.7239 1.65396C18.4405 1 16.7603 1 13.4 1H10.6C7.23969 1 5.55953 1 4.27606 1.65396C3.14708 2.2292 2.2292 3.14708 1.65396 4.27606ZM13.4 3H10.6C8.88684 3 7.72225 3.00156 6.82208 3.0751C5.94524 3.14674 5.49684 3.27659 5.18404 3.43597C4.43139 3.81947 3.81947 4.43139 3.43597 5.18404C3.27659 5.49684 3.14674 5.94524 3.0751 6.82208C3.00156 7.72225 3 8.88684 3 10.6V13.4C3 15.1132 3.00156 16.2777 3.0751 17.1779C3.14674 18.0548 3.27659 18.5032 3.43597 18.816C3.81947 19.5686 4.43139 20.1805 5.18404 20.564C5.49684 20.7234 5.94524 20.8533 6.82208 20.9249C7.72225 20.9984 8.88684 21 10.6 21H13.4C15.1132 21 16.2777 20.9984 17.1779 20.9249C18.0548 20.8533 18.5032 20.7234 18.816 20.564C19.5686 20.1805 20.1805 19.5686 20.564 18.816C20.7234 18.5032 20.8533 18.0548 20.9249 17.1779C20.9984 16.2777 21 15.1132 21 13.4V10.6C21 8.88684 20.9984 7.72225 20.9249 6.82208C20.8533 5.94524 20.7234 5.49684 20.564 5.18404C20.1805 4.43139 19.5686 3.81947 18.816 3.43597C18.5032 3.27659 18.0548 3.14674 17.1779 3.0751C16.2777 3.00156 15.1132 3 13.4 3Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
                                             CornerRadius="12"
-                                            MaxHeight="348">
+                                            MaxHeight="360">
                                         <Grid RowDefinitions="Auto,*">
 
+                                            <!-- Shared tab header: was two separate cards (What's New, News) -->
                                             <Border Grid.Row="0"
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     BorderThickness="0,0,0,1"
                                                     Padding="20,14">
                                                 <Grid ColumnDefinitions="*,Auto">
-                                                    <StackPanel Orientation="Horizontal" Spacing="10"
+                                                    <StackPanel Orientation="Horizontal" Spacing="16"
                                                                 VerticalAlignment="Center">
-                                                        <Border Width="3" Height="20" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                        <TextBlock FontSize="16"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                                   VerticalAlignment="Center"
-                                                                   Text="News" />
+                                                        <Button Classes="chrome"
+                                                                Click="HomeUpdatesTabButton_OnClick"
+                                                                Padding="0" BorderThickness="0" Background="Transparent"
+                                                                FontSize="14"
+                                                                Foreground="{Binding PrimaryTextBrush}"
+                                                                FontWeight="{Binding IsHomeUpdatesTabActive, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}"
+                                                                Content="What's New" />
+                                                        <Button Classes="chrome"
+                                                                Click="HomeNewsTabButton_OnClick"
+                                                                Padding="0" BorderThickness="0" Background="Transparent"
+                                                                FontSize="14"
+                                                                Foreground="{Binding PrimaryTextBrush}"
+                                                                FontWeight="{Binding IsHomeNewsTabActive, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}"
+                                                                Content="News" />
                                                     </StackPanel>
-                                                    <Button Grid.Column="1"
-                                                            Classes="chrome"
-                                                            Click="RefreshNewsButton_OnClick"
-                                                            IsEnabled="{Binding IsNewsRefreshEnabled}"
-                                                            VerticalAlignment="Center"
-                                                            ToolTip.Tip="Refresh news"
-                                                            Content="↻" />
+                                                    <StackPanel Grid.Column="1"
+                                                                Orientation="Horizontal"
+                                                                Spacing="8"
+                                                                VerticalAlignment="Center">
+                                                        <Button Classes="chrome"
+                                                                Click="RefreshLatestReleaseButton_OnClick"
+                                                                IsVisible="{Binding IsHomeUpdatesTabActive}"
+                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
+                                                                ToolTip.Tip="Check for newer release information"
+                                                                Content="↻" />
+                                                        <Button Classes="chrome"
+                                                                Click="OpenLatestReleaseButton_OnClick"
+                                                                IsVisible="{Binding IsHomeUpdatesTabActive}"
+                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
+                                                                ToolTip.Tip="Open this release on GitHub in your browser"
+                                                                Content="GitHub" />
+                                                        <Button Classes="chrome"
+                                                                Click="RefreshNewsButton_OnClick"
+                                                                IsVisible="{Binding IsHomeNewsTabActive}"
+                                                                IsEnabled="{Binding IsNewsRefreshEnabled}"
+                                                                ToolTip.Tip="Refresh news"
+                                                                Content="↻" />
+                                                    </StackPanel>
                                                 </Grid>
                                             </Border>
 
+                                            <!-- Updates tab content (was the standalone What's New card) -->
                                             <Border Grid.Row="1"
-                                                    Padding="16,14">
+                                                    Padding="20,14"
+                                                    IsVisible="{Binding IsHomeUpdatesTabActive}">
+                                                <Panel ClipToBounds="True">
+
+                                                    <StackPanel IsVisible="{Binding IsWhatsNewDisabled}"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                Spacing="8">
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding AccentBrush}"
+                                                                   FontWeight="SemiBold"
+                                                                   LetterSpacing="1"
+                                                                   Text="DISABLED" />
+                                                        <TextBlock FontSize="11"
+                                                                   HorizontalAlignment="Center"
+                                                                   Foreground="{Binding MutedTextBrush}"
+                                                                   Opacity="0.6"
+                                                                   TextAlignment="Center"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxWidth="220"
+                                                                   Text="What's New is turned off by Performance mode." />
+                                                    </StackPanel>
+
+                                                    <TextBlock IsVisible="{Binding IsLatestReleaseStatusVisible}"
+                                                               Foreground="{Binding MutedTextBrush}"
+                                                               FontSize="12"
+                                                               TextWrapping="Wrap"
+                                                               VerticalAlignment="Center"
+                                                               HorizontalAlignment="Center"
+                                                               TextAlignment="Center"
+                                                               Text="{Binding LatestReleaseStatusText}" />
+
+                                                    <ScrollViewer IsVisible="{Binding HasLatestRelease}"
+                                                                  VerticalScrollBarVisibility="Auto"
+                                                                  HorizontalScrollBarVisibility="Disabled">
+                                                        <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="kodoModels:FormattedParagraph" x:CompileBindings="True">
+                                                                    <Grid Margin="{Binding TopMargin}"
+                                                                          ColumnDefinitions="Auto,*">
+                                                                        <TextBlock Grid.Column="0"
+                                                                                   Text="{Binding Marker}"
+                                                                                   Width="{Binding MarkerColumnWidth}"
+                                                                                   FontSize="12"
+                                                                                   LineHeight="19"
+                                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                   VerticalAlignment="Top" />
+                                                                        <ItemsControl Grid.Column="1"
+                                                                                      ItemsSource="{Binding Runs}">
+                                                                            <ItemsControl.ItemsPanel>
+                                                                                <ItemsPanelTemplate>
+                                                                                    <WrapPanel />
+                                                                                </ItemsPanelTemplate>
+                                                                            </ItemsControl.ItemsPanel>
+                                                                            <ItemsControl.ItemTemplate>
+                                                                                <DataTemplate x:DataType="kodoModels:FormattedRun" x:CompileBindings="True">
+                                                                                    <TextBlock Text="{Binding Text}"
+                                                                                               TextWrapping="Wrap"
+                                                                                               FontSize="12"
+                                                                                               LineHeight="19"
+                                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                                               FontWeight="{Binding IsBold, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}" />
+                                                                                </DataTemplate>
+                                                                            </ItemsControl.ItemTemplate>
+                                                                        </ItemsControl>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </Panel>
+                                            </Border>
+
+                                            <!-- News tab content -->
+                                            <Border Grid.Row="1"
+                                                    Padding="16,14"
+                                                    IsVisible="{Binding IsHomeNewsTabActive}">
                                                 <Panel ClipToBounds="True">
                                                     
                                                     <StackPanel IsVisible="{Binding IsNewsDisabled}"
@@ -2335,137 +2494,10 @@
                                         </Grid>
                                     </Border>
 
-                                    <Border Background="{Binding CardBrush}"
-                                            BorderBrush="{Binding SurfaceBorderBrush}"
-                                            BorderThickness="1"
-                                            CornerRadius="12"
-                                            MaxHeight="329">
-                                        <Grid RowDefinitions="Auto,*">
-
-                                            <!-- Header: accent pill + version + action buttons -->
-                                            <Border Grid.Row="0"
-                                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                                    BorderThickness="0,0,0,1"
-                                                    Padding="20,14">
-                                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
-                                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                                        <Border Width="3"
-                                                                Height="22"
-                                                                CornerRadius="2"
-                                                                Background="{Binding AccentBrush}"
-                                                                VerticalAlignment="Center" />
-                                                        <StackPanel Spacing="1" VerticalAlignment="Center">
-                                                            <TextBlock FontSize="14"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{Binding PrimaryTextBrush}"
-                                                                       Text="What's New" />
-                                                            <TextBlock FontSize="12"
-                                                                       Foreground="{Binding MutedTextBrush}"
-                                                                       Text="{Binding LatestReleaseDisplayName}" />
-                                                        </StackPanel>
-                                                    </StackPanel>
-                                                    <StackPanel Grid.Column="1"
-                                                                Orientation="Horizontal"
-                                                                Spacing="8"
-                                                                VerticalAlignment="Center">
-                                                        <Button Classes="chrome"
-                                                                Click="RefreshLatestReleaseButton_OnClick"
-                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
-                                                                VerticalAlignment="Center"
-                                                                ToolTip.Tip="Check for newer release information"
-                                                                Content="↻" />
-                                                        <Button Classes="chrome"
-                                                                Click="OpenLatestReleaseButton_OnClick"
-                                                                IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
-                                                                ToolTip.Tip="Open this release on GitHub in your browser"
-                                                                Content="GitHub" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </Border>
-
-                                            <!-- Release notes body: always visible, scrollable -->
-                                            <Border Grid.Row="1"
-                                                    Padding="20,14">
-                                                <Panel ClipToBounds="True">
-
-                                                    <StackPanel IsVisible="{Binding IsWhatsNewDisabled}"
-                                                                HorizontalAlignment="Center"
-                                                                VerticalAlignment="Center"
-                                                                Spacing="8">
-                                                        <TextBlock FontSize="11"
-                                                                   HorizontalAlignment="Center"
-                                                                   Foreground="{Binding AccentBrush}"
-                                                                   FontWeight="SemiBold"
-                                                                   LetterSpacing="1"
-                                                                   Text="DISABLED" />
-                                                        <TextBlock FontSize="11"
-                                                                   HorizontalAlignment="Center"
-                                                                   Foreground="{Binding MutedTextBrush}"
-                                                                   Opacity="0.6"
-                                                                   TextAlignment="Center"
-                                                                   TextWrapping="Wrap"
-                                                                   MaxWidth="220"
-                                                                   Text="What's New is turned off by Performance mode." />
-                                                    </StackPanel>
-
-                                                    <!-- Status text (loading / error / up-to-date message) -->
-                                                    <TextBlock IsVisible="{Binding IsLatestReleaseStatusVisible}"
-                                                               Foreground="{Binding MutedTextBrush}"
-                                                               FontSize="12"
-                                                               TextWrapping="Wrap"
-                                                               VerticalAlignment="Center"
-                                                               HorizontalAlignment="Center"
-                                                               TextAlignment="Center"
-                                                               Text="{Binding LatestReleaseStatusText}" />
-
-                                                    <ScrollViewer IsVisible="{Binding HasLatestRelease}"
-                                                                  VerticalScrollBarVisibility="Auto"
-                                                                  HorizontalScrollBarVisibility="Disabled">
-                                                        <ItemsControl ItemsSource="{Binding LatestReleaseFormatted}">
-                                                            <ItemsControl.ItemTemplate>
-                                                                <DataTemplate x:DataType="kodoModels:FormattedParagraph" x:CompileBindings="True">
-                                                                    <Grid Margin="{Binding TopMargin}"
-                                                                          ColumnDefinitions="Auto,*">
-                                                                        <TextBlock Grid.Column="0"
-                                                                                   Text="{Binding Marker}"
-                                                                                   Width="{Binding MarkerColumnWidth}"
-                                                                                   FontSize="12"
-                                                                                   LineHeight="19"
-                                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                                   VerticalAlignment="Top" />
-                                                                        <ItemsControl Grid.Column="1"
-                                                                                      ItemsSource="{Binding Runs}">
-                                                                            <ItemsControl.ItemsPanel>
-                                                                                <ItemsPanelTemplate>
-                                                                                    <WrapPanel />
-                                                                                </ItemsPanelTemplate>
-                                                                            </ItemsControl.ItemsPanel>
-                                                                            <ItemsControl.ItemTemplate>
-                                                                                <DataTemplate x:DataType="kodoModels:FormattedRun" x:CompileBindings="True">
-                                                                                    <TextBlock Text="{Binding Text}"
-                                                                                               TextWrapping="Wrap"
-                                                                                               FontSize="12"
-                                                                                               LineHeight="19"
-                                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                                               FontWeight="{Binding IsBold, Converter={x:Static kodoModels:BoolToFontWeightConverter.Instance}}" />
-                                                                                </DataTemplate>
-                                                                            </ItemsControl.ItemTemplate>
-                                                                        </ItemsControl>
-                                                                    </Grid>
-                                                                </DataTemplate>
-                                                            </ItemsControl.ItemTemplate>
-                                                        </ItemsControl>
-                                                    </ScrollViewer>
-
-                                                </Panel>
-                                            </Border>
-
-                                        </Grid>
-                                    </Border>
-
                                 </StackPanel>
 
                             </Grid>
+                        </StackPanel>
                         </ScrollViewer>
 
                     </Grid>
