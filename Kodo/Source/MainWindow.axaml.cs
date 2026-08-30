@@ -192,6 +192,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDeveloperOptionsVisible;
     private bool _isVerboseLoggingEnabled;
     private int _tabSize = 4;
+    private bool _insertSpaces = true;
     private int _editorFontSize = 14;
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
     private string _customAccentHex = "#8C00FF";
@@ -623,7 +624,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentImagePreview = value;
             previousPreview?.Dispose();
             OnPropertyChanged();
-            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
+            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
         }
     }
 
@@ -789,6 +790,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
             ? "#8C00FF" : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
+        _insertSpaces = settings.InsertSpaces;
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
         _terminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
         _explorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
@@ -1740,6 +1742,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         EditorTextBox.WordWrap = IsWordWrapEnabled;
         EditorTextBox.Options.IndentationSize = TabSize;
+        EditorTextBox.Options.ConvertTabsToSpaces = InsertSpaces;
         EditorTextBox.FontSize = EditorFontSize;
         _indentGuideRenderer.TabSize = TabSize;
         _markdownColorizer.TabSize = TabSize;
@@ -1875,7 +1878,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isFileCorrupted == corrupted) return;
         _isFileCorrupted = corrupted;
-        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText));
+        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText));
     }
 
 
@@ -3011,25 +3014,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _tabSize = normalizedValue;
             OnPropertyChanged();
             OnPropertyChanged(nameof(EditorBehaviorStatusText));
+            OnPropertyChanged(nameof(IndentationDisplayText));
             ApplyEditorSettings();
             SaveSettings();
         }
     }
 
+    public bool InsertSpaces
+    {
+        get => _insertSpaces;
+        set
+        {
+            if (_insertSpaces == value) return;
+            _insertSpaces = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IndentationDisplayText));
+            OnPropertyChanged(nameof(EditorBehaviorStatusText));
+            ApplyEditorSettings();
+            SaveSettings();
+        }
+    }
+
+    public string IndentationDisplayText => InsertSpaces ? $"Spaces: {TabSize}" : $"Tab Size: {TabSize}";
+
+    public bool IsIndentationVisible => IsTextEditorVisible;
+
     public int TabSizeIndex
     {
-        get => TabSize switch
+        get
         {
-            2 => 0,
-            8 => 2,
-            _ => 1
-        };
-        set => TabSize = value switch
+            if (!InsertSpaces) return 3;
+            return TabSize switch
+            {
+                2 => 0,
+                8 => 2,
+                _ => 1
+            };
+        }
+        set
         {
-            0 => 2,
-            2 => 8,
-            _ => 4
-        };
+            switch (value)
+            {
+                case 0: InsertSpaces = true; TabSize = 2; break;
+                case 2: InsertSpaces = true; TabSize = 8; break;
+                case 3: InsertSpaces = false; break;
+                default: InsertSpaces = true; TabSize = 4; break;
+            }
+        }
     }
 
     public int EditorFontSize
@@ -4401,7 +4432,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -4872,6 +4903,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             InsightBlacklistExtensions = InsightBlacklistExtensions,
             DismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
             TabSize = TabSize,
+            InsertSpaces = InsertSpaces,
             EditorFontSize = EditorFontSize,
             ConfirmBeforeClosingUnsavedTabsEnabled = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled = IsRestoreOpenTabsOnLaunchEnabled,
@@ -7820,12 +7852,165 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void IndentationStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!HasFileOpen || !IsTextEditorVisible) return;
 
+        var options = new (string Label, bool UseSpaces, int Size)[]
+        {
+            ("Spaces: 2", true, 2),
+            ("Spaces: 4", true, 4),
+            ("Spaces: 8", true, 8),
+            ("Tab Size: 2", false, 2),
+            ("Tab Size: 4", false, 4),
+            ("Tab Size: 8", false, 8),
+        };
 
+        (bool UseSpaces, int Size)? chosen = null;
+        Window? dialog = null;
 
+        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
+            ? accentSolid.Color
+            : Color.Parse("#8C00FF");
 
+        var headerRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Change indentation:",
+                    FontSize = 13,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
 
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
 
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
+
+        var listPanel = new StackPanel { Spacing = 6 };
+
+        foreach (var (label, useSpaces, size) in options)
+        {
+            var isCurrent = useSpaces == InsertSpaces && size == TabSize;
+            var btn = new Button
+            {
+                Content = isCurrent ? $"{label}  \u2713" : label,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = isCurrent
+                    ? new SolidColorBrush(accentColor, 0.18)
+                    : ButtonBrush,
+                Foreground = isCurrent
+                    ? new SolidColorBrush(accentColor)
+                    : PrimaryTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 7),
+            };
+            var capturedSpaces = useSpaces;
+            var capturedSize = size;
+            btn.Click += (_, _) =>
+            {
+                chosen = (capturedSpaces, capturedSize);
+                dialog?.Close();
+            };
+            listPanel.Children.Add(btn);
+        }
+
+        var listBorder = new Border
+        {
+            Background = WindowBackgroundBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Child = listPanel
+        };
+
+        var panel = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                headerRow,
+                new TextBlock { Text = "Choose indentation for the editor:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                headerDivider,
+                listBorder,
+                new TextBlock
+                {
+                    Text = "Changes apply to new indentations and editor guides.",
+                    FontSize = 11,
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.85
+                },
+                footerDivider
+            }
+        };
+
+        var outer = new Border
+        {
+            Background = CardBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(16),
+            Child = panel
+        };
+
+        dialog = new Window
+        {
+            Title = "Change Indentation",
+            Width = 360,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 300,
+            MaxHeight = 560,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = WindowBackgroundBrush,
+            Content = outer,
+        };
+
+        await dialog.ShowDialog(this);
+
+        if (chosen is null) return;
+        var (chosenUseSpaces, chosenSize) = chosen.Value;
+        if (chosenUseSpaces == InsertSpaces && chosenSize == TabSize) return;
+
+        InsertSpaces = chosenUseSpaces;
+        TabSize = chosenSize;
+        OnPropertyChanged(nameof(IndentationDisplayText));
+        OnPropertyChanged(nameof(IsIndentationVisible));
+    }
 
     private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
@@ -8170,7 +8355,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-    private string GetIndentUnit() => "\t";
+    private string GetIndentUnit() => InsertSpaces ? new string(' ', TabSize) : "\t";
 
 
 

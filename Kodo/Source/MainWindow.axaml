@@ -2857,6 +2857,34 @@
                                 </TextBlock.IsVisible>
                             </TextBlock>
 
+                            <Button Classes="statusitem"
+                                    VerticalAlignment="Center"
+                                    VerticalContentAlignment="Center"
+                                    ToolTip.Tip="Indentation (click to change)"
+                                    Click="IndentationStatusBarButton_OnClick">
+                                <Button.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasFileOpen" />
+                                        <Binding Path="IsTextEditorVisible" />
+                                    </MultiBinding>
+                                </Button.IsVisible>
+                                <TextBlock FontSize="12"
+                                           Text="{Binding IndentationDisplayText}" />
+                            </Button>
+
+                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.4"
+                                       Margin="8,0"
+                                       Text="|">
+                                <TextBlock.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasFileOpen" />
+                                        <Binding Path="IsTextEditorVisible" />
+                                    </MultiBinding>
+                                </TextBlock.IsVisible>
+                            </TextBlock>
+
                             <TextBlock Foreground="{Binding MutedTextBrush}"
                                        VerticalAlignment="Center"
                                        IsVisible="{Binding IsWordCountVisible}"

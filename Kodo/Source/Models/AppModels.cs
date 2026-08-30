@@ -34,6 +34,7 @@ internal sealed class AppSettings
         set => InsightEnabled = value;
     }
     public int TabSize { get; set; } = 4;
+    public bool InsertSpaces { get; set; } = true;
     public int EditorFontSize { get; set; } = 14;
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
     public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
