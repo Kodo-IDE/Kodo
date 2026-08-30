@@ -3155,21 +3155,21 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
     private static HighlightingRuleSet BuildRuleSet(LoadedExtension ext, CompiledSyntaxProfile syntaxProfile)
     {
-        var commentColor     = ColorFor(ext, "comment",      "#6A9955");
-        var stringColor      = ColorFor(ext, "string",       "#CE9178");
-        var charLiteralColor = ColorFor(ext, "charLiteral",  "#CE9178");
-        var keywordColor     = ColorFor(ext, "keyword",      "#569CD6");
-        var typeColor        = ColorFor(ext, "type",         "#4EC9B0");
-        var numberColor      = ColorFor(ext, "number",       "#B5CEA8");
-        var functionColor    = ColorFor(ext, "function",     "#DCDCAA");
-        var namespaceColor   = ColorFor(ext, "namespace",    "#4FC1FF");
-        var propertyColor    = ColorFor(ext, "property",     "#9CDCFE");
-        var attributeColor   = ColorFor(ext, "attribute",    "#C586C0");
-        var operatorColor    = ColorFor(ext, "operator",     "#D4D4D4");
-        var punctuationColor = ColorFor(ext, "punctuation",  "#D4D4D4");
+        var commentColor = ColorFor(ext, "comment", "#6A9955");
+        var stringColor = ColorFor(ext, "string", "#CE9178");
+        var charLiteralColor = ColorFor(ext, "charLiteral", "#CE9178");
+        var keywordColor = ColorFor(ext, "keyword", "#569CD6");
+        var typeColor = ColorFor(ext, "type", "#4EC9B0");
+        var numberColor = ColorFor(ext, "number", "#B5CEA8");
+        var functionColor = ColorFor(ext, "function", "#DCDCAA");
+        var namespaceColor = ColorFor(ext, "namespace", "#4FC1FF");
+        var propertyColor = ColorFor(ext, "property", "#9CDCFE");
+        var attributeColor = ColorFor(ext, "attribute", "#C586C0");
+        var operatorColor = ColorFor(ext, "operator", "#D4D4D4");
+        var punctuationColor = ColorFor(ext, "punctuation", "#D4D4D4");
         var preprocessorColor = ColorFor(ext, "preprocessor", "#C586C0");
-        var variableColor    = ColorFor(ext, "variable",      "#A0DBFD");
-        var isBatch          = IsBatchExtension(ext);
+        var variableColor = ColorFor(ext, "variable", "#A0DBFD");
+        var isBatch = IsBatchExtension(ext);
         var supportsCommonStringPrefixes =
             ext.StringDelimiters.Contains("\"") ||
             ext.StringDelimiters.Contains("'") ||
@@ -3178,7 +3178,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         var isMarkdown = KodoExtensionIds.IsMarkdown(ext.Id);
 
-        var codeRuleSet  = new HighlightingRuleSet();
+        var codeRuleSet = new HighlightingRuleSet();
         var emptyRuleSet = new HighlightingRuleSet();
 
         if (!isMarkdown)
@@ -3236,12 +3236,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         {
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(Regex.Escape(ext.CommentBlockStart), RegexOptions.Compiled),
-                EndExpression          = new Regex(Regex.Escape(ext.CommentBlockEnd),   RegexOptions.Compiled),
-                SpanColor              = commentColor,
+                StartExpression = new Regex(Regex.Escape(ext.CommentBlockStart), RegexOptions.Compiled),
+                EndExpression = new Regex(Regex.Escape(ext.CommentBlockEnd), RegexOptions.Compiled),
+                SpanColor = commentColor,
                 SpanColorIncludesStart = true,
-                SpanColorIncludesEnd   = true,
-                RuleSet                = emptyRuleSet
+                SpanColorIncludesEnd = true,
+                RuleSet = emptyRuleSet
             });
         }
 
@@ -3250,12 +3250,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(@"^#{1,6}(?=\s)", RegexOptions.Compiled | RegexOptions.Multiline),
-                EndExpression          = new Regex(@"$", RegexOptions.Compiled),
-                SpanColor              = keywordColor,
+                StartExpression = new Regex(@"^#{1,6}(?=\s)", RegexOptions.Compiled | RegexOptions.Multiline),
+                EndExpression = new Regex(@"$", RegexOptions.Compiled),
+                SpanColor = keywordColor,
                 SpanColorIncludesStart = true,
-                SpanColorIncludesEnd   = false,
-                RuleSet                = emptyRuleSet
+                SpanColorIncludesEnd = false,
+                RuleSet = emptyRuleSet
             });
         }
 
@@ -3265,12 +3265,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             var commentOptions = isBatch ? RegexOptions.IgnoreCase : RegexOptions.None;
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(Regex.Escape(ext.CommentLine), RegexOptions.Compiled | commentOptions),
-                EndExpression          = new Regex("$", RegexOptions.Compiled),
-                SpanColor              = commentColor,
+                StartExpression = new Regex(Regex.Escape(ext.CommentLine), RegexOptions.Compiled | commentOptions),
+                EndExpression = new Regex("$", RegexOptions.Compiled),
+                SpanColor = commentColor,
                 SpanColorIncludesStart = true,
-                SpanColorIncludesEnd   = false,
-                RuleSet                = emptyRuleSet
+                SpanColorIncludesEnd = false,
+                RuleSet = emptyRuleSet
             });
 
             if (isBatch)
@@ -3278,23 +3278,23 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 // Batch also uses :: as a comment (alternative to REM) –
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
-                    StartExpression        = new Regex(@"::", RegexOptions.Compiled),
-                    EndExpression          = new Regex("$", RegexOptions.Compiled),
-                    SpanColor              = commentColor,
+                    StartExpression = new Regex(@"::", RegexOptions.Compiled),
+                    EndExpression = new Regex("$", RegexOptions.Compiled),
+                    SpanColor = commentColor,
                     SpanColorIncludesStart = true,
-                    SpanColorIncludesEnd   = false,
-                    RuleSet                = emptyRuleSet
+                    SpanColorIncludesEnd = false,
+                    RuleSet = emptyRuleSet
                 });
 
-            // Treat text after echo as literal output, leaving the command
+                // Treat text after echo as literal output, leaving the command
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
-                    StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-                    EndExpression          = new Regex("$", RegexOptions.Compiled),
-                    SpanColor              = ColorFor(ext, "plain", "#D4D4D4"),
+                    StartExpression = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                    EndExpression = new Regex("$", RegexOptions.Compiled),
+                    SpanColor = ColorFor(ext, "plain", "#D4D4D4"),
                     SpanColorIncludesStart = false,
-                    SpanColorIncludesEnd   = false,
-                    RuleSet                = emptyRuleSet
+                    SpanColorIncludesEnd = false,
+                    RuleSet = emptyRuleSet
                 });
 
                 // Handle echo. and echo: forms where punctuation is part of
@@ -3305,21 +3305,21 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             // Fallback when CommentLine is empty but we still want :: support
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(@"::", RegexOptions.Compiled),
-                EndExpression          = new Regex("$", RegexOptions.Compiled),
-                SpanColor              = commentColor,
+                StartExpression = new Regex(@"::", RegexOptions.Compiled),
+                EndExpression = new Regex("$", RegexOptions.Compiled),
+                SpanColor = commentColor,
                 SpanColorIncludesStart = true,
-                SpanColorIncludesEnd   = false,
-                RuleSet                = emptyRuleSet
+                SpanColorIncludesEnd = false,
+                RuleSet = emptyRuleSet
             });
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
-                StartExpression        = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
-                EndExpression          = new Regex("$", RegexOptions.Compiled),
-                SpanColor              = ColorFor(ext, "plain", "#D4D4D4"),
+                StartExpression = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
+                EndExpression = new Regex("$", RegexOptions.Compiled),
+                SpanColor = ColorFor(ext, "plain", "#D4D4D4"),
                 SpanColorIncludesStart = false,
-                SpanColorIncludesEnd   = false,
-                RuleSet                = emptyRuleSet
+                SpanColorIncludesEnd = false,
+                RuleSet = emptyRuleSet
             });
         }
 

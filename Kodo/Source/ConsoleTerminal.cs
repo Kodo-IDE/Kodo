@@ -40,7 +40,7 @@ public sealed class ConsoleTerminal : Control
     ];
 
     private static readonly Color DefaultFg = Color.FromRgb(204, 204, 204);
-    private static readonly Color DefaultBg = Color.FromRgb(12,  12,  12);
+    private static readonly Color DefaultBg = Color.FromRgb(12, 12, 12);
 
     private const double CellW = 8.4;
     private const double CellH = 17.0;
@@ -68,7 +68,7 @@ public sealed class ConsoleTerminal : Control
 
     private bool _bracketedPasteMode;
 
-    private static readonly Color SearchMatchBg   = Color.FromArgb(140, 255, 213, 79);
+    private static readonly Color SearchMatchBg = Color.FromArgb(140, 255, 213, 79);
     private static readonly Color SearchCurrentBg = Color.FromArgb(200, 255, 140, 0);
     private bool _searchActive;
     private readonly StringBuilder _searchQuery = new();
@@ -78,11 +78,11 @@ public sealed class ConsoleTerminal : Control
     public enum ParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
     private ParseState _parseState = ParseState.Ground;
     private readonly StringBuilder _csiParam = new();
-    private readonly StringBuilder _oscBuf   = new();
+    private readonly StringBuilder _oscBuf = new();
 
-    private IntPtr  _hPcon   = IntPtr.Zero;
-    private IntPtr  _hProcess = IntPtr.Zero;
-    private IntPtr  _hThread  = IntPtr.Zero;
+    private IntPtr _hPcon = IntPtr.Zero;
+    private IntPtr _hProcess = IntPtr.Zero;
+    private IntPtr _hThread = IntPtr.Zero;
     private Stream? _writeStream;
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
@@ -101,7 +101,7 @@ public sealed class ConsoleTerminal : Control
         _blinkTimer.Tick += (_, _) => { _cursorBlinkOn = !_cursorBlinkOn; InvalidateVisual(); };
         _blinkTimer.Start();
 
-        AttachedToVisualTree   += (_, _) => Focus();
+        AttachedToVisualTree += (_, _) => Focus();
     }
 
 
@@ -115,8 +115,8 @@ public sealed class ConsoleTerminal : Control
 
     public IReadOnlyDictionary<string, KeyGesture>? Keybinds { get; set; }
 
-    private static readonly KeyGesture DefaultCopy   = new(Key.C, KeyModifiers.Control | KeyModifiers.Shift);
-    private static readonly KeyGesture DefaultPaste  = new(Key.V, KeyModifiers.Control);
+    private static readonly KeyGesture DefaultCopy = new(Key.C, KeyModifiers.Control | KeyModifiers.Shift);
+    private static readonly KeyGesture DefaultPaste = new(Key.V, KeyModifiers.Control);
     private static readonly KeyGesture DefaultSearch = new(Key.F, KeyModifiers.Control);
 
     public void Start(string shellPath, string arguments, string workingDirectory,
@@ -138,7 +138,7 @@ public sealed class ConsoleTerminal : Control
             }
 
             NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
-            NativeConPty.CreatePipe(out var hReadPtyInput,  out var hWritePtyInput,  IntPtr.Zero, 0);
+            NativeConPty.CreatePipe(out var hReadPtyInput, out var hWritePtyInput, IntPtr.Zero, 0);
 
             var result = NativeConPty.CreatePseudoConsole(
                 new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
@@ -152,8 +152,8 @@ public sealed class ConsoleTerminal : Control
             NativeConPty.CloseHandle(hWritePtyOutput);
 
             _writeStream = new FileStream(
-                new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput,  true), FileAccess.Write);
-            _readStream  = new FileStream(
+                new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput, true), FileAccess.Write);
+            _readStream = new FileStream(
                 new Microsoft.Win32.SafeHandles.SafeFileHandle(hReadPtyOutput, true), FileAccess.Read);
 
             var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
@@ -190,9 +190,9 @@ public sealed class ConsoleTerminal : Control
         _cts = null;
 
         try { _writeStream?.Dispose(); } catch { }
-        try { _readStream?.Dispose();  } catch { }
+        try { _readStream?.Dispose(); } catch { }
         _writeStream = null;
-        _readStream  = null;
+        _readStream = null;
 
         if (_hPcon != IntPtr.Zero)
         {
@@ -200,7 +200,7 @@ public sealed class ConsoleTerminal : Control
             _hPcon = IntPtr.Zero;
         }
         if (_hProcess != IntPtr.Zero) { NativeConPty.CloseHandle(_hProcess); _hProcess = IntPtr.Zero; }
-        if (_hThread  != IntPtr.Zero) { NativeConPty.CloseHandle(_hThread);  _hThread  = IntPtr.Zero; }
+        if (_hThread != IntPtr.Zero) { NativeConPty.CloseHandle(_hThread); _hThread = IntPtr.Zero; }
     }
 
     public void Resize(int cols, int rows)
@@ -260,22 +260,22 @@ public sealed class ConsoleTerminal : Control
             var copyC = Math.Min(_cols, snap.Cols);
             var newCells = new TermCell[_rows, _cols];
             for (var r = 0; r < copyR; r++)
-            for (var c = 0; c < copyC; c++)
-                newCells[r, c] = snap.Cells[r, c];
+                for (var c = 0; c < copyC; c++)
+                    newCells[r, c] = snap.Cells[r, c];
             _cells = newCells;
 
-            _cursorRow     = Math.Min(snap.CursorRow, _rows - 1);
-            _cursorCol     = Math.Min(snap.CursorCol, _cols - 1);
+            _cursorRow = Math.Min(snap.CursorRow, _rows - 1);
+            _cursorCol = Math.Min(snap.CursorCol, _cols - 1);
             _cursorVisible = snap.CursorVisible;
-            _fg            = snap.Fg;
-            _bg            = snap.Bg;
-            _bold          = snap.Bold;
-            _underline     = snap.Underline;
-            _reverse       = snap.Reverse;
-            _parseState    = snap.ParseState;
+            _fg = snap.Fg;
+            _bg = snap.Bg;
+            _bold = snap.Bold;
+            _underline = snap.Underline;
+            _reverse = snap.Reverse;
+            _parseState = snap.ParseState;
             _csiParam.Clear();
             _csiParam.Append(snap.CsiParam);
-            _scrollOffset  = 0;
+            _scrollOffset = 0;
         }
         InvalidateVisual();
     }
@@ -425,7 +425,7 @@ public sealed class ConsoleTerminal : Control
     private (int Row, int Col) PointToCell(Point p)
     {
         var screenRow = Math.Clamp((int)(p.Y / CellH), 0, _rows - 1);
-        var col       = Math.Clamp((int)(p.X / CellW), 0, _cols - 1);
+        var col = Math.Clamp((int)(p.X / CellW), 0, _cols - 1);
         return (ScreenRowToAbsRow(screenRow), col);
     }
 
@@ -446,7 +446,7 @@ public sealed class ConsoleTerminal : Control
     }
 
     private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
-    private static readonly Typeface TypefaceBold   = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
+    private static readonly Typeface TypefaceBold = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
 
     public override void Render(DrawingContext ctx)
     {
@@ -482,66 +482,66 @@ public sealed class ConsoleTerminal : Control
             }
 
             for (var r = 0; r < _rows; r++)
-            for (var c = 0; c < _cols; c++)
-            {
-                var cell = GetDisplayCell(r, c, scrollbackStart);
-                var absRow = ScreenRowToAbsRow(r);
-
-                var x = (int)Math.Round(c * CellW);
-                var x1 = (int)Math.Round((c + 1) * CellW);
-                var y = r * CellH;          // CellH is already integral (17.0)
-                var w = x1 - x;            // actual pixel width for this column
-                var rect = new Rect(x, y, w, CellH);
-
-                var atCursor = isCursorVisible && r == _cursorRow && c == _cursorCol;
-                var selected = selRange is not null && IsCellSelected(absRow, c, selRange.Value);
-
-                var isMatch = false;
-                var isCurrentMatch = false;
-                if (searchHighlights is not null && searchHighlights.TryGetValue(absRow, out var ranges))
+                for (var c = 0; c < _cols; c++)
                 {
-                    foreach (var (mc, len) in ranges)
+                    var cell = GetDisplayCell(r, c, scrollbackStart);
+                    var absRow = ScreenRowToAbsRow(r);
+
+                    var x = (int)Math.Round(c * CellW);
+                    var x1 = (int)Math.Round((c + 1) * CellW);
+                    var y = r * CellH;          // CellH is already integral (17.0)
+                    var w = x1 - x;            // actual pixel width for this column
+                    var rect = new Rect(x, y, w, CellH);
+
+                    var atCursor = isCursorVisible && r == _cursorRow && c == _cursorCol;
+                    var selected = selRange is not null && IsCellSelected(absRow, c, selRange.Value);
+
+                    var isMatch = false;
+                    var isCurrentMatch = false;
+                    if (searchHighlights is not null && searchHighlights.TryGetValue(absRow, out var ranges))
                     {
-                        if (c < mc || c >= mc + len) continue;
-                        isMatch = true;
-                        if (_searchIndex >= 0 && _searchMatches[_searchIndex].AbsRow == absRow &&
-                            c >= _searchMatches[_searchIndex].Col && c < _searchMatches[_searchIndex].Col + len)
-                            isCurrentMatch = true;
-                        break;
+                        foreach (var (mc, len) in ranges)
+                        {
+                            if (c < mc || c >= mc + len) continue;
+                            isMatch = true;
+                            if (_searchIndex >= 0 && _searchMatches[_searchIndex].AbsRow == absRow &&
+                                c >= _searchMatches[_searchIndex].Col && c < _searchMatches[_searchIndex].Col + len)
+                                isCurrentMatch = true;
+                            break;
+                        }
+                    }
+
+                    var bg = atCursor ? DefaultFg
+                           : isCurrentMatch ? SearchCurrentBg
+                           : isMatch ? SearchMatchBg
+                           : selected ? SelectionBg
+                           : (cell.Bg ?? DefaultBg);
+                    if (bg != DefaultBg)
+                        ctx.FillRectangle(new SolidColorBrush(bg), rect);
+
+                    if (cell.Char != '\0' && cell.Char != ' ')
+                    {
+                        var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
+                        var typeface = cell.Bold ? TypefaceBold : TypefaceNormal;
+
+                        var ft = new FormattedText(
+                            cell.Char.ToString(),
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            FlowDirection.LeftToRight,
+                            typeface,
+                            FontSize,
+                            new SolidColorBrush(fg));
+
+                        ctx.DrawText(ft, new Point(x, y));
+                    }
+
+                    if (cell.Underline)
+                    {
+                        var fg = cell.Fg ?? DefaultFg;
+                        ctx.DrawLine(new Pen(new SolidColorBrush(fg)),
+                            new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                     }
                 }
-
-                var bg = atCursor ? DefaultFg
-                       : isCurrentMatch ? SearchCurrentBg
-                       : isMatch ? SearchMatchBg
-                       : selected ? SelectionBg
-                       : (cell.Bg ?? DefaultBg);
-                if (bg != DefaultBg)
-                    ctx.FillRectangle(new SolidColorBrush(bg), rect);
-
-                if (cell.Char != '\0' && cell.Char != ' ')
-                {
-                    var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
-                    var typeface = cell.Bold ? TypefaceBold : TypefaceNormal;
-
-                    var ft = new FormattedText(
-                        cell.Char.ToString(),
-                        System.Globalization.CultureInfo.InvariantCulture,
-                        FlowDirection.LeftToRight,
-                        typeface,
-                        FontSize,
-                        new SolidColorBrush(fg));
-
-                    ctx.DrawText(ft, new Point(x, y));
-                }
-
-                if (cell.Underline)
-                {
-                    var fg = cell.Fg ?? DefaultFg;
-                    ctx.DrawLine(new Pen(new SolidColorBrush(fg)),
-                        new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
-                }
-            }
 
             if (_scrollOffset > 0)
                 DrawScrollIndicator(ctx);
@@ -636,7 +636,7 @@ public sealed class ConsoleTerminal : Control
         for (var row = r0; row <= r1; row++)
         {
             var startCol = row == r0 ? c0 : 0;
-            var endCol   = row == r1 ? c1 : ColsForAbsRow(row);
+            var endCol = row == r1 ? c1 : ColsForAbsRow(row);
             var lineSb = new StringBuilder();
             for (var col = startCol; col < endCol; col++)
             {
@@ -768,7 +768,7 @@ public sealed class ConsoleTerminal : Control
         var s = size ?? Bounds.Size;
         // Uses the same rounding as Render.
         var cols = Math.Max(10, (int)(s.Width / CellW));
-        var rows = Math.Max(3,  (int)(s.Height / CellH));
+        var rows = Math.Max(3, (int)(s.Height / CellH));
         return (cols, rows);
     }
 
@@ -780,8 +780,8 @@ public sealed class ConsoleTerminal : Control
             var copyR = Math.Min(rows, _cells.GetLength(0));
             var copyC = Math.Min(cols, _cells.GetLength(1));
             for (var r = 0; r < copyR; r++)
-            for (var c = 0; c < copyC; c++)
-                next[r, c] = _cells[r, c];
+                for (var c = 0; c < copyC; c++)
+                    next[r, c] = _cells[r, c];
             _cells = next;
             _cursorRow = Math.Min(_cursorRow, rows - 1);
             _cursorCol = Math.Min(_cursorCol, cols - 1);
@@ -819,11 +819,11 @@ public sealed class ConsoleTerminal : Control
                 switch (ch)
                 {
                     case '\x1B': _parseState = ParseState.Escape; break;
-                    case '\r':   _cursorCol = 0; break;
-                    case '\n':   LineFeed(); break;
-                    case '\b':   if (_cursorCol > 0) _cursorCol--; break;
-                    case '\t':   _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
-                    case '\a':   break; // bell - ignore
+                    case '\r': _cursorCol = 0; break;
+                    case '\n': LineFeed(); break;
+                    case '\b': if (_cursorCol > 0) _cursorCol--; break;
+                    case '\t': _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
+                    case '\a': break; // bell - ignore
                     case '\x0E': break; // SO (shift-out) - ignore, no alternate charset
                     case '\x0F': break; // SI (shift-in)  - ignore
                     default:
@@ -841,10 +841,10 @@ public sealed class ConsoleTerminal : Control
                 switch (ch)
                 {
                     case '[': _csiParam.Clear(); _parseState = ParseState.CsiEntry; break;
-                    case ']': _oscBuf.Clear();   _parseState = ParseState.OscString; break;
+                    case ']': _oscBuf.Clear(); _parseState = ParseState.OscString; break;
                     case 'M': ReverseLineFeed(); _parseState = ParseState.Ground; break;
-                    case 'c': ResetTerminal();   _parseState = ParseState.Ground; break;
-                    default:                     _parseState = ParseState.Ground; break;
+                    case 'c': ResetTerminal(); _parseState = ParseState.Ground; break;
+                    default: _parseState = ParseState.Ground; break;
                 }
                 break;
 
@@ -918,10 +918,10 @@ public sealed class ConsoleTerminal : Control
     private void DispatchCsi(char cmd, string param)
     {
         var priv = param.StartsWith('?');
-        var raw  = priv ? param[1..] : param;
+        var raw = priv ? param[1..] : param;
         var nums = ParseNums(raw);
         int P(int i, int def = 1) => (i < nums.Count && nums[i] > 0) ? nums[i] : def;
-        int P0(int i)             => (i < nums.Count) ? nums[i] : 0;
+        int P0(int i) => (i < nums.Count) ? nums[i] : 0;
 
         switch (cmd)
         {
@@ -930,9 +930,10 @@ public sealed class ConsoleTerminal : Control
             case 'C': _cursorCol = Math.Min(_cols - 1, _cursorCol + P(0)); break;
             case 'D': _cursorCol = Math.Max(0, _cursorCol - P(0)); break;
             case 'E': _cursorRow = Math.Min(_rows - 1, _cursorRow + P(0)); _cursorCol = 0; break;
-            case 'F': _cursorRow = Math.Max(0, _cursorRow - P(0));          _cursorCol = 0; break;
+            case 'F': _cursorRow = Math.Max(0, _cursorRow - P(0)); _cursorCol = 0; break;
             case 'G': _cursorCol = Math.Min(_cols - 1, Math.Max(0, P(0) - 1)); break;
-            case 'H': case 'f':
+            case 'H':
+            case 'f':
                 _cursorRow = Math.Min(_rows - 1, Math.Max(0, P(0) - 1));
                 _cursorCol = Math.Min(_cols - 1, Math.Max(0, P(1) - 1));
                 break;
@@ -961,7 +962,7 @@ public sealed class ConsoleTerminal : Control
             // CSI <n> X erases n cells at the cursor without moving it.
             case 'X': EraseChars(P(0)); break;
 
-            case 'S': ScrollUp(P(0));   break;
+            case 'S': ScrollUp(P(0)); break;
             case 'T': ScrollDown(P(0)); break;
         }
     }
@@ -973,26 +974,26 @@ public sealed class ConsoleTerminal : Control
         {
             switch (nums[i])
             {
-                case 0:  ResetAttrs(); break;
-                case 1:  _bold = true; break;
-                case 4:  _underline = true; break;
-                case 7:  _reverse = true; break;
+                case 0: ResetAttrs(); break;
+                case 1: _bold = true; break;
+                case 4: _underline = true; break;
+                case 7: _reverse = true; break;
                 case 22: _bold = false; break;
                 case 24: _underline = false; break;
                 case 27: _reverse = false; break;
                 case >= 30 and <= 37: _fg = AnsiPalette[nums[i] - 30]; break;
                 case 38:
-                    if (i + 2 < nums.Count && nums[i+1] == 5) { _fg = Palette256(nums[i+2]); i += 2; }
-                    else if (i + 4 < nums.Count && nums[i+1] == 2) { _fg = Color.FromRgb((byte)nums[i+2], (byte)nums[i+3], (byte)nums[i+4]); i += 4; }
+                    if (i + 2 < nums.Count && nums[i + 1] == 5) { _fg = Palette256(nums[i + 2]); i += 2; }
+                    else if (i + 4 < nums.Count && nums[i + 1] == 2) { _fg = Color.FromRgb((byte)nums[i + 2], (byte)nums[i + 3], (byte)nums[i + 4]); i += 4; }
                     break;
                 case 39: _fg = DefaultFg; break;
                 case >= 40 and <= 47: _bg = AnsiPalette[nums[i] - 40]; break;
                 case 48:
-                    if (i + 2 < nums.Count && nums[i+1] == 5) { _bg = Palette256(nums[i+2]); i += 2; }
-                    else if (i + 4 < nums.Count && nums[i+1] == 2) { _bg = Color.FromRgb((byte)nums[i+2], (byte)nums[i+3], (byte)nums[i+4]); i += 4; }
+                    if (i + 2 < nums.Count && nums[i + 1] == 5) { _bg = Palette256(nums[i + 2]); i += 2; }
+                    else if (i + 4 < nums.Count && nums[i + 1] == 2) { _bg = Color.FromRgb((byte)nums[i + 2], (byte)nums[i + 3], (byte)nums[i + 4]); i += 4; }
                     break;
                 case 49: _bg = DefaultBg; break;
-                case >= 90 and <= 97:  _fg = AnsiPalette[nums[i] - 90 + 8]; break;
+                case >= 90 and <= 97: _fg = AnsiPalette[nums[i] - 90 + 8]; break;
                 case >= 100 and <= 107: _bg = AnsiPalette[nums[i] - 100 + 8]; break;
             }
         }
@@ -1040,22 +1041,22 @@ public sealed class ConsoleTerminal : Control
         _scrollOffset = Math.Clamp(_scrollOffset - trimmed, 0, _scrollback.Count);
 
         for (var r = 0; r < _rows - n; r++)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = _cells[r + n, c];
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r + n, c];
         for (var r = Math.Max(0, _rows - n); r < _rows; r++)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = default;
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = default;
     }
 
     private void ScrollDown(int n)
     {
         n = Math.Clamp(n, 0, _rows);
         for (var r = _rows - 1; r >= n; r--)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = _cells[r - n, c];
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r - n, c];
         for (var r = 0; r < n; r++)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = default;
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = default;
     }
 
     private void EraseDisplay(int mode)
@@ -1080,7 +1081,7 @@ public sealed class ConsoleTerminal : Control
         switch (mode)
         {
             case 0: for (var c = _cursorCol; c < _cols; c++) _cells[_cursorRow, c] = default; break;
-            case 1: for (var c = 0; c <= _cursorCol; c++)   _cells[_cursorRow, c] = default; break;
+            case 1: for (var c = 0; c <= _cursorCol; c++) _cells[_cursorRow, c] = default; break;
             case 2: ClearRow(_cursorRow); break;
         }
     }
@@ -1098,23 +1099,23 @@ public sealed class ConsoleTerminal : Control
     private void ClearAllCells()
     {
         for (var r = 0; r < _rows; r++)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = default;
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = default;
     }
 
     private void InsertLines(int n)
     {
         for (var r = _rows - 1; r >= _cursorRow + n; r--)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = _cells[r - n, c];
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r - n, c];
         for (var r = _cursorRow; r < _cursorRow + n && r < _rows; r++) ClearRow(r);
     }
 
     private void DeleteLines(int n)
     {
         for (var r = _cursorRow; r < _rows - n; r++)
-        for (var c = 0; c < _cols; c++)
-            _cells[r, c] = _cells[r + n, c];
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r + n, c];
         for (var r = Math.Max(0, _rows - n); r < _rows; r++) ClearRow(r);
     }
 
@@ -1136,41 +1137,41 @@ public sealed class ConsoleTerminal : Control
 
     private static string? KeyToVt(Key key, KeyModifiers mods)
     {
-        var ctrl  = mods.HasFlag(KeyModifiers.Control);
+        var ctrl = mods.HasFlag(KeyModifiers.Control);
         var shift = mods.HasFlag(KeyModifiers.Shift);
-        var alt   = mods.HasFlag(KeyModifiers.Alt);
-        var mod   = (shift ? 1 : 0) | (alt ? 2 : 0) | (ctrl ? 4 : 0);
+        var alt = mods.HasFlag(KeyModifiers.Alt);
+        var mod = (shift ? 1 : 0) | (alt ? 2 : 0) | (ctrl ? 4 : 0);
         var modSuffix = mod > 0 ? $";{mod + 1}" : "";
 
         return key switch
         {
             // Arrow keys: plain → CSI A-D; with any modifier → CSI 1;<mod+1> A-D
-            Key.Up    => mod > 0 ? $"\x1b[1{modSuffix}A" : "\x1b[A",
-            Key.Down  => mod > 0 ? $"\x1b[1{modSuffix}B" : "\x1b[B",
+            Key.Up => mod > 0 ? $"\x1b[1{modSuffix}A" : "\x1b[A",
+            Key.Down => mod > 0 ? $"\x1b[1{modSuffix}B" : "\x1b[B",
             Key.Right => mod > 0 ? $"\x1b[1{modSuffix}C" : "\x1b[C",
-            Key.Left  => mod > 0 ? $"\x1b[1{modSuffix}D" : "\x1b[D",
+            Key.Left => mod > 0 ? $"\x1b[1{modSuffix}D" : "\x1b[D",
 
             // Home/End: unmodified -> SS3 form; modified -> CSI 1;<mod+1> H/F
-            Key.Home   => mod > 0 ? $"\x1b[1{modSuffix}H" : "\x1bOH",
-            Key.End    => mod > 0 ? $"\x1b[1{modSuffix}F" : "\x1bOF",
+            Key.Home => mod > 0 ? $"\x1b[1{modSuffix}H" : "\x1bOH",
+            Key.End => mod > 0 ? $"\x1b[1{modSuffix}F" : "\x1bOF",
 
-            Key.Insert   => $"\x1b[2{modSuffix}~",
-            Key.Delete   => $"\x1b[3{modSuffix}~",
-            Key.PageUp   => $"\x1b[5{modSuffix}~",
+            Key.Insert => $"\x1b[2{modSuffix}~",
+            Key.Delete => $"\x1b[3{modSuffix}~",
+            Key.PageUp => $"\x1b[5{modSuffix}~",
             Key.PageDown => $"\x1b[6{modSuffix}~",
-            Key.F1  => "\x1bOP",
-            Key.F2  => "\x1bOQ",
-            Key.F3  => "\x1bOR",
-            Key.F4  => "\x1bOS",
-            Key.F5  => "\x1b[15~",
-            Key.F6  => "\x1b[17~",
-            Key.F7  => "\x1b[18~",
-            Key.F8  => "\x1b[19~",
-            Key.F9  => "\x1b[20~",
+            Key.F1 => "\x1bOP",
+            Key.F2 => "\x1bOQ",
+            Key.F3 => "\x1bOR",
+            Key.F4 => "\x1bOS",
+            Key.F5 => "\x1b[15~",
+            Key.F6 => "\x1b[17~",
+            Key.F7 => "\x1b[18~",
+            Key.F8 => "\x1b[19~",
+            Key.F9 => "\x1b[20~",
             Key.F10 => "\x1b[21~",
             Key.F11 => "\x1b[23~",
             Key.F12 => "\x1b[24~",
-            Key.Tab    => shift ? "\x1b[Z" : "\t",
+            Key.Tab => shift ? "\x1b[Z" : "\t",
             Key.Return => "\r",
             Key.Escape => "\x1b",
             // Backspace: Ctrl+Backspace → word-erase (^H = 0x08); plain →
@@ -1181,12 +1182,33 @@ public sealed class ConsoleTerminal : Control
 
     private static int? ControlChar(Key key) => key switch
     {
-        Key.A => 1,  Key.B => 2,  Key.C => 3,  Key.D => 4,  Key.E => 5,
-        Key.F => 6,  Key.G => 7,  Key.H => 8,  Key.I => 9,  Key.J => 10,
-        Key.K => 11, Key.L => 12, Key.M => 13, Key.N => 14, Key.O => 15,
-        Key.P => 16, Key.Q => 17, Key.R => 18, Key.S => 19, Key.T => 20,
-        Key.U => 21, Key.V => 22, Key.W => 23, Key.X => 24, Key.Y => 25,
-        Key.Z => 26, _ => null
+        Key.A => 1,
+        Key.B => 2,
+        Key.C => 3,
+        Key.D => 4,
+        Key.E => 5,
+        Key.F => 6,
+        Key.G => 7,
+        Key.H => 8,
+        Key.I => 9,
+        Key.J => 10,
+        Key.K => 11,
+        Key.L => 12,
+        Key.M => 13,
+        Key.N => 14,
+        Key.O => 15,
+        Key.P => 16,
+        Key.Q => 17,
+        Key.R => 18,
+        Key.S => 19,
+        Key.T => 20,
+        Key.U => 21,
+        Key.V => 22,
+        Key.W => 23,
+        Key.X => 24,
+        Key.Y => 25,
+        Key.Z => 26,
+        _ => null
     };
 
     private static string? AltKeyChar(Key key) => key switch
@@ -1210,7 +1232,7 @@ public sealed class ConsoleTerminal : Control
 
     private static Color Palette256(int n)
     {
-        if (n < 16)  return AnsiPalette[n];
+        if (n < 16) return AnsiPalette[n];
         if (n < 232)
         {
             n -= 16;
@@ -1225,11 +1247,11 @@ public sealed class ConsoleTerminal : Control
 }
 
 public readonly record struct TermCell(
-    char  Char,
+    char Char,
     Color? Fg,
     Color? Bg,
-    bool  Bold,
-    bool  Underline);
+    bool Bold,
+    bool Underline);
 
 // Immutable capture of a terminal's screen buffer, stored per session.
 public sealed class TerminalSnapshot(
@@ -1239,19 +1261,19 @@ public sealed class TerminalSnapshot(
     Color fg, Color bg, bool bold, bool underline, bool reverse,
     ConsoleTerminal.ParseState parseState, string csiParam)
 {
-    internal TermCell[,] Cells         { get; } = cells;
-    public   int         Rows          { get; } = rows;
-    public   int         Cols          { get; } = cols;
-    internal int         CursorRow     { get; } = cursorRow;
-    internal int         CursorCol     { get; } = cursorCol;
-    internal bool        CursorVisible { get; } = cursorVisible;
-    internal Color       Fg            { get; } = fg;
-    internal Color       Bg            { get; } = bg;
-    internal bool        Bold          { get; } = bold;
-    internal bool        Underline     { get; } = underline;
-    internal bool        Reverse       { get; } = reverse;
+    internal TermCell[,] Cells { get; } = cells;
+    public int Rows { get; } = rows;
+    public int Cols { get; } = cols;
+    internal int CursorRow { get; } = cursorRow;
+    internal int CursorCol { get; } = cursorCol;
+    internal bool CursorVisible { get; } = cursorVisible;
+    internal Color Fg { get; } = fg;
+    internal Color Bg { get; } = bg;
+    internal bool Bold { get; } = bold;
+    internal bool Underline { get; } = underline;
+    internal bool Reverse { get; } = reverse;
     internal ConsoleTerminal.ParseState ParseState { get; } = parseState;
-    internal string      CsiParam      { get; } = csiParam;
+    internal string CsiParam { get; } = csiParam;
 }
 
 internal static class NativeConPty
@@ -1263,17 +1285,17 @@ internal static class NativeConPty
     private struct STARTUPINFOEXW
     {
         public STARTUPINFOW StartupInfo;
-        public IntPtr       lpAttributeList;
+        public IntPtr lpAttributeList;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct STARTUPINFOW
     {
-        public int    cb;
+        public int cb;
         public string? lpReserved, lpDesktop, lpTitle;
-        public int    dwX, dwY, dwXSize, dwYSize;
-        public int    dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
-        public short  wShowWindow, cbReserved2;
+        public int dwX, dwY, dwXSize, dwYSize;
+        public int dwXCountChars, dwYCountChars, dwFillAttribute, dwFlags;
+        public short wShowWindow, cbReserved2;
         public IntPtr lpReserved2, hStdInput, hStdOutput, hStdError;
     }
 
@@ -1281,12 +1303,12 @@ internal static class NativeConPty
     private struct PROCESS_INFORMATION
     {
         public IntPtr hProcess, hThread;
-        public int    dwProcessId, dwThreadId;
+        public int dwProcessId, dwThreadId;
     }
 
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const uint PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
-    private const int  STARTF_USESTDHANDLES = 0x100;
+    private const int STARTF_USESTDHANDLES = 0x100;
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool CreatePipe(out IntPtr hRead, out IntPtr hWrite, IntPtr lpAttr, int nSize);
@@ -1349,7 +1371,7 @@ internal static class NativeConPty
                 {
                     StartupInfo = new STARTUPINFOW
                     {
-                        cb     = Marshal.SizeOf<STARTUPINFOEXW>(),
+                        cb = Marshal.SizeOf<STARTUPINFOEXW>(),
                         dwFlags = 0 // ConPTY owns stdio via attribute list; STARTF_USESTDHANDLES with null handles breaks stdin
                     },
                     lpAttributeList = attrList
@@ -1360,7 +1382,7 @@ internal static class NativeConPty
                     throw new InvalidOperationException($"CreateProcessW: {Marshal.GetLastWin32Error()}");
 
                 hProcess = pi.hProcess;
-                hThread  = pi.hThread;
+                hThread = pi.hThread;
             }
             finally { Marshal.FreeHGlobal(hPconPtr); }
         }

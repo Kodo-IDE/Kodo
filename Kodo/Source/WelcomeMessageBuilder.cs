@@ -16,7 +16,7 @@ internal static class WelcomeMessageBuilder
         var dow = date.DayOfWeek;
         var y = date.Year;
 
-        if (m == 1  && d == 1)  return new("New Year's Day", "Happy New Year!");
+        if (m == 1 && d == 1) return new("New Year's Day", "Happy New Year!");
         if (m == 12 && d == 31) return new("New Year's Eve", "Happy New Year's Eve!");
         if (m == 12 && d == 25) return new("Christmas Day", "Merry Christmas!");
         if (m == 12 && d == 24) return new("Christmas Eve", "Happy Christmas Eve!");
@@ -24,13 +24,13 @@ internal static class WelcomeMessageBuilder
             return new("Boxing Day", "Happy Boxing Day!");
         if (m == 12 && d == 26) return new("Kwanzaa", "Happy Kwanzaa!");
         if (m == 10 && d == 31) return new("Halloween", "Happy Halloween!");
-        if (m == 2  && d == 14) return new("Valentine's Day", "Happy Valentine's Day!");
-        if (m == 4  && d == 1)  return new("April Fools' Day", "Happy April Fools'! (Or is it?)");
-        if (m == 3  && d == 8)  return new("International Women's Day", "Happy International Women's Day!");
-        if (m == 4  && d == 22) return new("Earth Day", "Happy Earth Day!");
-        if (m == 5  && d == 5)  return new("Cinco de Mayo", "¡Feliz Cinco de Mayo!");
-        if (m == 6  && d == 5)  return new("World Environment Day", "Happy World Environment Day!");
-        if (m == 9  && d == 21) return new("International Day of Peace", "Happy International Day of Peace!");
+        if (m == 2 && d == 14) return new("Valentine's Day", "Happy Valentine's Day!");
+        if (m == 4 && d == 1) return new("April Fools' Day", "Happy April Fools'! (Or is it?)");
+        if (m == 3 && d == 8) return new("International Women's Day", "Happy International Women's Day!");
+        if (m == 4 && d == 22) return new("Earth Day", "Happy Earth Day!");
+        if (m == 5 && d == 5) return new("Cinco de Mayo", "¡Feliz Cinco de Mayo!");
+        if (m == 6 && d == 5) return new("World Environment Day", "Happy World Environment Day!");
+        if (m == 9 && d == 21) return new("International Day of Peace", "Happy International Day of Peace!");
         if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day!");
 
         if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
@@ -80,7 +80,7 @@ internal static class WelcomeMessageBuilder
 
         if (country == "CA")
         {
-            if (m == 7  && d == 1)  return new("Canada Day", "Happy Canada Day!");
+            if (m == 7 && d == 1) return new("Canada Day", "Happy Canada Day!");
             if (m == 11 && d == 11) return new("Remembrance Day", "Lest we forget.");
             if (m == 5 && dow == DayOfWeek.Monday && d >= 18 && d <= 24)
                 return new("Victoria Day", "Happy Victoria Day! Enjoy the long weekend.");
@@ -94,7 +94,7 @@ internal static class WelcomeMessageBuilder
 
         if (country == "US")
         {
-            if (m == 7  && d == 4)  return new("Independence Day", "Happy Fourth of July!");
+            if (m == 7 && d == 4) return new("Independence Day", "Happy Fourth of July!");
             if (m == 11 && d == 11) return new("Veterans Day", "Thank you to all who have served.");
             if (m == 11 && dow == DayOfWeek.Thursday && d >= 22 && d <= 28)
                 return new("Thanksgiving", "Happy Thanksgiving! (and happy coding after dinner)");
@@ -122,33 +122,33 @@ internal static class WelcomeMessageBuilder
 
         if (country == "AU")
         {
-            if (m == 1  && d == 26) return new("Australia Day", "Happy Australia Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget.");
-            if (m == 6  && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
+            if (m == 1 && d == 26) return new("Australia Day", "Happy Australia Day!");
+            if (m == 4 && d == 25) return new("ANZAC Day", "Lest we forget.");
+            if (m == 6 && dow == DayOfWeek.Monday && d >= 8 && d <= 14)
                 return new("King's Birthday (AU)", "Happy King's Birthday long weekend!");
         }
 
         if (country == "NZ")
         {
-            if (m == 2  && d == 6)  return new("Waitangi Day", "Happy Waitangi Day!");
-            if (m == 4  && d == 25) return new("ANZAC Day", "Lest we forget.");
+            if (m == 2 && d == 6) return new("Waitangi Day", "Happy Waitangi Day!");
+            if (m == 4 && d == 25) return new("ANZAC Day", "Lest we forget.");
         }
 
         if (country == "DE")
         {
             if (m == 10 && d == 3) return new("German Unity Day", "Happy German Unity Day!");
-            if (m == 5  && d == 1) return new("Labour Day", "Happy Labour Day!");
+            if (m == 5 && d == 1) return new("Labour Day", "Happy Labour Day!");
         }
 
         if (country == "FR")
         {
-            if (m == 7  && d == 14) return new("Bastille Day", "Bonne fête nationale!");
-            if (m == 5  && d == 1)  return new("Fête du Travail", "Bonne Fête du Travail!");
+            if (m == 7 && d == 14) return new("Bastille Day", "Bonne fête nationale!");
+            if (m == 5 && d == 1) return new("Fête du Travail", "Bonne Fête du Travail!");
         }
 
         if (country == "JP")
         {
-            if (m == 1  && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
+            if (m == 1 && d == 1) return new("Shōgatsu", "あけましておめでとうございます！Happy New Year!");
             if (m == 11 && d == 3) return new("Culture Day", "Happy Culture Day!");
         }
 
@@ -170,43 +170,43 @@ internal static class WelcomeMessageBuilder
 
     private static double MoonPhaseJdn(double k)
     {
-        double T   = k / 1236.85;
+        double T = k / 1236.85;
         double jde = 2451550.09766
                    + 29.530588861 * k
-                   + 0.00015437   * T * T
-                   - 0.000000150  * T * T * T
+                   + 0.00015437 * T * T
+                   - 0.000000150 * T * T * T
                    + 0.00000000073 * T * T * T * T;
-        double M  = Rad(2.5534   + 29.10535670  * k - 0.0000014 * T * T);
+        double M = Rad(2.5534 + 29.10535670 * k - 0.0000014 * T * T);
         double Mp = Rad(201.5643 + 385.81693528 * k + 0.0107582 * T * T);
-        double F  = Rad(160.7108 + 390.67050284 * k - 0.0016118 * T * T);
-        double Om = Rad(124.7746 -  1.56375588  * k + 0.0020672 * T * T);
-        double E  = 1 - 0.002516 * T - 0.0000074 * T * T;
+        double F = Rad(160.7108 + 390.67050284 * k - 0.0016118 * T * T);
+        double Om = Rad(124.7746 - 1.56375588 * k + 0.0020672 * T * T);
+        double E = 1 - 0.002516 * T - 0.0000074 * T * T;
         return jde
             + (-0.40720 * Math.Sin(Mp))
-            + ( 0.17241 * E * Math.Sin(M))
-            + ( 0.01608 * Math.Sin(2 * Mp))
-            + ( 0.01039 * Math.Sin(2 * F))
-            + ( 0.00739 * E * Math.Sin(Mp - M))
+            + (0.17241 * E * Math.Sin(M))
+            + (0.01608 * Math.Sin(2 * Mp))
+            + (0.01039 * Math.Sin(2 * F))
+            + (0.00739 * E * Math.Sin(Mp - M))
             + (-0.00514 * E * Math.Sin(Mp + M))
-            + ( 0.00208 * E * E * Math.Sin(2 * M))
+            + (0.00208 * E * E * Math.Sin(2 * M))
             + (-0.00111 * Math.Sin(Mp - 2 * F))
             + (-0.00057 * Math.Sin(Mp + 2 * F))
-            + ( 0.00056 * E * Math.Sin(2 * Mp + M))
+            + (0.00056 * E * Math.Sin(2 * Mp + M))
             + (-0.00042 * Math.Sin(3 * Mp))
-            + ( 0.00042 * E * Math.Sin(M + 2 * F))
-            + ( 0.00038 * E * Math.Sin(M - 2 * F))
+            + (0.00042 * E * Math.Sin(M + 2 * F))
+            + (0.00038 * E * Math.Sin(M - 2 * F))
             + (-0.00024 * E * Math.Sin(2 * Mp - M))
             + (-0.00017 * Math.Sin(Om))
             + (-0.00007 * Math.Sin(Mp + 2 * M))
-            + ( 0.00004 * Math.Sin(2 * Mp - 2 * F))
-            + ( 0.00004 * Math.Sin(3 * M))
-            + ( 0.00003 * Math.Sin(Mp + M - 2 * F))
-            + ( 0.00003 * Math.Sin(2 * Mp + 2 * F))
+            + (0.00004 * Math.Sin(2 * Mp - 2 * F))
+            + (0.00004 * Math.Sin(3 * M))
+            + (0.00003 * Math.Sin(Mp + M - 2 * F))
+            + (0.00003 * Math.Sin(2 * Mp + 2 * F))
             + (-0.00003 * Math.Sin(Mp + M + 2 * F))
-            + ( 0.00003 * Math.Sin(Mp - M + 2 * F))
+            + (0.00003 * Math.Sin(Mp - M + 2 * F))
             + (-0.00002 * Math.Sin(Mp - M - 2 * F))
             + (-0.00002 * Math.Sin(3 * Mp + M))
-            + ( 0.00002 * Math.Sin(4 * Mp));
+            + (0.00002 * Math.Sin(4 * Mp));
     }
 
     private static double Rad(double deg) => deg * Math.PI / 180.0;
@@ -220,9 +220,9 @@ internal static class WelcomeMessageBuilder
         int d = (4 * c + 3) / 1461;
         int e = c - 1461 * d / 4;
         int mo = (5 * e + 2) / 153;
-        int day   = e - (153 * mo + 2) / 5 + 1;
+        int day = e - (153 * mo + 2) / 5 + 1;
         int month = mo + 3 - 12 * (mo / 10);
-        int year  = 100 * b + d - 4800 + mo / 10;
+        int year = 100 * b + d - 4800 + mo / 10;
         return new DateTime(year, month, day);
     }
 
@@ -231,9 +231,9 @@ internal static class WelcomeMessageBuilder
         double kApprox = (year - 2000) * 12.3685 + month - 1;
         for (int offset = -2; offset <= 3; offset++)
         {
-            double k   = Math.Floor(kApprox) + offset + (fullMoon ? 0.5 : 0.0);
+            double k = Math.Floor(kApprox) + offset + (fullMoon ? 0.5 : 0.0);
             double jdn = MoonPhaseJdn(k);
-            var    dt  = JdnToDateTime(jdn);
+            var dt = JdnToDateTime(jdn);
             if (dt.Year == year && dt.Month == month)
                 return dt;
         }
@@ -245,9 +245,9 @@ internal static class WelcomeMessageBuilder
         double kApprox = (year - 2000) * 12.3685;
         for (int offset = -2; offset <= 3; offset++)
         {
-            double k      = Math.Floor(kApprox) + offset;
-            double jdn    = MoonPhaseJdn(k) + 8.0 / 24.0; // shift to UTC+8
-            var    dt     = JdnToDateTime(jdn);
+            double k = Math.Floor(kApprox) + offset;
+            double jdn = MoonPhaseJdn(k) + 8.0 / 24.0; // shift to UTC+8
+            var dt = JdnToDateTime(jdn);
             if (dt.Year == year && ((dt.Month == 1 && dt.Day >= 20) || (dt.Month == 2 && dt.Day <= 20)))
                 return dt;
         }
@@ -306,17 +306,17 @@ internal static class WelcomeMessageBuilder
     private static int HebrewElapsedDays(int hy)
     {
         int monthsElapsed = 235 * ((hy - 1) / 19)
-                          + 12  * ((hy - 1) % 19)
-                          + (7  * ((hy - 1) % 19) + 1) / 19;
+                          + 12 * ((hy - 1) % 19)
+                          + (7 * ((hy - 1) % 19) + 1) / 19;
         int parts = 204 + 793 * (monthsElapsed % 1080);
         int hours = 5 + 12 * monthsElapsed + 793 * (monthsElapsed / 1080) + parts / 1080;
-        int day   = 1 + 29 * monthsElapsed + hours / 24;
-        int pMod  = 1080 * (hours % 24) + parts % 1080;
+        int day = 1 + 29 * monthsElapsed + hours / 24;
+        int pMod = 1080 * (hours % 24) + parts % 1080;
 
         int alt = day;
         if (pMod >= 19440
-            || (day % 7 == 2 && pMod >= 9924  && !IsHebrewLeapYear(hy))
-            || (day % 7 == 1 && pMod >= 16789 &&  IsHebrewLeapYear(hy - 1)))
+            || (day % 7 == 2 && pMod >= 9924 && !IsHebrewLeapYear(hy))
+            || (day % 7 == 1 && pMod >= 16789 && IsHebrewLeapYear(hy - 1)))
             alt++;
 
         if (alt % 7 == 0 || alt % 7 == 3 || alt % 7 == 5) alt++;
@@ -434,9 +434,9 @@ internal static class WelcomeMessageBuilder
             now = DateTime.Now;
         }
 
-        var tod     = TimeOfDay(now.Hour);
+        var tod = TimeOfDay(now.Hour);
         var country = userCountry;
-        var dow     = now.DayOfWeek;
+        var dow = now.DayOfWeek;
         var dayName = now.ToString("dddd");   // e.g. "Monday"
 
         var messages = new List<string>();
@@ -522,14 +522,14 @@ internal static class WelcomeMessageBuilder
 
         messages.Add(dow switch
         {
-            DayOfWeek.Monday    => "Monday? Let's make it count.",
-            DayOfWeek.Tuesday   => "Tuesday momentum - keep it going!",
+            DayOfWeek.Monday => "Monday? Let's make it count.",
+            DayOfWeek.Tuesday => "Tuesday momentum - keep it going!",
             DayOfWeek.Wednesday => "Midweek check-in - still crushing it?",
-            DayOfWeek.Thursday  => "Almost Friday - don't stop now!",
-            DayOfWeek.Friday    => "Happy Friday! Let's finish strong.",
-            DayOfWeek.Saturday  => "Coding on a Saturday - respect.",
-            DayOfWeek.Sunday    => "Sunday coding session - the quiet grind.",
-            _                   => $"Happy {dayName}!"
+            DayOfWeek.Thursday => "Almost Friday - don't stop now!",
+            DayOfWeek.Friday => "Happy Friday! Let's finish strong.",
+            DayOfWeek.Saturday => "Coding on a Saturday - respect.",
+            DayOfWeek.Sunday => "Sunday coding session - the quiet grind.",
+            _ => $"Happy {dayName}!"
         });
 
         if (dow == DayOfWeek.Friday)
@@ -594,10 +594,20 @@ internal static class WelcomeMessageBuilder
             || (userHemisphereIndex == 0 && country is "AU" or "NZ" or "ZA" or "AR" or "BR" or "CL");
         var month = now.Month;
         var season = isSouthern
-            ? month switch { 12 or 1 or 2 => "summer", 3 or 4 or 5 => "autumn",
-                             6 or 7 or 8 => "winter", _ => "spring" }
-            : month switch { 12 or 1 or 2 => "winter", 3 or 4 or 5 => "spring",
-                             6 or 7 or 8 => "summer", _ => "autumn" };
+            ? month switch
+            {
+                12 or 1 or 2 => "summer",
+                3 or 4 or 5 => "autumn",
+                6 or 7 or 8 => "winter",
+                _ => "spring"
+            }
+            : month switch
+            {
+                12 or 1 or 2 => "winter",
+                3 or 4 or 5 => "spring",
+                6 or 7 or 8 => "summer",
+                _ => "autumn"
+            };
 
         messages.Add(season switch
         {
@@ -605,7 +615,7 @@ internal static class WelcomeMessageBuilder
             "spring" => "Spring energy - let's build something fresh.",
             "summer" => "Hot outside, hotter code.",
             "autumn" => "Cozy season, perfect for shipping features.",
-            _        => "Great day to write some code."
+            _ => "Great day to write some code."
         });
 
         if (season == "winter")
@@ -645,7 +655,7 @@ internal static class WelcomeMessageBuilder
 
     private static string TimeOfDay(int hour)
     {
-        if (hour < 6)  return "night";
+        if (hour < 6) return "night";
         if (hour < 12) return "morning";
         if (hour < 17) return "afternoon";
         if (hour < 22) return "evening";

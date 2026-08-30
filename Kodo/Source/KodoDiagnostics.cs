@@ -99,9 +99,9 @@ internal static class KodoDiagnostics
                 @"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
             if (key is null) return null;
 
-            var productName = key.GetValue("ProductName")        as string ?? string.Empty;
-            var buildStr    = key.GetValue("CurrentBuildNumber") as string ?? string.Empty;
-            var displayVer  = key.GetValue("DisplayVersion")     as string ?? string.Empty;
+            var productName = key.GetValue("ProductName") as string ?? string.Empty;
+            var buildStr = key.GetValue("CurrentBuildNumber") as string ?? string.Empty;
+            var displayVer = key.GetValue("DisplayVersion") as string ?? string.Empty;
 
             if (!int.TryParse(buildStr, out var build)) return null;
 
@@ -374,16 +374,16 @@ internal static class KodoDiagnostics
     private static string SeverityLabel(KodoSeverity severity) => severity switch
     {
         KodoSeverity.Critical => "CRITICAL",
-        KodoSeverity.Warning  => "WARNING",
-        KodoSeverity.Debug    => "DEBUG",
-        _                     => "INFO",
+        KodoSeverity.Warning => "WARNING",
+        KodoSeverity.Debug => "DEBUG",
+        _ => "INFO",
     };
 
     private static KodoSeverity ParseSeverity(string label) => label.ToUpperInvariant() switch
     {
         "CRASH" or "CRITICAL" or "FATAL" => KodoSeverity.Critical,
-        "DEBUG"                           => KodoSeverity.Debug,
-        _                                 => KodoSeverity.Warning,
+        "DEBUG" => KodoSeverity.Debug,
+        _ => KodoSeverity.Warning,
     };
 }
 
@@ -418,10 +418,10 @@ internal static class WindowsThemeHelper
     }
     public static Avalonia.Media.IBrush GetReadableForeground(Avalonia.Media.Color bg)
     {
-        static double Lum(Avalonia.Media.Color c) { double To(double ch){ ch/=255; return ch<=0.03928?ch/12.92:Math.Pow((ch+0.055)/1.055,2.4);} return 0.2126*To(c.R)+0.7152*To(c.G)+0.0722*To(c.B); }
+        static double Lum(Avalonia.Media.Color c) { double To(double ch) { ch /= 255; return ch <= 0.03928 ? ch / 12.92 : Math.Pow((ch + 0.055) / 1.055, 2.4); } return 0.2126 * To(c.R) + 0.7152 * To(c.G) + 0.0722 * To(c.B); }
         var l = Lum(bg);
-        return (1.05/(l+0.05)) >= ((l+0.05)/0.05) ? Avalonia.Media.Brushes.White : Avalonia.Media.Brushes.Black;
+        return (1.05 / (l + 0.05)) >= ((l + 0.05) / 0.05) ? Avalonia.Media.Brushes.White : Avalonia.Media.Brushes.Black;
     }
-    public static Avalonia.Media.Color Lighten(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch+(255-ch)*a,0,255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
-    public static Avalonia.Media.Color Darken(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch*(1-a),0,255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
+    public static Avalonia.Media.Color Lighten(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch + (255 - ch) * a, 0, 255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
+    public static Avalonia.Media.Color Darken(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch * (1 - a), 0, 255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
 }

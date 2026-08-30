@@ -459,13 +459,13 @@ public partial class MainWindow
 
     private static LoadedExtension ParseManifest(JsonElement manifest) => new()
     {
-        Id          = manifest.TryGetProperty("id",          out var id)   ? id.GetString()   ?? "" : "",
-        Version     = manifest.TryGetProperty("version",     out var ver)  ? ver.GetString()  ?? "" : "",
-        Name        = manifest.TryGetProperty("name",        out var name) ? name.GetString() ?? "" : "",
-        Type        = manifest.TryGetProperty("type",        out var type) ? type.GetString() ?? "" : "",
-        Author      = manifest.TryGetProperty("author",      out var auth) ? auth.GetString() ?? "" : "",
+        Id = manifest.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
+        Version = manifest.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "",
+        Name = manifest.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+        Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
+        Author = manifest.TryGetProperty("author", out var auth) ? auth.GetString() ?? "" : "",
         Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
-        Extensions  = manifest.TryGetProperty("extensions",  out var exts)
+        Extensions = manifest.TryGetProperty("extensions", out var exts)
             ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
             : [],
         PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
@@ -544,11 +544,11 @@ public partial class MainWindow
     {
         foreach (var ext in LoadedExtensions)
         {
-            ext.AccentBrush        = AccentBrush;
-            ext.CardBrush          = CardBrush;
-            ext.PrimaryTextBrush   = PrimaryTextBrush;
+            ext.AccentBrush = AccentBrush;
+            ext.CardBrush = CardBrush;
+            ext.PrimaryTextBrush = PrimaryTextBrush;
             ext.SurfaceBorderBrush = SurfaceBorderBrush;
-            ext.MutedTextBrush     = MutedTextBrush;
+            ext.MutedTextBrush = MutedTextBrush;
             ext.NotifyAllBrushesChanged();
         }
 
@@ -644,8 +644,8 @@ public partial class MainWindow
                 IsKodoExtensionsRepo(segments[0], segments[1]))
             {
                 var owner = segments[0];
-                var repo  = segments[1];
-                var path  = string.Join("/", segments, 4, segments.Length - 4);
+                var repo = segments[1];
+                var path = string.Join("/", segments, 4, segments.Length - 4);
                 return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
             }
             return url; // non-blob or third-party github.com URL - leave alone
@@ -657,9 +657,9 @@ public partial class MainWindow
             if (segments.Length >= 4 && IsKodoExtensionsRepo(segments[0], segments[1]))
             {
                 var owner = segments[0];
-                var repo  = segments[1];
+                var repo = segments[1];
                 // segments[2] is the branch - omitted from the Contents API path
-                var path  = string.Join("/", segments, 3, segments.Length - 3);
+                var path = string.Join("/", segments, 3, segments.Length - 3);
                 return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
             }
             return url; // third-party raw.githubusercontent.com URL - already serves raw bytes, leave alone
@@ -907,35 +907,35 @@ public partial class MainWindow
 
     private static LoadedExtension CloneBaseExtension(LoadedExtension src) => new()
     {
-        Id                = src.Id,
-        Version           = src.Version,
-        Name              = src.Name,
-        Type              = src.Type,
-        Author            = src.Author,
-        Description       = src.Description,
-        Extensions        = src.Extensions,
-        Keywords          = src.Keywords,
-        Types             = src.Types,
-        Functions         = src.Functions,
-        Properties        = src.Properties,
-        Namespaces        = src.Namespaces,
-        Blacklist         = src.Blacklist,
-        DeadCodeIgnore    = src.DeadCodeIgnore,
+        Id = src.Id,
+        Version = src.Version,
+        Name = src.Name,
+        Type = src.Type,
+        Author = src.Author,
+        Description = src.Description,
+        Extensions = src.Extensions,
+        Keywords = src.Keywords,
+        Types = src.Types,
+        Functions = src.Functions,
+        Properties = src.Properties,
+        Namespaces = src.Namespaces,
+        Blacklist = src.Blacklist,
+        DeadCodeIgnore = src.DeadCodeIgnore,
         DeadCodeEntryPoints = src.DeadCodeEntryPoints,
-        CommentLine       = src.CommentLine,
+        CommentLine = src.CommentLine,
         CommentBlockStart = src.CommentBlockStart,
-        CommentBlockEnd   = src.CommentBlockEnd,
-        StringDelimiters  = src.StringDelimiters.ToArray(),
+        CommentBlockEnd = src.CommentBlockEnd,
+        StringDelimiters = src.StringDelimiters.ToArray(),
         MultiLineStringDelimiters = src.MultiLineStringDelimiters.ToArray(),
         DisableSingleQuoteStrings = src.DisableSingleQuoteStrings,
-        ColorTokens       = new Dictionary<string, string>(src.ColorTokens),
-        SourcePath        = src.SourcePath,
+        ColorTokens = new Dictionary<string, string>(src.ColorTokens),
+        SourcePath = src.SourcePath,
         IsDirectorySource = src.IsDirectorySource,
-        InstalledOnUtc    = src.InstalledOnUtc,
+        InstalledOnUtc = src.InstalledOnUtc,
         PluginAssemblyFileName = src.PluginAssemblyFileName,
-        PluginFolderPath  = src.PluginFolderPath,
-        IconImage         = src.IconImage,
-        IconBytes         = src.IconBytes,
+        PluginFolderPath = src.PluginFolderPath,
+        IconImage = src.IconImage,
+        IconBytes = src.IconBytes,
     };
 
     private static void ApplyLanguageProfile(LoadedExtension ext, LanguageSyntaxProfile profile)

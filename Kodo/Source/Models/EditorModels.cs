@@ -14,6 +14,12 @@ using AvaloniaEdit.Rendering;
 
 namespace Kodo.Models;
 
+public enum LineEnding
+{
+    LF,
+    CRLF
+}
+
 internal enum UnsavedTabAction
 {
     Save,
@@ -69,7 +75,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             var depth = GetVisibleLineDepth(document, lineNumber);
             if (depth <= 0) continue;
 
-            var top    = visualLine.VisualTop - scrollY;
+            var top = visualLine.VisualTop - scrollY;
             var bottom = top + visualLine.Height;
 
             for (var level = 1; level <= depth; level++)
@@ -124,7 +130,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         var columns = 0;
         foreach (var ch in lineText)
         {
-            if      (ch == ' ')  columns++;
+            if (ch == ' ') columns++;
             else if (ch == '\t') columns += TabSize - (columns % TabSize);
             else break;
         }
@@ -474,12 +480,13 @@ public class EditorTab : INotifyPropertyChanged
     private IBrush _backgroundBrush = Brushes.Transparent;
     private IBrush _foregroundBrush = Brushes.White;
 
-    public EditorTab(string path, string displayName, string content, bool isUntitled = false)
+    public EditorTab(string path, string displayName, string content, bool isUntitled = false, LineEnding lineEnding = LineEnding.CRLF)
     {
         Path = path;
         DisplayName = displayName;
         _content = content;
         IsUntitled = isUntitled;
+        LineEnding = lineEnding;
     }
 
     public string Path { get; set; }
@@ -487,6 +494,8 @@ public class EditorTab : INotifyPropertyChanged
     public string DisplayName { get; private set; }
 
     public bool IsUntitled { get; set; }
+
+    public LineEnding LineEnding { get; set; }
 
     public string Content
     {

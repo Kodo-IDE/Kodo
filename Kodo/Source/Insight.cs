@@ -31,12 +31,12 @@ public sealed class InsightSuggestion : ICompletionData
     public object? Description => null;
     public double Priority => Kind switch
     {
-        InsightKind.Variable  => 5,
-        InsightKind.Function  => 4,
-        InsightKind.Property  => 3,
-        InsightKind.Type      => 2,
+        InsightKind.Variable => 5,
+        InsightKind.Function => 4,
+        InsightKind.Property => 3,
+        InsightKind.Type => 2,
         InsightKind.Namespace => 1,
-        InsightKind.Keyword   => 0,
+        InsightKind.Keyword => 0,
         _ => 0,
     };
 
@@ -51,23 +51,23 @@ public sealed class InsightSuggestion : ICompletionData
 
     private static string KindLabel(InsightKind kind) => kind switch
     {
-        InsightKind.Variable  => "Variable (this file)",
-        InsightKind.Function  => "Function",
-        InsightKind.Property  => "Property",
-        InsightKind.Type      => "Type",
+        InsightKind.Variable => "Variable (this file)",
+        InsightKind.Function => "Function",
+        InsightKind.Property => "Property",
+        InsightKind.Type => "Type",
         InsightKind.Namespace => "Namespace",
-        InsightKind.Keyword   => "Keyword",
+        InsightKind.Keyword => "Keyword",
         _ => string.Empty,
     };
 
     private static (string Glyph, string Color) GlyphAndColorFor(InsightKind kind) => kind switch
     {
-        InsightKind.Variable  => ("V", "#3a79df"),
-        InsightKind.Function  => ("F", "#9c51e2"),
-        InsightKind.Property  => ("P", "#1bc0ad"),
-        InsightKind.Type      => ("T", "#e76e17"),
+        InsightKind.Variable => ("V", "#3a79df"),
+        InsightKind.Function => ("F", "#9c51e2"),
+        InsightKind.Property => ("P", "#1bc0ad"),
+        InsightKind.Type => ("T", "#e76e17"),
         InsightKind.Namespace => ("N", "#0db373"),
-        InsightKind.Keyword   => ("K", "#5b5dda"),
+        InsightKind.Keyword => ("K", "#5b5dda"),
         _ => ("•", "#6B7280"),
     };
 
@@ -114,12 +114,12 @@ public sealed class InsightSuggestion : ICompletionData
     {
         var iconGeometry = Kind switch
         {
-            InsightKind.Variable  => VariableIconGeometry,
-            InsightKind.Function  => FunctionIconGeometry,
-            InsightKind.Property  => PropertyIconGeometry,
-            InsightKind.Type      => TypeIconGeometry,
+            InsightKind.Variable => VariableIconGeometry,
+            InsightKind.Function => FunctionIconGeometry,
+            InsightKind.Property => PropertyIconGeometry,
+            InsightKind.Type => TypeIconGeometry,
             InsightKind.Namespace => NamespaceIconGeometry,
-            InsightKind.Keyword   => KeywordIconGeometry,
+            InsightKind.Keyword => KeywordIconGeometry,
             _ => KeywordIconGeometry,
         };
 
@@ -815,8 +815,8 @@ public sealed class InsightEngine
     private static void ComputeDepths(string[] maskedLines, out int[] brace, out int[] paren, out int[] bracket)
     {
         brace = new int[maskedLines.Length]; paren = new int[maskedLines.Length]; bracket = new int[maskedLines.Length];
-        var cb=0; var cp=0; var ck=0;
-        for (var i=0;i<maskedLines.Length;i++) { brace[i]=cb; paren[i]=cp; bracket[i]=ck; cb+=CountChar(maskedLines[i],'{')-CountChar(maskedLines[i],'}'); cp+=CountChar(maskedLines[i],'(')-CountChar(maskedLines[i],')'); ck+=CountChar(maskedLines[i],'[')-CountChar(maskedLines[i],']'); }
+        var cb = 0; var cp = 0; var ck = 0;
+        for (var i = 0; i < maskedLines.Length; i++) { brace[i] = cb; paren[i] = cp; bracket[i] = ck; cb += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}'); cp += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')'); ck += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']'); }
     }
 
     public sealed class DeadCodeSpan

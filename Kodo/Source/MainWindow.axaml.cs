@@ -82,6 +82,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kodo-ide.github.io/";
     private const string InstagramUrl = "https://www.instagram.com/kodo.ide/";
+    private const string GitHubRepoUrl = "https://github.com/Kodo-IDE";
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
     private static readonly string NewsCachePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -105,6 +106,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _currentFilePath;
     // Encoding detected (or chosen) for the currently open file. Defaults
     private System.Text.Encoding _currentFileEncoding = System.Text.Encoding.UTF8;
+    // Line ending detected (or chosen) for the currently open file. Defaults to OS.
+    private Kodo.Models.LineEnding _currentLineEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
@@ -193,9 +196,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _accentColorMode = "kodo";   // "kodo" | "windows" | "custom"
     private string _customAccentHex = "#8C00FF";
     private string _themeAccentHex = "#8C00FF";
-    private bool   _hasThemeAccent  = false;
+    private bool _hasThemeAccent = false;
     private string _windowBackgroundHex = "#1E1E1E";
-    private bool   _hasWindowBackground = false;
+    private bool _hasWindowBackground = false;
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
@@ -269,9 +272,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _hasRunCompilerAutoDetect;
     private Dictionary<string, InstalledCompilerRecord> _installedCompilers =
         new(StringComparer.OrdinalIgnoreCase);
-    private static readonly TimeSpan WarningDialogCooldown   = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan WarningDialogCooldown = TimeSpan.FromSeconds(3);
 
-    private static readonly TimeSpan GitHubOperationTimeout  = TimeSpan.FromSeconds(7);
+    private static readonly TimeSpan GitHubOperationTimeout = TimeSpan.FromSeconds(7);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".bmp", ".dib", ".gif",
@@ -285,7 +288,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _selectedInstalledExtensionSort = ExtensionSortModes.Alphabetical;
     private string _selectedMarketplaceExtensionSort = ExtensionSortModes.Alphabetical;
     private string _userCountry = string.Empty;
-    private int    _userHemisphere = 0;
+    private int _userHemisphere = 0;
     private string _userTimezoneOffset = string.Empty;
     private string _userName = string.Empty;
     private bool _isSearchPanelVisible;
@@ -620,7 +623,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentImagePreview = value;
             previousPreview?.Dispose();
             OnPropertyChanged();
-            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
+            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
         }
     }
 
@@ -725,10 +728,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => { HideDiagnosticPopup(); QueueRefreshState(); };
+        // Selection changes should also refresh the Ln/Col -> selection override. Hook via reflection to avoid hard dependency on event name.
+        try
+        {
+            var taType = EditorTextBox.TextArea.GetType();
+            var ev = taType.GetEvent("SelectionChanged");
+            if (ev != null) ev.AddEventHandler(EditorTextBox.TextArea, new EventHandler((s, e) => QueueRefreshState()));
+            var edType = EditorTextBox.GetType();
+            var ev2 = edType.GetEvent("SelectionChanged");
+            if (ev2 != null) ev2.AddEventHandler(EditorTextBox, new EventHandler((s, e) => QueueRefreshState()));
+        }
+        catch { /* best-effort */ }
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
         Activated += (_, _) => QueueInsightRefresh();
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
-        EditorTextBox.TextArea.TextEntered  += EditorTextArea_OnTextEntered;
+        EditorTextBox.TextArea.TextEntered += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         ImageScrollViewer.AddHandler(
             InputElement.PointerWheelChangedEvent,
@@ -740,7 +754,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
-        _isDiscordImprovedRpcEnabled  = settings.DiscordImprovedRpcEnabled;
+        _isDiscordImprovedRpcEnabled = settings.DiscordImprovedRpcEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
         _isVerboseLoggingEnabled = settings.VerboseLoggingEnabled;
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
@@ -781,10 +795,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
             ? DetectCountryCode()
             : settings.UserCountry.ToUpperInvariant();
-        _userHemisphere     = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
+        _userHemisphere = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
-        _userName           = settings.UserName ?? string.Empty;
-        _lastSeenVersion    = settings.LastSeenVersion ?? string.Empty;
+        _userName = settings.UserName ?? string.Empty;
+        _lastSeenVersion = settings.LastSeenVersion ?? string.Empty;
         _isTerminalVisible = false; // always start hidden; user opens it manually
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
@@ -1194,8 +1208,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             items.Add(new NewsItem
             {
-                Title     = title ?? string.Empty,
-                Body      = string.Join("\n", bodyLines).Trim(),
+                Title = title ?? string.Empty,
+                Body = string.Join("\n", bodyLines).Trim(),
                 UpdatedAt = updatedAt ?? string.Empty,
             });
         }
@@ -1411,8 +1425,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (segments.Length >= 5 && segments[2].Equals("blob", StringComparison.OrdinalIgnoreCase))
         {
             var owner = segments[0];
-            var repo  = segments[1];
-            var path  = string.Join("/", segments, 4, segments.Length - 4);
+            var repo = segments[1];
+            var path = string.Join("/", segments, 4, segments.Length - 4);
             return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
         }
 
@@ -1861,7 +1875,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isFileCorrupted == corrupted) return;
         _isFileCorrupted = corrupted;
-        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions));
+        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText));
     }
 
 
@@ -2314,10 +2328,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (dash < 0) return 5; // stable: no suffix at all
 
         var suffix = tag[dash..];
-        if (suffix.Contains("dev",   StringComparison.OrdinalIgnoreCase)) return 0;
+        if (suffix.Contains("dev", StringComparison.OrdinalIgnoreCase)) return 0;
         if (suffix.Contains("alpha", StringComparison.OrdinalIgnoreCase)) return 1;
-        if (suffix.Contains("beta",  StringComparison.OrdinalIgnoreCase)) return 2;
-        if (suffix.Contains("rc",    StringComparison.OrdinalIgnoreCase)) return 4;
+        if (suffix.Contains("beta", StringComparison.OrdinalIgnoreCase)) return 2;
+        if (suffix.Contains("rc", StringComparison.OrdinalIgnoreCase)) return 4;
 
         return 3; // unrecognized pre-release suffix
     }
@@ -2333,7 +2347,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (string.IsNullOrWhiteSpace(lastSeen)) return false;
 
-        if (!Version.TryParse(StripPreRelease(lastSeen),          out var seen))    return false;
+        if (!Version.TryParse(StripPreRelease(lastSeen), out var seen)) return false;
         if (!Version.TryParse(StripPreRelease(CurrentAppVersion), out var current)) return false;
 
         if (current != seen) return current > seen;
@@ -2349,7 +2363,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!HasLatestRelease || string.IsNullOrWhiteSpace(LatestReleaseTag)) return false;
 
             if (!Version.TryParse(StripPreRelease(CurrentAppVersion), out var current)) return false;
-            if (!Version.TryParse(StripPreRelease(LatestReleaseTag),  out var latest))  return false;
+            if (!Version.TryParse(StripPreRelease(LatestReleaseTag), out var latest)) return false;
 
             if (latest != current) return latest > current;
 
@@ -2440,24 +2454,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return text.Trim();
     }
 
-    private static readonly Regex MdCodeFenceRegex         = new(@"```(?:[\w#+.-]+)?\n?",         RegexOptions.Compiled);
-    private static readonly Regex MdInlineCodeRegex        = new(@"`([^`]+)`",                    RegexOptions.Compiled);
-    private static readonly Regex MdImageRegex             = new(@"!\[([^\]]*)\]\([^)]+\)",        RegexOptions.Compiled);
-    private static readonly Regex MdLinkRegex              = new(@"\[(.*?)\]\((.*?)\)",            RegexOptions.Compiled);
-    private static readonly Regex MdHeadingRegex           = new(@"(?m)^\s{0,3}#{1,6}\s*",        RegexOptions.Compiled);
-    private static readonly Regex MdBlockquoteRegex        = new(@"(?m)^\s{0,3}>\s?",             RegexOptions.Compiled);
-    private static readonly Regex MdHrRegex                = new(@"(?m)^\s*[-*_]{3,}\s*$",        RegexOptions.Compiled);
-    private static readonly Regex MdBulletRegex            = new(@"(?m)^\s*[-*+]\s+",             RegexOptions.Compiled);
-    private static readonly Regex MdOrderedListRegex       = new(@"(?m)^\s*(\d+)\.\s+",           RegexOptions.Compiled);
-    private static readonly Regex MdBoldRegex              = new(@"(?<!\*)\*\*(?!\*)(.*?)\*\*(?<!\*)", RegexOptions.Compiled);
-    private static readonly Regex MdItalicRegex            = new(@"(?<!\*)\*(?!\*)(.*?)\*(?<!\*)", RegexOptions.Compiled);
-    private static readonly Regex MdBoldUnderscoreRegex    = new(@"__(.*?)__",                    RegexOptions.Compiled);
-    private static readonly Regex MdItalicUnderscoreRegex  = new(@"(?<!_)_(?!_)(.*?)(?<!_)_(?!_)", RegexOptions.Compiled);
-    private static readonly Regex MdStrikethroughRegex     = new(@"~~(.*?)~~",                    RegexOptions.Compiled);
-    private static readonly Regex MdTableLeadingPipeRegex  = new(@"(?m)^\s*\|",                   RegexOptions.Compiled);
-    private static readonly Regex MdTableTrailingPipeRegex = new(@"(?m)\|\s*$",                   RegexOptions.Compiled);
-    private static readonly Regex MdTablePipeRegex         = new(@"\|",                           RegexOptions.Compiled);
-    private static readonly Regex MdExcessNewlinesRegex    = new(@"\n{3,}",                       RegexOptions.Compiled);
+    private static readonly Regex MdCodeFenceRegex = new(@"```(?:[\w#+.-]+)?\n?", RegexOptions.Compiled);
+    private static readonly Regex MdInlineCodeRegex = new(@"`([^`]+)`", RegexOptions.Compiled);
+    private static readonly Regex MdImageRegex = new(@"!\[([^\]]*)\]\([^)]+\)", RegexOptions.Compiled);
+    private static readonly Regex MdLinkRegex = new(@"\[(.*?)\]\((.*?)\)", RegexOptions.Compiled);
+    private static readonly Regex MdHeadingRegex = new(@"(?m)^\s{0,3}#{1,6}\s*", RegexOptions.Compiled);
+    private static readonly Regex MdBlockquoteRegex = new(@"(?m)^\s{0,3}>\s?", RegexOptions.Compiled);
+    private static readonly Regex MdHrRegex = new(@"(?m)^\s*[-*_]{3,}\s*$", RegexOptions.Compiled);
+    private static readonly Regex MdBulletRegex = new(@"(?m)^\s*[-*+]\s+", RegexOptions.Compiled);
+    private static readonly Regex MdOrderedListRegex = new(@"(?m)^\s*(\d+)\.\s+", RegexOptions.Compiled);
+    private static readonly Regex MdBoldRegex = new(@"(?<!\*)\*\*(?!\*)(.*?)\*\*(?<!\*)", RegexOptions.Compiled);
+    private static readonly Regex MdItalicRegex = new(@"(?<!\*)\*(?!\*)(.*?)\*(?<!\*)", RegexOptions.Compiled);
+    private static readonly Regex MdBoldUnderscoreRegex = new(@"__(.*?)__", RegexOptions.Compiled);
+    private static readonly Regex MdItalicUnderscoreRegex = new(@"(?<!_)_(?!_)(.*?)(?<!_)_(?!_)", RegexOptions.Compiled);
+    private static readonly Regex MdStrikethroughRegex = new(@"~~(.*?)~~", RegexOptions.Compiled);
+    private static readonly Regex MdTableLeadingPipeRegex = new(@"(?m)^\s*\|", RegexOptions.Compiled);
+    private static readonly Regex MdTableTrailingPipeRegex = new(@"(?m)\|\s*$", RegexOptions.Compiled);
+    private static readonly Regex MdTablePipeRegex = new(@"\|", RegexOptions.Compiled);
+    private static readonly Regex MdExcessNewlinesRegex = new(@"\n{3,}", RegexOptions.Compiled);
 
     private static readonly Regex MdInlineBoldRegex = new(@"\*\*(.+?)\*\*|__(.+?)__", RegexOptions.Compiled | RegexOptions.Singleline);
 
@@ -2482,8 +2496,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (string.IsNullOrWhiteSpace(line)) continue;
 
-            var isBullet   = false;
-            var isOrdered  = false;
+            var isBullet = false;
+            var isOrdered = false;
             string? orderedPrefix = null;
 
             var bulletMatch = MdBulletRegex.Match(line);
@@ -2497,9 +2511,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var orderedMatch = MdOrderedListRegex.Match(line);
                 if (orderedMatch.Success)
                 {
-                    isOrdered     = true;
+                    isOrdered = true;
                     orderedPrefix = orderedMatch.Groups[1].Value + ".";
-                    line          = line[orderedMatch.Length..];
+                    line = line[orderedMatch.Length..];
                 }
                 else
                 {
@@ -2556,9 +2570,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             paragraphs.Add(new FormattedParagraph
             {
-                Runs              = runs,
-                TopMargin         = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
-                Marker            = marker,
+                Runs = runs,
+                TopMargin = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
+                Marker = marker,
                 MarkerColumnWidth = markerColumnWidth,
             });
         }
@@ -2635,9 +2649,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string MarketplaceEmptyStateText => ActiveMarketplaceTabType switch
     {
         "language" => "No language extensions in the Marketplace right now.",
-        "theme"    => "No themes in the Marketplace right now.",
-        "plugin"   => "No plugins in the Marketplace right now.",
-        _          => "The Marketplace has no extensions listed right now."
+        "theme" => "No themes in the Marketplace right now.",
+        "plugin" => "No plugins in the Marketplace right now.",
+        _ => "The Marketplace has no extensions listed right now."
     };
 
     public bool IsMarketplaceConnectivityWarningVisible
@@ -2671,8 +2685,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     // Swaps the regional wording for the Settings/Setup tutorial step titles.
     public string TutorialSpotlightTitle => TutorialStepIndex switch
     {
-        4 => IsAmericanEnglish ? "Personalize the experience"  : "Personalise the experience",
-        5 => IsAmericanEnglish ? "Why personalize?"            : "Why personalise?",
+        4 => IsAmericanEnglish ? "Personalize the experience" : "Personalise the experience",
+        5 => IsAmericanEnglish ? "Why personalize?" : "Why personalise?",
         _ => CurrentTutorialStep.SpotlightTitle,
     };
 
@@ -3880,11 +3894,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsAmericanEnglish => _userCountry == "US";
 
-    public string LabelAccentColour        => IsAmericanEnglish ? "Accent Color"      : "Accent Colour";
-    public string TooltipAccentTheme       => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
-    public string TooltipAccentWindows     => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
-    public string TooltipAccentCustom      => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
-    public string LabelPersonalization     => IsAmericanEnglish ? "Personalization"   : "Personalisation";
+    public string LabelAccentColour => IsAmericanEnglish ? "Accent Color" : "Accent Colour";
+    public string TooltipAccentTheme => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
+    public string TooltipAccentWindows => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
+    public string TooltipAccentCustom => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
+    public string LabelPersonalization => IsAmericanEnglish ? "Personalization" : "Personalisation";
     public string LabelPersonalizationHeader => IsAmericanEnglish ? "PERSONALIZATION" : "PERSONALISATION";
     public string PersonalizationExportTooltip => IsAmericanEnglish
         ? "Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
@@ -3985,7 +3999,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get
         {
             var today = DateTime.Now;
-            var age   = today.Year - _kodoBirthDate.Year;
+            var age = today.Year - _kodoBirthDate.Year;
             if (today.Month < _kodoBirthDate.Month ||
                 (today.Month == _kodoBirthDate.Month && today.Day < _kodoBirthDate.Day))
                 age--;
@@ -4024,14 +4038,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsDarkThemeActive  => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Dark",  StringComparison.OrdinalIgnoreCase);
+    public bool IsDarkThemeActive => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Dark", StringComparison.OrdinalIgnoreCase);
     public bool IsLightThemeActive => !IsSystemThemeActive && string.Equals(CurrentThemeName, "Light", StringComparison.OrdinalIgnoreCase);
 
     // True when the user picked "follow Windows"; tracked off
     public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
 
     public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush SystemThemePreviewBorder     { get; private set; } = Brush.Parse("#2B2B2B");
+    public IBrush SystemThemePreviewBorder { get; private set; } = Brush.Parse("#2B2B2B");
 
     public string LanguageDisplayText
     {
@@ -4062,14 +4076,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 65001 => _currentFileEncoding is System.Text.UTF8Encoding u && u.GetPreamble().Length > 0
                              ? "UTF-8 BOM"
                              : "UTF-8",
-                1200  => "UTF-16 LE",
-                1201  => "UTF-16 BE",
+                1200 => "UTF-16 LE",
+                1201 => "UTF-16 BE",
                 12000 => "UTF-32",
                 20127 => "ASCII",
-                _     => _currentFileEncoding.WebName.ToUpperInvariant(),
+                _ => _currentFileEncoding.WebName.ToUpperInvariant(),
             };
         }
     }
+
+    public string LineEndingDisplayText
+    {
+        get
+        {
+            if (!IsLineEndingVisible) return string.Empty;
+            return _currentLineEnding == Kodo.Models.LineEnding.CRLF ? "CRLF" : "LF";
+        }
+    }
+
+    public bool IsLineEndingVisible => HasFileOpen && IsTextEditorVisible;
 
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
@@ -4156,16 +4181,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsTextEditorVisible && IsPlainTextFile(_currentFilePath);
 
     public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush TopBarBrush           { get; private set; } = Brush.Parse("#181818");
-    public IBrush SidebarBrush          { get; private set; } = Brush.Parse("#181818");
-    public IBrush ButtonBrush           { get; private set; } = Brush.Parse("#252526");
-    public IBrush ButtonHoverBrush      { get; private set; } = Brush.Parse("#313437");
+    public IBrush TopBarBrush { get; private set; } = Brush.Parse("#181818");
+    public IBrush SidebarBrush { get; private set; } = Brush.Parse("#181818");
+    public IBrush ButtonBrush { get; private set; } = Brush.Parse("#252526");
+    public IBrush ButtonHoverBrush { get; private set; } = Brush.Parse("#313437");
     public IBrush EditorBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush CardBrush             { get; private set; } = Brush.Parse("#252526");
-    public IBrush PrimaryTextBrush      { get; private set; } = Brush.Parse("#F4F4F4");
-    public IBrush MutedTextBrush        { get; private set; } = Brush.Parse("#A0A0A0");
-    public IBrush SurfaceBorderBrush    { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush           { get; private set; } = Brush.Parse("#8C00FF");
+    public IBrush CardBrush { get; private set; } = Brush.Parse("#252526");
+    public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse("#F4F4F4");
+    public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
+    public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
+    public IBrush AccentBrush { get; private set; } = Brush.Parse("#8C00FF");
 
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
 
@@ -4219,11 +4244,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RaiseMany(nameof(IsAccentKodo), nameof(IsAccentWindows), nameof(IsAccentCustom), nameof(IsAccentTheme));
         }
     }
-    public bool IsAccentKodo    => _accentColorMode == "kodo";
+    public bool IsAccentKodo => _accentColorMode == "kodo";
     public bool IsAccentWindows => _accentColorMode == "windows";
-    public bool IsAccentCustom  => _accentColorMode == "custom";
-    public bool HasThemeAccent  => _hasThemeAccent;
-    public bool IsAccentTheme   => _accentColorMode == "theme";
+    public bool IsAccentCustom => _accentColorMode == "custom";
+    public bool HasThemeAccent => _hasThemeAccent;
+    public bool IsAccentTheme => _accentColorMode == "theme";
     public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse("#8C00FF");
 
     public string CustomAccentHex
@@ -4239,7 +4264,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     event PropertyChangedEventHandler? INotifyPropertyChanged.PropertyChanged
     {
-        add    => ViewModelPropertyChanged += value;
+        add => ViewModelPropertyChanged += value;
         remove => ViewModelPropertyChanged -= value;
     }
 
@@ -4316,12 +4341,55 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                var lines      = document?.LineCount ?? 1;
+                var lines = document?.LineCount ?? 1;
                 var characters = document?.TextLength ?? 0;
-                var caret      = EditorTextBox?.TextArea?.Caret;
-                var ln         = caret?.Line ?? 1;
-                var col        = caret?.Column ?? 1;
-                EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
+
+                var selection = EditorTextBox?.TextArea?.Selection;
+                if (selection is not null && !selection.IsEmpty && document is not null)
+                {
+                    var selectedText = selection.GetText();
+                    var selChars = selectedText.Length;
+                    // Line count: count '\n' and handle trailing newline correctly.
+                    var nlCount = selectedText.Count(c => c == '\n');
+                    var selLines = nlCount + (selectedText.EndsWith("\n") ? 0 : 1);
+                    if (selLines <= 0) selLines = 1;
+                    // Fallback to document line numbers for more accurate count when selection spans lines via offset (handles CRLF normalization)
+                    try
+                    {
+                        var seg = selection.SurroundingSegment;
+                        if (seg is not null && seg.Length > 0)
+                        {
+                            var startLine = document.GetLineByOffset(seg.Offset).LineNumber;
+                            var endLine = document.GetLineByOffset(Math.Max(seg.Offset, seg.EndOffset - 1)).LineNumber;
+                            var lineCountFromOffsets = Math.Max(1, endLine - startLine + 1);
+                            // Prefer offset-based count when it differs significantly (e.g., selection ends at line start)
+                            // Keep the larger? Use offset count if it seems more accurate.
+                            // For now, use offset count as primary, fallback to text count.
+                            selLines = lineCountFromOffsets;
+                        }
+                    }
+                    catch { /* fallback to text count */ }
+
+                    string selText;
+                    if (selLines > 1)
+                    {
+                        var charWord = selChars == 1 ? "char" : "chars";
+                        selText = $"{selLines} lines, {selChars} {charWord} selected";
+                    }
+                    else
+                    {
+                        var charWord = selChars == 1 ? "char" : "chars";
+                        selText = $"{selChars} {charWord} selected";
+                    }
+                    EditorStatsText = $"{selText}  |  {lines} lines  |  {characters} characters";
+                }
+                else
+                {
+                    var caret = EditorTextBox?.TextArea?.Caret;
+                    var ln = caret?.Line ?? 1;
+                    var col = caret?.Column ?? 1;
+                    EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
+                }
             }
         }
         else
@@ -4333,7 +4401,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -4422,21 +4490,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var details = GetDiscordPresenceDetails();
-            var state   = GetDiscordPresenceState();
+            var state = GetDiscordPresenceState();
 
             _discordRpcClient.SetPresence(new DiscordRichPresenceModel
             {
-                Details    = details,
-                State      = state,
-                Assets     = new DiscordAssetsModel
+                Details = details,
+                State = state,
+                Assets = new DiscordAssetsModel
                 {
-                    LargeImageKey  = DefaultDiscordLargeImageKey,
+                    LargeImageKey = DefaultDiscordLargeImageKey,
                     LargeImageText = DefaultDiscordLargeImageText
                 },
                 Timestamps = new DiscordRPC.Timestamps(_sessionStart)
             });
             _lastDiscordPresenceDetails = details;
-            _lastDiscordPresenceState   = state;
+            _lastDiscordPresenceState = state;
         }
         catch (Exception ex)
         {
@@ -4472,25 +4540,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string GetDiscordPresenceStateClassic()
     {
-        if (HasFileOpen)          return GetDiscordWorkspaceLabel();
+        if (HasFileOpen) return GetDiscordWorkspaceLabel();
         if (_hasUntitledDocument) return GetDiscordWorkspaceLabel("Editing an Unsaved file");
-        if (IsFolderOpen)         return GetDiscordWorkspaceLabel();
+        if (IsFolderOpen) return GetDiscordWorkspaceLabel();
         return "Waiting for a file";
     }
 
 
     private string GetDiscordPresenceDetailsImproved()
     {
-        if (_isSettingsPageVisible)   return "Tweaking settings";
+        if (_isSettingsPageVisible) return "Tweaking settings";
         if (_isExtensionsPageVisible) return "Browsing extensions";
-        if (_isHomePageVisible)       return "On the home screen";
-        if (_isTutorialPageVisible)   return "Following the tutorial";
-        if (_isWhatsNewPageVisible)   return "Reading what's new";
+        if (_isHomePageVisible) return "On the home screen";
+        if (_isTutorialPageVisible) return "Following the tutorial";
+        if (_isWhatsNewPageVisible) return "Reading what's new";
 
         if (HasDocumentOpen)
         {
             var fileName = GetDocumentDisplayName();
-            var lang     = GetDiscordLanguageLabel();
+            var lang = GetDiscordLanguageLabel();
             return string.IsNullOrWhiteSpace(lang)
                 ? $"Editing {fileName}"
                 : $"Editing {fileName}  \u00b7  {lang}";
@@ -4509,9 +4577,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string GetDiscordPresenceStateImproved()
     {
-        if (HasFileOpen)          return GetDiscordWorkspaceLabelImproved();
+        if (HasFileOpen) return GetDiscordWorkspaceLabelImproved();
         if (_hasUntitledDocument) return GetDiscordWorkspaceLabelImproved("Editing an unsaved file");
-        if (IsFolderOpen)         return GetDiscordWorkspaceLabelImproved();
+        if (IsFolderOpen) return GetDiscordWorkspaceLabelImproved();
         return "Waiting for a file";
     }
 
@@ -4548,8 +4616,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _discordRpcClient = null;
             _lastDiscordPresenceDetails = string.Empty;
-            _lastDiscordPresenceState   = string.Empty;
-            _lastDiscordPresenceKey     = default;
+            _lastDiscordPresenceState = string.Empty;
+            _lastDiscordPresenceKey = default;
         }
     }
 
@@ -4789,50 +4857,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         return new AppSettings
         {
-            ThemeName                              = _requestedThemeName,
-            AutoSaveEnabled                        = IsAutoSaveEnabled,
-            DiscordRichPresenceEnabled             = IsDiscordRichPresenceEnabled,
-            DiscordImprovedRpcEnabled              = IsDiscordImprovedRpcEnabled,
-            DeveloperOptionsVisible                = IsDeveloperOptionsVisible,
-            VerboseLoggingEnabled                   = IsVerboseLoggingEnabled,
-            StatusBarFilePathVisible               = IsStatusBarFilePathVisible,
-            WordWrapEnabled                        = IsWordWrapEnabled,
-            InsightEnabled                        = IsInsightEnabled,
-            InsightCodeSuggestionsEnabled         = IsInsightCodeSuggestionsEnabled,
-            InsightDeadCodeEnabled                = IsInsightDeadCodeEnabled,
-            InsightErrorDetectionEnabled          = IsInsightErrorDetectionEnabled,
-            InsightBlacklistExtensions           = InsightBlacklistExtensions,
-            DismissedDiagnostics                 = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
-            TabSize                                = TabSize,
-            EditorFontSize                         = EditorFontSize,
-            ConfirmBeforeClosingUnsavedTabsEnabled  = IsConfirmBeforeClosingUnsavedTabsEnabled,
-            RestoreOpenTabsOnLaunchEnabled          = IsRestoreOpenTabsOnLaunchEnabled,
-            AutoUpdateExtensionsEnabled             = IsAutoUpdateExtensionsEnabled,
+            ThemeName = _requestedThemeName,
+            AutoSaveEnabled = IsAutoSaveEnabled,
+            DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
+            DiscordImprovedRpcEnabled = IsDiscordImprovedRpcEnabled,
+            DeveloperOptionsVisible = IsDeveloperOptionsVisible,
+            VerboseLoggingEnabled = IsVerboseLoggingEnabled,
+            StatusBarFilePathVisible = IsStatusBarFilePathVisible,
+            WordWrapEnabled = IsWordWrapEnabled,
+            InsightEnabled = IsInsightEnabled,
+            InsightCodeSuggestionsEnabled = IsInsightCodeSuggestionsEnabled,
+            InsightDeadCodeEnabled = IsInsightDeadCodeEnabled,
+            InsightErrorDetectionEnabled = IsInsightErrorDetectionEnabled,
+            InsightBlacklistExtensions = InsightBlacklistExtensions,
+            DismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
+            TabSize = TabSize,
+            EditorFontSize = EditorFontSize,
+            ConfirmBeforeClosingUnsavedTabsEnabled = IsConfirmBeforeClosingUnsavedTabsEnabled,
+            RestoreOpenTabsOnLaunchEnabled = IsRestoreOpenTabsOnLaunchEnabled,
+            AutoUpdateExtensionsEnabled = IsAutoUpdateExtensionsEnabled,
             AutoUpdateExtensionsInBackgroundEnabled = IsAutoUpdateExtensionsInBackgroundEnabled,
-            AutoUpdateAppEnabled                    = IsAutoUpdateAppEnabled,
-            AutoUpdateAppInBackgroundEnabled         = IsAutoUpdateAppInBackgroundEnabled,
-            PerformanceModeEnabled                   = IsPerformanceModeEnabled,
-            NewsDisabled                             = NewsDisabled,
-            WhatsNewDisabled                         = WhatsNewDisabled,
-            DebouncedSearchEnabled                   = IsDebouncedSearchEnabled,
-            PreferredTerminalShellId                = SelectedTerminalShell?.Id,
-            PSReadLinePredictionEnabled              = IsPSReadLinePredictionEnabled,
-            TerminalVisible                         = IsTerminalVisible,
-            TerminalPanelHeight                     = TerminalPanelHeight,
-            ExplorerPanelWidth                      = ExplorerPanelWidth,
-            HasCompletedTutorial                    = _hasCompletedTutorial,
-            AccentColorMode                         = _accentColorMode,
-            CustomAccentHex                         = _customAccentHex,
-            CachedThemeAccentHex                    = _hasThemeAccent ? _themeAccentHex : null,
-            CachedThemeWindowBackgroundHex           = _hasWindowBackground ? _windowBackgroundHex : null,
-            UserCountry                             = _userCountry,
-            UserHemisphere                          = _userHemisphere,
-            UserTimezoneOffset                      = _userTimezoneOffset,
-            UserName                                = _userName,
-            LastSeenVersion                         = CurrentAppVersion,
-            AllowDataTracking                       = _isDataTrackingEnabled,
-            HasRespondedToDataTrackingPrompt        = _hasRespondedToDataTrackingPrompt,
-            HasAcceptedPrivacyPolicy                = _hasAcceptedPrivacyPolicy,
+            AutoUpdateAppEnabled = IsAutoUpdateAppEnabled,
+            AutoUpdateAppInBackgroundEnabled = IsAutoUpdateAppInBackgroundEnabled,
+            PerformanceModeEnabled = IsPerformanceModeEnabled,
+            NewsDisabled = NewsDisabled,
+            WhatsNewDisabled = WhatsNewDisabled,
+            DebouncedSearchEnabled = IsDebouncedSearchEnabled,
+            PreferredTerminalShellId = SelectedTerminalShell?.Id,
+            PSReadLinePredictionEnabled = IsPSReadLinePredictionEnabled,
+            TerminalVisible = IsTerminalVisible,
+            TerminalPanelHeight = TerminalPanelHeight,
+            ExplorerPanelWidth = ExplorerPanelWidth,
+            HasCompletedTutorial = _hasCompletedTutorial,
+            AccentColorMode = _accentColorMode,
+            CustomAccentHex = _customAccentHex,
+            CachedThemeAccentHex = _hasThemeAccent ? _themeAccentHex : null,
+            CachedThemeWindowBackgroundHex = _hasWindowBackground ? _windowBackgroundHex : null,
+            UserCountry = _userCountry,
+            UserHemisphere = _userHemisphere,
+            UserTimezoneOffset = _userTimezoneOffset,
+            UserName = _userName,
+            LastSeenVersion = CurrentAppVersion,
+            AllowDataTracking = _isDataTrackingEnabled,
+            HasRespondedToDataTrackingPrompt = _hasRespondedToDataTrackingPrompt,
+            HasAcceptedPrivacyPolicy = _hasAcceptedPrivacyPolicy,
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
@@ -5070,7 +5138,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else if (isReturningUser)
         {
             var showReleaseNotes = !IsDevBuild && IsCurrentNewerThanLastSeen(_lastSeenVersion);
-            var showConsentAsk   = !_hasRespondedToDataTrackingPrompt || !_hasAcceptedPrivacyPolicy;
+            var showConsentAsk = !_hasRespondedToDataTrackingPrompt || !_hasAcceptedPrivacyPolicy;
 
             _openingSplashShowsReleaseNotes = showReleaseNotes;
             if (showReleaseNotes || showConsentAsk)
@@ -5260,11 +5328,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 OnPropertyChanged(nameof(FileSummaryText));
             }
 
-            await File.WriteAllTextAsync(savingPath!, savingContent);
+            var textToSave = ConvertToLineEnding(savingContent, _currentLineEnding);
+            await File.WriteAllTextAsync(savingPath!, textToSave, _currentFileEncoding);
 
             if (savingTab is not null)
             {
-                savingTab.Content = savingContent;
+                savingTab.Content = textToSave;
                 savingTab.IsDirty = false;
                 if (savingTab.IsUntitled)
                     savingTab.IsUntitled = false;
@@ -5431,15 +5500,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var birthday = IsKodoBirthday ? " 🎂" : string.Empty;
 
-        if (_isSettingsPageVisible)   return "Settings";
+        if (_isSettingsPageVisible) return "Settings";
         if (_isExtensionsPageVisible) return "Extensions";
-        if (_isTutorialPageVisible)   return "Tutorial";
-        if (_isHomePageVisible)       return $"Kodo{birthday}";
+        if (_isTutorialPageVisible) return "Tutorial";
+        if (_isHomePageVisible) return $"Kodo{birthday}";
 
         if (HasDocumentOpen)
         {
             var dirty = _isDirty ? "● " : string.Empty;
-            var file  = GetDocumentDisplayName();
+            var file = GetDocumentDisplayName();
             if (IsFolderOpen)
             {
                 var workspace = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
@@ -5708,25 +5777,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void NavigateTo(AppPage page)
     {
-        var newHome       = page == AppPage.Home;
-        var newSettings   = page == AppPage.Settings;
+        var newHome = page == AppPage.Home;
+        var newSettings = page == AppPage.Settings;
         var newExtensions = page == AppPage.Extensions;
-        var newTutorial   = page == AppPage.Tutorial;
-        var newWhatsNew   = page == AppPage.WhatsNew;
+        var newTutorial = page == AppPage.Tutorial;
+        var newWhatsNew = page == AppPage.WhatsNew;
 
         // Bail early if nothing actually changed
-        if (_isHomePageVisible       == newHome       &&
-            _isSettingsPageVisible   == newSettings   &&
+        if (_isHomePageVisible == newHome &&
+            _isSettingsPageVisible == newSettings &&
             _isExtensionsPageVisible == newExtensions &&
-            _isTutorialPageVisible   == newTutorial   &&
-            _isWhatsNewPageVisible   == newWhatsNew)
+            _isTutorialPageVisible == newTutorial &&
+            _isWhatsNewPageVisible == newWhatsNew)
             return;
 
-        _isHomePageVisible       = newHome;
-        _isSettingsPageVisible   = newSettings;
+        _isHomePageVisible = newHome;
+        _isSettingsPageVisible = newSettings;
         _isExtensionsPageVisible = newExtensions;
-        _isTutorialPageVisible   = newTutorial;
-        _isWhatsNewPageVisible   = newWhatsNew;
+        _isTutorialPageVisible = newTutorial;
+        _isWhatsNewPageVisible = newWhatsNew;
 
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;
@@ -5786,7 +5855,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     try
                     {
-                        await File.WriteAllTextAsync(tab.Path, tab.Content);
+                        var textToSave = ConvertToLineEnding(tab.Content, tab.LineEnding);
+                        await File.WriteAllTextAsync(tab.Path, textToSave, _currentFileEncoding);
+                        tab.Content = textToSave;
                         tab.IsDirty = false;
                     }
                     catch (Exception ex)
@@ -6018,7 +6089,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (IsCheckingForUpdatesManually) return;
 
         IsCheckingForUpdatesManually = true;
-        CheckForUpdatesStatusText    = "Checking for updates…";
+        CheckForUpdatesStatusText = "Checking for updates…";
 
         try
         {
@@ -6052,7 +6123,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (button is not null)
         {
             button.IsEnabled = false;
-            button.Content   = "Checking…";
+            button.Content = "Checking…";
         }
 
         try
@@ -6065,7 +6136,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (button is not null)
             {
-                button.Content   = originalContent;
+                button.Content = originalContent;
                 button.IsEnabled = true;
             }
         }
@@ -6079,6 +6150,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenWebsiteButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(WebsiteUrl);
+
+    private void OpenGitHubButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(GitHubRepoUrl);
 
     private void OpenPrivacyPolicyButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(PrivacyPolicyUrl);
@@ -6094,61 +6168,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Polished header - accent badge + title, hint underneath, divider
         var iconBadge = new Border
         {
-            Background        = AccentBrush,
-            CornerRadius      = new CornerRadius(8),
-            Width             = 36,
-            Height            = 36,
+            Background = AccentBrush,
+            CornerRadius = new CornerRadius(8),
+            Width = 36,
+            Height = 36,
             VerticalAlignment = VerticalAlignment.Center,
             Child = new TextBlock
             {
-                Text                = "⌨",
-                FontSize            = 16,
-                Foreground          = AccentForegroundBrush,
+                Text = "⌨",
+                FontSize = 16,
+                Foreground = AccentForegroundBrush,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center,
-                Margin              = new Thickness(0, -1, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, -1, 0, 0),
             },
         };
 
         var titleText = new TextBlock
         {
-            Text              = "Keyboard Shortcuts",
-            FontSize          = 17,
-            FontWeight        = FontWeight.SemiBold,
-            Foreground        = PrimaryTextBrush,
+            Text = "Keyboard Shortcuts",
+            FontSize = 17,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = PrimaryTextBrush,
             VerticalAlignment = VerticalAlignment.Center,
         };
 
         var headerRow = new StackPanel
         {
-            Orientation       = Orientation.Horizontal,
-            Spacing           = 12,
+            Orientation = Orientation.Horizontal,
+            Spacing = 12,
             VerticalAlignment = VerticalAlignment.Center,
-            Children          = { iconBadge, titleText },
+            Children = { iconBadge, titleText },
         };
 
         var hintText = new TextBlock
         {
-            Text         = "Click a shortcut below, then press a new key combination. Press Escape to cancel (so Escape itself can only be reassigned via Reset, not capture).",
-            FontSize     = 12,
-            Foreground   = MutedTextBrush,
+            Text = "Click a shortcut below, then press a new key combination. Press Escape to cancel (so Escape itself can only be reassigned via Reset, not capture).",
+            FontSize = 12,
+            Foreground = MutedTextBrush,
             TextWrapping = TextWrapping.Wrap,
-            Opacity      = 0.92,
+            Opacity = 0.92,
         };
 
         var headerDivider = new Border
         {
-            Height     = 1,
+            Height = 1,
             Background = SurfaceBorderBrush,
-            Opacity    = 0.9,
-            Margin     = new Thickness(0, 2),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 2),
         };
 
         var editableHeader = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing     = 8,
-            Margin      = new Thickness(0, 0, 0, 2),
+            Spacing = 8,
+            Margin = new Thickness(0, 0, 0, 2),
             Children =
             {
                 new Border
@@ -6174,8 +6248,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var otherHeader = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing     = 8,
-            Margin      = new Thickness(0, 8, 0, 2),
+            Spacing = 8,
+            Margin = new Thickness(0, 8, 0, 2),
             Children =
             {
                 new Border
@@ -6202,13 +6276,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var editableGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("140,*,Auto,Auto"),
-            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
+            RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
         };
 
         var fixedGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
-            RowDefinitions    = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", fixedShortcuts.Length))),
+            RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", fixedShortcuts.Length))),
         };
 
         for (var i = 0; i < fixedShortcuts.Length; i++)
@@ -6217,17 +6291,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var gestureBorder = new Border
             {
-                Background      = CardBrush,
-                BorderBrush     = SurfaceBorderBrush,
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(8, 4),
-                Margin          = new Thickness(0, 0, 0, 6),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 4),
+                Margin = new Thickness(0, 0, 0, 6),
                 VerticalAlignment = VerticalAlignment.Center,
-                Child           = new TextBlock
+                Child = new TextBlock
                 {
-                    Text       = gesture,
-                    FontSize   = 12,
+                    Text = gesture,
+                    FontSize = 12,
                     FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                     Foreground = PrimaryTextBrush,
                 },
@@ -6235,12 +6309,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var descText = new TextBlock
             {
-                Text              = description,
-                FontSize          = 13,
-                Foreground        = MutedTextBrush,
+                Text = description,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping      = TextWrapping.Wrap,
-                Margin            = new Thickness(0, 0, 0, 6),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6),
             };
 
             Grid.SetRow(gestureBorder, i);
@@ -6254,29 +6328,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Conflict/status line shown under the editable list while
         var statusText = new TextBlock
         {
-            Text         = string.Empty,
-            FontSize     = 12,
-            Foreground   = Brush.Parse("#E5484D"),
+            Text = string.Empty,
+            FontSize = 12,
+            Foreground = Brush.Parse("#E5484D"),
             TextWrapping = TextWrapping.Wrap,
-            IsVisible    = false,
+            IsVisible = false,
         };
 
         var statusBorder = new Border
         {
-            Background      = new SolidColorBrush(Color.Parse("#E5484D"), 0.08),
-            BorderBrush     = new SolidColorBrush(Color.Parse("#E5484D"), 0.22),
+            Background = new SolidColorBrush(Color.Parse("#E5484D"), 0.08),
+            BorderBrush = new SolidColorBrush(Color.Parse("#E5484D"), 0.22),
             BorderThickness = new Thickness(1),
-            CornerRadius    = new CornerRadius(6),
-            Padding         = new Thickness(10, 7),
-            IsVisible       = false,
-            Child           = statusText,
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 7),
+            IsVisible = false,
+            Child = statusText,
         };
 
         // Only one row can be "listening" for a new key combo at a time.
         string? capturingId = null;
         var gestureTextBlocks = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
-        var editButtons        = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
-        var resetButtons        = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        var editButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        var resetButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
 
         void RefreshRow(string id)
         {
@@ -6292,13 +6366,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (string.IsNullOrEmpty(message))
             {
-                statusText.Text      = string.Empty;
+                statusText.Text = string.Empty;
                 statusText.IsVisible = false;
                 statusBorder.IsVisible = false;
             }
             else
             {
-                statusText.Text      = message;
+                statusText.Text = message;
                 statusText.IsVisible = true;
                 statusBorder.IsVisible = true;
             }
@@ -6319,18 +6393,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var gestureBorder = new Border
             {
-                Background      = CardBrush,
-                BorderBrush     = SurfaceBorderBrush,
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(8, 4),
-                Margin          = new Thickness(0, 0, 0, 6),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 4),
+                Margin = new Thickness(0, 0, 0, 6),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             var gestureText = new TextBlock
             {
-                Text       = FormatGesture(_keybinds[def.Id]),
-                FontSize   = 12,
+                Text = FormatGesture(_keybinds[def.Id]),
+                FontSize = 12,
                 FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground = PrimaryTextBrush,
             };
@@ -6339,38 +6413,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var descText = new TextBlock
             {
-                Text              = def.Description,
-                FontSize          = 13,
-                Foreground        = MutedTextBrush,
+                Text = def.Description,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping      = TextWrapping.Wrap,
-                Margin            = new Thickness(12, 0, 0, 6),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(12, 0, 0, 6),
             };
 
             var editButton = new Button
             {
-                Content         = "Edit",
-                FontSize        = 11,
-                Padding         = new Thickness(10, 3),
-                Margin          = new Thickness(0, 0, 6, 6),
-                Background      = ButtonBrush,
-                Foreground      = PrimaryTextBrush,
+                Content = "Edit",
+                FontSize = 11,
+                Padding = new Thickness(10, 3),
+                Margin = new Thickness(0, 0, 6, 6),
+                Background = ButtonBrush,
+                Foreground = PrimaryTextBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius    = new CornerRadius(5),
+                CornerRadius = new CornerRadius(5),
             };
             editButtons[def.Id] = editButton;
 
             var resetButton = new Button
             {
-                Content         = "Reset",
-                FontSize        = 11,
-                Padding         = new Thickness(10, 3),
-                Margin          = new Thickness(0, 0, 0, 6),
-                Background      = ButtonBrush,
-                Foreground      = MutedTextBrush,
+                Content = "Reset",
+                FontSize = 11,
+                Padding = new Thickness(10, 3),
+                Margin = new Thickness(0, 0, 0, 6),
+                Background = ButtonBrush,
+                Foreground = MutedTextBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius    = new CornerRadius(5),
-                IsVisible       = _keybinds[def.Id].Key != def.Default.Key || _keybinds[def.Id].KeyModifiers != def.Default.KeyModifiers,
+                CornerRadius = new CornerRadius(5),
+                IsVisible = _keybinds[def.Id].Key != def.Default.Key || _keybinds[def.Id].KeyModifiers != def.Default.KeyModifiers,
             };
             resetButtons[def.Id] = resetButton;
 
@@ -6412,97 +6486,97 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var sectionDivider = new Border
         {
-            Height     = 1,
+            Height = 1,
             Background = SurfaceBorderBrush,
-            Opacity    = 0.85,
-            Margin     = new Thickness(0, 4),
+            Opacity = 0.85,
+            Margin = new Thickness(0, 4),
         };
 
         var innerStack = new StackPanel
         {
-            Spacing  = 2,
+            Spacing = 2,
             Children = { editableHeader, editableGrid, sectionDivider, otherHeader, fixedGrid },
         };
 
         var scroll = new ScrollViewer
         {
             Content = innerStack,
-            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            MaxHeight                     = 380,
+            MaxHeight = 380,
         };
 
         var scrollBorder = new Border
         {
-            Background      = WindowBackgroundBrush,
-            BorderBrush     = SurfaceBorderBrush,
+            Background = WindowBackgroundBrush,
+            BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius    = new CornerRadius(8),
-            Padding         = new Thickness(12, 10),
-            Child           = scroll,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12, 10),
+            Child = scroll,
         };
 
         var dismissButton = new Button
         {
-            Content             = "Close",
+            Content = "Close",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Padding             = new Thickness(20, 8),
-            Background          = AccentBrush,
-            Foreground          = AccentForegroundBrush,
-            BorderThickness     = new Thickness(0),
-            CornerRadius        = new CornerRadius(8),
+            Padding = new Thickness(20, 8),
+            Background = AccentBrush,
+            Foreground = AccentForegroundBrush,
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(8),
         };
 
         var footerHint = new TextBlock
         {
-            Text              = "Changes save automatically",
-            FontSize          = 11,
-            Foreground        = MutedTextBrush,
+            Text = "Changes save automatically",
+            FontSize = 11,
+            Foreground = MutedTextBrush,
             VerticalAlignment = VerticalAlignment.Center,
-            Opacity           = 0.75,
+            Opacity = 0.75,
         };
 
         var footerDivider = new Border
         {
-            Height     = 1,
+            Height = 1,
             Background = SurfaceBorderBrush,
-            Opacity    = 0.9,
-            Margin     = new Thickness(0, 4, 0, 0),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4, 0, 0),
         };
 
         var footerRow = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            Children          = { footerHint, dismissButton },
+            Children = { footerHint, dismissButton },
         };
         Grid.SetColumn(dismissButton, 1);
 
         var content = new StackPanel
         {
-            Spacing  = 12,
+            Spacing = 12,
             Children = { headerRow, hintText, headerDivider, scrollBorder, statusBorder, footerDivider, footerRow },
         };
 
         Window? dialog = null;
         dialog = new Window
         {
-            Title                 = "Kodo - Keyboard Shortcuts",
-            Width                 = 560,
-            SizeToContent         = SizeToContent.Height,
-            MinWidth              = 440,
-            MaxHeight             = 720,
-            CanResize             = false,
+            Title = "Kodo - Keyboard Shortcuts",
+            Width = 560,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 440,
+            MaxHeight = 720,
+            CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background            = WindowBackgroundBrush,
+            Background = WindowBackgroundBrush,
             Content = new Border
             {
-                Background      = CardBrush,
-                BorderBrush     = SurfaceBorderBrush,
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(12),
-                Padding         = new Thickness(20),
-                Margin          = new Thickness(16),
-                Child           = content,
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(20),
+                Margin = new Thickness(16),
+                Child = content,
             },
         };
 
@@ -6634,7 +6708,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             Process.Start(new ProcessStartInfo
             {
-                FileName        = path,
+                FileName = path,
                 UseShellExecute = true,
             });
         }
@@ -6654,7 +6728,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             Process.Start(new ProcessStartInfo
             {
-                FileName        = path,
+                FileName = path,
                 UseShellExecute = true,
             });
         }
@@ -6843,7 +6917,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var lang = CurrentLanguageExtension;
         sb.AppendLine($"Active language: {(lang is not null ? $"{lang.Name} v{lang.Version}" : "(none / plain text)")}");
         if (HasFileOpen)
+        {
             sb.AppendLine($"Active file encoding: {EncodingDisplayText}");
+            if (IsLineEndingVisible)
+                sb.AppendLine($"Active file line ending: {LineEndingDisplayText}");
+        }
         sb.AppendLine($"Tab size: {TabSize}");
         sb.AppendLine($"Font size: {EditorFontSize}px");
         sb.AppendLine($"Word wrap: {IsWordWrapEnabled}");
@@ -7408,7 +7486,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var encodings = candidateEncodings
             .Select(c =>
             {
-                try   { return ((string Label, System.Text.Encoding Enc)?)(c.Label, c.Factory()); }
+                try { return ((string Label, System.Text.Encoding Enc)?)(c.Label, c.Factory()); }
                 catch { return null; }
             })
             .Where(x => x is not null)
@@ -7560,9 +7638,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            await File.WriteAllTextAsync(_currentFilePath!, EditorTextBox.Document.Text, chosen);
+            var textToWrite = ConvertToLineEnding(EditorTextBox.Document.Text, _currentLineEnding);
+            await File.WriteAllTextAsync(_currentFilePath!, textToWrite, chosen);
             _currentFileEncoding = chosen;
             OnPropertyChanged(nameof(EncodingDisplayText));
+            if (ActiveEditorTab is not null)
+                ActiveEditorTab.Content = textToWrite;
         }
         catch (Exception ex)
         {
@@ -7570,7 +7651,174 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void LineEndingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!HasFileOpen || !IsTextEditorVisible) return;
 
+        var lineEndings = new (string Label, Kodo.Models.LineEnding Ending)[]
+        {
+            ("LF (\\n) - Unix / macOS", Kodo.Models.LineEnding.LF),
+            ("CRLF (\\r\\n) - Windows", Kodo.Models.LineEnding.CRLF),
+        };
+
+        Kodo.Models.LineEnding? chosen = null;
+        Window? dialog = null;
+
+        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
+            ? accentSolid.Color
+            : Color.Parse("#8C00FF");
+
+        var headerRow = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            Children =
+            {
+                new Border
+                {
+                    Width = 3,
+                    Height = 16,
+                    Background = AccentBrush,
+                    CornerRadius = new CornerRadius(2),
+                    VerticalAlignment = VerticalAlignment.Center
+                },
+                new TextBlock
+                {
+                    Text = "Save file with line ending:",
+                    FontSize = 13,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = PrimaryTextBrush,
+                    VerticalAlignment = VerticalAlignment.Center
+                }
+            }
+        };
+
+        var headerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 6)
+        };
+
+        var listPanel = new StackPanel { Spacing = 6 };
+
+        foreach (var (label, ending) in lineEndings)
+        {
+            var isCurrent = ending == _currentLineEnding;
+            var btn = new Button
+            {
+                Content = isCurrent ? $"{label}  ✓" : label,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Background = isCurrent
+                    ? new SolidColorBrush(accentColor, 0.18)
+                    : ButtonBrush,
+                Foreground = isCurrent
+                    ? new SolidColorBrush(accentColor)
+                    : PrimaryTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(12, 7),
+            };
+            var captured = ending;
+            btn.Click += (_, _) =>
+            {
+                chosen = captured;
+                dialog?.Close();
+            };
+            listPanel.Children.Add(btn);
+        }
+
+        var listBorder = new Border
+        {
+            Background = WindowBackgroundBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Child = listPanel
+        };
+
+        var panel = new StackPanel
+        {
+            Spacing = 10,
+            Children =
+            {
+                headerRow,
+                new TextBlock { Text = "Choose line ending for this file:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                headerDivider,
+                listBorder,
+                new TextBlock
+                {
+                    Text = "The file will be re-saved immediately with the chosen line ending.",
+                    FontSize = 11,
+                    Foreground = MutedTextBrush,
+                    TextWrapping = TextWrapping.Wrap,
+                    Opacity = 0.85
+                },
+                footerDivider
+            }
+        };
+
+        var outer = new Border
+        {
+            Background = CardBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(16),
+            Margin = new Thickness(16),
+            Child = panel
+        };
+
+        dialog = new Window
+        {
+            Title = "Change Line Ending",
+            Width = 360,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 300,
+            MaxHeight = 560,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = WindowBackgroundBrush,
+            Content = outer,
+        };
+
+        await dialog.ShowDialog(this);
+
+        if (chosen is null) return;
+        if (chosen.Value == _currentLineEnding) return;
+
+        try
+        {
+            var textToWrite = ConvertToLineEnding(EditorTextBox.Document.Text, chosen.Value);
+            await File.WriteAllTextAsync(_currentFilePath!, textToWrite, _currentFileEncoding);
+            _currentLineEnding = chosen.Value;
+            if (ActiveEditorTab is not null)
+            {
+                ActiveEditorTab.LineEnding = chosen.Value;
+                ActiveEditorTab.Content = textToWrite;
+                ActiveEditorTab.IsDirty = false;
+            }
+            _isDirty = false;
+            OnPropertyChanged(nameof(LineEndingDisplayText));
+            OnPropertyChanged(nameof(IsLineEndingVisible));
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Change line ending", ex);
+        }
+    }
 
 
 
@@ -7670,8 +7918,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
-    private void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e) =>
-        EditorTextBox?.TextArea?.Selection?.ReplaceSelectionWithText(string.Empty);
+    private async void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
+        var text = sel.GetText();
+        if (string.IsNullOrEmpty(text)) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is not null)
+            await clipboard.SetTextAsync(text);
+        sel.ReplaceSelectionWithText(string.Empty);
+    }
 
     private async void EditorCopyMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -7796,7 +8052,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
 
 
-	// Fires before the character is written; skips an auto-inserted closing
+    // Fires before the character is written; skips an auto-inserted closing
 
 
 
@@ -7949,6 +8205,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static string NormalizeLineEndings(string text) =>
         text.Replace("\r\n", "\n").Replace('\r', '\n');
 
+    private static Kodo.Models.LineEnding DetectLineEnding(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+
+        // Count line endings to handle mixed files: majority wins; tie prefers CRLF on Windows.
+        int crlf = 0, lf = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '\r')
+            {
+                if (i + 1 < text.Length && text[i + 1] == '\n') { crlf++; i++; }
+                else lf++; // lone CR -> treat as LF line
+            }
+            else if (text[i] == '\n')
+            {
+                // Count LF only if not part of CRLF (already consumed)
+                lf++;
+            }
+        }
+
+        if (crlf == 0 && lf == 0)
+            return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+
+        if (crlf > lf) return Kodo.Models.LineEnding.CRLF;
+        if (lf > crlf) return Kodo.Models.LineEnding.LF;
+        // tie: use OS default
+        return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+    }
+
+    private static string ConvertToLineEnding(string text, Kodo.Models.LineEnding ending)
+    {
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        return ending == Kodo.Models.LineEnding.CRLF ? normalized.Replace("\n", "\r\n") : normalized;
+    }
+
 
 
     private static string GetSharedIndent(string left, string right)
@@ -8053,7 +8345,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         return; // Save was cancelled - leave the window open.
                     break;
 
-                // UnsavedTabAction.Discard - just continue to the next tab.
+                    // UnsavedTabAction.Discard - just continue to the next tab.
             }
         }
 

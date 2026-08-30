@@ -23,21 +23,21 @@ public partial class App : Application
 {
     private static int _isCrashDialogOpen;
 
-    private static readonly Color KodoDarkSurface     = DialogPalette.Surface;
+    private static readonly Color KodoDarkSurface = DialogPalette.Surface;
     private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
-    private static readonly Color KodoDarkBorder      = DialogPalette.Border;
-    private static readonly Color KodoDarkBadgeBg     = DialogPalette.BadgeBg;
-    private static readonly Color KodoTextMuted       = DialogPalette.TextMuted;
-    private static readonly Color KodoTextDim         = DialogPalette.TextDim;
-    private static readonly Color KodoTokenBlue       = DialogPalette.TokenBlue;  // source badge
-    private static readonly Color KodoTokenOrange     = DialogPalette.TokenOrange;  // stack trace
+    private static readonly Color KodoDarkBorder = DialogPalette.Border;
+    private static readonly Color KodoDarkBadgeBg = DialogPalette.BadgeBg;
+    private static readonly Color KodoTextMuted = DialogPalette.TextMuted;
+    private static readonly Color KodoTextDim = DialogPalette.TextDim;
+    private static readonly Color KodoTokenBlue = DialogPalette.TokenBlue;  // source badge
+    private static readonly Color KodoTokenOrange = DialogPalette.TokenOrange;  // stack trace
 
 
     public override void Initialize()
     {
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
-        TaskScheduler.UnobservedTaskException       += TaskScheduler_OnUnobservedTaskException;
-        Dispatcher.UIThread.UnhandledException      += DispatcherUiThread_OnUnhandledException;
+        TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
+        Dispatcher.UIThread.UnhandledException += DispatcherUiThread_OnUnhandledException;
         AvaloniaXamlLoader.Load(this);
     }
 
@@ -394,10 +394,10 @@ public partial class App : Application
 
     // Builds the crash dialog entirely in code, with no AXAML dependency.
     private static Window BuildCrashDialog(
-        string  source,
+        string source,
         Exception exception,
-        string  logPath,
-        bool    isTerminating,
+        string logPath,
+        bool isTerminating,
         Window? owner)
     {
         var palette = ThemeResolver.GetCurrentPalette();
@@ -434,10 +434,10 @@ public partial class App : Application
             Text = isTerminating
                 ? "An unrecoverable error occurred and Kodo will now close. The crash details have been saved."
                 : "An unexpected error occurred, but Kodo may still be running. The crash details have been saved.",
-            FontSize    = 13,
-            Foreground  = new SolidColorBrush(palette.TextMuted),
+            FontSize = 13,
+            Foreground = new SolidColorBrush(palette.TextMuted),
             TextWrapping = TextWrapping.Wrap,
-            Margin      = new Thickness(0, 4, 0, 0),
+            Margin = new Thickness(0, 4, 0, 0),
         };
 
         var headerDivider = new Border
@@ -451,33 +451,33 @@ public partial class App : Application
         // Terminating warning, shown only when isTerminating is true.
         var terminatingBanner = new Border
         {
-            IsVisible        = isTerminating,
-            Background       = new SolidColorBrush(Color.Parse("#3D1A00")),
-            BorderBrush      = new SolidColorBrush(Color.Parse("#7A3A00")),
-            BorderThickness  = new Thickness(1),
-            CornerRadius     = new CornerRadius(6),
-            Padding          = new Thickness(10, 6),
+            IsVisible = isTerminating,
+            Background = new SolidColorBrush(Color.Parse("#3D1A00")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#7A3A00")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 6),
             Child = new TextBlock
             {
-                Text        = "⚠ The application will close after you dismiss this dialog.",
-                FontSize    = 12,
-                Foreground  = new SolidColorBrush(Color.Parse("#FFA040")),
+                Text = "⚠ The application will close after you dismiss this dialog.",
+                FontSize = 12,
+                Foreground = new SolidColorBrush(Color.Parse("#FFA040")),
                 TextWrapping = TextWrapping.Wrap,
             },
         };
 
         var sourceBadge = new Border
         {
-            Background       = new SolidColorBrush(KodoDarkBadgeBg),
-            BorderBrush      = new SolidColorBrush(KodoDarkBorder),
-            BorderThickness  = new Thickness(1),
-            CornerRadius     = new CornerRadius(6),
-            Padding          = new Thickness(10, 5),
+            Background = new SolidColorBrush(KodoDarkBadgeBg),
+            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 5),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = new TextBlock
             {
-                Text       = source,
-                FontSize   = 12,
+                Text = source,
+                FontSize = 12,
                 FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground = new SolidColorBrush(KodoTokenBlue),
             },
@@ -485,17 +485,17 @@ public partial class App : Application
 
         var metadataText = new SelectableTextBlock
         {
-            Text         = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
-            FontSize     = 11,
-            FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-            Foreground   = new SolidColorBrush(KodoTextMuted),
+            Text = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
+            FontSize = 11,
+            FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+            Foreground = new SolidColorBrush(KodoTextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
 
         var exceptionText = new SelectableTextBlock
         {
-            Text       = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
-            FontSize   = 12,
+            Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
+            FontSize = 12,
             FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTokenOrange),
             TextWrapping = TextWrapping.Wrap,
@@ -503,70 +503,70 @@ public partial class App : Application
 
         var exceptionScroll = new ScrollViewer
         {
-            Content  = exceptionText,
+            Content = exceptionText,
             MaxHeight = 260,
-            VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
         };
 
         var exceptionBorder = new Border
         {
-            Background      = new SolidColorBrush(palette.SurfaceDeep),
-            BorderBrush     = new SolidColorBrush(palette.Border),
+            Background = new SolidColorBrush(palette.SurfaceDeep),
+            BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius    = new CornerRadius(8),
-            Padding         = new Thickness(12),
-            Child           = exceptionScroll,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12),
+            Child = exceptionScroll,
         };
 
         var logPathText = new TextBlock
         {
-            Text         = "Full details in: %AppData%\\Kodo\\kodo.log",
-            FontSize     = 11,
-            Foreground   = new SolidColorBrush(KodoTextDim),
+            Text = "Full details in: %AppData%\\Kodo\\kodo.log",
+            FontSize = 11,
+            Foreground = new SolidColorBrush(KodoTextDim),
             TextWrapping = TextWrapping.Wrap,
         };
 
         var copyButton = new Button
         {
-            Content             = "Copy to Clipboard",
+            Content = "Copy to Clipboard",
             HorizontalAlignment = HorizontalAlignment.Left,
-            Padding             = new Thickness(16, 8),
-            Background          = new SolidColorBrush(KodoDarkBadgeBg),
-            Foreground          = new SolidColorBrush(KodoTextMuted),
-            BorderBrush         = new SolidColorBrush(KodoDarkBorder),
-            BorderThickness     = new Thickness(1),
-            CornerRadius        = new CornerRadius(8),
+            Padding = new Thickness(16, 8),
+            Background = new SolidColorBrush(KodoDarkBadgeBg),
+            Foreground = new SolidColorBrush(KodoTextMuted),
+            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
         };
 
         var reportButton = new Button
         {
-            Content             = "Report on GitHub",
+            Content = "Report on GitHub",
             HorizontalAlignment = HorizontalAlignment.Left,
-            Padding             = new Thickness(16, 8),
-            Background          = new SolidColorBrush(KodoDarkBadgeBg),
-            Foreground          = new SolidColorBrush(KodoTextMuted),
-            BorderBrush         = new SolidColorBrush(KodoDarkBorder),
-            BorderThickness     = new Thickness(1),
-            CornerRadius        = new CornerRadius(8),
-            Margin              = new Thickness(8, 0, 0, 0),
+            Padding = new Thickness(16, 8),
+            Background = new SolidColorBrush(KodoDarkBadgeBg),
+            Foreground = new SolidColorBrush(KodoTextMuted),
+            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Margin = new Thickness(8, 0, 0, 0),
         };
 
         var dismissButton = new Button
         {
-            Content             = isTerminating ? "Close" : "Dismiss",
+            Content = isTerminating ? "Close" : "Dismiss",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Padding             = new Thickness(20, 8),
-            Background          = new SolidColorBrush(accentColor),
-            Foreground          = new SolidColorBrush(accentForeground),
-            BorderThickness     = new Thickness(0),
-            CornerRadius        = new CornerRadius(8),
+            Padding = new Thickness(20, 8),
+            Background = new SolidColorBrush(accentColor),
+            Foreground = new SolidColorBrush(accentForeground),
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(8),
         };
 
         var leftButtons = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children    = { copyButton, reportButton },
+            Children = { copyButton, reportButton },
         };
 
         var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -584,7 +584,7 @@ public partial class App : Application
 
         var content = new StackPanel
         {
-            Spacing  = 12,
+            Spacing = 12,
             Children =
             {
                 headerRow,
@@ -613,10 +613,10 @@ public partial class App : Application
 
         var dialog = new Window
         {
-            Title  = "Kodo - Crash Report",
-            Width  = 560,
+            Title = "Kodo - Crash Report",
+            Width = 560,
             SizeToContent = SizeToContent.Height,
-            MinWidth  = 400,
+            MinWidth = 400,
             MinHeight = 200,
             MaxHeight = 740,
             CanResize = true,
@@ -624,7 +624,7 @@ public partial class App : Application
                 ? WindowStartupLocation.CenterOwner
                 : WindowStartupLocation.CenterScreen,
             Background = new SolidColorBrush(palette.Background),
-            Content    = outer,
+            Content = outer,
         };
 
         copyButton.Click += async (_, _) =>
@@ -636,7 +636,7 @@ public partial class App : Application
                 {
                     var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true);
                     await clip.SetTextAsync(text);
-                    copyButton.Content   = "Copied!";
+                    copyButton.Content = "Copied!";
                     copyButton.Foreground = Brushes.White;
                 }
             }

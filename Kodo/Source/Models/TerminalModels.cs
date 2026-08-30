@@ -117,11 +117,11 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
     public string StatusDotColor => StatusText switch
     {
-        "Ready"                           => "#22C55E", // green
-        "Paused"                          => "#38BDF8", // blue
-        "Exited" or "Closed"              => "#94A3B8", // gray
+        "Ready" => "#22C55E", // green
+        "Paused" => "#38BDF8", // blue
+        "Exited" or "Closed" => "#94A3B8", // gray
         var s when s.StartsWith("Failed") => "#EF4444", // red
-        _                                 => "#F59E0B", // amber
+        _ => "#F59E0B", // amber
     };
 
     public Process? Process

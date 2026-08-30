@@ -50,7 +50,7 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     public ThemeExtensionGroup(string groupName, IReadOnlyList<LoadedExtension> themes)
     {
         GroupName = groupName;
-        Themes    = themes;
+        Themes = themes;
         _isExpanded = !IsMultiTheme;
     }
 

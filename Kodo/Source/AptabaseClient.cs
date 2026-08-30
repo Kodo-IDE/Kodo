@@ -11,16 +11,16 @@ using System.Threading.Tasks;
 namespace Kodo;
 
 internal sealed record AptabaseSystemProps(
-    [property: JsonPropertyName("isDebug")]    bool   IsDebug,
+    [property: JsonPropertyName("isDebug")] bool IsDebug,
     [property: JsonPropertyName("appVersion")] string AppVersion,
     [property: JsonPropertyName("sdkVersion")] string SdkVersion,
-    [property: JsonPropertyName("osName")]     string OsName);
+    [property: JsonPropertyName("osName")] string OsName);
 
 internal sealed record AptabaseEvent(
-    [property: JsonPropertyName("timestamp")]   string               Timestamp,
-    [property: JsonPropertyName("sessionId")]   string               SessionId,
-    [property: JsonPropertyName("eventName")]   string               EventName,
-    [property: JsonPropertyName("systemProps")] AptabaseSystemProps  SystemProps,
+    [property: JsonPropertyName("timestamp")] string Timestamp,
+    [property: JsonPropertyName("sessionId")] string SessionId,
+    [property: JsonPropertyName("eventName")] string EventName,
+    [property: JsonPropertyName("systemProps")] AptabaseSystemProps SystemProps,
     [property: JsonPropertyName("props")] Dictionary<string, string>? Props);
 
 internal static class AptabaseClient
@@ -136,12 +136,12 @@ internal static class AptabaseClient
 
         _isDevBuild = readableVersion.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
 
-        _sessionId   = Guid.NewGuid().ToString();
+        _sessionId = Guid.NewGuid().ToString();
         _systemProps = new AptabaseSystemProps(
-            IsDebug:    System.Diagnostics.Debugger.IsAttached,
+            IsDebug: System.Diagnostics.Debugger.IsAttached,
             AppVersion: readableVersion,
             SdkVersion: "kodo-aptabase@1.0.0",
-            OsName:     GetWindowsVersion());
+            OsName: GetWindowsVersion());
 
         if (_isDevBuild)
         {
@@ -159,7 +159,7 @@ internal static class AptabaseClient
     private static string? GetAptabaseKey()
     {
         var key = KEYS.AptabaseKey;
-        
+
         // Check and warn if the KEYS.cs file is missing or if the key is
         if (string.IsNullOrWhiteSpace(key))
         {
@@ -243,11 +243,11 @@ internal static class AptabaseClient
             while (_eventQueue.TryDequeue(out var item))
             {
                 batch.Add(new AptabaseEvent(
-                    Timestamp:   DateTime.UtcNow.ToString("O"),
-                    SessionId:   _sessionId!,
-                    EventName:   item.eventName,
+                    Timestamp: DateTime.UtcNow.ToString("O"),
+                    SessionId: _sessionId!,
+                    EventName: item.eventName,
                     SystemProps: _systemProps!,
-                    Props:       string.IsNullOrEmpty(item.message)
+                    Props: string.IsNullOrEmpty(item.message)
                                      ? null
                                      : new Dictionary<string, string> { ["message"] = item.message }
                 ));

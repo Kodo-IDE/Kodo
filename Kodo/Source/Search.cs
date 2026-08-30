@@ -1197,7 +1197,7 @@ public partial class MainWindow
         var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
         return beforeOk && afterOk;
     }
-    private static IEnumerable<(int Offset,int Length)> EnumerateFindMatches(string text,string needle,StringComparison cmp,bool wholeWord,Regex? regex) { var idx=0; while(idx<=text.Length){ var m=FindNextMatch(text,needle,idx,true,cmp,wholeWord,regex); if(m.Offset<0) yield break; yield return m; idx=m.Offset+m.Length; if(m.Length==0) yield break; } }
+    private static IEnumerable<(int Offset, int Length)> EnumerateFindMatches(string text, string needle, StringComparison cmp, bool wholeWord, Regex? regex) { var idx = 0; while (idx <= text.Length) { var m = FindNextMatch(text, needle, idx, true, cmp, wholeWord, regex); if (m.Offset < 0) yield break; yield return m; idx = m.Offset + m.Length; if (m.Length == 0) yield break; } }
 
     private void UpdateFindHighlights()
     {

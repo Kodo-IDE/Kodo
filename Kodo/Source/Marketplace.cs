@@ -1070,7 +1070,7 @@ public partial class MainWindow
 
             Process.Start(new ProcessStartInfo
             {
-                FileName        = ExtensionsFolderPath,
+                FileName = ExtensionsFolderPath,
                 UseShellExecute = true
             });
         }

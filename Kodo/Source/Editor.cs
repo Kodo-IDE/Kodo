@@ -363,9 +363,9 @@ public partial class MainWindow
         if (!IsSmartSyntaxEnabled()) return;
         if (IsMarkdownFile(_currentFilePath)) return;
         if (string.IsNullOrEmpty(e.Text)) return;
-        var ch     = e.Text[0];
-        var caret  = EditorTextBox.TextArea.Caret;
-        var doc    = EditorTextBox.Document;
+        var ch = e.Text[0];
+        var caret = EditorTextBox.TextArea.Caret;
+        var doc = EditorTextBox.Document;
         var offset = caret.Offset;
         var selection = EditorTextBox.TextArea.Selection;
 
@@ -446,7 +446,7 @@ public partial class MainWindow
 
             if (!BracketPairs.TryGetValue(ch, out var closing)) return;
 
-            var caret  = EditorTextBox.TextArea.Caret;
+            var caret = EditorTextBox.TextArea.Caret;
             var offset = caret.Offset;
 
             if (ch == '"' || ch == '\'' || ch == '`')
@@ -892,10 +892,10 @@ public partial class MainWindow
         var indentedLines = lines.OrderByDescending(l => l.Offset)
             .Select(l => GetIndentUnit() + doc.GetText(l));
         var newText = string.Join(Environment.NewLine, indentedLines);
-        
+
         // Replace the entire selection segment with indented text as one
         doc.Replace(segment, newText);
-        
+
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
@@ -913,7 +913,7 @@ public partial class MainWindow
             // Replace the line in one undoable operation.
             var outdentedText = lineText.TrimStart();
             doc.Replace(line.Offset, line.Length, outdentedText);
-            
+
             SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
             return;
         }
@@ -927,10 +927,10 @@ public partial class MainWindow
         var linesText = lines.OrderByDescending(l => l.Offset)
             .Select(l => doc.GetText(l).TrimStart());
         var replacedText = string.Join(Environment.NewLine, linesText);
-        
+
         // Replace the entire selection segment with outdented text as one
         doc.Replace(segment, replacedText);
-        
+
         SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
     }
 

@@ -220,10 +220,10 @@ public partial class MainWindow
 
             var bodyText = new TextBlock
             {
-                Text         = $"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
+                Text = $"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
                                $"It may be on a drive that isn't connected, or it may have been moved or deleted.\n\n{path}",
-                FontSize     = 13,
-                Foreground   = MutedTextBrush,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
 
@@ -246,25 +246,25 @@ public partial class MainWindow
 
             var removeButton = new Button
             {
-                Content             = "Remove from Recents",
+                Content = "Remove from Recents",
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(16, 8),
-                Background          = ButtonBrush,
-                Foreground          = MutedTextBrush,
-                BorderBrush         = SurfaceBorderBrush,
-                BorderThickness     = new Thickness(1),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(16, 8),
+                Background = ButtonBrush,
+                Foreground = MutedTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
             };
 
             var dismissButton = new Button
             {
-                Content             = "OK",
+                Content = "OK",
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Padding             = new Thickness(28, 8),
-                Background          = AccentBrush,
-                Foreground          = AccentForegroundBrush,
-                BorderThickness     = new Thickness(0),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(28, 8),
+                Background = AccentBrush,
+                Foreground = AccentForegroundBrush,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
             };
 
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -282,7 +282,7 @@ public partial class MainWindow
 
             var content = new StackPanel
             {
-                Spacing  = 12,
+                Spacing = 12,
                 Children = { headerRow, bodyText, pathBorder, divider, buttonRow },
             };
 
@@ -300,15 +300,15 @@ public partial class MainWindow
             Window? dialog = null;
             dialog = new Window
             {
-                Title                 = "Kodo - Not Found",
-                Width                 = 500,
-                SizeToContent         = SizeToContent.Height,
-                MinWidth              = 380,
-                MaxHeight             = 460,
-                CanResize             = false,
+                Title = "Kodo - Not Found",
+                Width = 500,
+                SizeToContent = SizeToContent.Height,
+                MinWidth = 380,
+                MaxHeight = 460,
+                CanResize = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background            = WindowBackgroundBrush,
-                Content               = outer,
+                Background = WindowBackgroundBrush,
+                Content = outer,
             };
 
             removeButton.Click += (_, _) => { RemoveRecentFile(path); dialog!.Close(); };
@@ -358,34 +358,34 @@ public partial class MainWindow
 
             var bodyText = new TextBlock
             {
-                Text         = body,
-                FontSize     = 13,
-                Foreground   = MutedTextBrush,
+                Text = body,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 2, 0, 0),
+                Margin = new Thickness(0, 2, 0, 0),
             };
 
             var cancelButton = new Button
             {
-                Content             = cancelLabel,
+                Content = cancelLabel,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(16, 8),
-                Background          = ButtonBrush,
-                Foreground          = MutedTextBrush,
-                BorderBrush         = SurfaceBorderBrush,
-                BorderThickness     = new Thickness(1),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(16, 8),
+                Background = ButtonBrush,
+                Foreground = MutedTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
             };
 
             var confirmButton = new Button
             {
-                Content             = confirmLabel,
+                Content = confirmLabel,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Padding             = new Thickness(20, 8),
-                Background          = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
-                Foreground          = Brushes.White,
-                BorderThickness     = new Thickness(0),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(20, 8),
+                Background = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
             };
 
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -403,7 +403,7 @@ public partial class MainWindow
 
             var content = new StackPanel
             {
-                Spacing  = 12,
+                Spacing = 12,
                 Children = { headerRow, bodyText, divider, buttonRow },
             };
 
@@ -421,20 +421,20 @@ public partial class MainWindow
             Window? dialog = null;
             dialog = new Window
             {
-                Title                 = "Kodo",
-                Width                 = 440,
-                SizeToContent         = SizeToContent.Height,
-                MinWidth              = 360,
-                MaxHeight             = 360,
-                CanResize             = false,
+                Title = "Kodo",
+                Width = 440,
+                SizeToContent = SizeToContent.Height,
+                MinWidth = 360,
+                MaxHeight = 360,
+                CanResize = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background            = WindowBackgroundBrush,
-                Content               = outer,
+                Background = WindowBackgroundBrush,
+                Content = outer,
             };
 
             var result = false;
-            cancelButton.Click  += (_, _) => { result = false; dialog!.Close(); };
-            confirmButton.Click += (_, _) => { result = true;  dialog!.Close(); };
+            cancelButton.Click += (_, _) => { result = false; dialog!.Close(); };
+            confirmButton.Click += (_, _) => { result = true; dialog!.Close(); };
             await dialog.ShowDialog(this);
             return result;
         }
@@ -462,12 +462,12 @@ public partial class MainWindow
 
         try
         {
-            var titleLabel   = isCritical ? "Action required" : "Something went wrong";
+            var titleLabel = isCritical ? "Action required" : "Something went wrong";
             var subtitleMessage = isCritical
                 ? "Kodo could not complete this file operation. Your in-editor content is still intact - try saving again or use Save As to choose a different location."
                 : "Kodo ran into a problem with this operation. No data was lost - you can try again.";
-            var windowTitle  = isCritical ? "Kodo - Warning" : "Kodo - Notice";
-            var logPath      = KodoDiagnostics.MainLogFilePath;
+            var windowTitle = isCritical ? "Kodo - Warning" : "Kodo - Notice";
+            var logPath = KodoDiagnostics.MainLogFilePath;
 
             var headerRow = new StackPanel
             {
@@ -497,11 +497,11 @@ public partial class MainWindow
 
             var subtitleText = new TextBlock
             {
-                Text         = subtitleMessage,
-                FontSize     = 13,
-                Foreground   = MutedTextBrush,
+                Text = subtitleMessage,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 2, 0, 0),
+                Margin = new Thickness(0, 2, 0, 0),
             };
 
             var headerDivider = new Border
@@ -514,33 +514,33 @@ public partial class MainWindow
 
             var criticalBanner = new Border
             {
-                IsVisible       = isCritical,
-                Background      = new SolidColorBrush(Color.Parse("#2D1F00")),
-                BorderBrush     = new SolidColorBrush(Color.Parse("#6B4800")),
+                IsVisible = isCritical,
+                Background = new SolidColorBrush(Color.Parse("#2D1F00")),
+                BorderBrush = new SolidColorBrush(Color.Parse("#6B4800")),
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(10, 6),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 6),
                 Child = new TextBlock
                 {
-                    Text        = "⚠ This operation affects file data. Check the log if the problem persists.",
-                    FontSize    = 12,
-                    Foreground  = new SolidColorBrush(Color.Parse("#FFA040")),
+                    Text = "⚠ This operation affects file data. Check the log if the problem persists.",
+                    FontSize = 12,
+                    Foreground = new SolidColorBrush(Color.Parse("#FFA040")),
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
 
             var contextBadge = new Border
             {
-                Background      = ButtonBrush,
-                BorderBrush     = SurfaceBorderBrush,
+                Background = ButtonBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(6),
-                Padding         = new Thickness(10, 5),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10, 5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Child = new TextBlock
                 {
-                    Text       = context,
-                    FontSize   = 12,
+                    Text = context,
+                    FontSize = 12,
                     FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                     Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
                 },
@@ -548,98 +548,98 @@ public partial class MainWindow
 
             var metadataText = new SelectableTextBlock
             {
-                Text         = KodoDiagnostics.BuildDiagnosticSummary(source, false, context),
-                FontSize     = 11,
-                FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-                Foreground   = MutedTextBrush,
+                Text = KodoDiagnostics.BuildDiagnosticSummary(source, false, context),
+                FontSize = 11,
+                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
 
             var errorMessageText = new TextBlock
             {
-                Text         = string.IsNullOrWhiteSpace(exception.Message)
+                Text = string.IsNullOrWhiteSpace(exception.Message)
                                    ? "An unexpected error occurred."
                                    : DescribeFetchFailure(exception),
-                FontSize     = 13,
-                Foreground   = PrimaryTextBrush,
+                FontSize = 13,
+                Foreground = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
 
             var exceptionText = new SelectableTextBlock
             {
-                Text         = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),
-                FontSize     = 12,
-                FontFamily   = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
-                Foreground   = new SolidColorBrush(Color.Parse("#CE9178")),
+                Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),
+                FontSize = 12,
+                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
                 TextWrapping = TextWrapping.Wrap,
             };
 
             var exceptionScroll = new ScrollViewer
             {
-                Content  = exceptionText,
+                Content = exceptionText,
                 MaxHeight = 200,
-                VerticalScrollBarVisibility   = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             };
 
             var exceptionBorder = new Border
             {
-                Background      = WindowBackgroundBrush,
-                BorderBrush     = SurfaceBorderBrush,
+                Background = WindowBackgroundBrush,
+                BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius    = new CornerRadius(8),
-                Padding         = new Thickness(12),
-                Child           = exceptionScroll,
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12),
+                Child = exceptionScroll,
             };
 
             var logPathText = new TextBlock
             {
-                Text         = "Logged to: %AppData%\\Kodo\\kodo.log",
-                FontSize     = 11,
-                Foreground   = MutedTextBrush,
+                Text = "Logged to: %AppData%\\Kodo\\kodo.log",
+                FontSize = 11,
+                Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
 
             var copyButton = new Button
             {
-                Content             = "Copy to Clipboard",
+                Content = "Copy to Clipboard",
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(16, 8),
-                Background          = ButtonBrush,
-                Foreground          = MutedTextBrush,
-                BorderBrush         = SurfaceBorderBrush,
-                BorderThickness     = new Thickness(1),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(16, 8),
+                Background = ButtonBrush,
+                Foreground = MutedTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
             };
 
             var dismissButton = new Button
             {
-                Content             = "Dismiss",
+                Content = "Dismiss",
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Padding             = new Thickness(20, 8),
-                Background          = AccentBrush,
-                Foreground          = AccentForegroundBrush,
-                BorderThickness     = new Thickness(0),
-                CornerRadius        = new CornerRadius(8),
+                Padding = new Thickness(20, 8),
+                Background = AccentBrush,
+                Foreground = AccentForegroundBrush,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(8),
             };
 
             var reportButton = new Button
             {
-                Content             = "Report on GitHub",
+                Content = "Report on GitHub",
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Padding             = new Thickness(16, 8),
-                Background          = ButtonBrush,
-                Foreground          = MutedTextBrush,
-                BorderBrush         = SurfaceBorderBrush,
-                BorderThickness     = new Thickness(1),
-                CornerRadius        = new CornerRadius(8),
-                Margin              = new Thickness(8, 0, 0, 0),
+                Padding = new Thickness(16, 8),
+                Background = ButtonBrush,
+                Foreground = MutedTextBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Margin = new Thickness(8, 0, 0, 0),
             };
 
             var leftButtons = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Children    = { copyButton, reportButton },
+                Children = { copyButton, reportButton },
             };
 
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -657,7 +657,7 @@ public partial class MainWindow
 
             var content = new StackPanel
             {
-                Spacing  = 12,
+                Spacing = 12,
                 Children =
                 {
                     headerRow,
@@ -688,16 +688,16 @@ public partial class MainWindow
             Window? dialog = null;
             dialog = new Window
             {
-                Title         = windowTitle,
-                Width         = 560,
+                Title = windowTitle,
+                Width = 560,
                 SizeToContent = SizeToContent.Height,
-                MinWidth      = 400,
-                MinHeight     = 200,
-                MaxHeight     = 700,
-                CanResize     = true,
+                MinWidth = 400,
+                MinHeight = 200,
+                MaxHeight = 700,
+                CanResize = true,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background    = WindowBackgroundBrush,
-                Content       = outer,
+                Background = WindowBackgroundBrush,
+                Content = outer,
             };
 
             copyButton.Click += async (_, _) =>
@@ -707,9 +707,9 @@ public partial class MainWindow
                     var clip = TopLevel.GetTopLevel(dialog)?.Clipboard;
                     if (clip is not null)
                     {
-                var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true);
-                await clip.SetTextAsync(text);
-                        copyButton.Content   = "Copied!";
+                        var text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true);
+                        await clip.SetTextAsync(text);
+                        copyButton.Content = "Copied!";
                         copyButton.Foreground = PrimaryTextBrush;
                     }
                 }

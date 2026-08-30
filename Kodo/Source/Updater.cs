@@ -91,7 +91,7 @@ internal static class UpdateService
     internal static bool IsNewerVersion(string remote, string local)
     {
         var remoteParts = ParseVersionParts(remote);
-        var localParts  = ParseVersionParts(local);
+        var localParts = ParseVersionParts(local);
 
         if (remoteParts is null || localParts is null)
             return !string.Equals(remote, local, StringComparison.OrdinalIgnoreCase);
@@ -275,9 +275,9 @@ internal static class UpdateService
 
                     Process.Start(new ProcessStartInfo
                     {
-                        FileName     = batPath,
+                        FileName = batPath,
                         UseShellExecute = false,
-                        CreateNoWindow   = true,
+                        CreateNoWindow = true,
                     });
 
                     Thread.Sleep(1500);
@@ -294,8 +294,8 @@ internal static class UpdateService
         // Background-update path (or fallback): launch installer, no restart.
         Process.Start(new ProcessStartInfo
         {
-            FileName        = installerPath,
-            Arguments       = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS",
+            FileName = installerPath,
+            Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS",
             UseShellExecute = true,
         });
 
@@ -400,33 +400,33 @@ internal sealed class UpdateDialog : Window
         _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
 
-        Title  = "Kodo - Update Available";
-        Width  = 460;
+        Title = "Kodo - Update Available";
+        Width = 460;
         SizeToContent = SizeToContent.Height;
-        CanResize  = false;
+        CanResize = false;
         Background = new SolidColorBrush(_palette.Background);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
         var iconBadge = new Border
         {
-            Background      = new SolidColorBrush(_accentColor),
-            CornerRadius    = new CornerRadius(8),
-            Width           = 40,
-            Height          = 40,
+            Background = new SolidColorBrush(_accentColor),
+            CornerRadius = new CornerRadius(8),
+            Width = 40,
+            Height = 40,
             Child = new TextBlock
             {
-                Text                = "↑",
-                FontSize            = 20,
-                Foreground          = new SolidColorBrush(_accentForeground),
+                Text = "↑",
+                FontSize = 20,
+                Foreground = new SolidColorBrush(_accentForeground),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
             },
         };
 
         var titleText = new TextBlock
         {
-            Text       = $"Kodo {update.Version} is available",
-            FontSize   = 16,
+            Text = $"Kodo {update.Version} is available",
+            FontSize = 16,
             FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Foreground = new SolidColorBrush(_palette.Text),
             TextWrapping = TextWrapping.Wrap,
@@ -436,36 +436,36 @@ internal sealed class UpdateDialog : Window
         var headerRow = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            Spacing     = 12,
-            Children    = { iconBadge, titleText },
+            Spacing = 12,
+            Children = { iconBadge, titleText },
         };
 
         _statusText = new TextBlock
         {
-            Text         = preDownloadedInstallerPath is not null
+            Text = preDownloadedInstallerPath is not null
                 ? "A new version of Kodo has already been downloaded and is ready to install."
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
-            FontSize     = 13,
-            Foreground   = new SolidColorBrush(_palette.TextMuted),
+            FontSize = 13,
+            Foreground = new SolidColorBrush(_palette.TextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
 
         var notesLink = new TextBlock
         {
-            Text         = "View release notes",
-            FontSize     = 12,
-            Foreground   = new SolidColorBrush(_accentColor),
-            Cursor       = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
+            Text = "View release notes",
+            FontSize = 12,
+            Foreground = new SolidColorBrush(_accentColor),
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand),
         };
         notesLink.PointerPressed += (_, _) => OpenUrl(update.ReleaseNotesUrl);
 
         _progressBar = new ProgressBar
         {
-            Minimum    = 0,
-            Maximum    = 1,
-            Value      = 0,
-            Height     = 8,
-            IsVisible  = false,
+            Minimum = 0,
+            Maximum = 1,
+            Value = 0,
+            Height = 8,
+            IsVisible = false,
             Foreground = new SolidColorBrush(_accentColor),
             Background = new SolidColorBrush(_palette.BadgeBg),
             CornerRadius = new CornerRadius(4),
@@ -473,26 +473,26 @@ internal sealed class UpdateDialog : Window
 
         _laterButton = new Button
         {
-            Content             = "Later",
+            Content = "Later",
             HorizontalAlignment = HorizontalAlignment.Left,
-            Padding             = new Thickness(16, 8),
-            Background          = new SolidColorBrush(_palette.BadgeBg),
-            Foreground          = new SolidColorBrush(_palette.TextMuted),
-            BorderBrush         = new SolidColorBrush(_palette.Border),
-            BorderThickness     = new Thickness(1),
-            CornerRadius        = new CornerRadius(8),
+            Padding = new Thickness(16, 8),
+            Background = new SolidColorBrush(_palette.BadgeBg),
+            Foreground = new SolidColorBrush(_palette.TextMuted),
+            BorderBrush = new SolidColorBrush(_palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
         };
         _laterButton.Click += (_, _) => Close();
 
         _primaryButton = new Button
         {
-            Content             = "Update Now",
+            Content = "Update Now",
             HorizontalAlignment = HorizontalAlignment.Right,
-            Padding             = new Thickness(20, 8),
-            Background          = new SolidColorBrush(_accentColor),
-            Foreground          = new SolidColorBrush(_accentForeground),
-            BorderThickness     = new Thickness(0),
-            CornerRadius        = new CornerRadius(8),
+            Padding = new Thickness(20, 8),
+            Background = new SolidColorBrush(_accentColor),
+            Foreground = new SolidColorBrush(_accentForeground),
+            BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(8),
         };
         _primaryButton.Click += async (_, _) => await BeginUpdateAsync();
 
@@ -534,13 +534,13 @@ internal sealed class UpdateDialog : Window
 
         Content = new Border
         {
-            Background      = new SolidColorBrush(_palette.SurfaceDeep),
-            BorderBrush     = new SolidColorBrush(_palette.Border),
+            Background = new SolidColorBrush(_palette.SurfaceDeep),
+            BorderBrush = new SolidColorBrush(_palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius    = new CornerRadius(12),
-            Padding         = new Thickness(20),
-            Margin          = new Thickness(16),
-            Child           = _content,
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(20),
+            Margin = new Thickness(16),
+            Child = _content,
         };
     }
 
@@ -577,28 +577,28 @@ internal sealed class UpdateDialog : Window
     {
         _canClose = false;
         _primaryButton.IsEnabled = false;
-        _laterButton.IsEnabled   = false;
+        _laterButton.IsEnabled = false;
 
         if (_preDownloadedInstallerPath is not null && File.Exists(_preDownloadedInstallerPath))
         {
-            _progressBar.IsVisible      = true;
+            _progressBar.IsVisible = true;
             _progressBar.IsIndeterminate = true;
-            _primaryButton.Content      = "Installing…";
-            _statusText.Text            = "Installing update… Kodo will restart shortly.";
+            _primaryButton.Content = "Installing…";
+            _statusText.Text = "Installing update… Kodo will restart shortly.";
             await Task.Delay(400);
             UpdateService.LaunchInstallerAndExit(_preDownloadedInstallerPath, reopenAfterInstall: true);
             return;
         }
 
-        _primaryButton.Content      = "Downloading…";
-        _progressBar.IsVisible      = true;
+        _primaryButton.Content = "Downloading…";
+        _progressBar.IsVisible = true;
         _progressBar.IsIndeterminate = false;
-        _statusText.Text            = "Downloading the update…";
+        _statusText.Text = "Downloading the update…";
 
         var progress = new Progress<UpdateDownloadProgress>(p =>
         {
             _progressBar.Value = p.Fraction;
-            _statusText.Text   = $"Downloading… {p.Label}";
+            _statusText.Text = $"Downloading… {p.Label}";
         });
 
         try
@@ -606,8 +606,8 @@ internal sealed class UpdateDialog : Window
             var installerPath = await UpdateService.DownloadInstallerAsync(_update, progress);
 
             _progressBar.IsIndeterminate = true;
-            _statusText.Text            = "Installing update… Kodo will restart shortly.";
-            _primaryButton.Content      = "Installing…";
+            _statusText.Text = "Installing update… Kodo will restart shortly.";
+            _primaryButton.Content = "Installing…";
 
             await Task.Delay(600);
 
@@ -615,11 +615,11 @@ internal sealed class UpdateDialog : Window
         }
         catch (Exception ex)
         {
-            _statusText.Text            = "The update couldn't be downloaded. Check your connection and try again.";
-            _primaryButton.Content      = "Retry";
-            _primaryButton.IsEnabled    = true;
-            _laterButton.IsEnabled      = true;
-            _progressBar.IsVisible      = false;
+            _statusText.Text = "The update couldn't be downloaded. Check your connection and try again.";
+            _primaryButton.Content = "Retry";
+            _primaryButton.IsEnabled = true;
+            _laterButton.IsEnabled = true;
+            _progressBar.IsVisible = false;
             _progressBar.IsIndeterminate = false;
             _canClose = true;
 
@@ -638,7 +638,7 @@ internal sealed class UpdateDialog : Window
         {
             Process.Start(new ProcessStartInfo
             {
-                FileName        = url,
+                FileName = url,
                 UseShellExecute = true,
             });
         }
@@ -650,14 +650,14 @@ internal sealed class UpdateDialog : Window
 }
 internal static class DialogPalette
 {
-    public static readonly Color Surface     = Color.Parse("#1E1E1E");
+    public static readonly Color Surface = Color.Parse("#1E1E1E");
     public static readonly Color SurfaceDeep = Color.Parse("#1A1A1A");
-    public static readonly Color Border      = Color.Parse("#3A3A3A");
-    public static readonly Color BadgeBg     = Color.Parse("#2B2B2B");
-    public static readonly Color Text        = Color.Parse("#F4F4F4");
-    public static readonly Color TextMuted   = Color.Parse("#A0A0A0");
-    public static readonly Color TextDim     = Color.Parse("#606060");
-    public static readonly Color TokenBlue   = Color.Parse("#9CDCFE");  // source badge
+    public static readonly Color Border = Color.Parse("#3A3A3A");
+    public static readonly Color BadgeBg = Color.Parse("#2B2B2B");
+    public static readonly Color Text = Color.Parse("#F4F4F4");
+    public static readonly Color TextMuted = Color.Parse("#A0A0A0");
+    public static readonly Color TextDim = Color.Parse("#606060");
+    public static readonly Color TokenBlue = Color.Parse("#9CDCFE");  // source badge
     public static readonly Color TokenOrange = Color.Parse("#CE9178");  // stack trace
 }
 
@@ -682,12 +682,12 @@ internal static class AccentResolver
 
         return settings.AccentColorMode switch
         {
-            "theme"   => string.IsNullOrWhiteSpace(settings.CachedThemeAccentHex)
+            "theme" => string.IsNullOrWhiteSpace(settings.CachedThemeAccentHex)
                 ? DefaultAccentHex : settings.CachedThemeAccentHex,
             "windows" => GetWindowsAccentColor() ?? "#0078D4",
-            "custom"  => string.IsNullOrWhiteSpace(settings.CustomAccentHex)
+            "custom" => string.IsNullOrWhiteSpace(settings.CustomAccentHex)
                 ? DefaultAccentHex : settings.CustomAccentHex,
-            _         => DefaultAccentHex, // "kodo" (and any unrecognised value)
+            _ => DefaultAccentHex, // "kodo" (and any unrecognised value)
         };
     }
 
@@ -798,12 +798,12 @@ internal static class ThemeResolver
 
         return settings.ThemeName switch
         {
-            "Light"  => LightPalette,
-            "Dark"   => DarkPalette,
+            "Light" => LightPalette,
+            "Dark" => DarkPalette,
 #pragma warning disable CA1416 // Kodo targets Windows only; System theme check is Windows-only by design.
             "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
 #pragma warning restore CA1416
-            _        => ResolveExtensionPalette(settings),
+            _ => ResolveExtensionPalette(settings),
         };
     }
 

@@ -92,10 +92,10 @@ public sealed class RecentFileItem : INotifyPropertyChanged
 
     public RecentFileItem(string path, bool isFolder, DateTime lastOpened, bool isPinned = false)
     {
-        Path       = path;
-        IsFolder   = isFolder;
+        Path = path;
+        IsFolder = isFolder;
         LastOpened = lastOpened;
-        _isPinned  = isPinned;
+        _isPinned = isPinned;
     }
 
     public string Path { get; }
@@ -160,10 +160,10 @@ public sealed class RecentFileItem : INotifyPropertyChanged
         get
         {
             var diff = DateTime.Now - LastOpened;
-            if (diff.TotalMinutes < 1)  return "Just now";
-            if (diff.TotalHours   < 1)  return $"{(int)diff.TotalMinutes}m ago";
-            if (diff.TotalDays    < 1)  return $"{(int)diff.TotalHours}h ago";
-            if (diff.TotalDays    < 30) return $"{(int)diff.TotalDays}d ago";
+            if (diff.TotalMinutes < 1) return "Just now";
+            if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes}m ago";
+            if (diff.TotalDays < 1) return $"{(int)diff.TotalHours}h ago";
+            if (diff.TotalDays < 30) return $"{(int)diff.TotalDays}d ago";
             return LastOpened.ToString("MMM d");
         }
     }
@@ -173,18 +173,18 @@ public sealed class RecentFileItem : INotifyPropertyChanged
         get
         {
             var diff = DateTime.Now - LastOpened;
-            if (diff.TotalMinutes < 1)  return "just now";
-            if (diff.TotalMinutes < 2)  return "1 minute ago";
-            if (diff.TotalHours   < 1)  return $"{(int)diff.TotalMinutes} minutes ago";
-            if (diff.TotalHours   < 2)  return "1 hour ago";
-            if (diff.TotalDays    < 1)  return $"{(int)diff.TotalHours} hours ago";
-            if (diff.TotalDays    < 2)  return "yesterday";
-            if (diff.TotalDays    < 7)  return $"{(int)diff.TotalDays} days ago";
-            if (diff.TotalDays    < 14) return "1 week ago";
-            if (diff.TotalDays    < 30) return $"{(int)(diff.TotalDays / 7)} weeks ago";
-            if (diff.TotalDays    < 60) return "1 month ago";
-            if (diff.TotalDays    < 365) return $"{(int)(diff.TotalDays / 30)} months ago";
-            if (diff.TotalDays    < 730) return "1 year ago";
+            if (diff.TotalMinutes < 1) return "just now";
+            if (diff.TotalMinutes < 2) return "1 minute ago";
+            if (diff.TotalHours < 1) return $"{(int)diff.TotalMinutes} minutes ago";
+            if (diff.TotalHours < 2) return "1 hour ago";
+            if (diff.TotalDays < 1) return $"{(int)diff.TotalHours} hours ago";
+            if (diff.TotalDays < 2) return "yesterday";
+            if (diff.TotalDays < 7) return $"{(int)diff.TotalDays} days ago";
+            if (diff.TotalDays < 14) return "1 week ago";
+            if (diff.TotalDays < 30) return $"{(int)(diff.TotalDays / 7)} weeks ago";
+            if (diff.TotalDays < 60) return "1 month ago";
+            if (diff.TotalDays < 365) return $"{(int)(diff.TotalDays / 30)} months ago";
+            if (diff.TotalDays < 730) return "1 year ago";
             return $"{(int)(diff.TotalDays / 365)} years ago";
         }
     }

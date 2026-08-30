@@ -54,7 +54,7 @@ class Program
 internal static class SingleInstance
 {
     private static readonly string MutexName = $@"Local\Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}";
-    private static readonly string PipeName  = $"Kodo_SingleInstance_Pipe_9F3E2C1A_{VersionSuffix()}";
+    private static readonly string PipeName = $"Kodo_SingleInstance_Pipe_9F3E2C1A_{VersionSuffix()}";
 
     private static Mutex? _mutex;
 
@@ -139,7 +139,7 @@ internal static class SingleInstance
         }
         catch
         {
-            
+
         }
     }
 }

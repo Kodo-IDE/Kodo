@@ -13,7 +13,7 @@ public sealed class NaturalSortComparer : IComparer<string>
     {
         if (ReferenceEquals(x, y)) return 0;
         if (x is null) return -1;
-        if (y is null) return  1;
+        if (y is null) return 1;
 
         var xi = 0;
         var yi = 0;
@@ -57,11 +57,11 @@ public sealed class NaturalSortComparer : IComparer<string>
 
 public sealed class NewsItem
 {
-    public string Title     { get; init; } = string.Empty;
-    public string Body      { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Body { get; init; } = string.Empty;
     public string UpdatedAt { get; init; } = string.Empty;
-    public bool HasTitle     => !string.IsNullOrWhiteSpace(Title);
-    public bool HasBody      => !string.IsNullOrWhiteSpace(Body);
+    public bool HasTitle => !string.IsNullOrWhiteSpace(Title);
+    public bool HasBody => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
 }
 
@@ -82,13 +82,13 @@ public class ReleaseLinkItem
 // One inline run (bold or normal) within a release-notes paragraph.
 public sealed class FormattedRun
 {
-    public string Text   { get; init; } = string.Empty;
-    public bool   IsBold { get; init; }
+    public string Text { get; init; } = string.Empty;
+    public bool IsBold { get; init; }
 }
 
 public sealed class FormattedParagraph
 {
-    public IReadOnlyList<FormattedRun> Runs      { get; init; } = [];
+    public IReadOnlyList<FormattedRun> Runs { get; init; } = [];
     // Extra top margin so paragraphs breathe; bullet items get slightly less.
     public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
     public string Marker { get; init; } = string.Empty;

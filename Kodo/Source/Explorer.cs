@@ -123,6 +123,7 @@ public partial class MainWindow
 
         ActiveEditorTab.Content = EditorTextBox.Document.Text;
         ActiveEditorTab.IsDirty = _isDirty;
+        ActiveEditorTab.LineEnding = _currentLineEnding;
         var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
         ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
             scrollOffset.Y)?.LineNumber ?? 1;
@@ -136,7 +137,8 @@ public partial class MainWindow
     private EditorTab CreateUntitledTab()
     {
         var displayName = $"untitled-{_nextUntitledTabNumber++}.txt";
-        return new EditorTab(displayName, displayName, string.Empty, isUntitled: true);
+        var defaultEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+        return new EditorTab(displayName, displayName, string.Empty, isUntitled: true, lineEnding: defaultEnding);
     }
 
     private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true)
@@ -159,6 +161,7 @@ public partial class MainWindow
         _currentFilePath = tab.IsUntitled ? null : tab.Path;
         _hasUntitledDocument = tab.IsUntitled;
         _isDirty = tab.IsDirty;
+        _currentLineEnding = tab.LineEnding;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
@@ -344,9 +347,22 @@ public partial class MainWindow
             return;
         }
 
+        // Detect line ending for text files; images/corrupted keep current
+        if (!IsImagePreviewFile(path) && !isCorrupted && !string.IsNullOrEmpty(content))
+        {
+            _currentLineEnding = DetectLineEnding(content);
+        }
+        else if (!IsImagePreviewFile(path) && !isCorrupted && string.IsNullOrEmpty(content))
+        {
+            _currentLineEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+        }
+        OnPropertyChanged(nameof(LineEndingDisplayText));
+        OnPropertyChanged(nameof(IsLineEndingVisible));
+
         NavigateTo(AppPage.Editor);
 
-        var tab = new EditorTab(path, Path.GetFileName(path), content);
+        var lineEndingForTab = _currentLineEnding;
+        var tab = new EditorTab(path, Path.GetFileName(path), content, lineEnding: lineEndingForTab);
         if (isCorrupted)
             _corruptedTabs.Add(tab);
         OpenTabs.Add(tab);
@@ -406,7 +422,7 @@ public partial class MainWindow
             watcher.Created += ProjectFolderWatcher_OnChanged;
             watcher.Deleted += ProjectFolderWatcher_OnChanged;
             watcher.Renamed += ProjectFolderWatcher_OnChanged;
-            watcher.Error   += ProjectFolderWatcher_OnError;
+            watcher.Error += ProjectFolderWatcher_OnError;
             watcher.EnableRaisingEvents = true;
 
             _projectFolderWatcher = watcher;
@@ -425,7 +441,7 @@ public partial class MainWindow
         _projectFolderWatcher.Created -= ProjectFolderWatcher_OnChanged;
         _projectFolderWatcher.Deleted -= ProjectFolderWatcher_OnChanged;
         _projectFolderWatcher.Renamed -= ProjectFolderWatcher_OnChanged;
-        _projectFolderWatcher.Error   -= ProjectFolderWatcher_OnError;
+        _projectFolderWatcher.Error -= ProjectFolderWatcher_OnError;
         _projectFolderWatcher.Dispose();
         _projectFolderWatcher = null;
     }
@@ -528,10 +544,10 @@ public partial class MainWindow
         Task.Run(() => GetSortedEntries(dirPath)
             .Select(entry => new FileTreeItem
             {
-                Name        = Path.GetFileName(entry),
-                FullPath    = entry,
+                Name = Path.GetFileName(entry),
+                FullPath = entry,
                 IsDirectory = Directory.Exists(entry),
-                Depth       = depth,
+                Depth = depth,
             })
             .ToList());
 
@@ -649,13 +665,13 @@ public partial class MainWindow
         }
     }
 
-    private void ZoomInButton_OnClick(object? sender, RoutedEventArgs e)  => ZoomImageIn();
+    private void ZoomInButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageIn();
 
     private void ZoomOutButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageOut();
 
     private void ZoomResetButton_OnClick(object? sender, RoutedEventArgs e) => ZoomImageReset();
 
-    private void ZoomImageIn()  => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel + ImageZoomStep);
+    private void ZoomImageIn() => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel + ImageZoomStep);
 
     private void ZoomImageOut() => ImageZoomLevel = SnapToNiceZoom(_imageZoomLevel - ImageZoomStep);
 
@@ -951,13 +967,13 @@ public partial class MainWindow
 
         var inputBox = new TextBox
         {
-            Text             = currentName,
-            Background       = ButtonBrush,
-            Foreground       = PrimaryTextBrush,
-            BorderBrush      = SurfaceBorderBrush,
-            Padding          = new Thickness(8, 6),
-            FontSize         = 14,
-            CaretBrush       = PrimaryTextBrush,
+            Text = currentName,
+            Background = ButtonBrush,
+            Foreground = PrimaryTextBrush,
+            BorderBrush = SurfaceBorderBrush,
+            Padding = new Thickness(8, 6),
+            FontSize = 14,
+            CaretBrush = PrimaryTextBrush,
         };
 
         var confirmButton = CreateDialogButton(action, AccentBrush, AccentBrush, AccentForegroundBrush, () =>
@@ -968,7 +984,7 @@ public partial class MainWindow
 
         inputBox.KeyDown += (_, e) =>
         {
-            if (e.Key == Key.Enter)  { result = inputBox.Text?.Trim(); dialog!.Close(); }
+            if (e.Key == Key.Enter) { result = inputBox.Text?.Trim(); dialog!.Close(); }
             if (e.Key == Key.Escape) { dialog!.Close(); }
         };
 
@@ -1031,15 +1047,15 @@ public partial class MainWindow
 
         dialog = new Window
         {
-            Width                   = 400,
-            SizeToContent           = SizeToContent.Height,
-            MinWidth                = 360,
-            MaxHeight               = 340,
-            CanResize               = false,
-            ShowInTaskbar           = false,
-            WindowStartupLocation   = WindowStartupLocation.CenterOwner,
-            Title                   = title,
-            Background              = WindowBackgroundBrush,
+            Width = 400,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 360,
+            MaxHeight = 340,
+            CanResize = false,
+            ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Title = title,
+            Background = WindowBackgroundBrush,
             Content = new Border
             {
                 Background = CardBrush,

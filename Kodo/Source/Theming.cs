@@ -79,9 +79,9 @@ public partial class MainWindow
         resources["SystemAccentColorLight1"] = LightenColor(c, 0.15);
         resources["SystemAccentColorLight2"] = LightenColor(c, 0.30);
         resources["SystemAccentColorLight3"] = LightenColor(c, 0.45);
-        resources["SystemAccentColorDark1"]  = DarkenColor(c, 0.15);
-        resources["SystemAccentColorDark2"]  = DarkenColor(c, 0.30);
-        resources["SystemAccentColorDark3"]  = DarkenColor(c, 0.45);
+        resources["SystemAccentColorDark1"] = DarkenColor(c, 0.15);
+        resources["SystemAccentColorDark2"] = DarkenColor(c, 0.30);
+        resources["SystemAccentColorDark3"] = DarkenColor(c, 0.45);
     }
 
     private static Color LightenColor(Color c, double amount) => WindowsThemeHelper.Lighten(c, amount);
@@ -133,15 +133,31 @@ public partial class MainWindow
 
     private static readonly Dictionary<string, string> LightPalette = new()
     {
-        ["WindowBackground"]="#F3F3F3", ["TopBar"]="#FFFFFF", ["Sidebar"]="#EFF2F7", ["Button"]="#E3E8F1",
-        ["ButtonHover"]="#D5DDE9", ["EditorBackground"]="#FFFFFF", ["Card"]="#F7F9FC", ["PrimaryText"]="#202124",
-        ["MutedText"]="#5F6B7A", ["SurfaceBorder"]="#D7DCE5", ["Accent"]="#8C00FF"
+        ["WindowBackground"] = "#F3F3F3",
+        ["TopBar"] = "#FFFFFF",
+        ["Sidebar"] = "#EFF2F7",
+        ["Button"] = "#E3E8F1",
+        ["ButtonHover"] = "#D5DDE9",
+        ["EditorBackground"] = "#FFFFFF",
+        ["Card"] = "#F7F9FC",
+        ["PrimaryText"] = "#202124",
+        ["MutedText"] = "#5F6B7A",
+        ["SurfaceBorder"] = "#D7DCE5",
+        ["Accent"] = "#8C00FF"
     };
     private static readonly Dictionary<string, string> DarkPalette = new()
     {
-        ["WindowBackground"]="#1E1E1E", ["TopBar"]="#181818", ["Sidebar"]="#181818", ["Button"]="#252526",
-        ["ButtonHover"]="#313437", ["EditorBackground"]="#1E1E1E", ["Card"]="#252526", ["PrimaryText"]="#F4F4F4",
-        ["MutedText"]="#A0A0A0", ["SurfaceBorder"]="#2B2B2B", ["Accent"]="#8C00FF"
+        ["WindowBackground"] = "#1E1E1E",
+        ["TopBar"] = "#181818",
+        ["Sidebar"] = "#181818",
+        ["Button"] = "#252526",
+        ["ButtonHover"] = "#313437",
+        ["EditorBackground"] = "#1E1E1E",
+        ["Card"] = "#252526",
+        ["PrimaryText"] = "#F4F4F4",
+        ["MutedText"] = "#A0A0A0",
+        ["SurfaceBorder"] = "#2B2B2B",
+        ["Accent"] = "#8C00FF"
     };
 
     private void SetThemeBrushesCore(string themeName)
@@ -230,10 +246,10 @@ public partial class MainWindow
 
         var hex = _accentColorMode switch
         {
-            "theme"   => _themeAccentHex,
+            "theme" => _themeAccentHex,
             "windows" => windowsHex,
-            "custom"  => _customAccentHex,
-            _         => "#8C00FF"
+            "custom" => _customAccentHex,
+            _ => "#8C00FF"
         };
         try { AccentBrush = GetCachedBrush(hex); }
         catch { AccentBrush = GetCachedBrush("#8C00FF"); }
@@ -254,7 +270,7 @@ public partial class MainWindow
     {
         var isLight = GetWindowsAppsUseLightTheme() == true;
         SystemThemePreviewBackground = GetCachedBrush(isLight ? "#FFFFFF" : "#1E1E1E");
-        SystemThemePreviewBorder     = GetCachedBrush(isLight ? "#D7DCE5" : "#2B2B2B");
+        SystemThemePreviewBorder = GetCachedBrush(isLight ? "#D7DCE5" : "#2B2B2B");
         OnPropertyChanged(nameof(SystemThemePreviewBackground));
         OnPropertyChanged(nameof(SystemThemePreviewBorder));
     }
@@ -271,10 +287,10 @@ public partial class MainWindow
             out var hue, out var sat, out var val);
 
         var hueCanvas = new Canvas { Width = 300, Height = 20 };
-        var hueGrad   = new LinearGradientBrush
+        var hueGrad = new LinearGradientBrush
         {
             StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-            EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
         };
         foreach (var (offset, h) in new (double, double)[]
             { (0,0),(1/6d,60),(2/6d,120),(3/6d,180),(4/6d,240),(5/6d,300),(1,360) })
@@ -283,31 +299,39 @@ public partial class MainWindow
             hueGrad.GradientStops.Add(new GradientStop(Color.FromRgb(hr2, hg2, hb2), offset));
         }
         var hueRect = new Avalonia.Controls.Shapes.Rectangle
-            { Width = 300, Height = 20, Fill = hueGrad, RadiusX = 4, RadiusY = 4 };
+        { Width = 300, Height = 20, Fill = hueGrad, RadiusX = 4, RadiusY = 4 };
         hueCanvas.Children.Add(hueRect);
 
         var hueCursor = new Avalonia.Controls.Shapes.Rectangle
         {
-            Width = 4, Height = 24, Fill = Brushes.White, RadiusX = 2, RadiusY = 2,
-            Stroke = new SolidColorBrush(Colors.Black), StrokeThickness = 1,
+            Width = 4,
+            Height = 24,
+            Fill = Brushes.White,
+            RadiusX = 2,
+            RadiusY = 2,
+            Stroke = new SolidColorBrush(Colors.Black),
+            StrokeThickness = 1,
         };
         Canvas.SetTop(hueCursor, -2);
         Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
         hueCanvas.Children.Add(hueCursor);
 
-        const double svSize   = 300.0;
+        const double svSize = 300.0;
         const double svHeight = 180.0;
         var svCanvas = new Canvas { Width = svSize, Height = svHeight };
 
-        var svHueFill      = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
+        var svHueFill = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
         var svWhiteOverlay = new Avalonia.Controls.Shapes.Rectangle { Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4 };
         var svBlackOverlay = new Avalonia.Controls.Shapes.Rectangle
         {
-            Width = svSize, Height = svHeight, RadiusX = 4, RadiusY = 4,
-            Fill  = new LinearGradientBrush
+            Width = svSize,
+            Height = svHeight,
+            RadiusX = 4,
+            RadiusY = 4,
+            Fill = new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint   = new RelativePoint(0, 1, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(0, 1, RelativeUnit.Relative),
                 GradientStops =
                 {
                     new GradientStop(Color.FromArgb(0,   0, 0, 0), 0),
@@ -323,7 +347,7 @@ public partial class MainWindow
             svWhiteOverlay.Fill = new LinearGradientBrush
             {
                 StartPoint = new RelativePoint(0, 0, RelativeUnit.Relative),
-                EndPoint   = new RelativePoint(1, 0, RelativeUnit.Relative),
+                EndPoint = new RelativePoint(1, 0, RelativeUnit.Relative),
                 GradientStops =
                 {
                     new GradientStop(Color.FromArgb(255, 255, 255, 255), 0),
@@ -339,33 +363,38 @@ public partial class MainWindow
 
         var svCursor = new Avalonia.Controls.Shapes.Ellipse
         {
-            Width = 12, Height = 12,
-            Stroke = Brushes.White, StrokeThickness = 2,
-            Fill   = new SolidColorBrush(Colors.Transparent),
+            Width = 12,
+            Height = 12,
+            Stroke = Brushes.White,
+            StrokeThickness = 2,
+            Fill = new SolidColorBrush(Colors.Transparent),
         };
-        Canvas.SetLeft(svCursor, sat * svSize   - 6);
-        Canvas.SetTop (svCursor, (1 - val) * svHeight - 6);
+        Canvas.SetLeft(svCursor, sat * svSize - 6);
+        Canvas.SetTop(svCursor, (1 - val) * svHeight - 6);
         svCanvas.Children.Add(svCursor);
 
         var previewBorder = new Border
         {
-            Width = 36, Height = 36, CornerRadius = new CornerRadius(8),
-            BorderBrush = SurfaceBorderBrush, BorderThickness = new Thickness(1),
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(8),
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
         };
 
         var hexInput = new TextBox
         {
-            Text            = _customAccentHex,
+            Text = _customAccentHex,
             PlaceholderText = "#RRGGBB",
-            MaxLength       = 7,
-            Foreground      = PrimaryTextBrush,
-            Background      = ButtonBrush,
-            BorderBrush     = SurfaceBorderBrush,
+            MaxLength = 7,
+            Foreground = PrimaryTextBrush,
+            Background = ButtonBrush,
+            BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            Padding         = new Thickness(8, 6),
-            FontSize        = 13,
-            CaretBrush      = PrimaryTextBrush,
-            Width           = 110,
+            Padding = new Thickness(8, 6),
+            FontSize = 13,
+            CaretBrush = PrimaryTextBrush,
+            Width = 110,
         };
 
         void UpdateAll()
@@ -375,19 +404,19 @@ public partial class MainWindow
             previewBorder.Background = new SolidColorBrush(c);
             hexInput.Text = $"#{r2:X2}{g2:X2}{b2:X2}";
             Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
-            Canvas.SetLeft(svCursor,  sat * svSize   - 6);
-            Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
+            Canvas.SetLeft(svCursor, sat * svSize - 6);
+            Canvas.SetTop(svCursor, (1 - val) * svHeight - 6);
             RefreshSvSquare();
         }
         UpdateAll();
 
-        hueCanvas.PointerPressed  += (_, pe) =>
+        hueCanvas.PointerPressed += (_, pe) =>
         {
             pe.Pointer.Capture(hueCanvas);
             hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
             UpdateAll();
         };
-        hueCanvas.PointerMoved    += (_, pe) =>
+        hueCanvas.PointerMoved += (_, pe) =>
         {
             if (pe.Pointer.Captured != hueCanvas) return;
             hue = Math.Clamp(pe.GetPosition(hueCanvas).X / 300.0 * 360, 0, 360);
@@ -395,20 +424,20 @@ public partial class MainWindow
         };
         hueCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
 
-        svCanvas.PointerPressed  += (_, pe) =>
+        svCanvas.PointerPressed += (_, pe) =>
         {
             pe.Pointer.Capture(svCanvas);
             var p = pe.GetPosition(svCanvas);
-            sat = Math.Clamp(p.X / svSize,        0, 1);
-            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
+            sat = Math.Clamp(p.X / svSize, 0, 1);
+            val = Math.Clamp(1 - p.Y / svHeight, 0, 1);
             UpdateAll();
         };
-        svCanvas.PointerMoved    += (_, pe) =>
+        svCanvas.PointerMoved += (_, pe) =>
         {
             if (pe.Pointer.Captured != svCanvas) return;
             var p = pe.GetPosition(svCanvas);
-            sat = Math.Clamp(p.X / svSize,        0, 1);
-            val = Math.Clamp(1 - p.Y / svHeight,  0, 1);
+            sat = Math.Clamp(p.X / svSize, 0, 1);
+            val = Math.Clamp(1 - p.Y / svHeight, 0, 1);
             UpdateAll();
         };
         svCanvas.PointerReleased += (_, pe) => pe.Pointer.Capture(null);
@@ -423,8 +452,8 @@ public partial class MainWindow
                 RgbToHsv(c.R, c.G, c.B, out hue, out sat, out val);
                 previewBorder.Background = new SolidColorBrush(c);
                 Canvas.SetLeft(hueCursor, hue / 360.0 * 296);
-                Canvas.SetLeft(svCursor,  sat * svSize   - 6);
-                Canvas.SetTop (svCursor,  (1 - val) * svHeight - 6);
+                Canvas.SetLeft(svCursor, sat * svSize - 6);
+                Canvas.SetTop(svCursor, (1 - val) * svHeight - 6);
                 RefreshSvSquare();
             }
             catch { /* wait for valid hex */ }
@@ -432,7 +461,7 @@ public partial class MainWindow
 
         hexInput.KeyDown += (_, ke) =>
         {
-            if (ke.Key == Key.Enter)  { confirmed = true; dialog!.Close(); }
+            if (ke.Key == Key.Enter) { confirmed = true; dialog!.Close(); }
             if (ke.Key == Key.Escape) { dialog!.Close(); }
         };
 
@@ -554,8 +583,8 @@ public partial class MainWindow
         {
             Brush.Parse(hex);
             _customAccentHex = hex;
-            CustomAccentHex  = hex;
-            AccentColorMode  = "custom";
+            CustomAccentHex = hex;
+            AccentColorMode = "custom";
             ApplyAccentOverride();
             SaveSettings();
         }
@@ -572,9 +601,9 @@ public partial class MainWindow
         v = max;
         s = max == 0 ? 0 : delta / max;
         if (delta == 0) { h = 0; return; }
-        if      (max == rf) h = 60 * (((gf - bf) / delta) % 6);
+        if (max == rf) h = 60 * (((gf - bf) / delta) % 6);
         else if (max == gf) h = 60 * (((bf - rf) / delta) + 2);
-        else                h = 60 * (((rf - gf) / delta) + 4);
+        else h = 60 * (((rf - gf) / delta) + 4);
         if (h < 0) h += 360;
     }
 
@@ -587,8 +616,12 @@ public partial class MainWindow
         var p = v * (1 - s); var q = v * (1 - f * s); var t = v * (1 - (1 - f) * s);
         var (rf, gf, bf) = i switch
         {
-            0 => (v, t, p), 1 => (q, v, p), 2 => (p, v, t),
-            3 => (p, q, v), 4 => (t, p, v), _ => (v, p, q),
+            0 => (v, t, p),
+            1 => (q, v, p),
+            2 => (p, v, t),
+            3 => (p, q, v),
+            4 => (t, p, v),
+            _ => (v, p, q),
         };
         r = (byte)(rf * 255); g = (byte)(gf * 255); b = (byte)(bf * 255);
     }
@@ -649,7 +682,7 @@ public partial class MainWindow
             group.IsExpanded = !group.IsExpanded;
     }
 
-    private void ThemeDarkButton_OnClick(object? sender, RoutedEventArgs e)  => ApplyTheme("Dark");
+    private void ThemeDarkButton_OnClick(object? sender, RoutedEventArgs e) => ApplyTheme("Dark");
 
     private void ThemeLightButton_OnClick(object? sender, RoutedEventArgs e) => ApplyTheme("Light");
 
