@@ -42,3 +42,7 @@ We have not noticed any performance issues within just over 24 hours of testing 
 > August 26, 2026
 Join us on August 30th for the release of Kodo v2.0.0!
 ---
+## v2.0.0 is here!
+> August 31, 2026
+Enjoy a reworked UI, compiler and plugin support, a reworked editor experience, and much more!
+> 
