@@ -2552,6 +2552,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static readonly Regex MdInlineBoldRegex = new(@"\*\*(.+?)\*\*|__(.+?)__", RegexOptions.Compiled | RegexOptions.Singleline);
 
+    // Left-margin pixels applied per nesting level for indented list items in release notes.
+    private const double MdListIndentWidth = 20.0;
+
+    // A matched bullet/ordered-list marker (e.g. "    - " or "  2. ") still carries its leading
+    // whitespace at this point. GitHub markdown nests lists in 2-space (or occasionally 4-space)
+    // increments, so dividing by 2 gives a reasonable depth without needing to detect the
+    // document's specific indent unit. Capped so a stray large indent can't push text off-screen.
+    private static int IndentLevelFromMarkerMatch(string markerMatchValue)
+    {
+        var leadingSpaces = markerMatchValue.Length - markerMatchValue.TrimStart(' ').Length;
+        return Math.Min(leadingSpaces / 2, 4);
+    }
+
     // Parses raw GitHub markdown into bold/normal runs for AXAML rendering.
     private static IReadOnlyList<FormattedParagraph> ParseMarkdownParagraphs(string markdown)
     {
@@ -2573,14 +2586,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (string.IsNullOrWhiteSpace(line)) continue;
 
+            // Normalize tabs before measuring indent so leading-whitespace width is consistent.
+            line = line.Replace("\t", "    ");
+
             var isBullet = false;
             var isOrdered = false;
             string? orderedPrefix = null;
+            var indentLevel = 0;
 
             var bulletMatch = MdBulletRegex.Match(line);
             if (bulletMatch.Success)
             {
                 isBullet = true;
+                indentLevel = IndentLevelFromMarkerMatch(bulletMatch.Value);
                 line = line[bulletMatch.Length..];
             }
             else
@@ -2590,6 +2608,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     isOrdered = true;
                     orderedPrefix = orderedMatch.Groups[1].Value + ".";
+                    indentLevel = IndentLevelFromMarkerMatch(orderedMatch.Value);
                     line = line[orderedMatch.Length..];
                 }
                 else
@@ -2645,10 +2664,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (runs.Count == 0) continue;
 
+            var leftMargin = (isBullet || isOrdered) ? indentLevel * MdListIndentWidth : 0.0;
+
             paragraphs.Add(new FormattedParagraph
             {
                 Runs = runs,
-                TopMargin = isBullet || isOrdered ? new Thickness(0, 2, 0, 0) : new Thickness(0, 6, 0, 0),
+                TopMargin = isBullet || isOrdered ? new Thickness(leftMargin, 2, 0, 0) : new Thickness(0, 6, 0, 0),
                 Marker = marker,
                 MarkerColumnWidth = markerColumnWidth,
             });
