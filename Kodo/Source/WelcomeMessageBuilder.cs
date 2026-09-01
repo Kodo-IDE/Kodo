@@ -421,13 +421,39 @@ internal static class WelcomeMessageBuilder
         bool isKodoBirthday,
         int kodoBirthdayAge)
     {
-        // Resolve effective local time, honouring the user's timezone
+        // Resolve effective local time, honouring the user's timezone (handles "+05:30", "-03:30", "5.5", etc.)
         DateTime now;
-        if (!string.IsNullOrWhiteSpace(userTimezoneOffset) &&
-            double.TryParse(userTimezoneOffset.Replace("+", ""), out var offsetHours))
+        if (!string.IsNullOrWhiteSpace(userTimezoneOffset))
         {
-            var offset = TimeSpan.FromHours(offsetHours);
-            now = DateTime.UtcNow + offset;
+            var raw = userTimezoneOffset.Trim();
+            var sign = 1;
+            if (raw.StartsWith("-", StringComparison.Ordinal)) { sign = -1; raw = raw[1..]; }
+            else if (raw.StartsWith("+", StringComparison.Ordinal)) raw = raw[1..];
+
+            if (raw.Contains(':'))
+            {
+                var parts = raw.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (parts.Length >= 2 && double.TryParse(parts[0], out var h) && double.TryParse(parts[1], out var m))
+                {
+                    var offset = TimeSpan.FromHours(h) + TimeSpan.FromMinutes(m);
+                    if (parts.Length > 2 && double.TryParse(parts[2], out var s)) offset += TimeSpan.FromSeconds(s);
+                    if (sign == -1) offset = -offset;
+                    now = DateTime.UtcNow + offset;
+                }
+                else
+                {
+                    now = DateTime.Now;
+                }
+            }
+            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var offsetHours))
+            {
+                var offset = TimeSpan.FromHours(offsetHours * sign);
+                now = DateTime.UtcNow + offset;
+            }
+            else
+            {
+                now = DateTime.Now;
+            }
         }
         else
         {

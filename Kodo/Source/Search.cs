@@ -324,7 +324,18 @@ public partial class MainWindow
         {
             var index = SearchDisplayItems.IndexOf(displayItem);
             if (index >= 0)
-                SearchResultsListBox.ScrollIntoView(index);
+            {
+                var captured = index;
+                var capturedItem = displayItem;
+                var listBoxRef = SearchResultsListBox;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (listBoxRef is null) return;
+                    if (captured < 0 || captured >= SearchDisplayItems.Count) return;
+                    if (!ReferenceEquals(listBoxRef.SelectedItem, capturedItem) && SearchDisplayItems.IndexOf(capturedItem) != captured) return;
+                    try { listBoxRef.ScrollIntoView(captured); } catch { }
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }
         }
     }
 
@@ -806,8 +817,10 @@ public partial class MainWindow
 
     private (List<string> Files, SearchIgnoreRules Rules) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
     {
-        // Invalidate cache if filters changed.
+        // Invalidate cache if root or filters changed.
+        var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         if (_searchFileCache is { } cached &&
+            string.Equals(cached.Rules.RootSnapshot, normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
             string.Equals(cached.Rules.IncludeFilterSnapshot, includeFilter ?? "", StringComparison.Ordinal) &&
             string.Equals(cached.Rules.ExcludeFilterSnapshot, excludeFilter ?? "", StringComparison.Ordinal))
         {
@@ -815,6 +828,7 @@ public partial class MainWindow
         }
 
         var rules = SearchIgnoreRules.Load(root, includeFilter, excludeFilter);
+        rules.RootSnapshot = normalizedRoot;
         rules.IncludeFilterSnapshot = includeFilter ?? "";
         rules.ExcludeFilterSnapshot = excludeFilter ?? "";
         var files = new List<string>();
@@ -1077,7 +1091,9 @@ public partial class MainWindow
         if (matches.Count == 0)
             return;
 
-        var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - FindText.Length));
+        // Use actual match lengths (not FindText.Length) for capacity - regex matches vary
+        var avgMatchLen = matches.Count > 0 ? (int)matches.Average(m => m.Length) : 0;
+        var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - avgMatchLen));
         var pos = 0;
         foreach (var match in matches)
         {
@@ -1085,6 +1101,7 @@ public partial class MainWindow
                 sb.Append(text, pos, match.Offset - pos);
             sb.Append(replacement);
             pos = match.Offset + match.Length;
+            if (match.Length == 0) pos = Math.Min(text.Length, pos + 1);
         }
         if (pos < text.Length)
             sb.Append(text, pos, text.Length - pos);
@@ -1149,8 +1166,16 @@ public partial class MainWindow
         {
             if (forward)
             {
-                var m = regex.Match(text, startIndex);
-                return m.Success ? (m.Index, m.Length) : (-1, 0);
+                var searchFrom = Math.Max(0, startIndex);
+                while (searchFrom <= text.Length)
+                {
+                    var m = regex.Match(text, searchFrom);
+                    if (!m.Success) return (-1, 0);
+                    if (!wholeWord || IsWholeWordMatch(text, m.Index, m.Length))
+                        return (m.Index, m.Length);
+                    searchFrom = m.Index + Math.Max(1, m.Length);
+                }
+                return (-1, 0);
             }
             else
             {
@@ -1158,6 +1183,7 @@ public partial class MainWindow
                 foreach (Match m in regex.Matches(text))
                 {
                     if (m.Index > startIndex) break;
+                    if (wholeWord && !IsWholeWordMatch(text, m.Index, m.Length)) continue;
                     last = (m.Index, m.Length);
                 }
                 return last;
@@ -1204,7 +1230,7 @@ public partial class MainWindow
         var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
         return beforeOk && afterOk;
     }
-    private static IEnumerable<(int Offset, int Length)> EnumerateFindMatches(string text, string needle, StringComparison cmp, bool wholeWord, Regex? regex) { var idx = 0; while (idx <= text.Length) { var m = FindNextMatch(text, needle, idx, true, cmp, wholeWord, regex); if (m.Offset < 0) yield break; yield return m; idx = m.Offset + m.Length; if (m.Length == 0) yield break; } }
+    private static IEnumerable<(int Offset, int Length)> EnumerateFindMatches(string text, string needle, StringComparison cmp, bool wholeWord, Regex? regex) { var idx = 0; while (idx <= text.Length) { var m = FindNextMatch(text, needle, idx, true, cmp, wholeWord, regex); if (m.Offset < 0) yield break; yield return m; idx = m.Offset + Math.Max(1, m.Length); } }
 
     private void UpdateFindHighlights()
     {
@@ -1238,6 +1264,7 @@ public partial class MainWindow
             var wholeCopy = wholeWord;
             var regexCopy = regex;
             var caretCopy = snapshotCaret;
+            var versionCopy = _insightDocVersion;
             Task.Run(() =>
             {
                 var matches = new List<(int Offset, int Length)>();
@@ -1247,8 +1274,9 @@ public partial class MainWindow
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted || t.IsCanceled) return;
-                // Discard stale results if find text changed while background ran
+                // Discard stale results if find text or document changed while background ran
                 if (FindText != findCopy) return;
+                if (versionCopy != _insightDocVersion) return;
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>
                 {
                     if (EditorTextBox?.Document is null) return;
@@ -1288,17 +1316,19 @@ public partial class MainWindow
     private string _cachedFindText = "";
     private bool _cachedFindMatchCase;
     private bool _cachedFindRegexEnabled;
+    private bool _cachedFindWholeWord;
 
     private Regex? BuildFindRegex()
     {
         if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText)) return null;
-        if (_cachedFindText == FindText && _cachedFindMatchCase == IsSearchMatchCaseEnabled && _cachedFindRegexEnabled == IsSearchRegexEnabled)
+        if (_cachedFindText == FindText && _cachedFindMatchCase == IsSearchMatchCaseEnabled && _cachedFindRegexEnabled == IsSearchRegexEnabled && _cachedFindWholeWord == IsSearchWholeWordEnabled)
         {
             return _cachedFindRegex!;
         }
         _cachedFindText = FindText;
         _cachedFindMatchCase = IsSearchMatchCaseEnabled;
         _cachedFindRegexEnabled = IsSearchRegexEnabled;
+        _cachedFindWholeWord = IsSearchWholeWordEnabled;
         try
         {
             var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;

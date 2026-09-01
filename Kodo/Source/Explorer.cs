@@ -82,7 +82,7 @@ public partial class MainWindow
     {
         if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
-        var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Monospace");
+        var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace");
         var widest = 0.0;
 
         foreach (var item in FileTreeItems)
@@ -92,7 +92,7 @@ public partial class MainWindow
                 CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight,
                 typeface,
-                13,
+                12,
                 Brushes.Black);
 
             var total = item.IndentWidth + formatted.Width;
@@ -146,7 +146,13 @@ public partial class MainWindow
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
             // Force page state even if NavigateTo bails early due to no change
+            // Ensure all overlay pages are cleared so IsEditorPageVisible becomes true
             _isHomePageVisible = false;
+            _isSettingsPageVisible = false;
+            _isExtensionsPageVisible = false;
+            _isTutorialPageVisible = false;
+            _isWhatsNewPageVisible = false;
+            RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible));
             NavigateTo(AppPage.Editor);
             RefreshState(fullRefresh: true);
             Dispatcher.UIThread.Post(() =>
@@ -164,7 +170,15 @@ public partial class MainWindow
         CloseCompletionWindow();
         if (preserveCurrentState)
             SaveCurrentEditorStateIntoTab();
+        // Ensure home -> editor visibility is updated before ActiveEditorTab notification
+        // so IsEditorTabsVisible (which depends on !IsHomePageVisible && IsEditorPageVisible) evaluates correctly.
+        _isHomePageVisible = false;
+        OnPropertyChanged(nameof(IsHomePageVisible));
+        OnPropertyChanged(nameof(IsEditorPageVisible));
+        OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
+        OnPropertyChanged(nameof(IsEditorTabsVisible));
         ActiveEditorTab = tab;
+        _activeTabVersion++;
         _currentFilePath = tab.IsUntitled ? null : tab.Path;
         _hasUntitledDocument = tab.IsUntitled;
         _isDirty = tab.IsDirty;
@@ -176,10 +190,14 @@ public partial class MainWindow
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
+        var targetTabForScroll = tab;
+        var savedOffsetVersion = _activeTabVersion;
         if (savedOffsetY > 0.0)
         {
             Dispatcher.UIThread.Post(() =>
             {
+                if (_activeTabVersion != savedOffsetVersion) return;
+                if (!ReferenceEquals(ActiveEditorTab, targetTabForScroll)) return;
                 var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
                 if (sv is not null)
                     sv.Offset = new Vector(sv.Offset.X, savedOffsetY);
@@ -187,7 +205,6 @@ public partial class MainWindow
         }
         UpdateCurrentDocumentPresentation();
 
-        _isHomePageVisible = false;
         NavigateTo(AppPage.Editor);
         RefreshState(fullRefresh: true);
 
@@ -240,6 +257,11 @@ public partial class MainWindow
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
+        OnPropertyChanged(nameof(LineEndingDisplayText));
+        OnPropertyChanged(nameof(IsLineEndingVisible));
+        OnPropertyChanged(nameof(IndentationDisplayText));
+        OnPropertyChanged(nameof(IsIndentationVisible));
+        OnPropertyChanged(nameof(EncodingDisplayText));
 
         if (_currentFolderPath is null)
             IsFileExplorerVisible = false;
@@ -378,7 +400,7 @@ public partial class MainWindow
         NavigateTo(AppPage.Editor);
 
         var lineEndingForTab = _currentLineEnding;
-        var tab = new EditorTab(path, Path.GetFileName(path), content, lineEnding: lineEndingForTab);
+        var tab = new EditorTab(path, Path.GetFileName(path), content, lineEnding: lineEndingForTab) { Encoding = _currentFileEncoding };
         if (isCorrupted)
             _corruptedTabs.Add(tab);
         OpenTabs.Add(tab);
@@ -474,12 +496,12 @@ public partial class MainWindow
     private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _fileTreeRefreshTimer.Stop();
+        _searchFileCache = null;
         if (_newFileInlineRenameItem?.IsRenaming == true)
         {
             RestartFileTreeRefreshTimer();
             return;
         }
-        _searchFileCache = null;
         await RefreshFileTreePreservingExpansionAsync();
     }
 
@@ -1397,6 +1419,8 @@ public partial class MainWindow
     }
 
     private bool _isHomeNewsTabActive = true;
+    private int _activeTabVersion; // incremented on each ActivateTab, used to cancel stale scroll-restores
+
     public bool IsHomeUpdatesTabActive => !_isHomeNewsTabActive;
     public bool IsHomeNewsTabActive => _isHomeNewsTabActive;
 

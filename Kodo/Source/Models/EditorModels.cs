@@ -497,6 +497,8 @@ public class EditorTab : INotifyPropertyChanged
 
     public LineEnding LineEnding { get; set; }
 
+    public System.Text.Encoding Encoding { get; set; } = System.Text.Encoding.UTF8;
+
     public string Content
     {
         get => _content;

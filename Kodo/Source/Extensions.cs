@@ -276,6 +276,9 @@ public partial class MainWindow
                 {
                     try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
                     catch { /* malformed SVG - leave icon absent */ }
+                    var oldImg = ext.IconImage;
+                    ext.IconImage = null;
+                    oldImg?.Dispose();
                     ext.IconBytes = null;
                     ext.NotifyIconChanged();
                 }
@@ -318,7 +321,9 @@ public partial class MainWindow
                     {
                         foreach (var (ext, bmp) in decoded)
                         {
+                            var old = ext.IconImage;
                             ext.IconImage = bmp;
+                            old?.Dispose();
                             ext.IconBytes = null;
                             ext.NotifyIconChanged();
                         }

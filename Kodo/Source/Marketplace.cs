@@ -108,14 +108,17 @@ public partial class MainWindow
         }
 
         Dictionary<string, string> marketplaceIconMap = [];
+        var combinedForIconMap = marketplaceExtensions
+            .Where(entry => !string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase))
+            .Concat(_pluginsIndexEntries)
+            .ToList();
+        // Build icon map from combined entries directly to avoid stale MarketplaceExtensions snapshot when batch is deferred
+        marketplaceIconMap = combinedForIconMap
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
+            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
         await InvokeExtensionUiAsync(() =>
         {
-            var combinedMarketplaceEntries = marketplaceExtensions
-                .Where(entry => !string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase))
-                .Concat(_pluginsIndexEntries)
-                .ToList();
-
-            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedMarketplaceEntries);
+            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
             SyncObservableCollection(
                 ExtensionLoadErrors,
                 ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
@@ -124,10 +127,6 @@ public partial class MainWindow
             SyncMarketplaceInstallStates();
             RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
             NotifyExtensionFiltersChanged();
-
-            marketplaceIconMap = MarketplaceExtensions
-                .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
         });
         _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
         _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);

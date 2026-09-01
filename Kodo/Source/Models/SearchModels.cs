@@ -29,6 +29,7 @@ internal sealed class SearchIgnoreRules
     private readonly List<string> _excludePatterns = new();
     public string IncludeFilterSnapshot { get; set; } = "";
     public string ExcludeFilterSnapshot { get; set; } = "";
+    public string RootSnapshot { get; set; } = "";
 
     public static SearchIgnoreRules Load(string projectRoot, string? includeFilter = null, string? excludeFilter = null)
     {

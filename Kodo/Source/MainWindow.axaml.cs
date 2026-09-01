@@ -1971,9 +1971,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isSettingsPageVisible == value) return;
             _isSettingsPageVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEditorPageVisible));
-            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
-            OnPropertyChanged(nameof(IsSearchPanelActive));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
         }
     }
 
@@ -1985,9 +1983,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isExtensionsPageVisible == value) return;
             _isExtensionsPageVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEditorPageVisible));
-            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
-            OnPropertyChanged(nameof(IsSearchPanelActive));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
         }
     }
 
@@ -1999,9 +1995,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isTutorialPageVisible == value) return;
             _isTutorialPageVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEditorPageVisible));
-            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
-            OnPropertyChanged(nameof(IsSearchPanelActive));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
         }
     }
 
@@ -2013,9 +2007,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isWhatsNewPageVisible == value) return;
             _isWhatsNewPageVisible = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(IsEditorPageVisible));
-            OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
-            OnPropertyChanged(nameof(IsSearchPanelActive));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
         }
     }
 
@@ -4386,10 +4378,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenTabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action == NotifyCollectionChangedAction.Add)
-            IsFileExplorerVisible = true;
-        RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible));
-        SaveSettings();
+        // Don't auto-show explorer on Add - respects user-collapsed state (was forcing visible)
+        RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(IsHomeOrEditorPageVisible), nameof(HasDocumentOpen), nameof(IsTextEditorVisible));
+        // Defer SaveSettings slightly to avoid capturing mid-closing stale ActiveEditorTab during last-tab close
+        Dispatcher.UIThread.Post(() => SaveSettings(), DispatcherPriority.Background);
     }
 
 
@@ -5179,15 +5171,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
-        // Smoothness: yield one frame before heavy editor theme
-        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-        await Task.Yield();
-
         // Applies the editor theme now that the window and editor exist.
         ApplyThemeToEditor();
-
-        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-        await Task.Yield();
 
         // _suppressSettingsSave stays true while tabs restore, cleared in a
         try
@@ -5198,28 +5183,88 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
                 {
                     await OpenFolderFromPathAsync(_startupFolderPath!);
-                    // Smoothness: yield to renderer after file tree layout
-                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-                    await Task.Yield();
                 }
 
-                foreach (var path in _startupOpenTabPaths)
-                {
-                    await OpenFileFromPathAsync(path);
-                    // Smoothness: yield one frame between tabs so 5-6 tabs
-                    await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-                    await Task.Yield();
-                }
+                // Load all startup tabs in parallel and create EditorTabs before the window is shown.
+                var distinctPaths = _startupOpenTabPaths
+                    .Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
+                if (distinctPaths.Count > 0)
                 {
-                    var activeTab = OpenTabs.FirstOrDefault(tab =>
-                        !tab.IsUntitled &&
-                        string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
-                    if (activeTab is not null)
+                    // Read all file contents concurrently (IO-bound)
+                    var readTasks = distinctPaths.Select(async path =>
                     {
-                        ActivateTab(activeTab);
-                    }
+                        if (IsImagePreviewFile(path))
+                        {
+                            return (path, content: string.Empty, lineEnding: Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF, isCorrupted: false, encoding: System.Text.Encoding.UTF8);
+                        }
+                        var (encoding, corrupted) = await Task.Run(() =>
+                        {
+                            if (IsBinaryContent(path))
+                                return (System.Text.Encoding.UTF8, true);
+                            return (DetectFileEncoding(path), false);
+                        }).ConfigureAwait(false);
+
+                        string content;
+                        if (corrupted)
+                        {
+                            content = string.Empty;
+                        }
+                        else if (new FileInfo(path).Length > MaxFileSizeForFullLoad)
+                        {
+                            content = await ReadLargeFileAsync(path, encoding).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            content = await File.ReadAllTextAsync(path, encoding).ConfigureAwait(false);
+                        }
+
+                        var lineEnding = !corrupted && !string.IsNullOrEmpty(content)
+                            ? DetectLineEnding(content)
+                            : Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+
+                        return (path, content, lineEnding, isCorrupted: corrupted, encoding);
+                    }).ToArray();
+
+                    var results = await Task.WhenAll(readTasks);
+
+                    // Create tabs on UI thread in original order, without per-tab Activate flicker
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        foreach (var path in _startupOpenTabPaths)
+                        {
+                            var result = results.FirstOrDefault(r => string.Equals(r.path, path, StringComparison.OrdinalIgnoreCase));
+                            if (result.path is null) continue;
+                            if (OpenTabs.Any(t => !t.IsUntitled && string.Equals(t.Path, result.path, StringComparison.OrdinalIgnoreCase)))
+                                continue;
+
+                            var tab = new EditorTab(result.path, Path.GetFileName(result.path), result.content, lineEnding: result.lineEnding) { Encoding = result.encoding };
+                            if (result.isCorrupted)
+                                _corruptedTabs.Add(tab);
+                            OpenTabs.Add(tab);
+                            AddRecentFile(result.path);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(_startupActiveTabPath))
+                        {
+                            var activeTab = OpenTabs.FirstOrDefault(tab =>
+                                !tab.IsUntitled &&
+                                string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
+                            if (activeTab is not null)
+                                ActivateTab(activeTab);
+                            else if (OpenTabs.Count > 0)
+                                ActivateTab(OpenTabs[0]);
+                        }
+                        else if (OpenTabs.Count > 0 && ActiveEditorTab is null)
+                        {
+                            ActivateTab(OpenTabs[0]);
+                        }
+                    }, DispatcherPriority.MaxValue);
+                    // Force final visibility refresh (covers the first-tab case where OpenTabs.Add raised IsEditorTabsVisible while still on Home)
+                    RaiseMany(nameof(IsHomePageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(HasOpenEditors));
+                    RefreshState(fullRefresh: true);
                 }
             }
 
@@ -5393,6 +5438,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsFileExplorerVisible = false;
         RefreshState(fullRefresh: true);
         RefreshRunBuildState();
+        SaveSettings(immediate: true, synchronous: true);
     }
 
     private async Task<bool> SaveAsync(bool allowPromptForPath, bool forcePromptForPath)
@@ -5648,14 +5694,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void SetEditorContent(string content)
     {
         _suppressDirtyTracking = true;
-        EditorTextBox.Document.Text = content;
-        // Clear UndoStack: shared document would undo wrong tab
-        EditorTextBox.Document.UndoStack.ClearAll();
-        EditorTextBox.TextArea.ClearSelection();
-        EditorTextBox.TextArea.Caret.Offset = 0;
-        Dispatcher.UIThread.Post(
-            () => _suppressDirtyTracking = false,
-            DispatcherPriority.Background);
+        try
+        {
+            EditorTextBox.Document.Text = content;
+            // Clear UndoStack: shared document would undo wrong tab
+            EditorTextBox.Document.UndoStack.ClearAll();
+            EditorTextBox.TextArea.ClearSelection();
+            EditorTextBox.TextArea.Caret.Offset = 0;
+        }
+        finally
+        {
+            _suppressDirtyTracking = false;
+        }
         QueueInsightRefresh();
     }
 
@@ -5984,8 +6034,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     try
                     {
                         var textToSave = ConvertToLineEnding(tab.Content, tab.LineEnding);
-                        await File.WriteAllTextAsync(tab.Path, textToSave, _currentFileEncoding);
+                        var encToUse = tab.Encoding ?? _currentFileEncoding;
+                        // Re-detect if file was externally changed and encoding unknown
+                        if (encToUse == System.Text.Encoding.UTF8 && File.Exists(tab.Path))
+                        {
+                            try { encToUse = DetectFileEncoding(tab.Path); } catch { }
+                        }
+                        await File.WriteAllTextAsync(tab.Path, textToSave, encToUse);
                         tab.Content = textToSave;
+                        tab.Encoding = encToUse;
                         tab.IsDirty = false;
                     }
                     catch (Exception ex)

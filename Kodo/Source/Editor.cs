@@ -54,7 +54,8 @@ public partial class MainWindow
             return;
         }
         var snapshot = EditorTextBox.Document.Text;
-        var version = _wordCountRefreshTimer.IsEnabled ? 0 : 1; // capture to avoid stale
+        var capturedVersion = _insightDocVersion;
+        var capturedPath = _currentFilePath;
         Task.Run(() =>
         {
             if (string.IsNullOrWhiteSpace(snapshot)) return 0;
@@ -73,7 +74,9 @@ public partial class MainWindow
             var wc = t.Result;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                // Discard if document changed to a different file in the meantime
+                // Discard if document changed to a different file or text changed in the meantime
+                if (capturedVersion != _insightDocVersion) return;
+                if (!string.Equals(capturedPath, _currentFilePath, StringComparison.OrdinalIgnoreCase)) return;
                 if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
                 WordCountText = wc == 0 && string.IsNullOrWhiteSpace(snapshot) ? "0 words" : $"{wc} words";
                 OnPropertyChanged(nameof(IsWordCountVisible));
