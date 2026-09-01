@@ -38,50 +38,78 @@ public partial class MainWindow
     private async void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
-        await UpdateInsightAsync();
-        await UpdateDeadCodeHighlightingAsync();
-        await UpdateErrorHighlightingAsync();
+        // Run independent Insight passes concurrently to reduce total latency
+        await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
-        RefreshWordCount();
-        OnPropertyChanged(nameof(IsWordCountVisible));
+        // Offload O(N) scan off UI thread; only run if word-count is actually visible
+        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
+        {
+            if (!IsWordCountVisible) WordCountText = string.Empty;
+            else RefreshWordCountSync();
+            OnPropertyChanged(nameof(IsWordCountVisible));
+            return;
+        }
+        var snapshot = EditorTextBox.Document.Text;
+        var version = _wordCountRefreshTimer.IsEnabled ? 0 : 1; // capture to avoid stale
+        Task.Run(() =>
+        {
+            if (string.IsNullOrWhiteSpace(snapshot)) return 0;
+            var chars = snapshot.AsSpan();
+            int wc = 0;
+            bool inWord = false;
+            for (var i = 0; i < chars.Length; i++)
+            {
+                if (char.IsWhiteSpace(chars[i])) inWord = false;
+                else if (!inWord) { inWord = true; wc++; }
+            }
+            return wc;
+        }).ContinueWith(t =>
+        {
+            if (t.IsFaulted || t.IsCanceled) return;
+            var wc = t.Result;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                // Discard if document changed to a different file in the meantime
+                if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
+                WordCountText = wc == 0 && string.IsNullOrWhiteSpace(snapshot) ? "0 words" : $"{wc} words";
+                OnPropertyChanged(nameof(IsWordCountVisible));
+            });
+        }, TaskScheduler.Default);
+        // For empty doc we still need to update UI
+        if (string.IsNullOrWhiteSpace(snapshot))
+        {
+            WordCountText = "0 words";
+            OnPropertyChanged(nameof(IsWordCountVisible));
+        }
     }
 
-    private void RefreshWordCount()
+    private void RefreshWordCountSync()
     {
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
         {
             WordCountText = string.Empty;
             return;
         }
-
         var text = EditorTextBox.Document.Text;
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            WordCountText = "0 words";
-            return;
-        }
-
-        // Count words via Span enumeration - zero allocations vs
+        if (string.IsNullOrWhiteSpace(text)) { WordCountText = "0 words"; return; }
         var chars = text.AsSpan();
         int wordCount = 0;
         bool inWord = false;
         for (var i = 0; i < chars.Length; i++)
         {
-            if (char.IsWhiteSpace(chars[i]))
-            {
-                inWord = false;
-            }
-            else if (!inWord)
-            {
-                inWord = true;
-                wordCount++;
-            }
+            if (char.IsWhiteSpace(chars[i])) inWord = false;
+            else if (!inWord) { inWord = true; wordCount++; }
         }
         WordCountText = $"{wordCount} words";
+    }
+
+    private void RefreshWordCount()
+    {
+        RefreshWordCountSync();
     }
 
     private string? GetDocumentStatusText()
@@ -834,6 +862,7 @@ public partial class MainWindow
             var blockText = Environment.NewLine + indent + extraIndent + Environment.NewLine + indent;
             doc.Insert(offset, blockText);
             caret.Offset = offset + Environment.NewLine.Length + indent.Length + extraIndent.Length;
+            try { caret.BringCaretToView(); } catch { }
             return;
         }
 
@@ -844,6 +873,7 @@ public partial class MainWindow
         var newLineText = Environment.NewLine + adjustedIndent + extraIndent;
         doc.Insert(offset, newLineText);
         caret.Offset = offset + newLineText.Length;
+        try { caret.BringCaretToView(); } catch { }
     }
 
     private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)

@@ -736,7 +736,6 @@ public partial class MainWindow
         var useRegex = IsSearchRegexEnabled;
         var includeFilter = IsProjectSearchMode ? SearchIncludeFilter : null;
         var excludeFilter = IsProjectSearchMode ? SearchExcludeFilter : null;
-        var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
         var sw = Stopwatch.StartNew();
 
         List<SearchResultItem> results;
@@ -745,11 +744,19 @@ public partial class MainWindow
         {
             if (mode == SearchMode.FileByName)
             {
-                results = await Task.Run(() => SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token), token);
+                results = await Task.Run(() =>
+                {
+                    var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
+                    return SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token);
+                }, token);
             }
             else
             {
-                var (projectResults, wasTruncated) = await Task.Run(() => SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token), token);
+                var (projectResults, wasTruncated) = await Task.Run(() =>
+                {
+                    var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
+                    return SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token);
+                }, token);
                 results = projectResults;
                 truncated = wasTruncated;
             }
@@ -1203,26 +1210,72 @@ public partial class MainWindow
     {
         if (EditorTextBox?.Document is null) return;
 
-        _findHighlightRenderer.Clear();
-        _findMatchOffsets.Clear();
-        _currentFindMatchIndex = -1;
+        // Snapshot UI state for background work; avoid O(N) on UI thread for large docs
+        var snapshotText = EditorTextBox.Document.Text;
+        var snapshotFind = FindText;
+        var snapshotMode = IsFindInFileSearchMode;
+        var snapshotCaret = EditorTextBox.TextArea.Caret.Offset;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var wholeWord = IsSearchWholeWordEnabled;
+        var regex = BuildFindRegex();
 
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText))
+        if (!snapshotMode || string.IsNullOrEmpty(snapshotFind))
         {
+            _findHighlightRenderer.Clear();
+            _findMatchOffsets.Clear();
+            _currentFindMatchIndex = -1;
             SearchStatusText = string.Empty;
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             return;
         }
 
-        var text = EditorTextBox.Document.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        foreach (var m in EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
+        // Large document: offload regex/string scan to thread pool to keep typing smooth
+        if (snapshotText.Length > 80000)
+        {
+            var findCopy = snapshotFind;
+            var textCopy = snapshotText;
+            var compCopy = comparison;
+            var wholeCopy = wholeWord;
+            var regexCopy = regex;
+            var caretCopy = snapshotCaret;
+            Task.Run(() =>
+            {
+                var matches = new List<(int Offset, int Length)>();
+                foreach (var m in EnumerateFindMatches(textCopy, findCopy, compCopy, wholeCopy, regexCopy))
+                    matches.Add(m);
+                return matches;
+            }).ContinueWith(t =>
+            {
+                if (t.IsFaulted || t.IsCanceled) return;
+                // Discard stale results if find text changed while background ran
+                if (FindText != findCopy) return;
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    if (EditorTextBox?.Document is null) return;
+                    _findHighlightRenderer.Clear();
+                    _findMatchOffsets.Clear();
+                    foreach (var m in t.Result) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
+                    if (_findMatchOffsets.Count > 0)
+                    {
+                        _currentFindMatchIndex = _findMatchOffsets.BinarySearch(caretCopy);
+                        if (_currentFindMatchIndex < 0) _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
+                    }
+                    else _currentFindMatchIndex = -1;
+                    UpdateFindStatusText();
+                    EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                });
+            }, TaskScheduler.Default);
+            return;
+        }
+
+        _findHighlightRenderer.Clear();
+        _findMatchOffsets.Clear();
+        _currentFindMatchIndex = -1;
+        foreach (var m in EnumerateFindMatches(snapshotText, snapshotFind, comparison, wholeWord, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
 
         if (_findMatchOffsets.Count > 0)
         {
-            var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(caretOffset);
+            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(snapshotCaret);
             if (_currentFindMatchIndex < 0)
                 _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
         }

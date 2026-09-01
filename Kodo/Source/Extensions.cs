@@ -126,9 +126,11 @@ public partial class MainWindow
         {
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await InvokeExtensionUiAsync(() => ApplyLoadedExtensionsResult(extensionScan));
-            await LoadMarketplaceExtensionsAsync();
-            await LoadPluginsIndexAsync();
-            await LoadCompilerExtensionsAsync(forceResolve: force);
+            // Parallelize independent marketplace index fetches (was sequential, ~3x network latency)
+            await Task.WhenAll(
+                LoadMarketplaceExtensionsAsync(),
+                LoadPluginsIndexAsync(),
+                LoadCompilerExtensionsAsync(forceResolve: force));
             // Flush deferred UI syncs into a single dispatcher frame -> 1 flicker instead of 4
             if (_deferredExtensionUiActions.Count > 0)
             {

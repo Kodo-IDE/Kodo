@@ -110,22 +110,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private Kodo.Models.LineEnding _currentLineEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
-    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
+    private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
-    private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(75) };
-    private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(175) };
+    private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(750) };
     private readonly DispatcherTimer _syntaxHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(40) };
-    private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
+    private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
-    private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private string _lastSeenWindowsAccentHex = string.Empty;
-    private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private string _lastSeenWindowsThemeName = string.Empty;
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
     private readonly InterpolatedStringColorizer _interpolatedStringColorizer = new();
@@ -768,7 +768,40 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         // TextEditor uses EventHandler (not RoutedEventHandler), so hook up
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) => { HideDiagnosticPopup(); QueueRefreshState(); };
+        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
+        {
+            HideDiagnosticPopup();
+            QueueRefreshState();
+            // Ensure caret is always visible - fixes horizontal scroll staying far right after editing
+            // a long line and pressing Down/Enter. Without this, the view can remain scrolled right
+            // while the caret is on a short line near column 0 and thus becomes invisible.
+            try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
+                // For the reported issue: when moving to a new line (Down/Enter) the caret is
+                // typically near column 0/indent. Ensure we scroll all the way back to the left
+                // so the cursor is fully visible, not just barely at the viewport edge.
+                try
+                {
+                    var caret = EditorTextBox.TextArea.Caret;
+                    if (caret.Column <= 8)
+                    {
+                        var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+                        if (sv is not null && sv.Offset.X > 10)
+                            sv.Offset = new Vector(0, sv.Offset.Y);
+                        else
+                        {
+                            // Fallback via TextView offset if ScrollViewer not yet realized
+                            var tv = EditorTextBox.TextArea.TextView;
+                            if (tv.ScrollOffset.X > 10)
+                                caret.BringCaretToView();
+                        }
+                    }
+                }
+                catch { }
+            }, DispatcherPriority.Background);
+        };
         // Selection changes should also refresh the Ln/Col -> selection override. Hook via reflection to avoid hard dependency on event name.
         try
         {
@@ -8435,6 +8468,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         int desiredOffset)
     {
         caret.Offset = Math.Clamp(desiredOffset, 0, doc.TextLength);
+        try { caret.BringCaretToView(); } catch { }
     }
 
 

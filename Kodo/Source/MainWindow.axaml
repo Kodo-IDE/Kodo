@@ -1454,7 +1454,7 @@
                                              Foreground="{Binding PrimaryTextBrush}"
                                              FontFamily="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace"
                                              FontSize="14"
-                                             Padding="8,12,18,0"
+                                             Padding="8,12,18,36"
                                              KeyboardNavigation.TabNavigation="None"
                                              ShowLineNumbers="True"
                                              WordWrap="{Binding IsWordWrapEnabled}"
