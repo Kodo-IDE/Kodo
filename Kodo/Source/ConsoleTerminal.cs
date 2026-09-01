@@ -1433,9 +1433,9 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Disables PSReadLine's predictive IntelliSense unless enabled
-            var disablePredictiveIntelliSenseCommand = enablePSReadLinePrediction
-                ? string.Empty
+            // Enables or disables PSReadLine's predictive IntelliSense
+            var predictionCommand = enablePSReadLinePrediction
+                ? "try { Set-PSReadLineOption -PredictionSource HistoryAndPlugin } catch { try { Set-PSReadLineOption -PredictionSource History } catch {} }; "
                 : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
 
             // Wraps the existing prompt function to also report cwd via OSC 1337.
@@ -1452,14 +1452,14 @@ public static class TerminalShellSupport
                     ?? ResolveExecutable("powershell.exe", Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}{reportCwdCommand}\"");
+                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
             AddShell(
                 "windows-powershell",
                 "Windows PowerShell",
                 ResolveExecutable("powershell.exe", Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{disablePredictiveIntelliSenseCommand}{reportCwdCommand}\"");
+                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
             AddShell(
                 "cmd",
                 "Command Prompt",
