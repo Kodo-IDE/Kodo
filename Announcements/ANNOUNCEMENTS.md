@@ -45,4 +45,9 @@ Join us on August 30th for the release of Kodo v2.0.0!
 ## v2.0.0 is here!
 > August 31, 2026
 Enjoy a reworked UI, compiler and plugin support, a reworked editor experience, and much more!
-> 
+---
+
+## v2.0.1/v2.0.2 are here!
+> August 31, 2026
+A lot of bugs from the initial v2.0.0 release have been fixed. Please make sure you're running v2.0.2 as v2.0.1 has dev artifacts still mistakenly added to it.
+---
