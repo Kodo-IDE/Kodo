@@ -321,6 +321,13 @@ public partial class MainWindow
                     {
                         foreach (var (ext, bmp) in decoded)
                         {
+                            // Prefer GitHub Index icon if it has already been applied; do not overwrite with embedded.
+                            if (ext.HasIcon)
+                            {
+                                bmp?.Dispose();
+                                ext.IconBytes = null;
+                                continue;
+                            }
                             var old = ext.IconImage;
                             ext.IconImage = bmp;
                             old?.Dispose();
@@ -680,24 +687,16 @@ public partial class MainWindow
             {
                 var owner = segments[0];
                 var repo = segments[1];
+                var branch = segments[3];
                 var path = string.Join("/", segments, 4, segments.Length - 4);
-                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
+                return $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}";
             }
             return url; // non-blob or third-party github.com URL - leave alone
         }
 
         if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
         {
-            var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-            if (segments.Length >= 4 && IsKodoExtensionsRepo(segments[0], segments[1]))
-            {
-                var owner = segments[0];
-                var repo = segments[1];
-                // segments[2] is the branch - omitted from the Contents API path
-                var path = string.Join("/", segments, 3, segments.Length - 3);
-                return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
-            }
-            return url; // third-party raw.githubusercontent.com URL - already serves raw bytes, leave alone
+            return url; // already raw - leave alone, never downgrade to api.github.com
         }
 
         // Already a Contents API URL or a non-GitHub third-party URL -

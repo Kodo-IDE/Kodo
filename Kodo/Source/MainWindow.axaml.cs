@@ -59,14 +59,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string CopyrightText => $"© {DateTime.Now.Year} Kodo-IDE, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
     private static readonly string[] MarketplaceIndexUrls =
     [
+        "https://raw.githubusercontent.com/Kodo-IDE/Kodo-Extensions/main/Indexs/ExtensionsIndex.json",
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/ExtensionsIndex.json",
     ];
     private static readonly string[] CompilerIndexUrls =
     [
+        "https://raw.githubusercontent.com/Kodo-IDE/Kodo-Extensions/main/Indexs/CompilerIndex.json",
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/CompilerIndex.json",
     ];
     private static readonly string[] PluginsIndexUrls =
     [
+        "https://raw.githubusercontent.com/Kodo-IDE/Kodo-Extensions/main/Indexs/PluginsIndex.json",
         "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Indexs/PluginsIndex.json",
     ];
     private static readonly string[] LatestReleaseApiUrls =
@@ -243,7 +246,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly ConcurrentDictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _marketplaceSvgCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
-    private readonly SemaphoreSlim _iconFetchSemaphore = new(4, 4);
+    private readonly SemaphoreSlim _iconFetchSemaphore = new(3, 3);
+    private readonly ConcurrentDictionary<string, Task<IconResult>> _iconFetchInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object _rateLimitLock = new();
+    private static int _gitHubRateLimitRemaining = int.MaxValue;
+    private static DateTime _gitHubRateLimitResetUtc = DateTime.MinValue;
+    private static DateTime _gitHubRateLimitBackoffUntilUtc = DateTime.MinValue;
+    private static readonly TimeSpan IconDiskCacheTtl = TimeSpan.FromDays(7);
+    private static string IconDiskCacheDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "IconCache");
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
     private string MarketplaceIndexCachePath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json");
@@ -1501,8 +1511,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var owner = segments[0];
             var repo = segments[1];
+            var branch = segments[3];
             var path = string.Join("/", segments, 4, segments.Length - 4);
-            return $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
+            return $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}";
         }
 
         return url; // non-blob github.com URL (e.g. releases page) - leave alone

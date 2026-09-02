@@ -28,20 +28,21 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        // Smoothness: cache read + JSON parse off UI thread so deferred 3s
-        var diskJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
-        if (diskJson is not null)
-            await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, marketplaceExtensions, extensionLoadErrors)).ConfigureAwait(false);
+        // Avoid pulling from disk cache unless rate limits have certainly been hit.
+        // Prefer fresh GitHub pull; ETag still sent if available (304 handling does not count as cache pull).
+        _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
+        // Keep ETag for conditional request even without pre-loading JSON.
+        // If server returns 304 we will re-read cache then (still rate-limit safe).
+        var rateLimitEncountered = false;
 
         try
         {
-            _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
-            var hasLocalDataToReuseOn304 = marketplaceExtensions.Count > 0;
             foreach (var indexUrl in MarketplaceIndexUrls)
             {
                 using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
-                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-                if (hasLocalDataToReuseOn304 && _marketplaceIndexETag is not null)
+                if (indexRequest.RequestUri!.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase))
+                    indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (_marketplaceIndexETag is not null)
                     indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _marketplaceIndexETag);
 
                 var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
@@ -52,7 +53,13 @@ public partial class MainWindow
                         if ((int)indexResponse.StatusCode == 304)
                             return (304, (string?)null, (string?)null);
                         if (!indexResponse.IsSuccessStatusCode)
-                            return (0, (string?)null, (string?)null);
+                        {
+                            // Propagate rate limits as exception so cache fallback can be triggered.
+                            if (indexResponse.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                                indexResponse.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                                throw new HttpRequestException($"GitHub API rate limit hit ({(int)indexResponse.StatusCode})", null, indexResponse.StatusCode);
+                            return ((int)indexResponse.StatusCode, (string?)null, (string?)null);
+                        }
                         var body = await indexResponse.Content.ReadAsStringAsync(ct);
                         var etag = indexResponse.Headers.ETag?.Tag;
                         return (200, body, etag);
@@ -60,6 +67,18 @@ public partial class MainWindow
 
                 if (statusCode == 304)
                 {
+                    // 304 means server confirms cache is fresh - now and only now pull from disk cache.
+                    var cachedJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
+                    if (cachedJson is not null)
+                    {
+                        var cachedParsed = new List<MarketplaceExtension>();
+                        var cachedErrors = new List<string>();
+                        await Task.Run(() => ParseAndApplyMarketplaceIndex(cachedJson, cachedParsed, cachedErrors)).ConfigureAwait(false);
+                        marketplaceExtensions.Clear();
+                        marketplaceExtensions.AddRange(cachedParsed);
+                        extensionLoadErrors.Clear();
+                        extensionLoadErrors.AddRange(cachedErrors);
+                    }
                     KodoDiagnostics.LogDebug("Marketplace index: 304 Not Modified - reusing cached data.");
                     break;
                 }
@@ -92,18 +111,50 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            if (diskJson is not null)
+            if (IsGitHubRateLimitException(ex))
             {
-                extensionLoadErrors.Add($"Marketplace index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
-                KodoDiagnostics.LogDebug("Marketplace index fetch failed; using disk cache.", ex);
+                rateLimitEncountered = true;
+                var diskJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallbackExtensions = new List<MarketplaceExtension>();
+                    var fallbackErrors = new List<string>();
+                    await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, fallbackExtensions, fallbackErrors)).ConfigureAwait(false);
+                    // Only use fallback if it actually contains data.
+                    if (fallbackExtensions.Count > 0)
+                    {
+                        marketplaceExtensions.Clear();
+                        marketplaceExtensions.AddRange(fallbackExtensions);
+                        extensionLoadErrors.Clear();
+                        extensionLoadErrors.AddRange(fallbackErrors);
+                        extensionLoadErrors.Add($"Marketplace index fetch rate-limited; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Marketplace index fetch rate-limited; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        extensionLoadErrors.Add($"Marketplace index fetch rate-limited and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    extensionLoadErrors.Add($"Marketplace index fetch rate-limited and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
+                // For rate limit we do NOT rethrow - allow UI to show cached data with fallback icons (lettered/embedded handled elsewhere).
+                if (marketplaceExtensions.Count == 0 && rateLimitEncountered)
+                {
+                    // No usable data even from cache - propagate to trigger empty state; connectivity warning will explain.
+                    KodoDiagnostics.LogDebug("Rate limit hit with no usable marketplace cache; marketplace will appear empty with lettered fallback.");
+                }
             }
             else
             {
-                // No cache at all - propagate so the caller shows the error
+                // Not a rate limit - do NOT pull from cache per new policy. Fallback to embedded/lettered icon logic elsewhere will apply.
                 extensionLoadErrors.Add($"Failed to load remote marketplace index: {DescribeFetchFailure(ex)}");
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
-                throw;
+                // Offline / other failures should not use stale cache; marketplace will show lettered fallback, installed keeps embedded.
+                if (marketplaceExtensions.Count == 0)
+                    throw;
             }
         }
 
@@ -113,9 +164,11 @@ public partial class MainWindow
             .Concat(_pluginsIndexEntries)
             .ToList();
         // Build icon map from combined entries directly to avoid stale MarketplaceExtensions snapshot when batch is deferred
+        // Use GroupBy to avoid duplicate-key exceptions if same Id appears in both indexes (stability).
         marketplaceIconMap = combinedForIconMap
             .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         await InvokeExtensionUiAsync(() =>
         {
             SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
@@ -139,19 +192,17 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        var diskJson = await Task.Run(() => TryReadPluginsIndexCache()).ConfigureAwait(false);
-        if (diskJson is not null)
-            await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, pluginExtensions, pluginLoadErrors)).ConfigureAwait(false);
+        // Avoid disk cache unless rate limits have certainly been hit.
+        _pluginsIndexETag ??= TryReadPluginsIndexETag();
 
         try
         {
-            _pluginsIndexETag ??= TryReadPluginsIndexETag();
-            var hasLocalDataToReuseOn304 = pluginExtensions.Count > 0;
             foreach (var indexUrl in PluginsIndexUrls)
             {
                 using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
-                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-                if (hasLocalDataToReuseOn304 && _pluginsIndexETag is not null)
+                if (indexRequest.RequestUri!.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase))
+                    indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (_pluginsIndexETag is not null)
                     indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _pluginsIndexETag);
 
                 var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
@@ -162,7 +213,12 @@ public partial class MainWindow
                         if ((int)indexResponse.StatusCode == 304)
                             return (304, (string?)null, (string?)null);
                         if (!indexResponse.IsSuccessStatusCode)
-                            return (0, (string?)null, (string?)null);
+                        {
+                            if (indexResponse.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                                indexResponse.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                                throw new HttpRequestException($"GitHub API rate limit hit ({(int)indexResponse.StatusCode})", null, indexResponse.StatusCode);
+                            return ((int)indexResponse.StatusCode, (string?)null, (string?)null);
+                        }
                         var body = await indexResponse.Content.ReadAsStringAsync(ct);
                         var etag = indexResponse.Headers.ETag?.Tag;
                         return (200, body, etag);
@@ -170,6 +226,17 @@ public partial class MainWindow
 
                 if (statusCode == 304)
                 {
+                    var cachedJson = await Task.Run(() => TryReadPluginsIndexCache()).ConfigureAwait(false);
+                    if (cachedJson is not null)
+                    {
+                        var cachedParsed = new List<MarketplaceExtension>();
+                        var cachedErrors = new List<string>();
+                        await Task.Run(() => ParseAndApplyMarketplaceIndex(cachedJson, cachedParsed, cachedErrors)).ConfigureAwait(false);
+                        pluginExtensions.Clear();
+                        pluginExtensions.AddRange(cachedParsed);
+                        pluginLoadErrors.Clear();
+                        pluginLoadErrors.AddRange(cachedErrors);
+                    }
                     KodoDiagnostics.LogDebug("Plugins index: 304 Not Modified - reusing cached data.");
                     break;
                 }
@@ -197,14 +264,38 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            if (diskJson is not null)
+            if (IsGitHubRateLimitException(ex))
             {
-                pluginLoadErrors.Add($"Plugins index fetch failed (using cached copy): {DescribeFetchFailure(ex)}");
-                KodoDiagnostics.LogDebug("Plugins index fetch failed; using disk cache.", ex);
+                var diskJson = await Task.Run(() => TryReadPluginsIndexCache()).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallback = new List<MarketplaceExtension>();
+                    var fallbackErrors = new List<string>();
+                    await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, fallback, fallbackErrors)).ConfigureAwait(false);
+                    if (fallback.Count > 0)
+                    {
+                        pluginExtensions.Clear();
+                        pluginExtensions.AddRange(fallback);
+                        pluginLoadErrors.Clear();
+                        pluginLoadErrors.AddRange(fallbackErrors);
+                        pluginLoadErrors.Add($"Plugins index fetch rate-limited; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Plugins index fetch rate-limited; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        pluginLoadErrors.Add($"Plugins index fetch rate-limited and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    pluginLoadErrors.Add($"Plugins index fetch rate-limited and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
             }
             else
             {
+                // Not rate limited - do not pull from cache.
                 pluginLoadErrors.Add($"Failed to load remote plugins index: {DescribeFetchFailure(ex)}");
+                KodoDiagnostics.LogDebug("Plugins index fetch failed (not rate-limited, cache not used).", ex);
             }
         }
 
@@ -229,7 +320,8 @@ public partial class MainWindow
 
             pluginIconMap = MarketplaceExtensions
                 .Where(entry => string.Equals(entry.Type, "plugin", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(entry.IconUrl))
-                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+                .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         });
 
         _ = FetchMarketplaceIconsAsync(pluginIconMap);
@@ -270,32 +362,153 @@ public partial class MainWindow
 
     private async Task FetchInstalledExtensionIconsAsync(IReadOnlyDictionary<string, string> marketplaceIconMap)
     {
-        var tasks = LoadedExtensions
-            .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
-            .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
-            .Select(async pair =>
+        // Policy: All panels prefer GitHub Index icons where possible.
+        // Installed panel: try GitHub icon first; on rate-limit / offline fallback to embedded .kox icon.
+        // If embedded is also missing, the view will show the lettered abbreviation (HasIcon == false).
+        // Snapshot on UI thread to avoid ObservableCollection cross-thread race (stability).
+        List<(LoadedExtension ext, string iconUrl)> pending;
+        try
+        {
+            pending = await Dispatcher.UIThread.InvokeAsync(() =>
+                LoadedExtensions
+                    .Select(ext => (ext, iconUrl: marketplaceIconMap.TryGetValue(ext.Id, out var iconUrl) ? iconUrl : string.Empty))
+                    .Where(pair => !string.IsNullOrWhiteSpace(pair.iconUrl))
+                    .ToList(), DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Failed to snapshot installed extensions for icon fetch.", ex);
+            return;
+        }
+
+        if (pending.Count == 0)
+            return;
+
+        var successful = new System.Collections.Concurrent.ConcurrentBag<(LoadedExtension ext, IconResult icon)>();
+        var needsEmbeddedFallback = new System.Collections.Concurrent.ConcurrentBag<LoadedExtension>();
+
+        var tasks = pending.Select(async pair =>
             {
                 try
                 {
-                    var icon = await GetCachedIconAsync(pair.iconUrl);
+                    var icon = await GetCachedIconAsync(pair.iconUrl).ConfigureAwait(false);
 
-                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    if (icon.HasValue)
                     {
-                        if (icon.HasValue)
-                        {
-                            // Index icon fetched successfully - use it
-                            ReplaceLoadedExtensionIcon(pair.ext, icon);
-                        }
-                    });
+                        // Prefer GitHub Index icon over embedded - collect for batched UI update.
+                        successful.Add((pair.ext, icon));
+                    }
+                    else
+                    {
+                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for installed extension '{pair.ext.Id}': {pair.iconUrl} - using embedded icon.");
+                        needsEmbeddedFallback.Add(pair.ext);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    needsEmbeddedFallback.Add(pair.ext);
                 }
                 catch (Exception ex)
                 {
-                    // Network failure for this icon - leave the kox icon
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for installed extension '{pair.ext.Id}': {pair.iconUrl}", ex);
+                    var isRateLimit = IsGitHubRateLimitException(ex);
+                    var reason = isRateLimit ? "rate limit" : !HasActiveInternetConnection() ? "offline" : "network failure";
+                    KodoDiagnostics.LogDebug($"Icon fetch failed for installed extension '{pair.ext.Id}' ({reason}): {pair.iconUrl} - falling back to embedded icon.", ex);
+                    try { RefreshMarketplaceConnectivityState($"Icon fetch - {pair.ext.Id}", ex); } catch { }
+                    needsEmbeddedFallback.Add(pair.ext);
                 }
             });
 
-        await Task.WhenAll(tasks);
+        try { await Task.WhenAll(tasks).ConfigureAwait(false); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Unexpected error during installed icon batch.", ex); }
+
+        // Batch apply GitHub icons first (higher priority), then ensure embedded for failures.
+        if (successful.Count > 0)
+        {
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    foreach (var (ext, icon) in successful)
+                    {
+                        try { ReplaceLoadedExtensionIcon(ext, icon); }
+                        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply installed icon for '{ext.Id}'.", ex); }
+                    }
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("Failed to batch-apply installed GitHub icons.", ex); }
+        }
+
+        if (needsEmbeddedFallback.Count > 0)
+        {
+            var fallbackTasks = needsEmbeddedFallback.Select(ext => EnsureInstalledEmbeddedIconAsync(ext));
+            try { await Task.WhenAll(fallbackTasks).ConfigureAwait(false); } catch { }
+        }
+    }
+
+    private async Task EnsureInstalledEmbeddedIconAsync(LoadedExtension extension)
+    {
+        // Fallback helper: if GitHub icon unavailable, make sure embedded .kox icon is materialized.
+        // Installed decoding already runs in ApplyLoadedExtensionsResult, but if it hasn't completed
+        // or bytes are still pending, decode here so the panel does not stay on lettered fallback.
+        if (extension.HasIcon)
+            return;
+        if (extension.IconBytes is null)
+            return;
+
+        var bytes = extension.IconBytes;
+        // Decode synchronously for fallback so UI updates promptly.
+        if (IsSvgContent(bytes))
+        {
+            try
+            {
+                var svg = System.Text.Encoding.UTF8.GetString(bytes);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!extension.HasIcon)
+                    {
+                        extension.SvgData = svg;
+                        extension.IconImage?.Dispose();
+                        extension.IconImage = null;
+                        extension.IconBytes = null;
+                        extension.NotifyIconChanged();
+                    }
+                });
+            }
+            catch { }
+        }
+        else
+        {
+            try
+            {
+                using var ms = new MemoryStream(bytes);
+                var bmp = new Bitmap(ms);
+                if (bmp.PixelSize.Width != bmp.PixelSize.Height)
+                {
+                    bmp.Dispose();
+                    bmp = null;
+                }
+                if (bmp is not null)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (!extension.HasIcon)
+                        {
+                            var old = extension.IconImage;
+                            extension.IconImage = bmp;
+                            old?.Dispose();
+                            extension.SvgData = null;
+                            extension.IconBytes = null;
+                            extension.NotifyIconChanged();
+                        }
+                        else
+                        {
+                            bmp.Dispose();
+                        }
+                    });
+                }
+            }
+            catch { }
+        }
     }
 
     private async Task FetchMarketplaceIconsAsync(
@@ -304,64 +517,115 @@ public partial class MainWindow
     {
         var entries = targetCollection ?? MarketplaceExtensions;
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        // Avoid in-memory cache unless rate limited - prefer fresh GitHub pull per new policy.
+        // Do not pre-populate from _marketplaceIconBytesCache here; GetCachedIconAsync will handle
+        // cache fallback only when a rate limit is certainly encountered.
+
+        // Policy: All panels prefer GitHub Index icons where possible.
+        // Marketplace panel: try GitHub icon first; on rate-limit / offline fallback to lettered abbreviation (HasIcon == false).
+        // Snapshot on UI thread to avoid ObservableCollection cross-thread race (stability - fixes inconsistent loads).
+        List<MarketplaceExtension> snapshot;
+        try
         {
-            foreach (var entry in entries)
-            {
-                if (entry.IconImage is not null || entry.SvgData is not null)
-                    continue;
+            snapshot = await Dispatcher.UIThread.InvokeAsync(() => entries.ToList(), DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Failed to snapshot marketplace entries for icon fetch.", ex);
+            return;
+        }
 
-                if (!marketplaceIconMap.TryGetValue(entry.Id, out var cachedUrl))
-                    continue;
+        var pendingEntries = snapshot
+            .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
+            .ToList();
 
-                if (!_marketplaceIconBytesCache.TryGetValue(cachedUrl, out var cachedBytes))
-                    continue;
-
-                var icon = DecodeCachedIconBytes(cachedBytes);
-                if (icon.HasValue)
-                    ReplaceMarketplaceIcon(entry, icon);
-            }
-        });
+        if (pendingEntries.Count == 0)
+            return;
 
         var iconFailures = 0;
         var iconAttempts = 0;
         Exception? lastIconException = null;
+        var rateLimited = 0;
+        var successful = new System.Collections.Concurrent.ConcurrentBag<(MarketplaceExtension entry, IconResult icon)>();
 
-        var tasks = entries
-            .Where(entry => entry.IconImage is null && entry.SvgData is null && marketplaceIconMap.TryGetValue(entry.Id, out _))
-            .Select(async entry =>
+        var tasks = pendingEntries.Select(async entry =>
             {
                 Interlocked.Increment(ref iconAttempts);
                 try
                 {
-                    var icon = await GetCachedIconAsync(marketplaceIconMap[entry.Id]);
-                    if (!icon.HasValue)
+                    // Guard against disposed collection / missing map entry.
+                    if (!marketplaceIconMap.TryGetValue(entry.Id, out var url) || string.IsNullOrWhiteSpace(url))
                     {
-                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}");
                         Interlocked.Increment(ref iconFailures);
                         return;
                     }
 
-                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    var icon = await GetCachedIconAsync(url).ConfigureAwait(false);
+                    if (!icon.HasValue)
                     {
-                        ReplaceMarketplaceIcon(entry, icon);
-                    });
+                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {url} - using lettered fallback.");
+                        Interlocked.Increment(ref iconFailures);
+                        return;
+                    }
+
+                    successful.Add((entry, icon));
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref iconFailures);
                 }
                 catch (Exception ex)
                 {
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}': {marketplaceIconMap[entry.Id]}", ex);
+                    if (IsGitHubRateLimitException(ex))
+                        Interlocked.Increment(ref rateLimited);
+                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}' (will use lettered fallback): {marketplaceIconMap.GetValueOrDefault(entry.Id, string.Empty)}", ex);
                     Interlocked.Increment(ref iconFailures);
                     Interlocked.Exchange(ref lastIconException, ex);
                 }
             });
 
-        await Task.WhenAll(tasks);
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Unexpected error during marketplace icon batch.", ex);
+        }
+
+        // Batch UI updates to reduce dispatcher pressure and improve stability.
+        if (successful.Count > 0)
+        {
+            try
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    foreach (var (entry, icon) in successful)
+                    {
+                        try { ReplaceMarketplaceIcon(entry, icon); }
+                        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply icon for '{entry.Id}'.", ex); }
+                    }
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Failed to batch-apply marketplace icons.", ex);
+            }
+        }
 
         if (iconAttempts > 0 && iconFailures == iconAttempts && lastIconException is not null)
         {
+            var reason = rateLimited > 0 ? "rate limit" : !HasActiveInternetConnection() ? "offline" : "network failure";
             KodoDiagnostics.LogDebug(
-                $"All {iconAttempts} marketplace icon fetch(es) failed; icons will show abbreviations.",
+                $"All {iconAttempts} marketplace icon fetch(es) failed due to {reason}; icons will show lettered abbreviations.",
                 lastIconException);
+            try { RefreshMarketplaceConnectivityState("Marketplace icon fetch", lastIconException); } catch { }
+        }
+        else if (iconFailures > 0)
+        {
+            // Partial failure - surface connectivity state but still show lettered fallback for failed entries.
+            if (lastIconException is not null && (rateLimited > 0 || !HasActiveInternetConnection()))
+                try { RefreshMarketplaceConnectivityState("Marketplace icon fetch", lastIconException); } catch { }
         }
     }
 
@@ -370,40 +634,324 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(iconUrl))
             return default;
 
-        if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var bytes))
-            return DecodeCachedIconBytes(bytes);
+        // Disk cache with TTL avoids hitting GitHub at all for recent icons (major rate-limit + stability saver).
+        if (TryReadIconFromDiskCache(iconUrl, out var cachedDiskBytes))
+        {
+            var diskIcon = DecodeCachedIconBytes(cachedDiskBytes);
+            if (diskIcon.HasValue)
+            {
+                _marketplaceIconBytesCache[iconUrl] = cachedDiskBytes;
+                KodoDiagnostics.LogDebug($"Icon cache hit (disk TTL) for '{iconUrl}' - avoiding network.");
+                return diskIcon;
+            }
+        }
 
-        // Cache miss - fetch under semaphore to avoid duplicate requests.
-        await _iconFetchSemaphore.WaitAsync();
+        // Rate-limit avoidance: if we are in backoff or remaining is low, prefer cached data without hitting network.
+        if (ShouldDeferDueToRateLimit())
+        {
+            if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var memBytes))
+                return DecodeCachedIconBytes(memBytes);
+            if (TryReadIconFromDiskCache(iconUrl, out var diskBytes))
+            {
+                _marketplaceIconBytesCache[iconUrl] = diskBytes;
+                return DecodeCachedIconBytes(diskBytes);
+            }
+            throw new HttpRequestException("GitHub rate limit backoff active - deferring icon fetch", null, System.Net.HttpStatusCode.TooManyRequests);
+        }
+
+        if (!HasActiveInternetConnection())
+        {
+            // Flaky NetworkInterface check caused inconsistent loads - attempt network anyway and let
+            // HttpClient failure trigger per-icon fallback (embedded/lettered) instead of whole-batch skip.
+            KodoDiagnostics.LogDebug($"HasActiveInternetConnection false for '{iconUrl}' - attempting fetch anyway (fallback on failure).");
+        }
+
+        // Deduplicate concurrent fetches for same URL to improve stability and avoid thundering herd.
+        // Use GetOrAdd to avoid race where two callers both miss in-flight and create duplicate tasks.
+        var fetchTask = _iconFetchInFlight.GetOrAdd(iconUrl, _ => FetchIconWithRetryAsync(iconUrl));
         try
         {
-            if (!_marketplaceIconBytesCache.TryGetValue(iconUrl, out bytes))
+            return await fetchTask.ConfigureAwait(false);
+        }
+        finally
+        {
+            // Only remove if still our task (avoid removing a newer task added while we were awaiting).
+            _iconFetchInFlight.TryRemove(new KeyValuePair<string, Task<IconResult>>(iconUrl, fetchTask));
+        }
+    }
+
+    private async Task<IconResult> FetchIconWithRetryAsync(string iconUrl)
+    {
+        // Stagger start to avoid burst hitting rate limit (jitter 20-80ms per fetch).
+        try { await Task.Delay(Random.Shared.Next(20, 80)).ConfigureAwait(false); } catch { }
+
+        await _iconFetchSemaphore.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            // Pre-check deferral before even attempting network.
+            if (ShouldDeferDueToRateLimit())
             {
-                using var cts = new CancellationTokenSource(GitHubOperationTimeout);
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, iconUrl);
-                if (IsGitHubContentsApiUrl(iconUrl))
-                    request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-
-                using var response = await MarketplaceHttpClient.SendAsync(request, cts.Token);
-                response.EnsureSuccessStatusCode();
-                bytes = await response.Content.ReadAsByteArrayAsync(cts.Token);
-                _marketplaceIconBytesCache[iconUrl] = bytes;
+                if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var deferMem))
+                    return DecodeCachedIconBytes(deferMem);
+                if (TryReadIconFromDiskCache(iconUrl, out var deferDisk))
+                {
+                    _marketplaceIconBytesCache[iconUrl] = deferDisk;
+                    return DecodeCachedIconBytes(deferDisk);
+                }
+                throw new HttpRequestException("Rate limit deferral active", null, System.Net.HttpStatusCode.TooManyRequests);
             }
+
+            // Loop over raw -> api fallback candidates (raw primary to avoid api.github.com rate limit).
+            Exception? lastRateLimitException = null;
+            foreach (var candidateUrl in BuildIconUrlCandidates(iconUrl))
+            {
+                const int maxAttempts = 3;
+                for (var attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    try
+                    {
+                        using var cts = new CancellationTokenSource(GitHubOperationTimeout);
+                        using var request = new HttpRequestMessage(HttpMethod.Get, candidateUrl);
+                        if (IsGitHubContentsApiUrl(candidateUrl))
+                            request.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+
+                        using var response = await MarketplaceHttpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+
+                        // Track rate limit headers on every response to proactively avoid future hits.
+                        UpdateRateLimitStateFromHeaders(response.Headers);
+                        if (response.Headers.TryGetValues("Retry-After", out _) || response.Headers.Contains("X-RateLimit-Remaining"))
+                            SetRateLimitBackoffFromHeaders(response.Headers);
+
+                        // Rate limit - log and fall through to next candidate, don't abort whole fetch.
+                        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                            response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                        {
+                            SetRateLimitBackoffFromHeaders(response.Headers);
+                            var rlEx = new HttpRequestException($"GitHub API rate limit hit ({(int)response.StatusCode})", null, response.StatusCode);
+                            KodoDiagnostics.LogDebug($"Icon fetch rate-limited ({(int)response.StatusCode}) for '{candidateUrl}' - trying next candidate if any.", rlEx);
+                            lastRateLimitException = rlEx;
+                            break; // break inner retry, continue to next candidate
+                        }
+
+                        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                        {
+                            KodoDiagnostics.LogDebug($"Icon not found (404) for '{candidateUrl}' - trying next candidate if any.");
+                            break; // break inner retry loop, continue to next candidate in outer foreach
+                        }
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        // 5xx and 408 are transient - throw to trigger retry.
+                        throw new HttpRequestException($"Icon fetch failed with {(int)response.StatusCode} {response.ReasonPhrase}", null, response.StatusCode);
+                    }
+
+                    var bytes = await response.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
+
+                    // Validate size to avoid OOM from unexpectedly large responses.
+                    if (bytes.Length == 0 || bytes.Length > 2 * 1024 * 1024)
+                    {
+                        KodoDiagnostics.LogDebug($"Icon for '{candidateUrl}' has invalid size {bytes.Length} - discarding.");
+                        break;
+                    }
+
+                    // Handle GitHub Contents API JSON wrapper when raw accept was not honored.
+                    if (TryExtractIconFromGitHubJsonWrapper(bytes, out var unwrapped))
+                        bytes = unwrapped;
+
+                    var icon = DecodeCachedIconBytes(bytes);
+                    if (!icon.HasValue)
+                    {
+                        KodoDiagnostics.LogDebug($"Decoded icon has no value for '{candidateUrl}' (corrupted or unsupported) - not caching.");
+                        break;
+                    }
+
+                    // Only cache validated, decodable bytes - keep cache keyed by original iconUrl (stable identity).
+                    _marketplaceIconBytesCache[iconUrl] = bytes;
+                    TryWriteIconToDiskCache(iconUrl, bytes);
+                    if (icon.SvgData is not null)
+                    {
+                        var svgData = _marketplaceSvgCache.GetOrAdd(iconUrl, icon.SvgData);
+                        return new IconResult(null, svgData);
+                    }
+                    return icon;
+                }
+                catch (Exception ex) when (IsGitHubRateLimitException(ex))
+                {
+                    KodoDiagnostics.LogDebug($"Icon fetch rate-limited for '{candidateUrl}' - trying next candidate if any.", ex);
+                    lastRateLimitException = ex;
+                    break;
+                }
+                catch (Exception ex) when (IsTransientIconFailure(ex) && HasActiveInternetConnection() && attempt < maxAttempts - 1)
+                {
+                    var delay = TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt) + Random.Shared.Next(0, 150));
+                    KodoDiagnostics.LogDebug($"Transient icon fetch failure for '{candidateUrl}' (attempt {attempt + 1}/{maxAttempts}): {ex.Message} - retrying in {delay.TotalMilliseconds:F0}ms");
+                    await Task.Delay(delay).ConfigureAwait(false);
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"Icon fetch failed for '{candidateUrl}' (will try next candidate if any): {ex.Message}");
+                    break;
+                }
+            }
+            // Candidate exhausted - continue to next candidate in BuildIconUrlCandidates
+            }
+            // All candidates exhausted - if any candidate hit rate limit, fallback to cache per earlier policy (point b)
+            if (lastRateLimitException != null)
+            {
+                if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var cachedBytes))
+                {
+                    KodoDiagnostics.LogDebug($"All icon candidates rate-limited for '{iconUrl}'; serving from in-memory cache.");
+                    return DecodeCachedIconBytes(cachedBytes);
+                }
+                if (TryReadIconFromDiskCache(iconUrl, out var diskBytes))
+                {
+                    _marketplaceIconBytesCache[iconUrl] = diskBytes;
+                    KodoDiagnostics.LogDebug($"All icon candidates rate-limited for '{iconUrl}'; serving from disk cache.");
+                    return DecodeCachedIconBytes(diskBytes);
+                }
+                throw lastRateLimitException;
+            }
+            return default;
         }
         finally
         {
             _iconFetchSemaphore.Release();
         }
+    }
 
-        var icon = DecodeCachedIconBytes(bytes);
-        if (icon.SvgData is not null)
+    private static bool IsTransientIconFailure(Exception ex) =>
+        ex is TimeoutException ||
+        ex is TaskCanceledException ||
+        ex is IOException ||
+        (ex is HttpRequestException hre &&
+         (hre.StatusCode is null ||
+          hre.StatusCode is System.Net.HttpStatusCode.RequestTimeout or System.Net.HttpStatusCode.InternalServerError or System.Net.HttpStatusCode.BadGateway or System.Net.HttpStatusCode.ServiceUnavailable or System.Net.HttpStatusCode.GatewayTimeout)) ||
+        (ex is InvalidDataException);
+
+    private static void UpdateRateLimitStateFromHeaders(System.Net.Http.Headers.HttpResponseHeaders headers)
+    {
+        try
         {
-            var svgData = _marketplaceSvgCache.GetOrAdd(iconUrl, icon.SvgData);
-            return new IconResult(null, svgData);
+            if (headers.TryGetValues("X-RateLimit-Remaining", out var remainingValues) &&
+                int.TryParse(remainingValues.FirstOrDefault(), out var remaining))
+            {
+                lock (_rateLimitLock) _gitHubRateLimitRemaining = remaining;
+                if (remaining < 10)
+                    KodoDiagnostics.LogDebug($"GitHub rate limit low: {remaining} remaining.");
+            }
+            if (headers.TryGetValues("X-RateLimit-Reset", out var resetValues) &&
+                long.TryParse(resetValues.FirstOrDefault(), out var resetUnix))
+            {
+                var resetUtc = DateTimeOffset.FromUnixTimeSeconds(resetUnix).UtcDateTime;
+                lock (_rateLimitLock) _gitHubRateLimitResetUtc = resetUtc;
+            }
         }
+        catch { }
+    }
 
-        return icon;
+    private static bool ShouldDeferDueToRateLimit()
+    {
+        lock (_rateLimitLock)
+        {
+            if (_gitHubRateLimitBackoffUntilUtc > DateTime.UtcNow)
+                return true;
+            if (_gitHubRateLimitRemaining < 5 && _gitHubRateLimitResetUtc > DateTime.UtcNow)
+                return true;
+            return false;
+        }
+    }
+
+    private static void SetRateLimitBackoffFromHeaders(System.Net.Http.Headers.HttpResponseHeaders headers)
+    {
+        try
+        {
+            if (headers.TryGetValues("Retry-After", out var retryValues) &&
+                int.TryParse(retryValues.FirstOrDefault(), out var seconds))
+            {
+                lock (_rateLimitLock) _gitHubRateLimitBackoffUntilUtc = DateTime.UtcNow.AddSeconds(seconds + 1);
+                KodoDiagnostics.LogDebug($"GitHub Retry-After {seconds}s - backing off icon fetches.");
+                return;
+            }
+            // Fallback to X-RateLimit-Reset if present
+            if (headers.TryGetValues("X-RateLimit-Reset", out var resetValues) &&
+                long.TryParse(resetValues.FirstOrDefault(), out var resetUnix))
+            {
+                var resetUtc = DateTimeOffset.FromUnixTimeSeconds(resetUnix).UtcDateTime;
+                lock (_rateLimitLock) _gitHubRateLimitBackoffUntilUtc = resetUtc;
+            }
+        }
+        catch { }
+    }
+
+    private static string GetIconDiskCachePath(string iconUrl)
+    {
+        try
+        {
+            var hash = System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(iconUrl));
+            var hex = Convert.ToHexString(hash);
+            Directory.CreateDirectory(IconDiskCacheDir);
+            return Path.Combine(IconDiskCacheDir, hex + ".bin");
+        }
+        catch { return Path.Combine(IconDiskCacheDir, "fallback.bin"); }
+    }
+
+    private static bool TryReadIconFromDiskCache(string iconUrl, out byte[] bytes)
+    {
+        bytes = [];
+        try
+        {
+            var path = GetIconDiskCachePath(iconUrl);
+            if (!File.Exists(path)) return false;
+            var info = new FileInfo(path);
+            // TTL check - avoid hitting network for fresh cache
+            if (DateTime.UtcNow - info.LastWriteTimeUtc > IconDiskCacheTtl)
+                return false;
+            bytes = File.ReadAllBytes(path);
+            if (bytes.Length == 0 || bytes.Length > 2 * 1024 * 1024) return false;
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static void TryWriteIconToDiskCache(string iconUrl, byte[] bytes)
+    {
+        try
+        {
+            var path = GetIconDiskCachePath(iconUrl);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, bytes);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to write icon disk cache for '{iconUrl}'.", ex); }
+    }
+
+    private static bool TryExtractIconFromGitHubJsonWrapper(byte[] bytes, out byte[] unwrapped)
+    {
+        unwrapped = bytes;
+        // GitHub Contents API without raw accept returns JSON with base64 "content".
+        // Detect quickly to avoid parsing every binary.
+        if (bytes.Length < 2 || bytes[0] != (byte)'{')
+            return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(bytes);
+            if (!doc.RootElement.TryGetProperty("content", out var contentProp) ||
+                contentProp.ValueKind != JsonValueKind.String)
+                return false;
+            var b64 = contentProp.GetString();
+            if (string.IsNullOrWhiteSpace(b64))
+                return false;
+            // Remove whitespace/newlines GitHub inserts.
+            b64 = b64.Replace("\n", string.Empty).Replace("\r", string.Empty).Replace(" ", string.Empty);
+            var decoded = Convert.FromBase64String(b64);
+            if (decoded.Length > 0 && decoded.Length <= 2 * 1024 * 1024)
+            {
+                unwrapped = decoded;
+                return true;
+            }
+        }
+        catch { }
+        return false;
     }
 
     private static IconResult DecodeCachedIconBytes(byte[] bytes)
@@ -552,10 +1100,61 @@ public partial class MainWindow
             return string.Empty;
 
         if (Uri.TryCreate(rawIcon, UriKind.Absolute, out _))
-            return NormalizeGitHubUrl(rawIcon);
+        {
+            // Prefer raw.githubusercontent.com for Kodo-Extensions icons to avoid api.github.com rate limits.
+            // Raw fetches do not count against the core API rate limit and have much higher quota.
+            var normalized = NormalizeGitHubUrl(rawIcon);
+            return TryConvertKodoApiUrlToRaw(normalized, out var raw) ? raw : normalized;
+        }
 
         var relativePath = rawIcon.Trim().TrimStart('/');
-        return $"https://api.github.com/repos/{KodoExtensionsOwner}/{KodoExtensionsRepo}/contents/{relativePath}";
+        // Use raw for first-party repo to avoid API rate limit; api fallback is handled via conversion helper if needed.
+        return $"https://raw.githubusercontent.com/{KodoExtensionsOwner}/{KodoExtensionsRepo}/main/{relativePath}";
+    }
+
+    private static bool TryConvertKodoApiUrlToRaw(string apiUrl, out string rawUrl)
+    {
+        rawUrl = apiUrl;
+        if (!TryParseGitHubContentsUrl(apiUrl, out var owner, out var repo, out var path))
+            return false;
+        if (!IsKodoExtensionsRepo(owner, repo))
+            return false;
+        // Use main branch for raw; GitHub will redirect if needed.
+        rawUrl = $"https://raw.githubusercontent.com/{owner}/{repo}/main/{path}";
+        return true;
+    }
+
+    private static bool TryGetAlternativeIconUrl(string url, out string altUrl)
+    {
+        altUrl = string.Empty;
+        // raw -> api fallback (when raw branch 404, api is canonical)
+        if (url.StartsWith("https://raw.githubusercontent.com/", StringComparison.OrdinalIgnoreCase))
+        {
+            var remainder = url.Substring("https://raw.githubusercontent.com/".Length);
+            var parts = remainder.Split('/', 4);
+            if (parts.Length == 4)
+            {
+                var owner = parts[0];
+                var repo = parts[1];
+                // parts[2] is branch, parts[3] is path
+                var path = parts[3];
+                // Try opposite branch first, then api
+                var currentBranch = parts[2];
+                var altBranch = currentBranch.Equals("main", StringComparison.OrdinalIgnoreCase) ? "master" : "main";
+                // Prefer api as most reliable alternative
+                altUrl = $"https://api.github.com/repos/{owner}/{repo}/contents/{path}";
+                return true;
+            }
+            return false;
+        }
+        // api -> raw fallback
+        if (TryParseGitHubContentsUrl(url, out var owner2, out var repo2, out var path2))
+        {
+            // Prefer raw main; raw master will be tried via next 404 loop if needed
+            altUrl = $"https://raw.githubusercontent.com/{owner2}/{repo2}/main/{path2}";
+            return true;
+        }
+        return false;
     }
 
     private void SyncMarketplaceInstallStates()
@@ -716,6 +1315,13 @@ public partial class MainWindow
         }
 
         return candidates;
+    }
+
+    private static IEnumerable<string> BuildIconUrlCandidates(string iconUrl)
+    {
+        yield return iconUrl;
+        if (TryParseGitHubRawUrl(iconUrl, out var owner, out var repo, out var path))
+            yield return BuildGitHubContentsUrl(owner, repo, path);
     }
 
     private static bool TryParseGitHubContentsUrl(string url, out string owner, out string repo, out string path)

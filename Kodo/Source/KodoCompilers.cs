@@ -77,20 +77,17 @@ public partial class MainWindow
             _ = AutoDetectDefaultCompilersAsync();
         }
 
-        var diskJson = await Task.Run(() => TryReadCacheFile(CompilerIndexCachePath)).ConfigureAwait(false);
-        if (diskJson is not null)
-            compilerEntries = await Task.Run(() => ParseCompilerIndexEntries(diskJson, loadErrors)).ConfigureAwait(false);
+        // Avoid disk cache unless rate limits have certainly been hit.
+        _compilerIndexETag ??= TryReadCacheFile(CompilerIndexETagPath)?.Trim();
 
         try
         {
-            _compilerIndexETag ??= TryReadCacheFile(CompilerIndexETagPath)?.Trim();
-            var hasLocalDataToReuseOn304 = compilerEntries.Count > 0;
-
             foreach (var indexUrl in CompilerIndexUrls)
             {
                 using var indexRequest = new HttpRequestMessage(HttpMethod.Get, indexUrl);
-                indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
-                if (hasLocalDataToReuseOn304 && _compilerIndexETag is not null)
+                if (indexRequest.RequestUri!.Host.Equals("api.github.com", StringComparison.OrdinalIgnoreCase))
+                    indexRequest.Headers.Accept.ParseAdd("application/vnd.github.raw+json");
+                if (_compilerIndexETag is not null)
                     indexRequest.Headers.TryAddWithoutValidation("If-None-Match", _compilerIndexETag);
 
                 var (statusCode, remoteJson, newETag) = await RunWithGitHubTimeoutAsync(
@@ -101,7 +98,12 @@ public partial class MainWindow
                         if ((int)indexResponse.StatusCode == 304)
                             return (304, (string?)null, (string?)null);
                         if (!indexResponse.IsSuccessStatusCode)
-                            return (0, (string?)null, (string?)null);
+                        {
+                            if (indexResponse.StatusCode == System.Net.HttpStatusCode.Forbidden ||
+                                indexResponse.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                                throw new HttpRequestException($"GitHub API rate limit hit ({(int)indexResponse.StatusCode})", null, indexResponse.StatusCode);
+                            return ((int)indexResponse.StatusCode, (string?)null, (string?)null);
+                        }
                         var body = await indexResponse.Content.ReadAsStringAsync(ct);
                         var etag = indexResponse.Headers.ETag?.Tag;
                         return (200, body, etag);
@@ -109,6 +111,17 @@ public partial class MainWindow
 
                 if (statusCode == 304)
                 {
+                    var cachedJson = await Task.Run(() => TryReadCacheFile(CompilerIndexCachePath)).ConfigureAwait(false);
+                    if (cachedJson is not null)
+                    {
+                        var cachedParsed = await Task.Run(() => ParseCompilerIndexEntries(cachedJson, new List<string>())).ConfigureAwait(false);
+                        if (cachedParsed.Count > 0)
+                        {
+                            compilerEntries = cachedParsed;
+                            // Clear previous errors that assumed empty, replace with 304 info
+                            loadErrors.Clear();
+                        }
+                    }
                     KodoDiagnostics.LogDebug("Compiler index: 304 Not Modified - reusing cached data.");
                     break;
                 }
@@ -139,8 +152,35 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            loadErrors.Add($"Compiler index fetch failed: {DescribeFetchFailure(ex)}");
-            KodoDiagnostics.LogDebug("Compiler index fetch failed.", ex);
+            if (IsGitHubRateLimitException(ex))
+            {
+                var diskJson = await Task.Run(() => TryReadCacheFile(CompilerIndexCachePath)).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallback = await Task.Run(() => ParseCompilerIndexEntries(diskJson, new List<string>())).ConfigureAwait(false);
+                    if (fallback.Count > 0)
+                    {
+                        compilerEntries = fallback;
+                        loadErrors.Clear();
+                        loadErrors.Add($"Compiler index fetch rate-limited; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Compiler index fetch rate-limited; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        loadErrors.Add($"Compiler index fetch rate-limited and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    loadErrors.Add($"Compiler index fetch rate-limited and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
+            }
+            else
+            {
+                // Not rate limited - do not pull from cache per new policy.
+                loadErrors.Add($"Compiler index fetch failed: {DescribeFetchFailure(ex)}");
+                KodoDiagnostics.LogDebug("Compiler index fetch failed (not rate-limited, cache not used).", ex);
+            }
         }
 
         _compilerIndexEntries = compilerEntries;
@@ -169,7 +209,8 @@ public partial class MainWindow
 
             compilerIconMap = CompilerExtensions
                 .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-                .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+                .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
 
             RefreshManualCompilerExtensions();
         });
@@ -258,7 +299,8 @@ public partial class MainWindow
     {
         var canonicalIconMap = CompilerExtensions
             .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
 
         ManualCompilerExtensions.Clear();
         foreach (var pair in _manualCompilers.OrderBy(kv => kv.Value.Name, StringComparer.OrdinalIgnoreCase))
@@ -266,7 +308,8 @@ public partial class MainWindow
 
         var manualIconMap = ManualCompilerExtensions
             .Where(entry => !string.IsNullOrWhiteSpace(entry.IconUrl))
-            .ToDictionary(entry => entry.Id, entry => entry.IconUrl, StringComparer.OrdinalIgnoreCase);
+            .GroupBy(entry => entry.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         if (manualIconMap.Count > 0)
             _ = FetchMarketplaceIconsAsync(manualIconMap, ManualCompilerExtensions);
         RefreshRunBuildState();
