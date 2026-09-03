@@ -127,7 +127,6 @@ public partial class MainWindow
         var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
         ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
             scrollOffset.Y)?.LineNumber ?? 1;
-        // Also save the exact pixel offset so restoration is sub-line-accurate.
         ActiveEditorTab.ScrollOffsetY = scrollOffset.Y;
         ActiveEditorTab.CaretOffset = EditorTextBox.TextArea.Caret.Offset;
         if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
@@ -145,8 +144,6 @@ public partial class MainWindow
     {
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
-            // Force page state even if NavigateTo bails early due to no change
-            // Ensure all overlay pages are cleared so IsEditorPageVisible becomes true
             _isHomePageVisible = false;
             _isSettingsPageVisible = false;
             _isExtensionsPageVisible = false;
@@ -170,8 +167,6 @@ public partial class MainWindow
         CloseCompletionWindow();
         if (preserveCurrentState)
             SaveCurrentEditorStateIntoTab();
-        // Ensure home -> editor visibility is updated before ActiveEditorTab notification
-        // so IsEditorTabsVisible (which depends on !IsHomePageVisible && IsEditorPageVisible) evaluates correctly.
         _isHomePageVisible = false;
         OnPropertyChanged(nameof(IsHomePageVisible));
         OnPropertyChanged(nameof(IsEditorPageVisible));
@@ -208,7 +203,6 @@ public partial class MainWindow
         NavigateTo(AppPage.Editor);
         RefreshState(fullRefresh: true);
 
-        // Ensure active tab is scrolled into view (overflow affordance)
         Dispatcher.UIThread.Post(() =>
         {
             var sv = this.FindControl<ScrollViewer>("EditorTabScrollViewer");
@@ -330,7 +324,7 @@ public partial class MainWindow
         await OpenFileFromPathAsync(path);
     }
 
-    private const long MaxFileSizeForFullLoad = 5_000_000; // 5MB
+    private const long MaxFileSizeForFullLoad = 5_000_000;
 
     private async Task OpenFileFromPathAsync(string path)
     {
@@ -370,7 +364,6 @@ public partial class MainWindow
 
                 if (File.Exists(path) && new FileInfo(path).Length > MaxFileSizeForFullLoad)
                 {
-                    // For large files, read in chunks to avoid UI lag
                     content = await ReadLargeFileAsync(path, encoding);
                 }
                 else
@@ -385,7 +378,6 @@ public partial class MainWindow
             return;
         }
 
-        // Detect line ending for text files; images/corrupted keep current
         if (!IsImagePreviewFile(path) && !isCorrupted && !string.IsNullOrEmpty(content))
         {
             _currentLineEnding = DetectLineEnding(content);
@@ -411,7 +403,7 @@ public partial class MainWindow
     private static async Task<string> ReadLargeFileAsync(string path, System.Text.Encoding encoding)
     {
         var sb = new StringBuilder();
-        const int chunkSize = 65536; // 64KB chunks
+        const int chunkSize = 65536;
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         var buffer = new byte[chunkSize];
         int bytesRead;
@@ -555,7 +547,6 @@ public partial class MainWindow
 
     private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
     {
-        // Bulk Reset avoids N layout passes
         _suppressExplorerWidthRefresh = true;
         try
         {
@@ -570,7 +561,6 @@ public partial class MainWindow
             {
                 FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
             }
-            // Single Reset notifies ItemsControl to rebuild once, not N times
             FileTreeItems_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
             OnPropertyChanged(nameof(FileTreeItems));
         }
@@ -614,11 +604,9 @@ public partial class MainWindow
         }
     }
 
-    // Home screen: most recently opened item regardless of pin state, for the Continue spotlight.
     public RecentFileItem? MostRecentFileItem => RecentFiles.OrderByDescending(item => item.LastOpened).FirstOrDefault();
     public bool HasMostRecentFileItem => MostRecentFileItem is not null;
 
-    // Home screen: pinned items surfaced as a chip row, independent of the Recent list below it.
     public IEnumerable<RecentFileItem> PinnedRecentFiles => RecentFiles.Where(item => item.IsPinned);
     public bool HasPinnedRecentFiles => RecentFiles.Any(item => item.IsPinned);
 
@@ -745,7 +733,6 @@ public partial class MainWindow
         var hasControl = (e.KeyModifiers & KeyModifiers.Control) == KeyModifiers.Control;
         if (!hasControl) return;
 
-        // Ctrl+wheel → zoom. Mark handled so the ScrollViewer does NOT also
         if (e.Delta.Y > 0)
             ZoomImageIn();
         else if (e.Delta.Y < 0)
@@ -756,7 +743,6 @@ public partial class MainWindow
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        // Only toggles panel visibility - previously wiped folder state via
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
@@ -934,10 +920,10 @@ public partial class MainWindow
             {
                 var fileManagers = new[]
                 {
-                    ("nautilus", $"--select \"{path}\""),   // GNOME
-                    ("dolphin",  $"--select \"{path}\""),   // KDE
-                    ("nemo",     $"\"{path}\""),             // Cinnamon
-                    ("thunar",   $"\"{Path.GetDirectoryName(path)}\""), // XFCE (no select)
+                    ("nautilus", $"--select \"{path}\""),
+                    ("dolphin",  $"--select \"{path}\""),
+                    ("nemo",     $"\"{path}\""),
+                    ("thunar",   $"\"{Path.GetDirectoryName(path)}\""),
                 };
 
                 foreach (var (binary, args) in fileManagers)
@@ -962,7 +948,6 @@ public partial class MainWindow
                 }
             }
 
-            // Universal fallback: open the containing directory.
             var fallbackDir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
             Process.Start(new ProcessStartInfo { FileName = fallbackDir, UseShellExecute = true });
         }
@@ -1341,7 +1326,6 @@ public partial class MainWindow
         var itemName = Path.GetFileName(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar));
         var destPath = CreateUniqueSiblingPath(Path.Combine(destDir, itemName), _clipboardItemIsDirectory);
 
-        // Guard: pasting a folder into itself/descendant would recurse infinitely
         if (_clipboardItemIsDirectory)
         {
             var normalizedSrc = Path.GetFullPath(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
@@ -1365,7 +1349,7 @@ public partial class MainWindow
                     File.Move(_clipboardItemPath, destPath);
 
                 RetargetTabPaths(_clipboardItemPath, destPath, _clipboardItemIsDirectory);
-                _clipboardItemPath = null; // cut is consumed
+                _clipboardItemPath = null;
             }
             else
             {
@@ -1406,8 +1390,6 @@ public partial class MainWindow
         NotifyRecentFilesChanged();
     }
 
-    // FileByName search requires a folder to scan (see CanShowSearchPanelForMode in Search.cs),
-    // so on Home with nothing open there's nothing for it to search - offer to open a folder instead.
     public string HomeQuickSearchPlaceholderText => IsFolderOpen ? "Jump to file..." : "Open a folder to search files...";
 
     private async void HomeQuickSearchButton_OnClick(object? sender, RoutedEventArgs e)
@@ -1419,7 +1401,7 @@ public partial class MainWindow
     }
 
     private bool _isHomeNewsTabActive = true;
-    private int _activeTabVersion; // incremented on each ActivateTab, used to cancel stale scroll-restores
+    private int _activeTabVersion;
 
     public bool IsHomeUpdatesTabActive => !_isHomeNewsTabActive;
     public bool IsHomeNewsTabActive => _isHomeNewsTabActive;

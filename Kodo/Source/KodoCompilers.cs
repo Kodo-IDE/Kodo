@@ -64,7 +64,6 @@ public partial class MainWindow
         var compilerEntries = new List<CompilerIndexEntry>();
         var loadErrors = new List<string>();
 
-        // Smoothness: registry + cache reads off UI thread
         await Task.Run(() =>
         {
             LoadInstalledCompilerRegistry();
@@ -77,7 +76,6 @@ public partial class MainWindow
             _ = AutoDetectDefaultCompilersAsync();
         }
 
-        // Avoid disk cache unless rate limits have certainly been hit.
         _compilerIndexETag ??= TryReadCacheFile(CompilerIndexETagPath)?.Trim();
 
         try
@@ -118,7 +116,6 @@ public partial class MainWindow
                         if (cachedParsed.Count > 0)
                         {
                             compilerEntries = cachedParsed;
-                            // Clear previous errors that assumed empty, replace with 304 info
                             loadErrors.Clear();
                         }
                     }
@@ -177,7 +174,6 @@ public partial class MainWindow
             }
             else
             {
-                // Not rate limited - do not pull from cache per new policy.
                 loadErrors.Add($"Compiler index fetch failed: {DescribeFetchFailure(ex)}");
                 KodoDiagnostics.LogDebug("Compiler index fetch failed (not rate-limited, cache not used).", ex);
             }
@@ -1251,7 +1247,6 @@ public partial class MainWindow
                 }
             }
 
-            // Add mingw bin to user PATH so where.exe g++ works without restart
             try
             {
                 var binToAdd = Directory.Exists(mingwBin) ? mingwBin : Directory.Exists(ucrtBin) ? ucrtBin : null;
@@ -1278,7 +1273,6 @@ public partial class MainWindow
 
             await InstallPairedLanguageExtensionsAsync(compilerExtension);
             ExtensionsStatusText = $"{compilerExtension.Name} ready - g++ installed. Switched to GCC for .cpp.";
-            // Auto-switch .cpp to GCC so Build no longer tries clang++
             _compilerOverrides[".cpp"] = compilerExtension.Id;
             _compilerOverrides[".c"] = compilerExtension.Id;
             _compilerOverrides[".cc"] = compilerExtension.Id;
@@ -1501,7 +1495,6 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            // If the install folder is already gone, don't error out - just
             var folder = FindCompilerUninstaller(compilerExtension.Name)?.InstallFolder;
             if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
             {
@@ -2197,7 +2190,6 @@ public partial class MainWindow
             return null;
         }
 
-        // Fall back to project command if no runnable command
         if (ResolveCommandTemplate(best.Compiler, isBuild: false, ext) is null &&
             ResolveCommandTemplate(best.Compiler, isBuild: true, ext) is null)
         {
@@ -2215,7 +2207,6 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             return false;
 
-        // Anchor project discovery to active file
         var fileFolder = Path.GetDirectoryName(_currentFilePath ?? string.Empty);
         var projectRoot = !string.IsNullOrWhiteSpace(fileFolder) && Directory.Exists(fileFolder)
             ? FindProjectRoot(fileFolder)
@@ -2366,7 +2357,6 @@ public partial class MainWindow
         var iconUrl = iconSource?.IconUrl ?? string.Empty;
         if (string.IsNullOrWhiteSpace(iconUrl))
         {
-            // Try manual compilers for icon fallback
             iconUrl = ManualCompilerExtensions.FirstOrDefault(c => c.Id.Equals(iconSourceId, StringComparison.OrdinalIgnoreCase))?.IconUrl ?? string.Empty;
         }
 
@@ -2555,7 +2545,6 @@ public partial class MainWindow
 
     private string ResolveWorkingDirectory()
     {
-        // Root commands at active file's directory
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
             var fileFolder = Path.GetDirectoryName(_currentFilePath);
@@ -2611,7 +2600,6 @@ public partial class MainWindow
                 return sibling;
         }
 
-        // Check common install locations for Go even if not on PATH yet
         if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase))
         {
             var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", "go.exe");
@@ -2689,7 +2677,6 @@ public partial class MainWindow
             if (initProc is not null)
             {
                 await initProc.WaitForExitAsync();
-                // Best-effort tidy, ignore failure (no deps yet)
                 try
                 {
                     using var tidyProc = Process.Start(new ProcessStartInfo(goExe, "mod tidy")
@@ -2996,7 +2983,6 @@ public partial class MainWindow
             menu.Items.Add(item);
         }
 
-        // Keep project compiler as fallback
         {
             var folder = ResolveWorkingDirectory();
             if (!string.IsNullOrWhiteSpace(folder) && TryGetProjectFallbackExtension(folder, ext, out var projectFallback))
@@ -3146,7 +3132,6 @@ public partial class MainWindow
             }
         }
 
-        // No icon loaded yet - return empty placeholder instead of abbreviation
         return icon;
     }
 

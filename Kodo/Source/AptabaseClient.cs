@@ -62,7 +62,6 @@ internal static class AptabaseClient
             return;
         }
 
-        // CERTAINLY deferrable: connectivity probe not needed before first paint
         _ = Task.Run(async () =>
         {
             try
@@ -74,7 +73,6 @@ internal static class AptabaseClient
         });
     }
 
-    // Strips user-identifying substrings from exception messages
     private static string? SanitizeMessage(string? message)
     {
         if (string.IsNullOrEmpty(message)) return message;
@@ -132,7 +130,7 @@ internal static class AptabaseClient
             ? informationalVersion
             : System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "0.0.0";
 
-        var readableVersion = appVersion.Split('+', 2)[0]; //Exclude metadatas
+        var readableVersion = appVersion.Split('+', 2)[0];
 
         _isDevBuild = readableVersion.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
 
@@ -160,7 +158,6 @@ internal static class AptabaseClient
     {
         var key = KEYS.AptabaseKey;
 
-        // Check and warn if the KEYS.cs file is missing or if the key is
         if (string.IsNullOrWhiteSpace(key))
         {
             Console.WriteLine("[Aptabase] WARNING: No key found, check if the file is there or if the key is set correctly.");
@@ -171,7 +168,6 @@ internal static class AptabaseClient
             return null;
         }
 
-        // Check if placeholder key is there and print if it is.
         if (key == "PLACEHOLDER")
         {
             Console.WriteLine("[Aptabase] Placeholder Key found.");
@@ -269,7 +265,6 @@ internal static class AptabaseClient
             if (string.IsNullOrEmpty(_sessionId) || events.Count == 0)
                 return;
 
-            // Body is a bare JSON array and NOT wrapped in { "events": [___] }
             var json = JsonSerializer.Serialize(events);
             Console.WriteLine($"[Aptabase] Payload: {json}");
 

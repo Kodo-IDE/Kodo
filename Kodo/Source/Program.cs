@@ -66,18 +66,16 @@ internal static class SingleInstance
 
         var version = string.IsNullOrEmpty(informationalVersion)
             ? "0.0.0"
-            : informationalVersion.Split('+', 2)[0]; // strip +<git-hash> metadata
+            : informationalVersion.Split('+', 2)[0];
 
         return version.Replace('.', '_');
     }
 
-    // True if this process is the primary (first) instance and owns the mutex.
     public static bool TryAcquire()
     {
         _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
         if (createdNew) return true;
 
-        // Didn't create it; someone else owns it. Don't hold a handle around.
         _mutex.Dispose();
         _mutex = null;
         return false;
@@ -113,16 +111,13 @@ internal static class SingleInstance
                     using var reader = new StreamReader(server, Encoding.UTF8, leaveOpen: true);
                     var payload = await reader.ReadToEndAsync();
 
-                    // Empty payload just means "bring the window to front"
                     onActivationRequested(string.IsNullOrWhiteSpace(payload) ? null : payload);
                 }
                 catch
                 {
-                    // Pipe hiccup - brief backoff so a persistent failure
                     await Task.Delay(500);
                 }
             }
-            // ReSharper disable once FunctionNeverReturns
         });
     }
 

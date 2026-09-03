@@ -38,14 +38,12 @@ public partial class MainWindow
     private async void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
-        // Run independent Insight passes concurrently to reduce total latency
         await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
-        // Offload O(N) scan off UI thread; only run if word-count is actually visible
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
             if (!IsWordCountVisible) WordCountText = string.Empty;
@@ -74,7 +72,6 @@ public partial class MainWindow
             var wc = t.Result;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                // Discard if document changed to a different file or text changed in the meantime
                 if (capturedVersion != _insightDocVersion) return;
                 if (!string.Equals(capturedPath, _currentFilePath, StringComparison.OrdinalIgnoreCase)) return;
                 if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
@@ -82,7 +79,6 @@ public partial class MainWindow
                 OnPropertyChanged(nameof(IsWordCountVisible));
             });
         }, TaskScheduler.Default);
-        // For empty doc we still need to update UI
         if (string.IsNullOrWhiteSpace(snapshot))
         {
             WordCountText = "0 words";
@@ -147,7 +143,6 @@ public partial class MainWindow
             ToolTip.SetTip(textView, null);
     }
 
-    // Show link or diagnostic popup on hover (with X to dismiss)
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         _diagnosticPopupHideTimer.Stop();
@@ -162,7 +157,7 @@ public partial class MainWindow
 
         if (nowOverLink == _isPointerOverEditorLink &&
             (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason))
-            return; // no state change
+            return;
 
         _isPointerOverEditorLink = nowOverLink;
         _hoveredDeadCodeReason = deadCodeReason;
@@ -274,7 +269,6 @@ public partial class MainWindow
             {
                 var msg = p.Trim();
                 if (string.IsNullOrWhiteSpace(msg)) continue;
-                // Strip "Error: " / "Dead Code: " prefixes for signature match
                 if (msg.StartsWith("Error: ", StringComparison.Ordinal))
                     msg = msg.Substring("Error: ".Length);
                 else if (msg.StartsWith("Dead Code: ", StringComparison.Ordinal))
@@ -289,7 +283,6 @@ public partial class MainWindow
         DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(EditorTextBox.TextArea.TextView, null);
 
-        // Force immediate unhighlight instead of waiting for debounce timer
         await UpdateErrorHighlightingAsync();
         await UpdateDeadCodeHighlightingAsync();
 
@@ -340,7 +333,6 @@ public partial class MainWindow
         }
         catch
         {
-            // Document may be null or line out of range during rapid edits
             return null;
         }
     }
@@ -349,7 +341,6 @@ public partial class MainWindow
     {
         _insightDocVersion++;
         HideDiagnosticPopup();
-        // Debounce snapshot rebuild 40ms to avoid XAML lag
         _syntaxHighlightDebounceTimer.Stop();
         _syntaxHighlightDebounceTimer.Start();
 
@@ -378,7 +369,6 @@ public partial class MainWindow
         _markdownColorizer.InvalidateCache();
         _htmlEmbeddedColorizer.InvalidateCache();
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
-        // Coalesce BackgroundRenderer invalidation
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
@@ -413,7 +403,6 @@ public partial class MainWindow
             }
         }
 
-        // Merge opener + auto-closer into one undo group
         var isPairOpener = BracketPairs.ContainsKey(ch);
 
         if (!ClosingChars.Contains(ch))
@@ -431,7 +420,6 @@ public partial class MainWindow
             return;
         }
 
-        // Asymmetric pairs are always safe to skip; symmetric pairs only
         bool skip = ch is ')' or ']' or '}' or '>';
         if (!skip && (ch == '"' || ch == '\''))
             skip = offset > 0 && doc.GetCharAt(offset - 1) == ch;
@@ -451,7 +439,6 @@ public partial class MainWindow
 
     private void BeginAutoCloseUndoGroup(AvaloniaEdit.Document.TextDocument doc)
     {
-        // Guard against a stray double-open leaving the UndoStack's group
         if (_autoCloseUndoGroupOpen) return;
         doc.UndoStack.StartUndoGroup();
         _autoCloseUndoGroupOpen = true;
@@ -466,7 +453,6 @@ public partial class MainWindow
 
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
-        // Close auto-close undo group if opened
         var doc = EditorTextBox.Document;
         try
         {
@@ -541,14 +527,12 @@ public partial class MainWindow
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
 
-        // Offload Insight scan off UI thread
         var suggestions = await Task.Run(() =>
         {
             _InsightEngine.ScanDocument(fileKey, text, languageExtension);
             return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
         });
 
-        // Discard stale scan if doc version changed
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.TextArea is null) return;
 
@@ -657,7 +641,6 @@ public partial class MainWindow
         window.CompletionList.FontFamily = EditorTextBox.FontFamily;
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        // Match app cards while keeping the panel compact.
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
         panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(10)));
         panelCornerStyle.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush));
@@ -676,19 +659,16 @@ public partial class MainWindow
             listBox.ClipToBounds = true;
         }
 
-        // Avoid row-transition flashes while the list rebuilds.
         var noTransitionStyle = new Style(x => x.OfType<ListBoxItem>());
         noTransitionStyle.Setters.Add(new Setter(Animatable.TransitionsProperty, new Transitions()));
         window.Styles.Add(noTransitionStyle);
 
-        // Keep the base row transparent; style hover and selection as chips.
         var baseRowStyle = new Style(x => x.OfType<ListBoxItem>());
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, Brushes.Transparent));
         baseRowStyle.Setters.Add(new Setter(Avalonia.Controls.ContentControl.HorizontalContentAlignmentProperty, HorizontalAlignment.Stretch));
         baseRowStyle.Setters.Add(new Setter(Layoutable.MarginProperty, new Thickness(0, 1)));
         window.Styles.Add(baseRowStyle);
 
-        // Rounded chip for every row - ensures hover/selected backgrounds
         var itemCornerStyle = new Style(x => x.OfType<ListBoxItem>().Template().OfType<Border>());
         itemCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(7)));
         window.Styles.Add(itemCornerStyle);
@@ -701,7 +681,6 @@ public partial class MainWindow
         selectedRowStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
         window.Styles.Add(selectedRowStyle);
 
-        // Keep selected accent even when pointer is over the selected row.
         var selectedHoverStyle = new Style(x => x.OfType<ListBoxItem>().Class(":selected").Class(":pointerover"));
         selectedHoverStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty, accentTint));
         window.Styles.Add(selectedHoverStyle);
@@ -721,7 +700,6 @@ public partial class MainWindow
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
-        // Any editor interaction should hide the diagnostic popup - don't
         if (DiagnosticPopup.IsOpen && IsEditorKeyEvent(e))
             HideDiagnosticPopup();
 
@@ -921,12 +899,10 @@ public partial class MainWindow
         }
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        // Replace the selection in one undoable operation.
         var indentedLines = lines.OrderByDescending(l => l.Offset)
             .Select(l => GetIndentUnit() + doc.GetText(l));
         var newText = string.Join(Environment.NewLine, indentedLines);
 
-        // Replace the entire selection segment with indented text as one
         doc.Replace(segment, newText);
 
         SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
@@ -943,7 +919,6 @@ public partial class MainWindow
             if (removable <= 0)
                 return;
 
-            // Replace the line in one undoable operation.
             var outdentedText = lineText.TrimStart();
             doc.Replace(line.Offset, line.Length, outdentedText);
 
@@ -956,12 +931,10 @@ public partial class MainWindow
             return;
 
         var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        // Replace the selected lines in one undoable operation.
         var linesText = lines.OrderByDescending(l => l.Offset)
             .Select(l => doc.GetText(l).TrimStart());
         var replacedText = string.Join(Environment.NewLine, linesText);
 
-        // Replace the entire selection segment with outdented text as one
         doc.Replace(segment, replacedText);
 
         SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
@@ -1100,7 +1073,6 @@ public partial class MainWindow
             });
 
         var delta = 0;
-        // Group per-line edits into one undo
         doc.UndoStack.StartUndoGroup();
         try
         {

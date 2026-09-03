@@ -89,7 +89,7 @@ public partial class MainWindow
 
     private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
     {
-        const double MinimumReadableContrast = 4.5; // WCAG AA, normal text
+        const double MinimumReadableContrast = 4.5;
 
         if (candidate.ToImmutable() is not ISolidColorBrush candidateSolid)
             return candidate;
@@ -231,7 +231,6 @@ public partial class MainWindow
         catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
         OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
 
-        // In "kodo" mode, always use the fixed Kodo purple regardless of
         if (_accentColorMode == "kodo")
         {
             try { AccentBrush = GetCachedBrush("#8C00FF"); }

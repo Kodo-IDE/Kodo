@@ -29,9 +29,8 @@ public partial class App : Application
     private static readonly Color KodoDarkBadgeBg = DialogPalette.BadgeBg;
     private static readonly Color KodoTextMuted = DialogPalette.TextMuted;
     private static readonly Color KodoTextDim = DialogPalette.TextDim;
-    private static readonly Color KodoTokenBlue = DialogPalette.TokenBlue;  // source badge
-    private static readonly Color KodoTokenOrange = DialogPalette.TokenOrange;  // stack trace
-
+    private static readonly Color KodoTokenBlue = DialogPalette.TokenBlue;
+    private static readonly Color KodoTokenOrange = DialogPalette.TokenOrange;
 
     public override void Initialize()
     {
@@ -43,7 +42,6 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // Init KEYS before AptabaseClient
         AptabaseClient.Initialize();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -62,7 +60,6 @@ public partial class App : Application
             SingleInstance.StartListening(handoffPath =>
                 Dispatcher.UIThread.Post(() => mainWindow.ActivateFromSecondaryInstance(handoffPath)));
 
-            // CERTAINLY deferrable: analytics not needed before first paint
             _ = Task.Run(async () =>
             {
                 try
@@ -75,7 +72,6 @@ public partial class App : Application
             desktop.Exit += async (_, _) => await AptabaseClient.FlushAsync();
         }
 
-        // CERTAINLY deferrable: none of this needs to block first paint
 #if !DEBUG
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -115,7 +111,6 @@ public partial class App : Application
         }
     }
 
-
     [SupportedOSPlatform("windows")]
     private static void LaunchStandaloneUpdaterIfNeeded()
     {
@@ -123,7 +118,6 @@ public partial class App : Application
         {
             if (!UpdateService.IsAutoUpdateEnabledInSettings())
             {
-                // User has auto-update off entirely; make sure no logon
                 UpdateService.RemoveAutostartRegistration();
                 return;
             }
@@ -145,7 +139,6 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            // Best-effort - if this fails, updates simply fall back to the in-app
             KodoDiagnostics.LogWarning("App.LaunchStandaloneUpdaterIfNeeded", ex, operation: "AutoUpdate");
         }
     }
@@ -161,7 +154,7 @@ public partial class App : Application
             var update = new UpdateInfo(
                 Version: version,
                 ReleaseNotesUrl: "https://github.com/Kodo-IDE/Kodo/releases",
-                AssetDownloadUrl: string.Empty, // unused: installer is already on disk
+                AssetDownloadUrl: string.Empty,
                 AssetName: Path.GetFileName(installerPath),
                 AssetSizeBytes: 0);
 
@@ -192,7 +185,6 @@ public partial class App : Application
             }
             catch
             {
-                // Update checking must never crash the app.
             }
         });
     }
@@ -241,7 +233,6 @@ public partial class App : Application
         });
     }
 
-
     [SupportedOSPlatform("windows")]
     private static void RegisterFileAssociations()
     {
@@ -281,10 +272,8 @@ public partial class App : Application
         }
         catch
         {
-            // Registration failure must never crash the app.
         }
     }
-
 
     private static void CurrentDomain_OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
@@ -305,13 +294,10 @@ public partial class App : Application
 
     private static void DispatcherUiThread_OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        // Critical: exception on the UI thread - may leave the UI in a
         KodoDiagnostics.LogCritical("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         e.Handled = true;
     }
-
-    // ShowCrashDialog dispatches a modal error dialog to the UI thread.
 
     private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
@@ -328,20 +314,17 @@ public partial class App : Application
                 return;
             }
 
-            // Posts to the UI thread rather than blocking.
             if (isTerminating)
             {
                 Dispatcher.UIThread.Post(
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                // Keep the terminating process alive until the report is
                 for (var i = 0; _isCrashDialogOpen == 1; i++)
                     Thread.Sleep(100);
             }
             else
             {
-                // Recoverable crash - posts without blocking the caller.
                 Dispatcher.UIThread.Post(
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
@@ -349,7 +332,6 @@ public partial class App : Application
         }
         catch
         {
-            // Dispatcher invocation must never crash the app.
         }
     }
 
@@ -358,7 +340,6 @@ public partial class App : Application
         Interlocked.Exchange(ref _isCrashDialogOpen, 1);
         try
         {
-            // Uses the main window as owner only when it is still open and
             Window? owner = null;
             if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             {
@@ -369,7 +350,6 @@ public partial class App : Application
 
             var dialog = BuildCrashDialog(source, exception, logPath, isTerminating, owner);
 
-            // Falls back to Show() + TCS when no owner is available.
             if (owner is not null)
             {
                 await dialog.ShowDialog(owner);
@@ -384,7 +364,6 @@ public partial class App : Application
         }
         catch
         {
-            // The crash dialog itself must never crash the app.
         }
         finally
         {
@@ -392,7 +371,6 @@ public partial class App : Application
         }
     }
 
-    // Builds the crash dialog entirely in code, with no AXAML dependency.
     private static Window BuildCrashDialog(
         string source,
         Exception exception,
@@ -448,7 +426,6 @@ public partial class App : Application
             Margin = new Thickness(0, 6)
         };
 
-        // Terminating warning, shown only when isTerminating is true.
         var terminatingBanner = new Border
         {
             IsVisible = isTerminating,
@@ -642,7 +619,6 @@ public partial class App : Application
             }
             catch
             {
-                // Clipboard failures must not crash the crash dialog.
             }
         };
 
@@ -650,7 +626,6 @@ public partial class App : Application
         {
             try
             {
-                // Pre-fills a GitHub issue with the exception type as the title.
                 var title = Uri.EscapeDataString($"[Crash] {exception.GetType().Name}: {exception.Message}"
                     .Replace("\r", "").Replace("\n", " ").Trim());
                 var url = "https://github.com/Kodo-IDE/Kodo/issues/new?title=" +
@@ -663,7 +638,6 @@ public partial class App : Application
             }
             catch
             {
-                // Opening the browser must not crash the crash dialog.
             }
         };
 

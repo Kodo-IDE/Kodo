@@ -41,10 +41,10 @@ public sealed class MarketplaceTileWidthConverter : IValueConverter
     public static readonly MarketplaceTileWidthConverter Instance = new();
 
     private const int Columns = 5;
-    private const double HorizontalPadding = 48; // ScrollViewer Padding="24" on each side
-    private const double ScrollbarGutter = 20; // room for the vertical scrollbar when visible
-    private const double TileMargin = 12; // Border.extensiontile Margin="6" on each side
-    private const double MinTileWidth = 120; // floor so tiles never collapse to nothing
+    private const double HorizontalPadding = 48;
+    private const double ScrollbarGutter = 20;
+    private const double TileMargin = 12;
+    private const double MinTileWidth = 120;
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -58,7 +58,6 @@ public sealed class MarketplaceTileWidthConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
-
 
 public sealed class BoolInverter : IValueConverter
 {

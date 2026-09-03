@@ -282,7 +282,6 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             }
             catch (ArgumentOutOfRangeException)
             {
-                // The editor changed while the popup was closing; abandon
             }
         }
 

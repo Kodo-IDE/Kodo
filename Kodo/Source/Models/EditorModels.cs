@@ -68,7 +68,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
         var pen = new Pen(GuideBrush, 1, GuideDashStyle);
 
-        // Compute indent for visible lines only
         foreach (var visualLine in textView.VisualLines)
         {
             var lineNumber = visualLine.FirstDocumentLine.LineNumber;
@@ -95,7 +94,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         if (!string.IsNullOrWhiteSpace(text))
             return GetIndentColumns(text) / TabSize;
 
-        // Blank line - look locally for surrounding context (bounded scan
         const int maxLookAround = 32;
         var above = 0;
         for (var a = lineNumber - 1; a >= 1 && lineNumber - a <= maxLookAround; a--)
@@ -231,10 +229,8 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    // Instance (not static/const) so ApplyThemeToEditor can swap it per theme.
     public IBrush TextBrush { get; set; } = Brushes.Black;
 
-    // Only darkens in light themes - in dark themes the red wash preserves
     public bool IsLightTheme { get; set; }
 
     private IReadOnlyList<InsightEngine.ErrorSpan> _errorSpans = Array.Empty<InsightEngine.ErrorSpan>();
@@ -470,7 +466,6 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
         !char.IsWhiteSpace(ch) &&
         ch is not '<' and not '>' and not '"' and not '\'' and not '[' and not ']' and not '(' and not ')' and not '{' and not '}' and not '|' and not '\\' and not '^' and not '`';
 }
-
 
 public class EditorTab : INotifyPropertyChanged
 {

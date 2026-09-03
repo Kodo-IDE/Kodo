@@ -50,7 +50,6 @@ internal sealed record ExtensionScanResult(
     List<LoadedExtension> Extensions,
     List<string> LoadErrors);
 
-
 public static class ExtensionSortModes
 {
     public const string Alphabetical = "A-Z";
@@ -142,11 +141,8 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string ThemeCardAccent => ThemeDefinition?.Accent ?? "#8C00FF";
     public bool IsThemeSubEntry { get; init; }
     public byte[]? IconBytes { get; set; }
-    // Optional icon loaded from icon.png / icon.svg inside the .kox / folder
     public Bitmap? IconImage { get; set; }
-    // SVG text for icons sourced from the marketplace index or local icon.svg
     public string? SvgData { get; set; }
-    // Fallback: first two letters of the name, shown when no icon is present
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
     public bool HasIcon => IconImage is not null || SvgData is not null;
     public bool IsUpdateAvailable

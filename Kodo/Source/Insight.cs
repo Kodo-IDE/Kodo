@@ -19,7 +19,6 @@ public enum InsightKind { Variable, Function, Property, Type, Namespace, Keyword
 
 public sealed class InsightSuggestion : ICompletionData
 {
-    // Set by MainWindow from its live theme brushes before building suggestions.
     public static IBrush PanelForeground { get; set; } = Brushes.WhiteSmoke;
     public static IBrush MutedForeground { get; set; } = new SolidColorBrush(Color.Parse("#8A8A8A"));
 
@@ -109,7 +108,6 @@ public sealed class InsightSuggestion : ICompletionData
         "C3 16.3747 3 16.7823 3.13495 17.1308C3.25414 17.4386 3.44766 17.7121 3.69824 17.9269" +
         "C3.98195 18.1702 4.36629 18.3058 5.13498 18.5771Z");
 
-    // Compact suggestion row with a rounded chip and muted kind label.
     private Control BuildContentVisual()
     {
         var iconGeometry = Kind switch
@@ -376,7 +374,6 @@ public sealed class InsightEngine
 
             if (inString)
             {
-                // Interpolated string: code inside { } is real code, not string
                 if (isInterpolated)
                 {
                     if (inInterpolationCode)
@@ -443,7 +440,6 @@ public sealed class InsightEngine
 
                 if (c == '\\' && !inMulti && !isVerbatim)
                 {
-                    // escaped char - blank both (verbatim strings use ""
                     masked[i] = ' ';
                     if (i + 1 < chars.Length && chars[i + 1] != '\n' && chars[i + 1] != '\r')
                     {
@@ -455,7 +451,6 @@ public sealed class InsightEngine
 
                 if (c == '\n' && !inMulti && !isVerbatim)
                 {
-                    // unterminated single-line string - treat newline as
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
@@ -481,7 +476,6 @@ public sealed class InsightEngine
 
                 if (closing is not null)
                 {
-                    // keep closing delimiters as-is (so `x = "a"` still has
                     inString = false;
                     inMulti = false;
                     isInterpolated = false;
@@ -523,7 +517,6 @@ public sealed class InsightEngine
                 inMulti = true;
                 isInterpolated = false;
                 isVerbatim = false;
-                // check if this multi-line delimiter is interpolated (e.g
                 if (i > 0 && chars[i - 1] == '$')
                     isInterpolated = true;
                 else if (i > 1 && chars[i - 2] == '$' && chars[i - 1] == '@')
@@ -534,7 +527,6 @@ public sealed class InsightEngine
 
             if (c == '"' || (c == '\'' && !disableSingle))
             {
-                // check for interpolated / verbatim prefix: $", $@", @$", @"
                 var interpolated = false;
                 var verbatim = false;
                 if (i > 0 && chars[i - 1] == '$')
@@ -543,7 +535,7 @@ public sealed class InsightEngine
                     verbatim = true;
                 else if (i > 0 && (chars[i - 1] == 'r' || chars[i - 1] == 'R') &&
                          (i < 2 || !char.IsLetterOrDigit(chars[i - 2])))
-                    verbatim = true; // Python/Rust raw string: backslash is literal, no doubled-quote escape
+                    verbatim = true;
                 if (i > 1 && ((chars[i - 2] == '$' && chars[i - 1] == '@') || (chars[i - 2] == '@' && chars[i - 1] == '$')))
                 {
                     interpolated = true;
@@ -610,7 +602,6 @@ public sealed class InsightEngine
     {
         if (string.IsNullOrEmpty(name)) return false;
         if (name.Length > 64) return false;
-        // Reject numeric-like or hyphenated artifacts that slipped through.
         if (char.IsDigit(name[0])) return false;
         if (name.Contains('-')) return false;
         return true;
@@ -638,7 +629,6 @@ public sealed class InsightEngine
 
         if (pattern == ColonAnnotatedAssignment)
         {
-            // Extract content between ':' and '=' for this specific match
             var colonIdx = scanText.IndexOf(':', StringComparison.Ordinal);
             var eqIdx = scanText.IndexOf('=', colonIdx + 1);
             if (colonIdx >= 0 && eqIdx > colonIdx)
@@ -650,7 +640,6 @@ public sealed class InsightEngine
                     firstToken = firstToken.TrimEnd('?');
                     if (firstToken.Length > 0 && char.IsLower(firstToken[0]) && !KnownColonTypes.Contains(firstToken))
                     {
-                        // If type part is exactly one identifier with no
                         var tokens = typePart.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                         if (tokens.Length == 1 && !typePart.Contains("<") && !typePart.Contains("[") && !typePart.Contains("|"))
                             return true;
@@ -668,11 +657,9 @@ public sealed class InsightEngine
                 var nameIdx = beforeEq.LastIndexOf(name, StringComparison.Ordinal);
                 if (nameIdx > 0 && beforeEq.Substring(0, nameIdx).Contains('.'))
                     return true;
-                // Also reject bracket-like `arr[0] =` where LHS is not a
                 if (beforeEq.Contains('[') || beforeEq.Contains(']'))
                     return true;
             }
-            // Reject lines like `return x = 5`, `throw x = 5`, `yield x = 5`
             var beforeTrimLower = beforeEq.TrimStart().ToLowerInvariant();
             if (beforeTrimLower.StartsWith("return ") || beforeTrimLower.StartsWith("throw ") ||
                 beforeTrimLower.StartsWith("yield ") || beforeTrimLower.StartsWith("await ") ||
@@ -680,7 +667,6 @@ public sealed class InsightEngine
                 return true;
         }
 
-        // Reject names that are language keywords even if ReservedWords missed
         if (name.Length >= 2 && name.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
         if (name.Length >= 2 && name.Equals("false", StringComparison.OrdinalIgnoreCase)) return true;
         if (name.Length >= 2 && name.Equals("null", StringComparison.OrdinalIgnoreCase)) return true;
@@ -754,12 +740,10 @@ public sealed class InsightEngine
                     var t = maskedLine.Trim();
                     if (!IsVarDeclPrefix(t) && !t.Contains(";"))
                     {
-                        // If the line looks like `prop = value,` with no
                         var eqIdx = t.IndexOf('=');
                         if (eqIdx > 0)
                         {
                             var lhs = t.Substring(0, eqIdx).Trim();
-                            // If lhs is single identifier without type
                             if (System.Text.RegularExpressions.Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$") && !lhs.Contains(" "))
                                 continue;
                         }
@@ -852,7 +836,7 @@ public sealed class InsightEngine
         for (var i = 0; i < lines.Length; i++)
         {
             lineStart[i] = offset;
-            offset += lines[i].Length + 1; // +1 accounts for the '\n' consumed by Split.
+            offset += lines[i].Length + 1;
         }
 
         var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
@@ -891,7 +875,7 @@ public sealed class InsightEngine
         {
             foreach (var name in IdentifyVariableInitializations(masked[i]))
             {
-                if (!seenVariable.Add(name)) continue; // only flag a name's first declaration
+                if (!seenVariable.Add(name)) continue;
                 if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
                 if (name == "_" || name.StartsWith('_')) continue;
@@ -993,13 +977,13 @@ public sealed class InsightEngine
             {
                 var trimmed = masked[j].Trim();
                 if (trimmed.Length == 0) { j++; continue; }
-                if (ClosingBraceOnlyLine.IsMatch(trimmed)) break; // end of the enclosing block
-                if (PossibleJumpTarget.IsMatch(trimmed)) break;   // could still be jumped to
+                if (ClosingBraceOnlyLine.IsMatch(trimmed)) break;
+                if (PossibleJumpTarget.IsMatch(trimmed)) break;
 
                 if (deadStart < 0) deadStart = j;
 
                 var lineDepthChange = CountChar(masked[j], '{') - CountChar(masked[j], '}');
-                if (depth + lineDepthChange < 0) break; // this line closes the enclosing block too
+                if (depth + lineDepthChange < 0) break;
                 depth += lineDepthChange;
                 deadEnd = j;
                 j++;
@@ -1010,7 +994,7 @@ public sealed class InsightEngine
                 var start = lineStart[deadStart];
                 var end = lineStart[deadEnd] + ContentLength(lines[deadEnd]);
                 spans.Add(new DeadCodeSpan(start, end - start, "Unreachable code"));
-                i = deadEnd; // skip past the section we just flagged
+                i = deadEnd;
             }
         }
 
@@ -1046,7 +1030,6 @@ public sealed class InsightEngine
         @"[;{}:,\\+\-*/%&|^~<>=!\[(]\s*$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
         RegexOptions.Compiled);
 
-    // Preprocessor / attribute / label lines that never take a trailing ';'.
     private static readonly Regex StatementExemptLine = new(
         @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
         RegexOptions.Compiled);
@@ -1095,30 +1078,24 @@ public sealed class InsightEngine
                 return true;
             if (next.StartsWith("{") && trimmedEnd.Contains("=") && !trimmedEnd.Contains(";") && trimmedEnd.Contains("new"))
                 return true;
-            // Ternary continuation: `Text = isTerminating` + `? "..."` or
             if ((next.StartsWith("?") || next.StartsWith(":") || next.StartsWith(".")) && trimmedEnd.Contains("="))
                 return true;
             if ((next.StartsWith(".") || next.StartsWith("+")) && !trimmedEnd.EndsWith(";", StringComparison.Ordinal) && !trimmedEnd.EndsWith("{", StringComparison.Ordinal))
                 return true;
-            // Header like `public partial class App : Application` + `{`
             if (next.StartsWith("{") && (trimmedNoIndent.Contains("class") || trimmedNoIndent.Contains("struct") ||
                 trimmedNoIndent.Contains("interface") || trimmedNoIndent.Contains("enum") ||
                 trimmedNoIndent.Contains("record") || trimmedNoIndent.Contains("namespace")))
                 return true;
-            // Control header with `)` + `{` like `if (x)` + `{` or `void
             if (trimmedEnd.EndsWith(")", StringComparison.Ordinal) && next.StartsWith("{"))
                 return true;
-            // Fallback: any `class`/`struct` etc without `=`/`;` before `{`
             if (next.StartsWith("{") && !trimmedEnd.Contains("=") && !trimmedEnd.Contains(";"))
                 return true;
-            // Multi-line expression: current line is `? "..."` and next is `:`
             if (trimmedNoIndent.StartsWith("?") && next.StartsWith(":"))
                 return true;
             if (trimmedNoIndent.StartsWith(":") && (next.StartsWith(",") || next.StartsWith("}")))
                 return true;
         }
 
-        // Line itself ends with `=` (e.g. `Children =`) – continuation, not
         if (trimmedEnd.EndsWith("=", StringComparison.Ordinal))
             return true;
 
@@ -1132,7 +1109,6 @@ public sealed class InsightEngine
             return true;
         if (Regex.IsMatch(line, @"\belse\b.*\b(?:return|throw|break|continue)\b"))
             return true;
-        // `if (cond)` on previous line and `return;` on this line without `{`
         for (var k = terminatorIndex - 1; k >= 0; k--)
         {
             var prev = masked[k].Trim();

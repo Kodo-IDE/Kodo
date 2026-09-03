@@ -19,7 +19,7 @@ using System.Threading.Tasks;
 namespace Kodo;
 
 internal sealed record UpdateInfo(
-    string Version,        // e.g. "v1.2.0" (raw tag_name from GitHub)
+    string Version,
     string ReleaseNotesUrl,
     string AssetDownloadUrl,
     string AssetName,
@@ -46,7 +46,6 @@ internal static class UpdateService
         return client;
     }
 
-
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
         try
@@ -68,7 +67,6 @@ internal static class UpdateService
             if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion))
                 return null;
 
-            // Inno Setup output is a plain .exe - grab the first .exe asset.
             var asset = release.Assets?.FirstOrDefault(a =>
                 a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
 
@@ -128,7 +126,6 @@ internal static class UpdateService
         return parts.Length > 0 ? parts : null;
     }
 
-
     private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
     {
         try
@@ -145,13 +142,11 @@ internal static class UpdateService
     public static bool IsAutoUpdateEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppEnabled, true);
     public static bool IsAutoUpdateInBackgroundEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppInBackgroundEnabled, false);
 
-    // Minimal subset of MainWindow's AppSettings needed to read this one flag.
     private sealed class AutoUpdateSettings
     {
         public bool AutoUpdateAppEnabled { get; set; } = true;
         public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     }
-
 
     [SupportedOSPlatform("windows")]
     public static void EnsureAutostartRegistered()
@@ -204,8 +199,6 @@ internal static class UpdateService
         proc?.WaitForExit(5000);
     }
 
-
-    // Downloads the installer to a temp path with progress reporting.
     public static async Task<string> DownloadInstallerAsync(
         UpdateInfo update,
         IProgress<UpdateDownloadProgress>? progress,
@@ -255,7 +248,6 @@ internal static class UpdateService
             : $"{bytes / 1024.0:0} KB";
     }
 
-
     public static void LaunchInstallerAndExit(string installerPath, bool reopenAfterInstall = false)
     {
         if (reopenAfterInstall)
@@ -286,12 +278,10 @@ internal static class UpdateService
                 }
                 catch
                 {
-                    // Fall through to the direct-launch fallback below.
                 }
             }
         }
 
-        // Background-update path (or fallback): launch installer, no restart.
         Process.Start(new ProcessStartInfo
         {
             FileName = installerPath,
@@ -339,7 +329,6 @@ internal static class UpdateService
         return update;
     }
 
-
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -380,7 +369,6 @@ internal sealed class UpdateDialog : Window
 {
     private readonly DialogThemePalette _palette;
 
-    // Resolved from the user's active accent setting, same as MainWindow.
     private readonly Color _accentColor;
     private readonly Color _accentForeground;
 
@@ -644,7 +632,6 @@ internal sealed class UpdateDialog : Window
         }
         catch
         {
-            // Opening the browser is a convenience action; never let it
         }
     }
 }
@@ -657,8 +644,8 @@ internal static class DialogPalette
     public static readonly Color Text = Color.Parse("#F4F4F4");
     public static readonly Color TextMuted = Color.Parse("#A0A0A0");
     public static readonly Color TextDim = Color.Parse("#606060");
-    public static readonly Color TokenBlue = Color.Parse("#9CDCFE");  // source badge
-    public static readonly Color TokenOrange = Color.Parse("#CE9178");  // stack trace
+    public static readonly Color TokenBlue = Color.Parse("#9CDCFE");
+    public static readonly Color TokenOrange = Color.Parse("#CE9178");
 }
 
 internal static class AccentResolver
@@ -687,7 +674,7 @@ internal static class AccentResolver
             "windows" => GetWindowsAccentColor() ?? "#0078D4",
             "custom" => string.IsNullOrWhiteSpace(settings.CustomAccentHex)
                 ? DefaultAccentHex : settings.CustomAccentHex,
-            _ => DefaultAccentHex, // "kodo" (and any unrecognised value)
+            _ => DefaultAccentHex,
         };
     }
 
@@ -800,7 +787,7 @@ internal static class ThemeResolver
         {
             "Light" => LightPalette,
             "Dark" => DarkPalette,
-#pragma warning disable CA1416 // Kodo targets Windows only; System theme check is Windows-only by design.
+#pragma warning disable CA1416
             "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
 #pragma warning restore CA1416
             _ => ResolveExtensionPalette(settings),
@@ -884,7 +871,7 @@ internal static class ThemeResolver
                 return raw != 0;
         }
         catch { /* Registry unavailable */ }
-        return false; // Default to dark.
+        return false;
     }
 
     private static ThemeSettings LoadThemeSettings()
@@ -937,7 +924,6 @@ internal static class PendingUpdateService
 
             if (!UpdateService.IsNewerVersion(record.Version, KodoDiagnostics.AppVersion))
             {
-                // Already on this version or newer - the download is stale.
                 Clear();
                 return null;
             }
@@ -978,7 +964,6 @@ internal sealed class AppUpdateScheduler
     }
     public void Stop() => _timer.Stop();
 
-    // Fires every six hours while enabled; skips while a manual check is in
     private async Task OnTickAsync()
     {
         if (!_isEnabled() || _isManualCheckInProgress())
@@ -993,7 +978,6 @@ internal sealed class AppUpdateScheduler
         }
         catch (Exception ex)
         {
-            // Silent background check - this must never surface as a crash.
             KodoDiagnostics.LogDebug("Periodic app update check failed", ex);
         }
     }

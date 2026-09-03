@@ -180,7 +180,6 @@ public partial class MainWindow
         }
         catch
         {
-            // Tutorial failure must never crash the app.
         }
 
         return Task.CompletedTask;
@@ -715,7 +714,6 @@ public partial class MainWindow
                 }
                 catch
                 {
-                    // Clipboard failures must not crash the error dialog.
                 }
             };
 
@@ -731,7 +729,6 @@ public partial class MainWindow
                 }
                 catch
                 {
-                    // Opening the browser must not crash the warning dialog.
                 }
             };
 

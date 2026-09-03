@@ -16,27 +16,26 @@ using Kodo.Models;
 
 namespace Kodo;
 
-
 public sealed class ConsoleTerminal : Control
 {
     private static readonly Color[] AnsiPalette =
     [
-        Color.FromRgb(12,  12,  12),   // 0  Black
-        Color.FromRgb(197, 15,  31),   // 1  Red
-        Color.FromRgb(19,  161, 14),   // 2  Green
-        Color.FromRgb(193, 156, 0),    // 3  Yellow
-        Color.FromRgb(0,   55,  218),  // 4  Blue
-        Color.FromRgb(136, 23,  152),  // 5  Magenta
-        Color.FromRgb(58,  150, 221),  // 6  Cyan
-        Color.FromRgb(204, 204, 204),  // 7  White
-        Color.FromRgb(118, 118, 118),  // 8  Bright Black
-        Color.FromRgb(231, 72,  86),   // 9  Bright Red
-        Color.FromRgb(22,  198, 12),   // 10 Bright Green
-        Color.FromRgb(249, 241, 165),  // 11 Bright Yellow
-        Color.FromRgb(59,  120, 255),  // 12 Bright Blue
-        Color.FromRgb(180, 0,   158),  // 13 Bright Magenta
-        Color.FromRgb(97,  214, 214),  // 14 Bright Cyan
-        Color.FromRgb(242, 242, 242),  // 15 Bright White
+        Color.FromRgb(12,  12,  12),
+        Color.FromRgb(197, 15,  31),
+        Color.FromRgb(19,  161, 14),
+        Color.FromRgb(193, 156, 0),
+        Color.FromRgb(0,   55,  218),
+        Color.FromRgb(136, 23,  152),
+        Color.FromRgb(58,  150, 221),
+        Color.FromRgb(204, 204, 204),
+        Color.FromRgb(118, 118, 118),
+        Color.FromRgb(231, 72,  86),
+        Color.FromRgb(22,  198, 12),
+        Color.FromRgb(249, 241, 165),
+        Color.FromRgb(59,  120, 255),
+        Color.FromRgb(180, 0,   158),
+        Color.FromRgb(97,  214, 214),
+        Color.FromRgb(242, 242, 242),
     ];
 
     private static readonly Color DefaultFg = Color.FromRgb(204, 204, 204);
@@ -60,7 +59,6 @@ public sealed class ConsoleTerminal : Control
     private Color _fg = DefaultFg, _bg = DefaultBg;
     private bool _bold, _underline, _reverse;
 
-    // Selection, in absolute buffer coordinates (row 0 = oldest scrollback line).
     private static readonly Color SelectionBg = Color.FromArgb(120, 51, 153, 255);
     private bool _selecting;
     private (int Row, int Col)? _selStart;
@@ -104,11 +102,8 @@ public sealed class ConsoleTerminal : Control
         AttachedToVisualTree += (_, _) => Focus();
     }
 
-
-    // Fired when the shell exits, with the process handle from Start().
     public event EventHandler<IntPtr>? SessionExited;
 
-    // Fired when the shell reports a new window title via OSC 0/2.
     public event EventHandler<string>? TitleChanged;
 
     public event EventHandler<string>? WorkingDirectoryChanged;
@@ -129,7 +124,6 @@ public sealed class ConsoleTerminal : Control
         {
             var (cols, rows) = CalcSize();
             _cols = cols; _rows = rows;
-            // Only allocates a fresh grid when no restore is pending.
             if (!suppressOutputUntilRestored)
             {
                 ResizeCells(rows, cols);
@@ -160,7 +154,6 @@ public sealed class ConsoleTerminal : Control
             NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
                 out _hProcess, out _hThread);
 
-            // Suppresses output for 500ms while a restore is pending.
             _suppressOutputUntilTick = suppressOutputUntilRestored
                 ? Environment.TickCount64 + 500
                 : 0;
@@ -232,13 +225,10 @@ public sealed class ConsoleTerminal : Control
         if (seq is not null) SendInput(seq);
     }
 
-    // True while a ConPTY process is running in this control.
     public bool HasLiveProcess => _hPcon != IntPtr.Zero;
 
-    // Process handle from the most recent Start() call; zero if none running.
     public IntPtr CurrentProcessHandle => _hProcess;
 
-    // Captures the screen buffer and cursor state for restoring this
     public TerminalSnapshot SaveSnapshot()
     {
         lock (_lock)
@@ -280,7 +270,6 @@ public sealed class ConsoleTerminal : Control
         InvalidateVisual();
     }
 
-
     protected override void OnKeyDown(KeyEventArgs e)
     {
         if (_searchActive)
@@ -314,7 +303,6 @@ public sealed class ConsoleTerminal : Control
             base.OnKeyDown(e);
             return;
         }
-
 
         var seq = KeyToVt(e.Key, e.KeyModifiers);
         if (seq is not null)
@@ -385,7 +373,6 @@ public sealed class ConsoleTerminal : Control
 
     protected override Size ArrangeOverride(Size final)
     {
-        // Skips resizing the grid while a snapshot restore is pending.
         if (Environment.TickCount64 >= _suppressOutputUntilTick)
         {
             var (cols, rows) = CalcSize(final);
@@ -489,8 +476,8 @@ public sealed class ConsoleTerminal : Control
 
                     var x = (int)Math.Round(c * CellW);
                     var x1 = (int)Math.Round((c + 1) * CellW);
-                    var y = r * CellH;          // CellH is already integral (17.0)
-                    var w = x1 - x;            // actual pixel width for this column
+                    var y = r * CellH;
+                    var w = x1 - x;
                     var rect = new Rect(x, y, w, CellH);
 
                     var atCursor = isCursorVisible && r == _cursorRow && c == _cursorCol;
@@ -583,7 +570,6 @@ public sealed class ConsoleTerminal : Control
         return _cells[liveRow, col];
     }
 
-    // Scroll-position indicator on the right edge.
     private void DrawScrollIndicator(DrawingContext ctx)
     {
         var totalLines = _scrollback.Count + _rows;
@@ -594,7 +580,6 @@ public sealed class ConsoleTerminal : Control
         var brush = new SolidColorBrush(Color.FromArgb(160, 204, 204, 204));
         ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
     }
-
 
     private int TotalAbsRows => _scrollback.Count + _rows;
 
@@ -622,7 +607,6 @@ public sealed class ConsoleTerminal : Control
         if (absRow == sel.r1) return col < sel.c1;
         return true;
     }
-
 
     private string? GetSelectedText()
     {
@@ -673,7 +657,6 @@ public sealed class ConsoleTerminal : Control
         text = text.Replace("\r\n", "\r").Replace("\n", "\r");
         SendInput(_bracketedPasteMode ? $"\x1b[200~{text}\x1b[201~" : text);
     }
-
 
     private void OpenSearch()
     {
@@ -762,11 +745,9 @@ public sealed class ConsoleTerminal : Control
         _scrollOffset = Math.Clamp(_scrollback.Count + targetScreenRow - absRow, 0, _scrollback.Count);
     }
 
-
     private (int cols, int rows) CalcSize(Size? size = null)
     {
         var s = size ?? Bounds.Size;
-        // Uses the same rounding as Render.
         var cols = Math.Max(10, (int)(s.Width / CellW));
         var rows = Math.Max(3, (int)(s.Height / CellH));
         return (cols, rows);
@@ -800,7 +781,6 @@ public sealed class ConsoleTerminal : Control
                 var text = Encoding.UTF8.GetString(buf, 0, n);
                 lock (_lock)
                 {
-                    // Drains the pipe while suppressed, discarding bytes
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
                         foreach (var ch in text) ProcessChar(ch);
                 }
@@ -823,9 +803,9 @@ public sealed class ConsoleTerminal : Control
                     case '\n': LineFeed(); break;
                     case '\b': if (_cursorCol > 0) _cursorCol--; break;
                     case '\t': _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
-                    case '\a': break; // bell - ignore
-                    case '\x0E': break; // SO (shift-out) - ignore, no alternate charset
-                    case '\x0F': break; // SI (shift-in)  - ignore
+                    case '\a': break;
+                    case '\x0E': break;
+                    case '\x0F': break;
                     default:
                         if (ch >= ' ')
                         {
@@ -877,7 +857,7 @@ public sealed class ConsoleTerminal : Control
 
             case ParseState.OscString:
                 if (ch == '\x07' || ch == '\x9C') { HandleOscComplete(); _parseState = ParseState.Ground; }
-                else if (ch == '\x1B') _parseState = ParseState.OscStringEsc; // expect ST's trailing '\'
+                else if (ch == '\x1B') _parseState = ParseState.OscStringEsc;
                 else _oscBuf.Append(ch);
                 break;
 
@@ -942,7 +922,6 @@ public sealed class ConsoleTerminal : Control
             case 'J': EraseDisplay(P0(0)); break;
             case 'K': EraseLine(P0(0)); break;
 
-            // SGR - colours and attributes
             case 'm': ApplySgr(nums); break;
 
             case 'h':
@@ -959,7 +938,6 @@ public sealed class ConsoleTerminal : Control
 
             case '@': InsertChars(P(0)); break;
             case 'P': DeleteChars(P(0)); break;
-            // CSI <n> X erases n cells at the cursor without moving it.
             case 'X': EraseChars(P(0)); break;
 
             case 'S': ScrollUp(P(0)); break;
@@ -1063,11 +1041,11 @@ public sealed class ConsoleTerminal : Control
     {
         switch (mode)
         {
-            case 0: // cursor to end
+            case 0:
                 EraseLine(0);
                 for (var r = _cursorRow + 1; r < _rows; r++) ClearRow(r);
                 break;
-            case 1: // start to cursor
+            case 1:
                 for (var r = 0; r < _cursorRow; r++) ClearRow(r);
                 EraseLine(1);
                 break;
@@ -1086,7 +1064,6 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    // CSI <n> X - blanks n cells from the cursor without moving it.
     private void EraseChars(int n)
     {
         var end = Math.Min(_cursorCol + n, _cols);
@@ -1145,13 +1122,11 @@ public sealed class ConsoleTerminal : Control
 
         return key switch
         {
-            // Arrow keys: plain → CSI A-D; with any modifier → CSI 1;<mod+1> A-D
             Key.Up => mod > 0 ? $"\x1b[1{modSuffix}A" : "\x1b[A",
             Key.Down => mod > 0 ? $"\x1b[1{modSuffix}B" : "\x1b[B",
             Key.Right => mod > 0 ? $"\x1b[1{modSuffix}C" : "\x1b[C",
             Key.Left => mod > 0 ? $"\x1b[1{modSuffix}D" : "\x1b[D",
 
-            // Home/End: unmodified -> SS3 form; modified -> CSI 1;<mod+1> H/F
             Key.Home => mod > 0 ? $"\x1b[1{modSuffix}H" : "\x1bOH",
             Key.End => mod > 0 ? $"\x1b[1{modSuffix}F" : "\x1bOF",
 
@@ -1174,7 +1149,6 @@ public sealed class ConsoleTerminal : Control
             Key.Tab => shift ? "\x1b[Z" : "\t",
             Key.Return => "\r",
             Key.Escape => "\x1b",
-            // Backspace: Ctrl+Backspace → word-erase (^H = 0x08); plain →
             Key.Back => ctrl ? "\x08" : "\x7f",
             _ => null
         };
@@ -1213,11 +1187,11 @@ public sealed class ConsoleTerminal : Control
 
     private static string? AltKeyChar(Key key) => key switch
     {
-        Key.B => "b",   // Alt+B - move word back
-        Key.F => "f",   // Alt+F - move word forward
-        Key.D => "d",   // Alt+D - delete word forward
-        Key.Back => "\x7f", // Alt+Backspace - delete word back (ESC DEL)
-        Key.OemPeriod => ".", // Alt+. - insert last argument
+        Key.B => "b",
+        Key.F => "f",
+        Key.D => "d",
+        Key.Back => "\x7f",
+        Key.OemPeriod => ".",
         _ => null
     };
 
@@ -1253,7 +1227,6 @@ public readonly record struct TermCell(
     bool Bold,
     bool Underline);
 
-// Immutable capture of a terminal's screen buffer, stored per session.
 public sealed class TerminalSnapshot(
     TermCell[,] cells,
     int rows, int cols,
@@ -1348,7 +1321,6 @@ internal static class NativeConPty
     public static void LaunchProcess(StringBuilder cmdLine, string workingDir, IntPtr hPcon,
         out IntPtr hProcess, out IntPtr hThread)
     {
-        // Build a PROC_THREAD_ATTRIBUTE_LIST containing the ConPTY handle
         var attrListSize = IntPtr.Zero;
         InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref attrListSize);
         var attrList = Marshal.AllocHGlobal(attrListSize);
@@ -1372,7 +1344,7 @@ internal static class NativeConPty
                     StartupInfo = new STARTUPINFOW
                     {
                         cb = Marshal.SizeOf<STARTUPINFOEXW>(),
-                        dwFlags = 0 // ConPTY owns stdio via attribute list; STARTF_USESTDHANDLES with null handles breaks stdin
+                        dwFlags = 0
                     },
                     lpAttributeList = attrList
                 };
@@ -1394,7 +1366,6 @@ internal static class NativeConPty
     }
 }
 
-// One selectable shell (PowerShell, cmd, bash, ...) the terminal panel can
 public sealed class TerminalShellOption
 {
     public string Id { get; init; } = string.Empty;
@@ -1433,12 +1404,10 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Enables or disables PSReadLine's predictive IntelliSense
             var predictionCommand = enablePSReadLinePrediction
                 ? "try { Set-PSReadLineOption -PredictionSource HistoryAndPlugin } catch { try { Set-PSReadLineOption -PredictionSource History } catch {} }; "
                 : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
 
-            // Wraps the existing prompt function to also report cwd via OSC 1337.
             const string reportCwdCommand =
                 "if (-not $global:__KodoOrigPrompt) { $global:__KodoOrigPrompt = $function:prompt }; " +
                 "function global:prompt { " +
@@ -1465,7 +1434,6 @@ public static class TerminalShellSupport
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
                     ?? ResolveExecutable("cmd.exe"),
-                // $E is cmd's escape-char macro; $P$G restores the normal
                 "/K prompt $E]1337;CurrentDir=$P\a$P$G");
             AddShell(
                 "bash",
@@ -1473,7 +1441,6 @@ public static class TerminalShellSupport
                 ResolveExecutable("bash.exe",
                     @"C:\Program Files\Git\bin\bash.exe",
                     @"C:\Program Files\Git\usr\bin\bash.exe"),
-                // PROMPT_COMMAND is exported to survive the exec into a
                 $"--login -i -c \"{BashCwdHookCommand}\"");
         }
         else
@@ -1547,7 +1514,6 @@ public static class TerminalShellSupport
 
         var trimmedPath = rawTitle.TrimEnd('\\', '/');
 
-        // If the path looks like a file, use its containing folder name instead.
         if (File.Exists(trimmedPath) || (!Directory.Exists(trimmedPath) && Path.HasExtension(trimmedPath)))
         {
             var parentDir = Path.GetDirectoryName(trimmedPath);

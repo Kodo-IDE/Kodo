@@ -79,7 +79,6 @@ public class ReleaseLinkItem
     public string Url { get; init; } = string.Empty;
 }
 
-// One inline run (bold or normal) within a release-notes paragraph.
 public sealed class FormattedRun
 {
     public string Text { get; init; } = string.Empty;
@@ -89,7 +88,6 @@ public sealed class FormattedRun
 public sealed class FormattedParagraph
 {
     public IReadOnlyList<FormattedRun> Runs { get; init; } = [];
-    // Extra top margin so paragraphs breathe; bullet items get slightly less.
     public Thickness TopMargin { get; init; } = new Thickness(0, 6, 0, 0);
     public string Marker { get; init; } = string.Empty;
     public double MarkerColumnWidth { get; init; }

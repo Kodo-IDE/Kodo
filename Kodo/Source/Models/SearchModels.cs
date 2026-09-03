@@ -73,7 +73,6 @@ internal sealed class SearchIgnoreRules
                 if (negated) line = line[1..];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                // Strip leading slash (anchored to .gitignore directory).
                 if (line[0] is '/' or '\\')
                     line = line[1..];
                 if (string.IsNullOrWhiteSpace(line)) continue;
@@ -122,7 +121,6 @@ internal sealed class SearchIgnoreRules
                 return !negated;
         }
 
-        // User-defined exclude patterns: skip if file matches any.
         if (_excludePatterns.Count > 0)
         {
             var relPath = Path.GetRelativePath(_excludePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
@@ -133,7 +131,6 @@ internal sealed class SearchIgnoreRules
             }
         }
 
-        // User-defined include patterns: skip if file matches NONE.
         if (_includePatterns.Count > 0)
         {
             var relPath2 = Path.GetRelativePath(_includePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
@@ -154,7 +151,6 @@ internal sealed class SearchIgnoreRules
 
     private static bool MatchesAnyPathComponent(string pattern, string componentName)
     {
-        // Pattern without slash - match against a single path component.
         if (!pattern.Contains('/') && !pattern.Contains('\\'))
             return MatchesFileName(pattern, componentName);
 
@@ -168,7 +164,6 @@ internal sealed class SearchIgnoreRules
             return MatchesFileName(pattern, Path.GetFileName(fullPath));
         }
 
-        // Path pattern - match against relative path from the .gitignore root.
         try
         {
             var relative = Path.GetRelativePath(ruleRoot, fullPath)
@@ -292,7 +287,6 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
         public int EndOffset => Offset + Length;
     }
 }
-
 
 internal static class FuzzyMatch
 {

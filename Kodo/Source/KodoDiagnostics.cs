@@ -22,7 +22,6 @@ internal static class KodoDiagnostics
 
     public static bool VerboseLoggingEnabled { get; set; }
 
-
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
     private static readonly object _breadcrumbLock = new();
@@ -71,7 +70,6 @@ internal static class KodoDiagnostics
         }
     }
 
-
     private static string ResolveAppVersion()
     {
         var raw = Assembly.GetExecutingAssembly()
@@ -113,7 +111,6 @@ internal static class KodoDiagnostics
             var winLabel = build >= 22000 ? "Windows 11" : "Windows 10";
             var fullName = string.IsNullOrWhiteSpace(edition) ? winLabel : $"{winLabel} {edition}";
 
-            // e.g. "Windows 11 Pro 24H2 (build 26200)"
             return string.IsNullOrWhiteSpace(displayVer)
                 ? $"{fullName} (build {build})"
                 : $"{fullName} {displayVer} (build {build})";
@@ -123,7 +120,6 @@ internal static class KodoDiagnostics
             return null;
         }
     }
-
 
     public static string LogDirectoryPath =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
@@ -135,7 +131,6 @@ internal static class KodoDiagnostics
     public static string LogFilePath => MainLogFilePath;
 
     public static DateTime UtcNow() => DateTime.UtcNow;
-
 
     public static string BuildDiagnosticPayload(
         string source,
@@ -186,7 +181,6 @@ internal static class KodoDiagnostics
         return redactPaths ? RedactExceptionText(summary.ToString()) : summary.ToString();
     }
 
-
     public static void LogCritical(
         string source,
         Exception exception,
@@ -230,7 +224,6 @@ internal static class KodoDiagnostics
         WritePayloadToDisk(line, MainLogFilePath);
     }
 
-
     public static void WriteDiagnosticLog(
         string source,
         Exception exception,
@@ -238,7 +231,6 @@ internal static class KodoDiagnostics
         string severity,
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating, ParseSeverity(severity), operation);
-
 
     private static void WriteToLog(
         string source,
@@ -369,7 +361,6 @@ internal static class KodoDiagnostics
         }
         catch { /* all attempts exhausted */ }
     }
-
 
     private static string SeverityLabel(KodoSeverity severity) => severity switch
     {

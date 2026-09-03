@@ -49,7 +49,6 @@ public sealed class CompiledSyntaxProfile
 
         if (traits.IsMarkupLike)
         {
-            // Markup: generic tag/attr regex for O(1) highlighting
             rules.Add(new(new Regex(@"(?<=</?|<!)[\p{L}_:-][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "keyword", "#569CD6"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_:-][\p{L}\p{Nd}_:-]*(?:[:.][\p{L}_:-][\p{L}\p{Nd}_:-]*)*(?=\s*=)", RegexOptions.Compiled), "property", "#9CDCFE"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_-][\p{L}\p{Nd}_-]*(?=:[^<>]*\s*=)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
@@ -76,8 +75,6 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(CommonStringPrefixPattern, RegexOptions.Compiled), "string", "#CE9178"));
         }
 
-        // Text between tags uses default foreground; numbers via generic regex
-
         rules.Add(new(new Regex(@"(?<![\p{L}\p{Nd}_])(?:0[xX][0-9A-Fa-f]+|0[bB][01]+|0[oO][0-7]+|\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)(?![\p{L}\p{Nd}_])", RegexOptions.Compiled), "number", "#B5CEA8"));
 
         if (traits.IsCssLike)
@@ -95,7 +92,6 @@ public sealed class CompiledSyntaxProfile
         }
         else
         {
-            // Rule order matters: specific rules must precede the catch-all
             rules.Add(new(new Regex(
                 traits.IsCssLike
                     ? @"(?<![\p{L}\p{Nd}_-])@[\p{L}_-][\p{L}\p{Nd}_-]*(?![\p{L}\p{Nd}_-])"
@@ -110,7 +106,6 @@ public sealed class CompiledSyntaxProfile
             rules.Add(new(new Regex(@"(?<=\b(?:using|import|include|require|use|from)\b\s+(?:[\p{L}_][\p{L}\p{Nd}_./\\]*\s*[./\\]\s*)?)[\p{L}_][\p{L}\p{Nd}_]*(?=\s*(?:;|$))", RegexOptions.Compiled), "namespace", "#4FC1FF"));
             if (isBatch)
             {
-                // Match batch-specific variable expansions precisely.
                 rules.Add(new(new Regex(@"%[0-9*]|%~[a-zA-Z\$]*\d*|%[A-Za-z_][A-Za-z0-9_]*%|![A-Za-z_][A-Za-z0-9_]*!|%%[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled | RegexOptions.IgnoreCase), "variable", "#A0DBFD"));
             }
             else
@@ -145,7 +140,6 @@ public sealed class CompiledSyntaxProfile
         }
         else if (isBatch)
         {
-            // Batch: REM is case-insensitive and :: is also a comment
             singleLineCommentRegex = new Regex(@"(?:(?i)rem|::).*$", RegexOptions.Compiled);
         }
         else
@@ -475,21 +469,19 @@ public sealed class EmbeddedSyntaxProfile
                 mode = EmbeddedSyntaxScanMode.LineComment;
                 activeDelimiter = null;
                 segmentStart = index;
-                index += 1; // :: is 2 chars, loop will increment; we consumed 2
+                index += 1;
                 continue;
             }
 
             if (isBatch && IsBatchEchoStart(text, index))
             {
-                // Reserve the literal echoed text so it is not highlighted
                 var lineEnd = text.IndexOf('\n', index);
                 if (lineEnd < 0) lineEnd = text.Length;
-                else if (lineEnd > 0 && text[lineEnd - 1] == '\r') lineEnd--; // keep \r out
+                else if (lineEnd > 0 && text[lineEnd - 1] == '\r') lineEnd--;
                 var echoPrefixLen = GetBatchEchoPrefixLength(text, index);
                 var contentStart = index + echoPrefixLen;
                 if (contentStart < lineEnd)
                     TryReserveRange(protectedRanges, contentStart, lineEnd);
-                // Skip to end of line
                 index = lineEnd - 1;
                 continue;
             }
@@ -718,11 +710,9 @@ public sealed class EmbeddedSyntaxProfile
 
     private static bool IsBatchEchoStart(string text, int index)
     {
-        // Must be at line start (after optional whitespace) and match
         var lineStart = index;
         while (lineStart > 0 && text[lineStart - 1] != '\n' && text[lineStart - 1] != '\r')
             lineStart--;
-        // check only whitespace between lineStart and index
         for (var i = lineStart; i < index; i++)
             if (!char.IsWhiteSpace(text[i]))
                 return false;
@@ -739,7 +729,6 @@ public sealed class EmbeddedSyntaxProfile
         var after = index + atOffset + 4;
         if (after < text.Length && text[after] is '.' or ':' or '(')
             after++;
-        // ensure next char is whitespace, end, or we still treat as echo
         return true;
     }
 
@@ -747,7 +736,7 @@ public sealed class EmbeddedSyntaxProfile
     {
         var len = 0;
         var atOffset = text[index] == '@' ? 1 : 0;
-        len = atOffset + 4; // echo
+        len = atOffset + 4;
         var after = index + len;
         if (after < text.Length && text[after] is '.' or ':' or '(')
             len++;
@@ -1001,7 +990,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         }
         else if (IsMarkupLikeExtension(extension))
         {
-            // Disable rainbow brackets for markup
             IsEnabled = false;
             _commentLine = extension.CommentLine;
             _commentBlockStart = extension.CommentBlockStart;
@@ -1051,7 +1039,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
-        // Batch: echo lines are literal output – don't rainbow brackets in
         int batchEchoContentStart = -1;
         if (_isBatch)
         {
@@ -1059,7 +1046,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             if (echoMatch.Success)
                 batchEchoContentStart = echoMatch.Length;
             else if (Regex.IsMatch(text, @"^\s*::"))
-                return; // comment line – no brackets
+                return;
             else if (Regex.IsMatch(text.TrimStart(), @"^rem\b", RegexOptions.IgnoreCase))
                 return;
         }
@@ -1192,7 +1179,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     private ParseSnapshot BuildSnapshot(string text)
     {
-        // Fast path: no brackets -> trivial snapshot
         if (text.IndexOfAny(['(', ')', '[', ']', '{', '}']) < 0)
         {
             var emptyLineCount = 1;
@@ -2055,9 +2041,9 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     ];
     private static readonly IBrush[] MarkdownBulletBrushes =
     [
-        Brush.Parse("#4FC1FF"), // blue
-        Brush.Parse("#C586C0"), // magenta
-        Brush.Parse("#FFD700"), // yellow
+        Brush.Parse("#4FC1FF"),
+        Brush.Parse("#C586C0"),
+        Brush.Parse("#FFD700"),
     ];
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -2256,7 +2242,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             MarkRange(protectedRanges, markers.Index, markers.Index + markers.Length);
         }
 
-        // Code spans bind tighter than any inline construct, so they're
         foreach (Match match in InlineCodeRegex.Matches(text))
         {
             if (!TryReserveRange(protectedRanges, match.Index, match.Index + match.Length))
@@ -2319,7 +2304,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             var refIdGroup = match.Groups["refId"];
             if (refIdGroup.Success)
                 ApplyBrush(lineOffset, refIdGroup.Index, refIdGroup.Index + refIdGroup.Length, _stringBrush);
-
 
         }
 
@@ -2491,7 +2475,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
         }
 
-        // Tries to recognise the snippet language, falling back to a flat colour.
         var profile = ResolveInlineEmbeddedProfile(content.Value);
         if (profile is null)
         {
@@ -2530,7 +2513,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return profile;
     }
 
-    // Detects an inline snippet's language and resolves the matching syntax
     private EmbeddedSyntaxProfile? ResolveInlineEmbeddedProfile(string content)
     {
         if (string.IsNullOrWhiteSpace(content) || _inlineLanguageResolver is null)
@@ -2880,7 +2862,6 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             return;
 
         var text = document.GetText(line.Offset, line.Length);
-        // Build snapshot once per edit, not per line
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var state = snapshot.GetLineState(line.LineNumber);
 
@@ -2923,7 +2904,6 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     private HtmlSnapshot BuildSnapshot(string text)
     {
-        // Fast path: skip embedded scan if no blocks
         if (text.IndexOf("<script", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<style", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<x:code", StringComparison.OrdinalIgnoreCase) < 0)
@@ -3199,7 +3179,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"\*{2,3}|_{2,3}", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Italic markers: single * or _ not adjacent to another
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"(?<!\*)\*(?!\*)|(?<!_)_(?!_)", RegexOptions.Compiled),
@@ -3210,7 +3189,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"~~", RegexOptions.Compiled),
                 Color = operatorColor
             });
-            // Link/image opening bracket only - closing ] ) are left as
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"!?\[", RegexOptions.Compiled),
@@ -3221,14 +3199,12 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 Regex = new Regex(@"\|", RegexOptions.Compiled),
                 Color = punctuationColor
             });
-            // Unordered list markers at start of line: - + *
             codeRuleSet.Rules.Add(new HighlightingRule
             {
                 Regex = new Regex(@"(?<=^|\n)[ \t]*[-+*](?=[ \t])", RegexOptions.Compiled),
                 Color = operatorColor
             });
         }
-
 
         var mainRuleSet = new HighlightingRuleSet();
 
@@ -3259,7 +3235,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
             });
         }
 
-        // Single-line comment to end-of-line; $ anchors so the whole
         if (!isMarkdown && !string.IsNullOrEmpty(ext.CommentLine))
         {
             var commentOptions = isBatch ? RegexOptions.IgnoreCase : RegexOptions.None;
@@ -3275,7 +3250,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
             if (isBatch)
             {
-                // Batch also uses :: as a comment (alternative to REM) –
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
                     StartExpression = new Regex(@"::", RegexOptions.Compiled),
@@ -3286,7 +3260,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet = emptyRuleSet
                 });
 
-                // Treat text after echo as literal output, leaving the command
                 mainRuleSet.Spans.Add(new HighlightingSpan
                 {
                     StartExpression = new Regex(@"(?m)^\s*@?echo[\.:\(]?", RegexOptions.Compiled | RegexOptions.IgnoreCase),
@@ -3297,12 +3270,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                     RuleSet = emptyRuleSet
                 });
 
-                // Handle echo. and echo: forms where punctuation is part of
             }
         }
         else if (!isMarkdown && isBatch)
         {
-            // Fallback when CommentLine is empty but we still want :: support
             mainRuleSet.Spans.Add(new HighlightingSpan
             {
                 StartExpression = new Regex(@"::", RegexOptions.Compiled),
@@ -3340,7 +3311,6 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 
         if (ext.DisableSingleQuoteStrings && ext.StringDelimiters.Contains("\""))
         {
-            // Interpolated verbatim strings escape only via doubled quotes
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?:\$@|@\$)""", @"""(?!"")", stringColor, emptyRuleSet, allowEndOfLineFallback: false, isVerbatim: true));
             mainRuleSet.Spans.Add(CreateRegexStringSpan(@"\$""", @"""", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 

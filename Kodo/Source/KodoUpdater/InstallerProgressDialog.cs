@@ -158,7 +158,7 @@ internal static class ThemeResolver
         {
             "Light"  => LightPalette,
             "Dark"   => DarkPalette,
-#pragma warning disable CA1416 // Kodo targets Windows only; System theme check is Windows-only by design.
+#pragma warning disable CA1416
             "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
 #pragma warning restore CA1416
             _        => ResolveExtensionPalette(settings),

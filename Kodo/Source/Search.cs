@@ -142,11 +142,9 @@ public partial class MainWindow
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
         if (_currentFolderPath is null) return;
 
-        // Compute relative path from project root to the selected item.
         var relativePath = GetRelativePathOrName(_currentFolderPath, item.FullPath);
         if (!string.IsNullOrEmpty(relativePath))
         {
-            // If it's a directory, append /** glob; if it's a file, just
             SearchIncludeFilter = item.IsDirectory
                 ? relativePath.Replace('\\', '/') + "/**"
                 : relativePath.Replace('\\', '/');
@@ -616,7 +614,6 @@ public partial class MainWindow
     {
         _searchDisplayItems.Clear();
 
-        // In FindInFile mode or FileByName mode: no grouping, flat list.
         if (_searchMode != SearchMode.ProjectSearch)
         {
             foreach (var item in _searchResults)
@@ -686,7 +683,7 @@ public partial class MainWindow
                                + 8
                                + group.RelativePath.Length * charWidth11
                                + 8
-                               + (group.MatchCount.ToString().Length + 9) * charWidth11; // "N matches"
+                               + (group.MatchCount.ToString().Length + 9) * charWidth11;
             if (groupWidth > maxWidth) maxWidth = groupWidth;
         }
 
@@ -774,7 +771,6 @@ public partial class MainWindow
         }
         catch (OperationCanceledException)
         {
-            // A newer search superseded this one (or the panel closed
             IsSearchBusy = false;
             return;
         }
@@ -817,7 +813,6 @@ public partial class MainWindow
 
     private (List<string> Files, SearchIgnoreRules Rules) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
     {
-        // Invalidate cache if root or filters changed.
         var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         if (_searchFileCache is { } cached &&
             string.Equals(cached.Rules.RootSnapshot, normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
@@ -1035,15 +1030,14 @@ public partial class MainWindow
             var read = fs.Read(bom);
 
             if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-                return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);   // UTF-8 BOM
+                return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
             if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
-                return System.Text.Encoding.Unicode;          // UTF-16 LE
+                return System.Text.Encoding.Unicode;
             if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
-                return System.Text.Encoding.BigEndianUnicode; // UTF-16 BE
+                return System.Text.Encoding.BigEndianUnicode;
             if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
                 return System.Text.Encoding.UTF32;
 
-            // No BOM - default to UTF-8 without BOM
             return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         }
         catch
@@ -1091,7 +1085,6 @@ public partial class MainWindow
         if (matches.Count == 0)
             return;
 
-        // Use actual match lengths (not FindText.Length) for capacity - regex matches vary
         var avgMatchLen = matches.Count > 0 ? (int)matches.Average(m => m.Length) : 0;
         var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - avgMatchLen));
         var pos = 0;
@@ -1148,7 +1141,6 @@ public partial class MainWindow
         EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
         EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
 
-        // Track which match we're on for the "X of Y" status display.
         if (_findMatchOffsets.Count > 0)
         {
             _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
@@ -1236,7 +1228,6 @@ public partial class MainWindow
     {
         if (EditorTextBox?.Document is null) return;
 
-        // Snapshot UI state for background work; avoid O(N) on UI thread for large docs
         var snapshotText = EditorTextBox.Document.Text;
         var snapshotFind = FindText;
         var snapshotMode = IsFindInFileSearchMode;
@@ -1255,7 +1246,6 @@ public partial class MainWindow
             return;
         }
 
-        // Large document: offload regex/string scan to thread pool to keep typing smooth
         if (snapshotText.Length > 80000)
         {
             var findCopy = snapshotFind;
@@ -1274,7 +1264,6 @@ public partial class MainWindow
             }).ContinueWith(t =>
             {
                 if (t.IsFaulted || t.IsCanceled) return;
-                // Discard stale results if find text or document changed while background ran
                 if (FindText != findCopy) return;
                 if (versionCopy != _insightDocVersion) return;
                 Avalonia.Threading.Dispatcher.UIThread.Post(() =>

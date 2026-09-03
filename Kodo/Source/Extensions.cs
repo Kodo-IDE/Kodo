@@ -114,7 +114,6 @@ public partial class MainWindow
 
                 await Dispatcher.UIThread.InvokeAsync(async () =>
                 {
-                    // Update status bar so the panel itself reflects the stall.
                     ExtensionsStatusText = "Marketplace refresh is taking too long. Check your connection.";
                     await ShowWarningDialogAsync("Marketplace refresh", timeoutEx);
                 });
@@ -126,12 +125,10 @@ public partial class MainWindow
         {
             var extensionScan = await Task.Run(ScanInstalledExtensions);
             await InvokeExtensionUiAsync(() => ApplyLoadedExtensionsResult(extensionScan));
-            // Parallelize independent marketplace index fetches (was sequential, ~3x network latency)
             await Task.WhenAll(
                 LoadMarketplaceExtensionsAsync(),
                 LoadPluginsIndexAsync(),
                 LoadCompilerExtensionsAsync(forceResolve: force));
-            // Flush deferred UI syncs into a single dispatcher frame -> 1 flicker instead of 4
             if (_deferredExtensionUiActions.Count > 0)
             {
                 var actions = _deferredExtensionUiActions.ToList();
@@ -170,7 +167,6 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            // Ensure batch state is cleared on failure
             _deferredExtensionUiActions.Clear();
             _extensionFilterBatchDepth = 0;
             _pendingExtensionFilterNotify = false;
@@ -179,7 +175,6 @@ public partial class MainWindow
         }
         finally
         {
-            // Safety: clear batch if try block didn't decrement (e.g. early throw before decrement)
             if (_extensionFilterBatchDepth > 0)
             {
                 _deferredExtensionUiActions.Clear();
@@ -200,7 +195,6 @@ public partial class MainWindow
     {
         var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(scan), DispatcherPriority.Background);
-        // Give renderer a chance to pump one frame after extensions + theme
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
@@ -266,7 +260,6 @@ public partial class MainWindow
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
 
-        // Decode icons off UI thread in batches
         var pngExtensions = new List<LoadedExtension>();
         foreach (var ext in LoadedExtensions)
         {
@@ -291,7 +284,6 @@ public partial class MainWindow
 
         if (pngExtensions.Count > 0)
         {
-            // Offload PNG Skia decode off UI thread, assign at Background
             _ = Task.Run(async () =>
             {
                 const int batchSize = 4;
@@ -321,7 +313,6 @@ public partial class MainWindow
                     {
                         foreach (var (ext, bmp) in decoded)
                         {
-                            // Prefer GitHub Index icon if it has already been applied; do not overwrite with embedded.
                             if (ext.HasIcon)
                             {
                                 bmp?.Dispose();
@@ -336,7 +327,6 @@ public partial class MainWindow
                         }
                     }, DispatcherPriority.Background);
 
-                    // Yield to renderer between batches
                     await Task.Delay(16);
                 }
             });
@@ -401,7 +391,6 @@ public partial class MainWindow
         var themePath = Path.Combine(folderPath, "theme.json");
         if (!File.Exists(themePath))
         {
-            // No theme file - yield the extension as-is (language
             yield return baseExt;
             yield break;
         }
@@ -618,7 +607,6 @@ public partial class MainWindow
             if (sniffed is null)
                 return null;
 
-            // Content-sniffed match: use the base extension as-is (no
             return sniffed;
         }
 
@@ -691,15 +679,14 @@ public partial class MainWindow
                 var path = string.Join("/", segments, 4, segments.Length - 4);
                 return $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}";
             }
-            return url; // non-blob or third-party github.com URL - leave alone
+            return url;
         }
 
         if (uri.Host.Equals("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase))
         {
-            return url; // already raw - leave alone, never downgrade to api.github.com
+            return url;
         }
 
-        // Already a Contents API URL or a non-GitHub third-party URL -
         return url;
     }
 
@@ -817,7 +804,6 @@ public partial class MainWindow
         return Path.Combine(ExtensionsFolderPath, fileName);
     }
 
-
     private void DisposeExtensionFolderWatcher(FileSystemWatcher? watcher)
     {
         if (watcher is null)
@@ -911,7 +897,6 @@ public partial class MainWindow
     {
         yield return ExtensionsFolderPath;
 
-        // Also search the project source tree when running from the build
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
         var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
         if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
@@ -1107,7 +1092,7 @@ public partial class MainWindow
         if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
         {
             if (string.IsNullOrEmpty(alias))
-                return null; // explicit plain-text marker - no syntax profile
+                return null;
             normalized = alias;
         }
 

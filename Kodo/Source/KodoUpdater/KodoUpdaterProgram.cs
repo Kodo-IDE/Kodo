@@ -51,7 +51,6 @@ internal static class Program
                 }
                 catch
                 {
-                    // Never let one bad cycle kill the whole resident process.
                 }
 
                 await Task.Delay(PollInterval);
@@ -135,7 +134,6 @@ internal static class Program
         }
         catch
         {
-            // Best-effort - on failure Kodo just doesn't restart this cycle.
         }
         await Task.CompletedTask;
     }
@@ -174,7 +172,6 @@ internal static class Program
                     appLifetime = lt;
                     dialog.Show();
                 });
-                // Blocks here until appLifetime.Shutdown() is called from
             });
             if (OperatingSystem.IsWindows())
             {
@@ -186,7 +183,6 @@ internal static class Program
             var progressCts = new CancellationTokenSource();
             var pollTask = Task.Run(() => PollInstallProgressAsync(dialog, progressFilePath, progressCts.Token));
 
-            // Run the installer on a background thread while the UI pumps
             await Task.Run(() =>
             {
                 try
@@ -260,7 +256,6 @@ internal static class Program
             .WithInterFont()
             .LogToTrace();
 
-
     private static string RelaunchSentinelPath =>
         Path.Combine(Path.GetTempPath(), "Kodo-Update", "relaunch.json");
 
@@ -283,7 +278,6 @@ internal static class Program
         }
         catch
         {
-            // Best-effort - if this fails, Kodo just doesn't restart after
         }
     }
 
@@ -310,7 +304,6 @@ internal static class Program
         {
         }
     }
-
 
     private static async Task RunOneCycleAsync()
     {
@@ -346,7 +339,7 @@ internal static class Program
         }
         catch
         {
-            return; // Network hiccup - try again next cycle.
+            return;
         }
 
         if (settings.AutoUpdateAppInBackgroundEnabled && !IsKodoRunning())
@@ -415,7 +408,6 @@ internal static class Program
             return true;
         }
     }
-
 
     private static HttpClient CreateHttpClient()
     {

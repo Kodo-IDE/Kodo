@@ -68,7 +68,6 @@ internal static class WelcomeMessageBuilder
         if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
             return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
 
-        // Navratri / Sharad Navratri (day after new moon of Ashwin)
         if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
             return new("Navratri", "Happy Navratri!");
 
@@ -167,7 +166,6 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-
     private static double MoonPhaseJdn(double k)
     {
         double T = k / 1236.85;
@@ -246,7 +244,7 @@ internal static class WelcomeMessageBuilder
         for (int offset = -2; offset <= 3; offset++)
         {
             double k = Math.Floor(kApprox) + offset;
-            double jdn = MoonPhaseJdn(k) + 8.0 / 24.0; // shift to UTC+8
+            double jdn = MoonPhaseJdn(k) + 8.0 / 24.0;
             var dt = JdnToDateTime(jdn);
             if (dt.Year == year && ((dt.Month == 1 && dt.Day >= 20) || (dt.Month == 2 && dt.Day <= 20)))
                 return dt;
@@ -300,7 +298,6 @@ internal static class WelcomeMessageBuilder
         return null;
     }
 
-
     private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
 
     private static int HebrewElapsedDays(int hy)
@@ -331,14 +328,13 @@ internal static class WelcomeMessageBuilder
         int yd = HebrewYearDays(hy);
         if (hm == 2) return yd % 10 == 5 ? 30 : 29;
         if (hm == 3) return yd % 10 == 3 ? 29 : 30;
-        // Adar (6) is 30 days in leap years, 29 in regular
         if (hm == 6) return IsHebrewLeapYear(hy) ? 30 : 29;
         return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
     }
 
     private static DateTime HebrewToGregorian(int hy, int hm, int hd)
     {
-        const int HebrewEpoch = 347997; // JDN of 1 Tishrei AM 1
+        const int HebrewEpoch = 347997;
         int elapsed = HebrewElapsedDays(hy);
         int doy = hd;
         for (int mo = 1; mo < hm; mo++)
@@ -372,7 +368,6 @@ internal static class WelcomeMessageBuilder
 
     private static DateTime? HanukkahDate(int year)
     {
-        // 25 Kislev of Hebrew year ~(Gregorian + 3761) falls in Nov/Dec.
         int hy0 = ApproxHebrewYear(year) + 1;
         for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
         {
@@ -384,17 +379,15 @@ internal static class WelcomeMessageBuilder
 
     private static DateTime? DiwaliDate(int year)
     {
-        // Kartika new moon is always in the second half of October or early
         var oct = MoonInMonth(year, 10, fullMoon: false);
         if (oct != null && oct.Value.Day >= 14) return oct;
         var nov = MoonInMonth(year, 11, fullMoon: false);
         if (nov != null && nov.Value.Day <= 15) return nov;
-        return oct; // Fallback
+        return oct;
     }
 
     private static DateTime? NavratriDate(int year)
     {
-        // Ashwin new moon falls in Sep (day >= 15) or early Oct (day <= 10).
         var sep = MoonInMonth(year, 9, fullMoon: false);
         if (sep != null && sep.Value.Day >= 15) return sep.Value.AddDays(1);
         var oct = MoonInMonth(year, 10, fullMoon: false);
@@ -421,7 +414,6 @@ internal static class WelcomeMessageBuilder
         bool isKodoBirthday,
         int kodoBirthdayAge)
     {
-        // Resolve effective local time, honouring the user's timezone (handles "+05:30", "-03:30", "5.5", etc.)
         DateTime now;
         if (!string.IsNullOrWhiteSpace(userTimezoneOffset))
         {
@@ -463,7 +455,7 @@ internal static class WelcomeMessageBuilder
         var tod = TimeOfDay(now.Hour);
         var country = userCountry;
         var dow = now.DayOfWeek;
-        var dayName = now.ToString("dddd");   // e.g. "Monday"
+        var dayName = now.ToString("dddd");
 
         var messages = new List<string>();
 
@@ -472,7 +464,6 @@ internal static class WelcomeMessageBuilder
             for (var i = 0; i < times; i++) messages.Add(text);
         }
 
-        // Prepend the user's name to a subset of greetings so it's not
         var name = userName;
         if (!string.IsNullOrWhiteSpace(name))
         {
@@ -495,7 +486,6 @@ internal static class WelcomeMessageBuilder
         if (holiday?.Greeting is not null)
             Add(holiday.Greeting, 8);
 
-        // Kodo birthday (April 18): weighted x5 so it dominates the pool
         if (isKodoBirthday)
         {
             var age = kodoBirthdayAge;
@@ -510,14 +500,12 @@ internal static class WelcomeMessageBuilder
         if (now.Minute == 11 && (now.Hour == 11 || now.Hour == 23))
             Add("11:11! Make a wish!", 8);
 
-        // Friday the 13th: easter egg weighted x8, same pattern as the
         if (dow == DayOfWeek.Friday && now.Day == 13)
         {
             Add("Friday the 13th... may your builds stay bug-free! 🖤", 8);
             messages.Add("Unlucky for some, lucky for your commit history?");
         }
 
-        // Leap Day: Feb 29 only exists every 4 years, so it gets its own
         if (now.Month == 2 && now.Day == 29)
             Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.", 8);
 
