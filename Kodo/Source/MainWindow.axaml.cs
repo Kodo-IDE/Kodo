@@ -7045,25 +7045,74 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var clearedAny = false;
         var failures = new List<string>();
 
-        var kodoDir = KodoDiagnostics.LogDirectoryPath;
-        if (Directory.Exists(kodoDir))
+        void TryDeleteFile(string path)
         {
-            foreach (var file in Directory.GetFiles(kodoDir, "*", SearchOption.AllDirectories))
+            try
             {
-                var fileName = Path.GetFileName(file);
-                try
+                if (File.Exists(path))
                 {
-                    // Preserve log files and settings - those are handled
-                    if (fileName == "kodo.log" || fileName == "crash.log" || fileName == "kodosettings.json") continue;
-                    File.Delete(file);
+                    File.Delete(path);
                     clearedAny = true;
                 }
-                catch (Exception ex)
-                {
-                    failures.Add($"{fileName} ({ex.Message})");
-                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{Path.GetFileName(path)} ({ex.Message})");
             }
         }
+
+        void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                    clearedAny = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{Path.GetFileName(path)} ({ex.Message})");
+            }
+        }
+
+        // Explicit allowlist: only known cache locations.
+        // Logs (kodo.log/crash.log), settings (kodosettings.json) and
+        // user extensions (%APPDATA%/Kodo/Extensions, *.kox) are never touched.
+
+        // Local app data caches (network/index caches) - all safe to delete:
+        // - news-cache.json / whats-new-cache.json: re-fetched from GitHub, UI shows empty until next fetch (Source/MainWindow.axaml.cs:90,94)
+        // - marketplace/compiler/plugins index + .etag: conditional GET caches; miss triggers fresh 200 fetch (Source/Marketplace.cs:33, Source/KodoCompilers.cs:81)
+        // - resolved-compiler-versions.json is intentionally NOT cleared: it holds last-known resolved versions (Source/KodoCompilers.cs:887)
+        //   deleting offline would degrade compiler versions to fallback/"Checking…" until next network resolve
+        TryDeleteFile(NewsCachePath);
+        TryDeleteFile(LatestReleaseCachePath);
+        TryDeleteFile(MarketplaceIndexCachePath);
+        TryDeleteFile(MarketplaceIndexETagPath);
+        TryDeleteFile(CompilerIndexCachePath);
+        TryDeleteFile(CompilerIndexETagPath);
+        TryDeleteFile(PluginsIndexCachePath);
+        TryDeleteFile(PluginsIndexETagPath);
+
+        // Disk caches (directories) - IconCache is safe to wipe (re-fetched on demand).
+        // PluginCache is intentionally excluded: active plugins are shadow-copied from
+        // %APPDATA%/Kodo/PluginCache/* (Source/KodoPlugins.cs:66,114-117) via
+        // KodoPluginLoadContext.Load/LoadShadowCopy (Source/KodoPlugins.cs:30-41).
+        // Deleting the live folder would break lazy dependency resolution and
+        // any reload until ExtractKoxPluginFiles (Source/Extensions.cs:448) re-extracts on next restart.
+        TryDeleteDirectory(IconDiskCacheDir);
+
+        // Reset in-memory ETag state so next fetch does not send If-None-Match
+        // and hit 304 while disk cache file is missing (Source/Marketplace.cs:45, Source/KodoCompilers.cs:90).
+        _marketplaceIndexETag = null;
+        _compilerIndexETag = null;
+        _pluginsIndexETag = null;
+
+        // Keep in-memory icon cache consistent with disk purge - will be lazily re-fetched
+        // via GetIconDiskCachePath/TryReadIconFromDiskCache (Source/Marketplace.cs:887,904).
+        _marketplaceIconBytesCache.Clear();
+        _marketplaceSvgCache.Clear();
 
         DeveloperOptionsStatusText = failures.Count > 0
             ? $"Couldn't clear: {string.Join(", ", failures)}"
