@@ -30,6 +30,7 @@ internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 internal static class UpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest";
+    private const string ReleasesListUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases";
     private const string ReleaseNotesUrl = "https://github.com/Kodo-IDE/Kodo/releases";
     private const string UserAgent = "Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)";
 
@@ -47,6 +48,15 @@ internal static class UpdateService
     }
 
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
+    {
+        var fromLatest = await TryCheckLatestAsync(ct).ConfigureAwait(false);
+        if (fromLatest is not null)
+            return fromLatest;
+
+        return await TryCheckReleasesListAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async Task<UpdateInfo?> TryCheckLatestAsync(CancellationToken ct)
     {
         try
         {
@@ -79,6 +89,51 @@ internal static class UpdateService
                 AssetDownloadUrl: asset.BrowserDownloadUrl,
                 AssetName: asset.Name,
                 AssetSizeBytes: asset.Size);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<UpdateInfo?> TryCheckReleasesListAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var response = await Http.GetAsync(ReleasesListUrl, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            var releases = await JsonSerializer.DeserializeAsync<GitHubRelease[]>(stream, JsonOptions, ct)
+                .ConfigureAwait(false);
+
+            if (releases is null || releases.Length == 0)
+                return null;
+
+            foreach (var release in releases)
+            {
+                if (release is null || string.IsNullOrWhiteSpace(release.TagName))
+                    continue;
+                if (release.Draft || release.Prerelease)
+                    continue;
+                if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion))
+                    continue;
+
+                var asset = release.Assets?.FirstOrDefault(a =>
+                    a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+                if (asset is null)
+                    continue;
+
+                return new UpdateInfo(
+                    Version: release.TagName,
+                    ReleaseNotesUrl: release.HtmlUrl ?? ReleaseNotesUrl,
+                    AssetDownloadUrl: asset.BrowserDownloadUrl,
+                    AssetName: asset.Name,
+                    AssetSizeBytes: asset.Size);
+            }
+
+            return null;
         }
         catch
         {

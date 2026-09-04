@@ -5846,7 +5846,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e)
+    private void OpenReleasesPageButton_OnClick(object? sender, RoutedEventArgs e) =>
+        OpenUrl(ReleasesPageUrl);
+
+    private async void DownloadUpdateButton_OnClick(object? sender, RoutedEventArgs e)
     {
         var button = sender as Button;
         var originalContent = button?.Content;
@@ -5861,7 +5864,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
             if (update is null)
-                OpenUrl(ReleasesPageUrl);
+            {
+                // Fall back to the specific release page when we already know a newer
+                // version exists (from What's New), otherwise the generic releases list.
+                if (HasLatestRelease && IsNewerVersionAvailable && !string.IsNullOrWhiteSpace(LatestReleaseUrl))
+                    OpenUrl(LatestReleaseUrl);
+                else
+                    OpenUrl(ReleasesPageUrl);
+            }
         }
         finally
         {

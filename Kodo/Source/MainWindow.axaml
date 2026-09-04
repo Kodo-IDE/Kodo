@@ -1265,7 +1265,7 @@
                         </StackPanel>
                         <Button Grid.Column="1"
                                 Classes="chrome"
-                                Click="OpenReleasesPageButton_OnClick"
+                                Click="DownloadUpdateButton_OnClick"
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0"
                                 ToolTip.Tip="Download the latest version of Kodo"
@@ -6063,7 +6063,7 @@
                                         </StackPanel>
                                         <Button Grid.Column="1"
                                                 Classes="chrome"
-                                                Click="OpenReleasesPageButton_OnClick"
+                                                Click="DownloadUpdateButton_OnClick"
                                                 VerticalAlignment="Center"
                                                 ToolTip.Tip="Download the latest version of Kodo"
                                                 Content="Download" />

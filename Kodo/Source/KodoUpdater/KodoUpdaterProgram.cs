@@ -419,6 +419,13 @@ internal static class Program
 
     private static async Task<UpdateInfo?> CheckForUpdateAsync(string localVersion)
     {
+        var fromLatest = await TryCheckLatestAsync(localVersion).ConfigureAwait(false);
+        if (fromLatest is not null) return fromLatest;
+        return await TryCheckReleasesListAsync(localVersion).ConfigureAwait(false);
+    }
+
+    private static async Task<UpdateInfo?> TryCheckLatestAsync(string localVersion)
+    {
         try
         {
             using var response = await Http.GetAsync("https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest");
@@ -438,9 +445,37 @@ internal static class Program
         }
         catch
         {
+            return null;
         }
+    }
 
-        return null;
+    private static async Task<UpdateInfo?> TryCheckReleasesListAsync(string localVersion)
+    {
+        try
+        {
+            using var response = await Http.GetAsync("https://api.github.com/repos/Kodo-IDE/Kodo/releases");
+            if (!response.IsSuccessStatusCode) return null;
+
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            var releases = await JsonSerializer.DeserializeAsync<GitHubRelease[]>(stream, JsonOptions);
+            if (releases is null || releases.Length == 0) return null;
+
+            foreach (var release in releases)
+            {
+                if (release is null || string.IsNullOrWhiteSpace(release.TagName)) continue;
+                if (release.Draft || release.Prerelease) continue;
+                if (!IsNewerVersion(release.TagName, localVersion)) continue;
+                var asset = release.Assets?.FirstOrDefault(a =>
+                    a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+                if (asset is null) continue;
+                return new UpdateInfo(release.TagName, asset.BrowserDownloadUrl, asset.Name);
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static bool IsNewerVersion(string remote, string local)
