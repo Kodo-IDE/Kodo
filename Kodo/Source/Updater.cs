@@ -715,7 +715,7 @@ internal static class AccentResolver
                 return $"#{r:X2}{g:X2}{b:X2}";
             }
         }
-        catch { /* Registry unavailable */ }
+        catch { }
         return null;
     }
 
@@ -870,7 +870,7 @@ internal static class ThemeResolver
             if (key?.GetValue("AppsUseLightTheme") is int raw)
                 return raw != 0;
         }
-        catch { /* Registry unavailable */ }
+        catch { }
         return false;
     }
 
@@ -938,7 +938,7 @@ internal static class PendingUpdateService
 
     public static void Clear()
     {
-        try { File.Delete(FilePath); } catch { /* best-effort cleanup */ }
+        try { File.Delete(FilePath); } catch { }
     }
 
     private sealed record PendingUpdateRecord(string Version, string InstallerPath, DateTime DownloadedAtUtc);

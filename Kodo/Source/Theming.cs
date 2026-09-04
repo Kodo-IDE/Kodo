@@ -280,7 +280,7 @@ public partial class MainWindow
         var confirmed = false;
 
         var initialColor = Color.Parse("#8C00FF");
-        try { initialColor = Color.Parse(_customAccentHex); } catch { /* use fallback */ }
+        try { initialColor = Color.Parse(_customAccentHex); } catch { }
 
         RgbToHsv(initialColor.R, initialColor.G, initialColor.B,
             out var hue, out var sat, out var val);
@@ -455,7 +455,7 @@ public partial class MainWindow
                 Canvas.SetTop(svCursor, (1 - val) * svHeight - 6);
                 RefreshSvSquare();
             }
-            catch { /* wait for valid hex */ }
+            catch { }
         };
 
         hexInput.KeyDown += (_, ke) =>
@@ -587,7 +587,7 @@ public partial class MainWindow
             ApplyAccentOverride();
             SaveSettings();
         }
-        catch { /* invalid hex - ignore */ }
+        catch { }
     }
 
     private static void RgbToHsv(byte r, byte g, byte b,

@@ -45,7 +45,7 @@ internal static class KodoDiagnostics
                     Directory.CreateDirectory(LogDirectoryPath);
                     File.WriteAllText(path, string.Empty);
                 }
-                catch { /* best effort - fall through to normal append/create-on-write */ }
+                catch { }
             }
 
             initialized = true;
@@ -212,7 +212,7 @@ internal static class KodoDiagnostics
             else
                 WriteVerboseTrace(message);
         }
-        catch { /* never throw from a debug trace */ }
+        catch { }
     }
 
     private static void WriteVerboseTrace(string message)
@@ -285,7 +285,7 @@ internal static class KodoDiagnostics
 
             WritePayloadToDisk(sb.ToString(), CrashLogFilePath);
         }
-        catch { /* crash log generation must never itself crash */ }
+        catch { }
     }
 
     private static string RedactExceptionText(string text)
@@ -342,7 +342,7 @@ internal static class KodoDiagnostics
             File.AppendAllText(primaryPath, payload + Environment.NewLine);
             return;
         }
-        catch { /* fall through */ }
+        catch { }
 
         try
         {
@@ -350,7 +350,7 @@ internal static class KodoDiagnostics
             File.AppendAllText(tempLog, payload + Environment.NewLine);
             return;
         }
-        catch { /* fall through */ }
+        catch { }
 
         try
         {
@@ -359,7 +359,7 @@ internal static class KodoDiagnostics
                 Path.GetFileName(primaryPath));
             File.AppendAllText(desktopLog, payload + Environment.NewLine);
         }
-        catch { /* all attempts exhausted */ }
+        catch { }
     }
 
     private static string SeverityLabel(KodoSeverity severity) => severity switch

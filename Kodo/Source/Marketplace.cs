@@ -138,6 +138,35 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug("Rate limit hit with no usable marketplace cache; marketplace will appear empty with lettered fallback.");
                 }
             }
+            else if (IsOfflineException(ex))
+            {
+                var diskJson = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallbackExtensions = new List<MarketplaceExtension>();
+                    var fallbackErrors = new List<string>();
+                    await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, fallbackExtensions, fallbackErrors)).ConfigureAwait(false);
+                    if (fallbackExtensions.Count > 0)
+                    {
+                        marketplaceExtensions.Clear();
+                        marketplaceExtensions.AddRange(fallbackExtensions);
+                        extensionLoadErrors.Clear();
+                        extensionLoadErrors.AddRange(fallbackErrors);
+                        extensionLoadErrors.Add($"Marketplace offline; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Marketplace index fetch offline; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        extensionLoadErrors.Add($"Marketplace offline and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    extensionLoadErrors.Add($"Marketplace offline and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
+                await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
+                // offline: use cache
+            }
             else
             {
                 extensionLoadErrors.Add($"Failed to load remote marketplace index: {DescribeFetchFailure(ex)}");
@@ -168,8 +197,19 @@ public partial class MainWindow
             RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
             NotifyExtensionFiltersChanged();
         });
-        _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
-        _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
+        if (_extensionFilterBatchDepth > 0)
+        {
+            _deferredExtensionUiActions.Add(() =>
+            {
+                _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
+                _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
+            });
+        }
+        else
+        {
+            _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
+            _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
+        }
     }
 
     private async Task LoadPluginsIndexAsync()
@@ -277,6 +317,33 @@ public partial class MainWindow
                     pluginLoadErrors.Add($"Plugins index fetch rate-limited and no cached copy available: {DescribeFetchFailure(ex)}");
                 }
             }
+            else if (IsOfflineException(ex))
+            {
+                var diskJson = await Task.Run(() => TryReadPluginsIndexCache()).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallback = new List<MarketplaceExtension>();
+                    var fallbackErrors = new List<string>();
+                    await Task.Run(() => ParseAndApplyMarketplaceIndex(diskJson, fallback, fallbackErrors)).ConfigureAwait(false);
+                    if (fallback.Count > 0)
+                    {
+                        pluginExtensions.Clear();
+                        pluginExtensions.AddRange(fallback);
+                        pluginLoadErrors.Clear();
+                        pluginLoadErrors.AddRange(fallbackErrors);
+                        pluginLoadErrors.Add($"Plugins index offline; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Plugins index fetch offline; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        pluginLoadErrors.Add($"Plugins index offline and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    pluginLoadErrors.Add($"Plugins index offline and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
+            }
             else
             {
                 pluginLoadErrors.Add($"Failed to load remote plugins index: {DescribeFetchFailure(ex)}");
@@ -309,8 +376,19 @@ public partial class MainWindow
                 .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         });
 
-        _ = FetchMarketplaceIconsAsync(pluginIconMap);
-        _ = FetchInstalledExtensionIconsAsync(pluginIconMap);
+        if (_extensionFilterBatchDepth > 0)
+        {
+            _deferredExtensionUiActions.Add(() =>
+            {
+                _ = FetchMarketplaceIconsAsync(pluginIconMap);
+                _ = FetchInstalledExtensionIconsAsync(pluginIconMap);
+            });
+        }
+        else
+        {
+            _ = FetchMarketplaceIconsAsync(pluginIconMap);
+            _ = FetchInstalledExtensionIconsAsync(pluginIconMap);
+        }
     }
 
     private string? TryReadPluginsIndexCache()
@@ -363,7 +441,16 @@ public partial class MainWindow
         }
 
         if (pending.Count == 0)
+        {
+            if (marketplaceIconMap.Count > 0)
+            {
+                var count = 0;
+                try { count = await Dispatcher.UIThread.InvokeAsync(() => LoadedExtensions.Count, DispatcherPriority.Background); } catch { }
+                if (count == 0)
+                    Dispatcher.UIThread.Post(() => { _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap); }, DispatcherPriority.Background);
+            }
             return;
+        }
 
         var successful = new System.Collections.Concurrent.ConcurrentBag<(LoadedExtension ext, IconResult icon)>();
         var needsEmbeddedFallback = new System.Collections.Concurrent.ConcurrentBag<LoadedExtension>();
@@ -508,7 +595,13 @@ public partial class MainWindow
             .ToList();
 
         if (pendingEntries.Count == 0)
+        {
+            if (marketplaceIconMap.Count > 0 && snapshot.Count == 0 && entries.Count == 0)
+            {
+                Dispatcher.UIThread.Post(() => { _ = FetchMarketplaceIconsAsync(marketplaceIconMap, targetCollection); }, DispatcherPriority.Background);
+            }
             return;
+        }
 
         var iconFailures = 0;
         var iconAttempts = 0;

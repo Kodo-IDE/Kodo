@@ -209,7 +209,7 @@ internal static class Program
                 });
             });
 
-            try { await pollTask; } catch { /* cancelled */ }
+            try { await pollTask; } catch { }
             staThread.Join();
         }
         catch
@@ -318,7 +318,7 @@ internal static class Program
             if (!IsNewerVersion(pending.Version, localVersion))
             {
                 PendingUpdate.Clear();
-                try { File.Delete(pending.InstallerPath); } catch { /* best-effort cleanup */ }
+                try { File.Delete(pending.InstallerPath); } catch { }
             }
             else
             {
@@ -556,7 +556,7 @@ internal static class PendingUpdate
 
     public static void Clear()
     {
-        try { File.Delete(FilePath); } catch { /* ignore */ }
+        try { File.Delete(FilePath); } catch { }
     }
 }
 

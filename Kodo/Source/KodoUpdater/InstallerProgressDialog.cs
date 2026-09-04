@@ -241,7 +241,7 @@ internal static class ThemeResolver
             if (key?.GetValue("AppsUseLightTheme") is int raw)
                 return raw != 0;
         }
-        catch { /* Registry unavailable */ }
+        catch { }
         return false;
     }
 
@@ -339,7 +339,7 @@ internal static class AccentResolver
                 return $"#{r:X2}{g:X2}{b:X2}";
             }
         }
-        catch { /* Registry unavailable */ }
+        catch { }
         return null;
     }
 

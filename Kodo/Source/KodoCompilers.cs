@@ -172,6 +172,29 @@ public partial class MainWindow
                     loadErrors.Add($"Compiler index fetch rate-limited and no cached copy available: {DescribeFetchFailure(ex)}");
                 }
             }
+            else if (IsOfflineException(ex))
+            {
+                var diskJson = await Task.Run(() => TryReadCacheFile(CompilerIndexCachePath)).ConfigureAwait(false);
+                if (diskJson is not null)
+                {
+                    var fallback = await Task.Run(() => ParseCompilerIndexEntries(diskJson, new List<string>())).ConfigureAwait(false);
+                    if (fallback.Count > 0)
+                    {
+                        compilerEntries = fallback;
+                        loadErrors.Clear();
+                        loadErrors.Add($"Compiler index offline; using cached copy: {DescribeFetchFailure(ex)}");
+                        KodoDiagnostics.LogDebug("Compiler index fetch offline; using disk cache.", ex);
+                    }
+                    else
+                    {
+                        loadErrors.Add($"Compiler index offline and cached copy was empty: {DescribeFetchFailure(ex)}");
+                    }
+                }
+                else
+                {
+                    loadErrors.Add($"Compiler index offline and no cached copy available: {DescribeFetchFailure(ex)}");
+                }
+            }
             else
             {
                 loadErrors.Add($"Compiler index fetch failed: {DescribeFetchFailure(ex)}");
@@ -210,7 +233,17 @@ public partial class MainWindow
 
             RefreshManualCompilerExtensions();
         });
-        _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
+        if (_extensionFilterBatchDepth > 0)
+        {
+            _deferredExtensionUiActions.Add(() =>
+            {
+                _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
+            });
+        }
+        else
+        {
+            _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
+        }
         _ = RefreshCompilerResolutionsAsync(compilerEntries, compilerExtensions, effectiveForceResolve);
     }
 
@@ -227,7 +260,7 @@ public partial class MainWindow
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, contents, System.Text.Encoding.UTF8);
         }
-        catch { /* best-effort disk cache - ignore write failures */ }
+        catch { }
     }
 
     private static T? ReadJsonCache<T>(string path, string logName) where T : class
@@ -1201,7 +1234,7 @@ public partial class MainWindow
                     else
                         await Task.Delay(TimeSpan.FromSeconds(3));
                 }
-                catch { /* user may have cancelled */ }
+                catch { }
 
                 await Task.Delay(TimeSpan.FromSeconds(1));
                 bashPath = msysRoots.Select(r => Path.Combine(r, @"usr\bin\bash.exe")).FirstOrDefault(File.Exists);
@@ -1705,10 +1738,10 @@ public partial class MainWindow
                             compilerName.Contains(displayName, StringComparison.OrdinalIgnoreCase))
                             return uninstallString;
                     }
-                    catch { /* Unreadable entry - skip it */ }
+                    catch { }
                 }
             }
-            catch { /* Registry unavailable */ }
+            catch { }
         }
 
         return null;

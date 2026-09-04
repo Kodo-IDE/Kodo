@@ -80,7 +80,7 @@ internal sealed class SearchIgnoreRules
                 _rules.Add((line, rootDir, negated));
             }
         }
-        catch { /* unreadable .gitignore - skip */ }
+        catch { }
     }
 
     public bool ShouldSkipDirectory(string dirPath)

@@ -39,10 +39,45 @@ public partial class MainWindow
     private static bool IsGitHubRateLimitException(Exception exception) =>
         exception is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
 
-    private static string DescribeFetchFailure(Exception exception) =>
-        IsGitHubRateLimitException(exception)
-            ? "GitHub's API rate limit was hit. Wait a few minutes, then try again."
-            : exception.Message;
+    private static bool IsOfflineException(Exception exception)
+    {
+        if (!HasActiveInternetConnection())
+            return true;
+        if (exception is AggregateException agg)
+        {
+            foreach (var inner in agg.InnerExceptions)
+                if (IsOfflineException(inner))
+                    return true;
+        }
+        var current = exception;
+        while (current is not null)
+        {
+            if (current is System.Net.Sockets.SocketException)
+                return true;
+            if (current is HttpRequestException hre && hre.InnerException is System.Net.Sockets.SocketException)
+                return true;
+            if (current is HttpRequestException hre2 && hre2.InnerException is not null && IsOfflineException(hre2.InnerException))
+                return true;
+            if (current.Message.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("Name or service not known", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("Network is unreachable", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("No internet", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("Unable to resolve", StringComparison.OrdinalIgnoreCase) ||
+                current.Message.Contains("raw.githubusercontent.com", StringComparison.OrdinalIgnoreCase) && current.Message.Contains("host", StringComparison.OrdinalIgnoreCase))
+                return true;
+            current = current.InnerException;
+        }
+        return false;
+    }
+
+    private static string DescribeFetchFailure(Exception exception)
+    {
+        if (IsGitHubRateLimitException(exception))
+            return "GitHub's API rate limit was hit. Wait a few minutes, then try again.";
+        if (IsOfflineException(exception))
+            return "No internet connection. Marketplace is offline - using cached data if available.";
+        return exception.Message;
+    }
 
     private async Task CutEditorSelectionAsync()
     {
@@ -452,6 +487,20 @@ public partial class MainWindow
 
         var source = isCritical ? "MainWindow.Warning.Critical" : "MainWindow.Warning";
         KodoDiagnostics.LogWarning(source, exception, operation: context);
+
+        // offline: suppress modal, use banner
+        if (!isCritical && IsOfflineException(exception) &&
+            (context.Contains("Marketplace", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("Plugins", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("Compiler", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("News", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("Announcements", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("Latest release", StringComparison.OrdinalIgnoreCase) ||
+             context.Contains("Icon fetch", StringComparison.OrdinalIgnoreCase)))
+        {
+            KodoDiagnostics.LogDebug($"Suppressed offline warning dialog for '{context}' - using banner/cached data.", exception);
+            return;
+        }
 
         if (ShouldSuppressWarningDialog(context, exception))
         {

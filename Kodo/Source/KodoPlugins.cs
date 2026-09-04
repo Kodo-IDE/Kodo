@@ -86,7 +86,7 @@ public partial class MainWindow
         foreach (var dir in Directory.EnumerateDirectories(PluginCacheFolderPath, $"{prefix}*"))
         {
             try { Directory.Delete(dir, recursive: true); }
-            catch { /* best effort */ }
+            catch { }
         }
     }
 
@@ -142,7 +142,7 @@ public partial class MainWindow
             ExtensionLoadErrors.Add($"Plugin '{ext.Name}' failed to load: {ex.Message}");
             foreach (var instance in instances)
             {
-                try { instance.OnUnload(); } catch { /* best effort */ }
+                try { instance.OnUnload(); } catch { }
             }
             loadContext.Unload();
         }

@@ -170,8 +170,20 @@ public partial class MainWindow
             _deferredExtensionUiActions.Clear();
             _extensionFilterBatchDepth = 0;
             _pendingExtensionFilterNotify = false;
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Couldn't refresh extensions. Check your connection and try again.");
-            await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync("Marketplace fetch", ex));
+            if (IsOfflineException(ex))
+            {
+                KodoDiagnostics.LogDebug("Marketplace refresh offline - suppressing modal, using banner.", ex);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ExtensionsStatusText = "Marketplace is offline. Using cached extensions if available.";
+                    RefreshMarketplaceConnectivityState("Marketplace fetch", ex);
+                });
+            }
+            else
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Couldn't refresh extensions. Check your connection and try again.");
+                await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync("Marketplace fetch", ex));
+            }
         }
         finally
         {
@@ -268,7 +280,7 @@ public partial class MainWindow
                 if (IsSvgContent(ext.IconBytes))
                 {
                     try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
-                    catch { /* malformed SVG - leave icon absent */ }
+                    catch { }
                     var oldImg = ext.IconImage;
                     ext.IconImage = null;
                     oldImg?.Dispose();

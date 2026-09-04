@@ -803,7 +803,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var ev2 = edType.GetEvent("SelectionChanged");
             if (ev2 != null) ev2.AddEventHandler(EditorTextBox, new EventHandler((s, e) => QueueRefreshState()));
         }
-        catch { /* best-effort */ }
+        catch { }
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
         Activated += (_, _) => QueueInsightRefresh();
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
@@ -4195,7 +4195,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             selLines = lineCountFromOffsets;
                         }
                     }
-                    catch { /* fallback to text count */ }
+                    catch { }
 
                     string selText;
                     if (selLines > 1)
@@ -4421,7 +4421,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _discordRpcClient.ClearPresence();
             _discordRpcClient.Dispose();
         }
-        catch { /* Ignore cleanup failures. */ }
+        catch { }
         finally
         {
             _discordRpcClient = null;
@@ -4440,7 +4440,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _discordRpcClient.Dispose();
         }
-        catch { /* Ignore reconnect cleanup failures. */ }
+        catch { }
         finally
         {
             _discordRpcClient = null;
@@ -6636,7 +6636,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 });
                 Environment.Exit(0);
             }
-            catch { /* best effort */ }
+            catch { }
         }
     }
 

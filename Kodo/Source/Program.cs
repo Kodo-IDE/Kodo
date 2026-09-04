@@ -88,7 +88,7 @@ internal static class SingleInstance
             _mutex?.ReleaseMutex();
             _mutex?.Dispose();
         }
-        catch { /* best effort on shutdown */ }
+        catch { }
     }
 
     public static void StartListening(Action<string?> onActivationRequested)
