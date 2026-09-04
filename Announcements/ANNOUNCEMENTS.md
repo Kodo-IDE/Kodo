@@ -51,3 +51,8 @@ Enjoy a reworked UI, compiler and plugin support, a reworked editor experience, 
 > August 31, 2026
 A lot of bugs from the initial v2.0.0 release have been fixed. Please make sure you're running v2.0.2 as v2.0.1 has dev artifacts still mistakenly added to it.
 ---
+
+## v2.0.3 is here!
+> September 3, 2026
+More bugs from the initial v2.0.0 release, including Marketplace bugs and the misfunctioning Clear Cache button have been fixed. 
+---
