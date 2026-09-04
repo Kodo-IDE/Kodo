@@ -1,4 +1,4 @@
-<!-- Licensed under GPL-v3.0 -->
+﻿<!-- Licensed under GPL-v3.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -7,8 +7,8 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
-    <Version>2.0.3-DEV</Version>
-    <InformationalVersion>v2.0.3-DEV</InformationalVersion>
+    <Version>2.0.3</Version>
+    <InformationalVersion>v2.0.3</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
