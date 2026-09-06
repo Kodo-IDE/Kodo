@@ -1333,7 +1333,129 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                
+                <Border Grid.Row="0"
+                        IsVisible="{Binding !IsHomePageVisible}"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="18,12">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Border Width="28"
+                                    Height="28"
+                                    CornerRadius="8"
+                                    ClipToBounds="True">
+                                <Image Source="avares://Kodo/Assets/kodo-logo.png"
+                                       Stretch="UniformToFill" />
+                            </Border>
+
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Kodo" />
+                                <TextBlock FontSize="12"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="{Binding FileSummaryText}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsEditorTabsVisible}">
+                            
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="{Binding SaveTooltip}"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveButton_OnClick"
+                                    Content="Save" />
+
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="{Binding SaveAsTooltip}"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveAsButton_OnClick"
+                                    Content="Save As" />
+
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="Save All"
+                                    IsEnabled="{Binding HasMultipleOpenEditors}"
+                                    Click="ToolbarSaveAllButton_OnClick"
+                                    Content="Save All" />
+                        </StackPanel>
+
+                        <Border Grid.Column="2"
+                                Width="1"
+                                Height="20"
+                                Background="{Binding SurfaceBorderBrush}"
+                                Margin="8,0"
+                                VerticalAlignment="Center"
+                                IsVisible="{Binding IsEditorTabsVisible}" />
+
+                        <StackPanel Grid.Column="3"
+                                    Orientation="Horizontal"
+                                    Spacing="12"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsEditorTabsVisible}">
+                            
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="RunButton_OnClick">
+                                        <TextBlock Text="Run" LineHeight="16"/>
+                                    </Button>
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="RunMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildButton_OnClick">
+                                        <TextBlock Text="Build" LineHeight="16"/>
+                                    </Button>
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <Button Classes="compilericon"
+                                    IsVisible="{Binding IsCompilerIconVisible}"
+                                    ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                    Click="CompilerIconButton_OnClick">
+                                <Panel>
+                                    <Image Source="{Binding ActiveCompilerExtension.IconImage}"
+                                           Width="22"
+                                           Height="22"
+                                           Stretch="Uniform"
+                                           IsHitTestVisible="False"
+                                           IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                    <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
+                                             Width="22"
+                                             Height="22"
+                                             IsHitTestVisible="False"
+                                             IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </Panel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
 
                 <Border Grid.Row="1"
                         Background="{Binding TopBarBrush}"
