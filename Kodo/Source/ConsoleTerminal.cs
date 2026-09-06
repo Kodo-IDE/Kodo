@@ -1,5 +1,6 @@
 // Licensed under GPL-v3.0
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -15,6 +16,16 @@ using Avalonia.Threading;
 using Kodo.Models;
 
 namespace Kodo;
+
+internal static class BrushCache
+{
+    private static readonly ConcurrentDictionary<uint, SolidColorBrush> _cache = new();
+    public static SolidColorBrush Get(Color c)
+    {
+        var key = ((uint)c.A << 24) | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B;
+        return _cache.GetOrAdd(key, _ => new SolidColorBrush(c));
+    }
+}
 
 public sealed class ConsoleTerminal : Control
 {
@@ -96,10 +107,21 @@ public sealed class ConsoleTerminal : Control
         ClipToBounds = true;
 
         _blinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
-        _blinkTimer.Tick += (_, _) => { _cursorBlinkOn = !_cursorBlinkOn; InvalidateVisual(); };
+        _blinkTimer.Tick += (_, _) =>
+        {
+            // Stop blink when not visible or no live process to save CPU (win #6)
+            if (!IsVisible || !HasLiveProcess || _scrollOffset != 0) return;
+            _cursorBlinkOn = !_cursorBlinkOn;
+            InvalidateVisual();
+        };
         _blinkTimer.Start();
 
-        AttachedToVisualTree += (_, _) => Focus();
+        AttachedToVisualTree += (_, _) =>
+        {
+            Focus();
+            if (HasLiveProcess) _blinkTimer.Start();
+        };
+        DetachedFromVisualTree += (_, _) => _blinkTimer.Stop();
     }
 
     public event EventHandler<IntPtr>? SessionExited;
@@ -504,7 +526,7 @@ public sealed class ConsoleTerminal : Control
                            : selected ? SelectionBg
                            : (cell.Bg ?? DefaultBg);
                     if (bg != DefaultBg)
-                        ctx.FillRectangle(new SolidColorBrush(bg), rect);
+                        ctx.FillRectangle(BrushCache.Get(bg), rect);
 
                     if (cell.Char != '\0' && cell.Char != ' ')
                     {
@@ -517,7 +539,7 @@ public sealed class ConsoleTerminal : Control
                             FlowDirection.LeftToRight,
                             typeface,
                             FontSize,
-                            new SolidColorBrush(fg));
+                            BrushCache.Get(fg));
 
                         ctx.DrawText(ft, new Point(x, y));
                     }
@@ -525,7 +547,7 @@ public sealed class ConsoleTerminal : Control
                     if (cell.Underline)
                     {
                         var fg = cell.Fg ?? DefaultFg;
-                        ctx.DrawLine(new Pen(new SolidColorBrush(fg)),
+                        ctx.DrawLine(new Pen(BrushCache.Get(fg)),
                             new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                     }
                 }

@@ -6,6 +6,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
 using System.Globalization;
@@ -402,16 +403,10 @@ public partial class MainWindow
 
     private static async Task<string> ReadLargeFileAsync(string path, System.Text.Encoding encoding)
     {
-        var sb = new StringBuilder();
-        const int chunkSize = 65536;
-        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var buffer = new byte[chunkSize];
-        int bytesRead;
-        while ((bytesRead = await fs.ReadAsync(buffer.AsMemory())) > 0)
-        {
-            sb.Append(encoding.GetString(buffer, 0, bytesRead));
-        }
-        return sb.ToString();
+        // Use StreamReader with Decoder to handle multi-byte splits correctly + avoid LOH string per chunk
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
+        using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: false);
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 
     private async Task OpenFolderAsync()
@@ -446,7 +441,8 @@ public partial class MainWindow
             var watcher = new FileSystemWatcher(folderPath)
             {
                 IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                InternalBufferSize = 64 * 1024,
             };
 
             watcher.Created += ProjectFolderWatcher_OnChanged;
@@ -878,6 +874,25 @@ public partial class MainWindow
         }
     }
 
+    private static async Task CopyDirectoryRecursiveAsync(string sourceDirectory, string destinationDirectory, CancellationToken ct = default)
+    {
+        Directory.CreateDirectory(destinationDirectory);
+        foreach (var file in Directory.GetFiles(sourceDirectory))
+        {
+            ct.ThrowIfCancellationRequested();
+            var destinationFile = Path.Combine(destinationDirectory, Path.GetFileName(file));
+            await using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            await using var dst = new FileStream(destinationFile, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
+            await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+        }
+        foreach (var directory in Directory.GetDirectories(sourceDirectory))
+        {
+            ct.ThrowIfCancellationRequested();
+            var destinationChild = Path.Combine(destinationDirectory, Path.GetFileName(directory));
+            await CopyDirectoryRecursiveAsync(directory, destinationChild, ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task OpenPathInSystemExplorer(string path, bool selectItem)
     {
         try
@@ -1260,9 +1275,9 @@ public partial class MainWindow
         {
             var duplicatePath = CreateUniqueSiblingPath(item.FullPath, item.IsDirectory);
             if (item.IsDirectory)
-                CopyDirectoryRecursive(item.FullPath, duplicatePath);
+                await Task.Run(() => CopyDirectoryRecursiveAsync(item.FullPath, duplicatePath)).ConfigureAwait(false);
             else
-                File.Copy(item.FullPath, duplicatePath, overwrite: false);
+                await Task.Run(() => File.Copy(item.FullPath, duplicatePath, overwrite: false)).ConfigureAwait(false);
 
             await RefreshExplorerTreeAsync();
         }
@@ -1299,7 +1314,7 @@ public partial class MainWindow
                 return;
 
             if (item.IsDirectory)
-                Directory.Delete(item.FullPath, recursive: true);
+                await Task.Run(() => Directory.Delete(item.FullPath, recursive: true)).ConfigureAwait(false);
             else
                 File.Delete(item.FullPath);
 
@@ -1354,9 +1369,9 @@ public partial class MainWindow
             else
             {
                 if (_clipboardItemIsDirectory)
-                    CopyDirectoryRecursive(_clipboardItemPath, destPath);
+                    await Task.Run(() => CopyDirectoryRecursiveAsync(_clipboardItemPath, destPath)).ConfigureAwait(false);
                 else
-                    File.Copy(_clipboardItemPath, destPath, overwrite: false);
+                    await Task.Run(() => File.Copy(_clipboardItemPath, destPath, overwrite: false)).ConfigureAwait(false);
             }
 
             await RefreshExplorerTreeAsync();

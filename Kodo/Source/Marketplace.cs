@@ -28,6 +28,33 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
+        // Cache-first: show cached index instantly without blocking on network (win #7)
+        var cachedEarly = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
+        if (cachedEarly is not null)
+        {
+            var earlyParsed = new List<MarketplaceExtension>();
+            var earlyErrors = new List<string>();
+            await Task.Run(() => ParseAndApplyMarketplaceIndex(cachedEarly, earlyParsed, earlyErrors)).ConfigureAwait(false);
+            if (earlyParsed.Count > 0)
+            {
+                marketplaceExtensions.AddRange(earlyParsed);
+                extensionLoadErrors.AddRange(earlyErrors);
+                await InvokeExtensionUiAsync(() =>
+                {
+                    var combined = earlyParsed.Where(e => !string.Equals(e.Type, "plugin", StringComparison.OrdinalIgnoreCase)).Concat(_pluginsIndexEntries).ToList();
+                    SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined);
+                    NotifyExtensionFiltersChanged();
+                });
+                // Defer icon fetch lazily on background, only for visible entries
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                    var map = earlyParsed.Where(e => !string.IsNullOrWhiteSpace(e.IconUrl)).GroupBy(e => e.Id, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
+                    await Dispatcher.UIThread.InvokeAsync(() => { _ = FetchMarketplaceIconsAsync(map); }, DispatcherPriority.Background);
+                });
+            }
+        }
+
         _marketplaceIndexETag ??= TryReadMarketplaceIndexETag();
         var rateLimitEncountered = false;
 

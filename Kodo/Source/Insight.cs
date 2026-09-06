@@ -83,30 +83,21 @@ public sealed class InsightSuggestion : ICompletionData
     private static readonly Geometry FunctionIconGeometry = Geometry.Parse(
         "M16.6582 9.28638C18.098 10.1862 18.8178 10.6361 19.0647 11.2122C19.2803 11.7152 19.2803 12.2847 19.0647 12.7878C18.8178 13.3638 18.098 13.8137 16.6582 14.7136L9.896 18.94C8.29805 19.9387 7.49907 20.4381 6.83973 20.385C6.26501 20.3388 5.73818 20.0469 5.3944 19.584C5 19.053 5 18.1108 5 16.2264V7.77357C5 5.88919 5 4.94701 5.3944 4.41598C5.73818 3.9531 6.26501 3.66111 6.83973 3.6149C7.49907 3.5619 8.29805 4.06126 9.896 5.05998L16.6582 9.28638Z");
 
+    // Sliders (two tracks + knobs) — distinct from hexagon/cube
     private static readonly Geometry PropertyIconGeometry = Geometry.Parse(
-        "M2.46148 12.8001C2.29321 12.5087 2.20908 12.3629 2.17615 12.208C2.14701 12.0709 2.14701 11.9293 2.17615 11.7922C2.20908 11.6373 2.29321 11.4915 2.46148 11.2001L6.53772 4.13984C6.70598 3.8484 6.79011 3.70268 6.90782 3.5967C7.01196 3.50293 7.13465 3.43209 7.26793 3.38879C7.41856 3.33984 7.58683 3.33984 7.92336 3.33984H16.0758C16.4124 3.33984 16.5806 3.33984 16.7313 3.38879C16.8645 3.43209 16.9872 3.50293 17.0914 3.5967C17.2091 3.70268 17.2932 3.8484 17.4615 4.13984L21.5377 11.2001C21.706 11.4915 21.7901 11.6373 21.823 11.7922C21.8522 11.9293 21.8522 12.0709 21.823 12.208C21.7901 12.3629 21.706 12.5087 21.5377 12.8001L17.4615 19.8604C17.2932 20.1518 17.2091 20.2975 17.0914 20.4035C16.9872 20.4973 16.8645 20.5681 16.7313 20.6114C16.5806 20.6604 16.4124 20.6604 16.0758 20.6604H7.92336C7.58683 20.6604 7.41856 20.6604 7.26793 20.6114C7.13465 20.5681 7.01196 20.4973 6.90782 20.4035C6.79011 20.2975 6.70598 20.1518 6.53772 19.8604L2.46148 12.8001Z");
+        "M3 8 H19 M3 16 H19 M6 5.5 H10 V10.5 H6 Z M14 13.5 H18 V18.5 H14 Z");
 
+    // T inside hexagon — distinct from sliders
     private static readonly Geometry TypeIconGeometry = Geometry.Parse(
-        "M0 12L6 1.60769H18L24 12L18 22.3923H6L0 12Z");
+        "M0 12L6 1.6H18L24 12L18 22.4H6L0 12Z M9 8 H15 V10 H13 V16 H11 V10 H9 Z");
 
+    // Stacked layers (3 offset squares) — distinct from single shapes
     private static readonly Geometry NamespaceIconGeometry = Geometry.Parse(
-        "M108,36H48A12,12,0,0,0,36,48v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V48A12,12,0,0,0,108,36ZM96,96H60V60H96Z" +
-        "M208,36H148a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V48A12,12,0,0,0,208,36ZM196,96H160V60h36Z" +
-        "M108,136H48a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V148A12,12,0,0,0,108,136ZM96,196H60V160H96Z" +
-        "M208,136H148a12,12,0,0,0-12,12v60a12,12,0,0,0,12,12h60a12,12,0,0,0,12-12V148A12,12,0,0,0,208,136Zm-12,60H160V160h36Z");
+        "M4 10 H14 V20 H4 Z M7 7 H17 V17 H15 V9 H7 Z M10 4 H20 V14 H10 Z");
 
+    // Hash # — distinct from tag/triangle/cube
     private static readonly Geometry KeywordIconGeometry = Geometry.Parse(
-        "M12 10.2308L3.08495 7.02346M12 10.2308L20.9178 7.03406M12 10.2308V20.8791" +
-        "M5.13498 18.5771L10.935 20.6242C11.3297 20.7635 11.527 20.8331 11.7294 20.8608" +
-        "C11.909 20.8853 12.091 20.8853 12.2706 20.8608C12.473 20.8331 12.6703 20.7635 13.065 20.6242" +
-        "L18.865 18.5771C19.6337 18.3058 20.018 18.1702 20.3018 17.9269C20.5523 17.7121 20.7459 17.4386 20.8651 17.1308" +
-        "C21 16.7823 21 16.3747 21 15.5595V8.44058C21 7.62542 21 7.21785 20.8651 6.86935" +
-        "C20.7459 6.56155 20.5523 6.28804 20.3018 6.0732C20.018 5.82996 19.6337 5.69431 18.865 5.42301" +
-        "L13.065 3.37595C12.6703 3.23665 12.473 3.167 12.2706 3.13936C12.091 3.11484 11.909 3.11484 11.7294 3.13936" +
-        "C11.527 3.167 11.3297 3.23665 10.935 3.37595L5.13498 5.42301C4.36629 5.69431 3.98195 5.82996 3.69824 6.0732" +
-        "C3.44766 6.28804 3.25414 6.56155 3.13495 6.86935C3 7.21785 3 7.62542 3 8.44058V15.5595" +
-        "C3 16.3747 3 16.7823 3.13495 17.1308C3.25414 17.4386 3.44766 17.7121 3.69824 17.9269" +
-        "C3.98195 18.1702 4.36629 18.3058 5.13498 18.5771Z");
+        "M9 4 L11 20 M13 4 L15 20 M4 9 H20 M4 15 H20");
 
     private Control BuildContentVisual()
     {
@@ -129,20 +120,37 @@ public sealed class InsightSuggestion : ICompletionData
             Background = GlyphBrushes[Kind],
             BorderBrush = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)),
             BorderThickness = new Thickness(1),
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Child = new Path
+            Child = new Grid
             {
-                Data = iconGeometry,
-                Stretch = Stretch.Uniform,
-                Width = 11,
-                Height = 11,
-                Fill = Brushes.White,
-                Stroke = Brushes.White,
-                StrokeThickness = 1.25,
-                StrokeLineCap = PenLineCap.Round,
-                StrokeJoin = PenLineJoin.Round,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                Children =
+                {
+                    new Viewbox
+                    {
+                        Width = 12,
+                        Height = 12,
+                        Stretch = Stretch.Uniform,
+                        StretchDirection = StretchDirection.Both,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Child = new Path
+                        {
+                            Data = iconGeometry,
+                            Stretch = Stretch.Uniform,
+                            Fill = Brushes.White,
+                            Stroke = Brushes.White,
+                            StrokeThickness = 0.9,
+                            StrokeLineCap = PenLineCap.Round,
+                            StrokeJoin = PenLineJoin.Round,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center,
+                        },
+                    },
+                },
             },
         };
 
@@ -556,33 +564,57 @@ public sealed class InsightEngine
         return new string(masked);
     }
 
+    private static readonly Dictionary<string, (DateTime mtime, string? masked)> _folderMaskCache = new(StringComparer.OrdinalIgnoreCase);
     private static string? BuildFolderMaskedText(string folderPath, string currentFilePath, LoadedExtension? ext)
     {
         try
         {
-            var currentExt = System.IO.Path.GetExtension(currentFilePath);
-            var files = System.IO.Directory.EnumerateFiles(folderPath, "*", System.IO.SearchOption.AllDirectories)
+            // Cache folder masked text per folder mtime to avoid re-reading 400 files every 750ms (win #4)
+            try
+            {
+                var folderMtime = global::System.IO.Directory.GetLastWriteTimeUtc(folderPath);
+                var cacheKey = folderPath + "|" + global::System.IO.Path.GetExtension(currentFilePath);
+                lock (_folderMaskCache)
+                {
+                    if (_folderMaskCache.TryGetValue(cacheKey, out var cached) && cached.mtime == folderMtime && cached.masked is not null)
+                        return cached.masked;
+                }
+                var result = BuildFolderMaskedTextCore(folderPath, currentFilePath, ext);
+                lock (_folderMaskCache) _folderMaskCache[cacheKey] = (folderMtime, result);
+                return result;
+            }
+            catch { }
+            return BuildFolderMaskedTextCore(folderPath, currentFilePath, ext);
+        }
+        catch { return null; }
+    }
+    private static string? BuildFolderMaskedTextCore(string folderPath, string currentFilePath, LoadedExtension? ext)
+    {
+        try
+        {
+            var currentExt = global::System.IO.Path.GetExtension(currentFilePath);
+            var files = global::System.IO.Directory.EnumerateFiles(folderPath, "*", new global::System.IO.EnumerationOptions { IgnoreInaccessible = true, RecurseSubdirectories = true, AttributesToSkip = global::System.IO.FileAttributes.Hidden | global::System.IO.FileAttributes.System })
                 .Where(f => !f.Equals(currentFilePath, StringComparison.OrdinalIgnoreCase))
                 .Where(f => string.IsNullOrWhiteSpace(currentExt) || System.IO.Path.GetExtension(f).Equals(currentExt, StringComparison.OrdinalIgnoreCase))
                 .Where(f =>
                 {
                     var lower = f.ToLowerInvariant();
-                    return !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}.git{System.IO.Path.DirectorySeparatorChar}") &&
-                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}bin{System.IO.Path.DirectorySeparatorChar}") &&
-                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}obj{System.IO.Path.DirectorySeparatorChar}") &&
-                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}node_modules{System.IO.Path.DirectorySeparatorChar}") &&
-                           !lower.Contains($"{System.IO.Path.DirectorySeparatorChar}.vs{System.IO.Path.DirectorySeparatorChar}");
+                    return !lower.Contains("/.git/") && !lower.Contains("\\.git\\") &&
+                           !lower.Contains("/bin/") && !lower.Contains("\\bin\\") &&
+                           !lower.Contains("/obj/") && !lower.Contains("\\obj\\") &&
+                           !lower.Contains("/node_modules/") && !lower.Contains("\\node_modules\\") &&
+                           !lower.Contains("/.vs/") && !lower.Contains("\\.vs\\");
                 })
-                .Take(400);
+                .Take(20);
 
-            var sb = new System.Text.StringBuilder();
+            var sb = new global::System.Text.StringBuilder();
             foreach (var f in files)
             {
                 try
                 {
-                    var info = new System.IO.FileInfo(f);
+                    var info = new global::System.IO.FileInfo(f);
                     if (info.Length > 1_500_000) continue;
-                    var text = System.IO.File.ReadAllText(f);
+                    var text = global::System.IO.File.ReadAllText(f);
                     if (text.IndexOf('\0') >= 0) continue;
                     var masked = BuildMaskedDocument(text, ext);
                     sb.AppendLine(masked);

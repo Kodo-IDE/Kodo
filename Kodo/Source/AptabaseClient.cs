@@ -1,11 +1,13 @@
 // Licensed under GPL-v3.0
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Kodo;
@@ -25,10 +27,14 @@ internal sealed record AptabaseEvent(
 
 internal static class AptabaseClient
 {
-    private static readonly HttpClient _client = new();
+    private static readonly HttpClient _client = new() { Timeout = TimeSpan.FromSeconds(10) };
     private static string? _appKey;
     private static string? _sessionId;
-    private static readonly Queue<(string eventName, string? message)> _eventQueue = new();
+    private static readonly ConcurrentQueue<(string eventName, string? message)> _eventQueue = new();
+    private static readonly SemaphoreSlim _flushGate = new(1, 1);
+    private static Timer? _flushTimer;
+    private const int BatchSize = 50;
+    private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(30);
 
     private static AptabaseSystemProps? _systemProps;
 
@@ -58,7 +64,9 @@ internal static class AptabaseClient
 
         if (!enabled)
         {
-            _eventQueue.Clear();
+            while (_eventQueue.TryDequeue(out _)) { }
+            _flushTimer?.Dispose();
+            _flushTimer = null;
             return;
         }
 
@@ -212,7 +220,16 @@ internal static class AptabaseClient
             _eventQueue.Enqueue((eventName, SanitizeMessage(message)));
             Console.WriteLine($"[Aptabase] Queued event: {eventName}");
 
-            _ = FlushAsync();
+            // Debounced batch flush: flush every 30s or 50 events, coalesced via gate (win #9)
+            if (_eventQueue.Count >= BatchSize)
+            {
+                _ = FlushAsync();
+            }
+            else
+            {
+                _flushTimer ??= new Timer(_ => _ = FlushAsync(), null, FlushInterval, FlushInterval);
+                _flushTimer.Change(FlushInterval, FlushInterval);
+            }
         }
         catch (Exception ex)
         {
@@ -223,11 +240,12 @@ internal static class AptabaseClient
 
     public static async Task FlushAsync()
     {
+        if (!await _flushGate.WaitAsync(0).ConfigureAwait(false)) return;
         try
         {
             if (!_isEnabled)
             {
-                _eventQueue.Clear();
+                while (_eventQueue.TryDequeue(out _)) { }
                 return;
             }
 
@@ -236,7 +254,7 @@ internal static class AptabaseClient
             Console.WriteLine($"[Aptabase] Flushing {_eventQueue.Count} queued event(s)");
 
             var batch = new List<AptabaseEvent>();
-            while (_eventQueue.TryDequeue(out var item))
+            while (_eventQueue.TryDequeue(out var item) && batch.Count < BatchSize)
             {
                 batch.Add(new AptabaseEvent(
                     Timestamp: DateTime.UtcNow.ToString("O"),
@@ -249,13 +267,17 @@ internal static class AptabaseClient
                 ));
             }
 
-            await SendBatchAsync(batch);
+            await SendBatchAsync(batch).ConfigureAwait(false);
+            // If more queued, schedule next batch
+            if (!_eventQueue.IsEmpty)
+                _ = Task.Delay(200).ContinueWith(_ => _ = FlushAsync());
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Aptabase] Error in FlushAsync: {ex.Message}");
             KodoDiagnostics.LogWarning("AptabaseClient.FlushAsync", ex, "flushing queued events");
         }
+        finally { _flushGate.Release(); }
     }
 
     private static async Task SendBatchAsync(List<AptabaseEvent> events)

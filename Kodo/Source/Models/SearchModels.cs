@@ -221,6 +221,9 @@ internal sealed class SearchIgnoreRules
 
     private static bool IsHiddenOnDisk(string path)
     {
+        // Skip syscall for common non-hidden paths; EnumerationOptions already skips Hidden|System where used
+        var name = Path.GetFileName(path);
+        if (!string.IsNullOrEmpty(name) && name[0] == '.') return true;
         try
         {
             var attributes = File.GetAttributes(path);
