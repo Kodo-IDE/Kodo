@@ -56,3 +56,8 @@ A lot of bugs from the initial v2.0.0 release have been fixed. Please make sure 
 > September 3, 2026
 More bugs from the initial v2.0.0 release, including Marketplace bugs and the misfunctioning Clear Cache button have been fixed. 
 ---
+
+## v2.0.4 is here!
+> September 5, 2026
+This patch features updated Insight SVG icons and lag and performance improvements.
+---
