@@ -84,19 +84,15 @@ public sealed class InsightSuggestion : ICompletionData
     private static readonly Geometry FunctionIconGeometry = Geometry.Parse(
         "M16.6582 9.28638C18.098 10.1862 18.8178 10.6361 19.0647 11.2122C19.2803 11.7152 19.2803 12.2847 19.0647 12.7878C18.8178 13.3638 18.098 13.8137 16.6582 14.7136L9.896 18.94C8.29805 19.9387 7.49907 20.4381 6.83973 20.385C6.26501 20.3388 5.73818 20.0469 5.3944 19.584C5 19.053 5 18.1108 5 16.2264V7.77357C5 5.88919 5 4.94701 5.3944 4.41598C5.73818 3.9531 6.26501 3.66111 6.83973 3.6149C7.49907 3.5619 8.29805 4.06126 9.896 5.05998L16.6582 9.28638Z");
 
-    // Sliders (two tracks + knobs) — distinct from hexagon/cube
     private static readonly Geometry PropertyIconGeometry = Geometry.Parse(
         "M3 8 H19 M3 16 H19 M6 5.5 H10 V10.5 H6 Z M14 13.5 H18 V18.5 H14 Z");
 
-    // T inside hexagon — distinct from sliders
     private static readonly Geometry TypeIconGeometry = Geometry.Parse(
         "M0 12L6 1.6H18L24 12L18 22.4H6L0 12Z M9 8 H15 V10 H13 V16 H11 V10 H9 Z");
 
-    // Stacked layers (3 offset squares) — distinct from single shapes
     private static readonly Geometry NamespaceIconGeometry = Geometry.Parse(
         "M4 10 H14 V20 H4 Z M7 7 H17 V17 H15 V9 H7 Z M10 4 H20 V14 H10 Z");
 
-    // Hash # — distinct from tag/triangle/cube
     private static readonly Geometry KeywordIconGeometry = Geometry.Parse(
         "M9 4 L11 20 M13 4 L15 20 M4 9 H20 M4 15 H20");
 
@@ -1382,10 +1378,7 @@ public sealed class InsightEngine
                 variableNamesInFile.Add(v);
         }
 
-        // Symbols and variable-like tokens are authoritative declarations supplied by
-        // the language pack. Keep them out of the spelling pass as well as completion
-        // and navigation; otherwise a user-defined identifier can be mistaken for a
-        // misspelled language keyword or API name.
+        // Exclude language-pack declarations from spelling/completion.
         var declaredNamesInFile = new HashSet<string>(variableNamesInFile, StringComparer.OrdinalIgnoreCase);
         if (languageExtension?.LangRules is { HasSymbolAnalyzer: true } symbolRules)
         {
@@ -1474,8 +1467,7 @@ public sealed class InsightEngine
                 var wordLineStart = maskedDocForLines.LastIndexOf('\n', Math.Max(0, match.Index - 1)) + 1;
                 var linePrefix = maskedDocForLines[wordLineStart..match.Index].TrimEnd();
 
-                // Member and lambda parameter declarations commonly place `=>` after
-                // the name. Do not spellcheck that identifier as ordinary text.
+                // Skip spellcheck for `=>` declarations.
                 if (afterIndex + 1 < maskedDocForLines.Length &&
                     maskedDocForLines[afterIndex] == '=' && maskedDocForLines[afterIndex + 1] == '>')
                     continue;

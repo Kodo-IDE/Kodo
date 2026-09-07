@@ -2184,9 +2184,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         if (string.IsNullOrWhiteSpace(text))
             return;
 
-        // Markdown owns its lexical highlighting. Kodo only coordinates line
-        // state and embedded-language routing; token scopes/colors come from
-        // the installed Markdown LangRules assembly.
+        // Markdown highlighting is delegated to its LangRules.
         if (_langRules is { HasTokenizer: true } rules)
         {
             foreach (var token in rules.Tokenize(text))
@@ -2198,10 +2196,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
                 {
                     ApplyBrush(lineOffset, token.Start, token.Start + length, Brush.Parse(token.Color));
                 }
-                catch
-                {
-                    // A malformed extension color must not interrupt editing.
-                }
+                catch { }
             }
             return;
         }

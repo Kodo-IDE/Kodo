@@ -29,13 +29,11 @@
     <AvaloniaResource Include="..\Assets\**" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <!-- Keep the sibling updater out of this project's compile glob. -->
   <ItemGroup>
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
   </ItemGroup>
 
-  <!-- Remove debugging symbols from the release publish directory. -->
   <Target Name="RemovePdbFilesFromPublish"
           AfterTargets="Publish"
           Condition="'$(Configuration)' == 'Release'">

@@ -10,18 +10,14 @@
     <AssemblyName>KodoUpdater</AssemblyName>
     <RootNamespace>KodoUpdater</RootNamespace>
 
-    <!-- Application -->
     <ApplicationIcon>..\..\Assets\kodo_logo.ico</ApplicationIcon>
 
-    <!-- Windows x64 standalone updater -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
 
-    <!-- Single-file publishing -->
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 
-    <!-- Release optimization -->
     <Optimize>true</Optimize>
     <DebugType>None</DebugType>
     <DebugSymbols>false</DebugSymbols>
@@ -34,7 +30,6 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
   </ItemGroup>
 
-  <!-- Remove debugging symbols from the release publish output -->
   <Target Name="RemovePdbFilesFromPublish"
           AfterTargets="Publish"
           Condition="'$(Configuration)' == 'Release'">

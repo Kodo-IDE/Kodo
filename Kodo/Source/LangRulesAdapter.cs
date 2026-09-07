@@ -7,9 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace Kodo;
 
-/// Adapter for the generated LangRules.dll contract shipped by language extensions.
-/// The core deliberately talks to this through reflection: each language package owns
-/// its scanner and may use a different generated namespace.
+/// Reflection-based adapter for language-pack LangRules contracts.
 public sealed class LangRulesAdapter
 {
     private readonly Type _rules;
@@ -107,8 +105,7 @@ public sealed class LangRulesAdapter
     {
         foreach (var token in Tokenize(code))
         {
-            // TokenKind is owned by the extension. Keep this contract name-based
-            // so the core does not depend on a language's generated enum type.
+            // TokenKind is extension-owned; compare by name.
             if (token.Kind.Equals("Variable", StringComparison.OrdinalIgnoreCase) ||
                 token.Kind.Equals("Parameter", StringComparison.OrdinalIgnoreCase) ||
                 token.Kind.Equals("Field", StringComparison.OrdinalIgnoreCase) ||
