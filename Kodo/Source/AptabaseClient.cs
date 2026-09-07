@@ -220,7 +220,6 @@ internal static class AptabaseClient
             _eventQueue.Enqueue((eventName, SanitizeMessage(message)));
             Console.WriteLine($"[Aptabase] Queued event: {eventName}");
 
-            // Debounced batch flush: flush every 30s or 50 events, coalesced via gate (win #9)
             if (_eventQueue.Count >= BatchSize)
             {
                 _ = FlushAsync();
@@ -268,7 +267,6 @@ internal static class AptabaseClient
             }
 
             await SendBatchAsync(batch).ConfigureAwait(false);
-            // If more queued, schedule next batch
             if (!_eventQueue.IsEmpty)
                 _ = Task.Delay(200).ContinueWith(_ => _ = FlushAsync());
         }

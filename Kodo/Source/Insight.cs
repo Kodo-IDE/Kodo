@@ -569,7 +569,6 @@ public sealed class InsightEngine
     {
         try
         {
-            // Cache folder masked text per folder mtime to avoid re-reading 400 files every 750ms (win #4)
             try
             {
                 var folderMtime = global::System.IO.Directory.GetLastWriteTimeUtc(folderPath);

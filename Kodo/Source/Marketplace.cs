@@ -28,7 +28,6 @@ public partial class MainWindow
 
         await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState(), DispatcherPriority.Background);
 
-        // Cache-first: show cached index instantly without blocking on network (win #7)
         var cachedEarly = await Task.Run(() => TryReadMarketplaceIndexCache()).ConfigureAwait(false);
         if (cachedEarly is not null)
         {
@@ -45,7 +44,6 @@ public partial class MainWindow
                     SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined);
                     NotifyExtensionFiltersChanged();
                 });
-                // Defer icon fetch lazily on background, only for visible entries
                 _ = Task.Run(async () =>
                 {
                     await Task.Delay(500).ConfigureAwait(false);
@@ -192,7 +190,6 @@ public partial class MainWindow
                     extensionLoadErrors.Add($"Marketplace offline and no cached copy available: {DescribeFetchFailure(ex)}");
                 }
                 await Dispatcher.UIThread.InvokeAsync(() => RefreshMarketplaceConnectivityState("Marketplace fetch", ex));
-                // offline: use cache
             }
             else
             {

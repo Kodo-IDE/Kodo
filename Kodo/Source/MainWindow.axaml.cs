@@ -5865,8 +5865,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
             if (update is null)
             {
-                // Fall back to the specific release page when we already know a newer
-                // version exists (from What's New), otherwise the generic releases list.
                 if (HasLatestRelease && IsNewerVersionAvailable && !string.IsNullOrWhiteSpace(LatestReleaseUrl))
                     OpenUrl(LatestReleaseUrl);
                 else

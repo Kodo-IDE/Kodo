@@ -109,7 +109,6 @@ public sealed class ConsoleTerminal : Control
         _blinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _blinkTimer.Tick += (_, _) =>
         {
-            // Stop blink when not visible or no live process to save CPU (win #6)
             if (!IsVisible || !HasLiveProcess || _scrollOffset != 0) return;
             _cursorBlinkOn = !_cursorBlinkOn;
             InvalidateVisual();

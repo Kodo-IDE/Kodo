@@ -403,7 +403,6 @@ public partial class MainWindow
 
     private static async Task<string> ReadLargeFileAsync(string path, System.Text.Encoding encoding)
     {
-        // Use StreamReader with Decoder to handle multi-byte splits correctly + avoid LOH string per chunk
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
         using var reader = new StreamReader(fs, encoding, detectEncodingFromByteOrderMarks: false);
         return await reader.ReadToEndAsync().ConfigureAwait(false);

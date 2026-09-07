@@ -99,7 +99,6 @@
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
         </Style>
 
-        <!-- Compiler / language icon switch button in the editor header -->
         <Style Selector="Button.compilericon">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -153,7 +152,6 @@
         <Style Selector="Button.chrome.groupheader:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
-        <!-- Only PART_Border (inset by its Margin) receives the hover colour. -->
         <Style Selector="Button.chrome.groupheader /template/ Border#PART_Border">
             <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Background" Value="Transparent" />
@@ -399,7 +397,6 @@
             </Setter>
         </Style>
 
-        <!-- Prevent Avalonia's default template from shifting the ContentPresenter on hover -->
         <Style Selector="Button.activity /template/ ContentPresenter">
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
@@ -481,7 +478,6 @@
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
-        <!-- Unified search panel: mode tabs (Find / Files / Project) -->
         <Style Selector="Border.searchpanel">
             <Setter Property="Background" Value="{Binding CardBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
@@ -520,7 +516,6 @@
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
 
-        <!-- Small icon buttons used in the search row (Aa, W, .*, navigation) -->
         <Style Selector="Button.chromesmall">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -666,12 +661,10 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
-        <!-- Dirty dot: hide on hover so it is replaced by close button instead of overlapping (keep visible when active but not hovered) -->
         <Style Selector="Border.tabwrap:pointerover Viewbox.dirtydot">
             <Setter Property="Opacity" Value="0" />
         </Style>
 
-        <!-- Underline: hidden by default, shown on hover and always on active tab -->
         <Style Selector="Border.tabunderline">
             <Setter Property="Opacity" Value="0" />
         </Style>
@@ -709,7 +702,6 @@
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
 
-        <!-- All tooltips size dynamically to their content, capped at 480px -->
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
         </Style>
@@ -717,7 +709,6 @@
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
 
-        <!-- CheckBox: border and checked background use the live accent colour -->
         <Style Selector="CheckBox">
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
@@ -741,7 +732,7 @@
         </Style>
     </Window.Styles>
 
-    <!-- Root: activity bar | file explorer panel | editor/content area -->
+    
     <Grid ColumnDefinitions="60,Auto,Auto,*">
 
         <Border Grid.Column="0"
@@ -818,11 +809,11 @@
                             IsVisible="{Binding IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
-                                <!-- Explorer visible: button collapses it -->
+                                
                                 <Path IsVisible="{Binding IsFileExplorerVisible}"
                                       Fill="{Binding $parent[Button].Foreground}"
                                       Data="M15.5000 14.7500 L14.0000 14.7500 C13.4477 14.7500 13.0000 15.1977 13.0000 15.7500 L13.0000 15.7500 C13.0000 16.3023 12.6370 16.4879 12.1893 16.1645 L9.3107 14.0855 C8.8630 13.7621 8.8630 13.2379 9.3107 12.9145 L12.1893 10.8355 C12.6370 10.5121 13.0000 10.6977 13.0000 11.2500 L13.0000 11.2500 C13.0000 11.8023 13.4477 12.2500 14.0000 12.2500 L15.5000 12.2500 C16.0523 12.2500 16.5000 12.6977 16.5000 13.2500 L16.5000 13.7500 C16.5000 14.3023 16.0523 14.7500 15.5000 14.7500 Z M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z" />
-                                <!-- Explorer hidden: button expands it -->
+                                
                                 <Path IsVisible="{Binding !IsFileExplorerVisible}"
                                       Fill="{Binding $parent[Button].Foreground}"
                                       Data="M9.5000 12.2500 L11.0000 12.2500 C11.5523 12.2500 12.0000 11.8023 12.0000 11.2500 L12.0000 11.2500 C12.0000 10.6977 12.3630 10.5121 12.8107 10.8355 L15.6893 12.9145 C16.1370 13.2379 16.1370 13.7621 15.6893 14.0855 L12.8107 16.1645 C12.3630 16.4879 12.0000 16.3023 12.0000 15.7500 L12.0000 15.7500 C12.0000 15.1977 11.5523 14.7500 11.0000 14.7500 L9.5000 14.7500 C8.9477 14.7500 8.5000 14.3023 8.5000 13.7500 L8.5000 13.2500 C8.5000 12.6977 8.9477 12.2500 9.5000 12.2500 Z M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z" />
@@ -1763,7 +1754,7 @@
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="Auto,*">
 
-                        <!-- Hero banner: card-style to blend with new home cards (12r, CardBrush, accent wash) -->
+                        
                         <Border Grid.Row="0"
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -1773,7 +1764,7 @@
                                 Padding="0"
                                 ClipToBounds="True">
                             <Panel>
-                                <!-- subtle accent wash to echo expanded folder (0.65) / divider (0.22) accents -->
+                                
                                 <Border Background="{Binding AccentBrush}"
                                         Opacity="0.035"
                                         CornerRadius="12"
@@ -1800,7 +1791,7 @@
                                                        Text="🎂" />
                                         </StackPanel>
 
-                                        <!-- Hero message: larger, bolder, tighter tracking to anchor hero -->
+                                        
                                         <StackPanel Spacing="6">
                                             <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
                                                      HorizontalAlignment="Left"
@@ -1822,7 +1813,7 @@
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <!-- version pill: accent-outlined to match tab underlines + card pills -->
+                                    
                                     <Border Grid.Column="1"
                                             Background="{Binding WindowBackgroundBrush}"
                                             BorderBrush="{Binding AccentBrush}"
@@ -1847,7 +1838,7 @@
                                       HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="32,28,32,36" Spacing="16">
 
-                            <!-- Continue spotlight: one-click resume of the most recently opened item -->
+                            
                             <Border Padding="18,16"
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding AccentBrush}"
@@ -1880,7 +1871,7 @@
                                 </Grid>
                             </Border>
 
-                            <!-- Pinned workspaces: one-click launchers for pinned recents, pulled from the same RecentFiles list -->
+                            
                             <ItemsControl ItemsSource="{Binding PinnedRecentFiles}"
                                           IsVisible="{Binding HasPinnedRecentFiles}">
                                 <ItemsControl.ItemsPanel>
@@ -1890,9 +1881,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:RecentFileItem" x:CompileBindings="True">
-                                        <!-- Style's Button.chrome brushes are plain {Binding ...}, which resolve
-                                             against this item's DataContext, not MainWindow - override explicitly
-                                             with #RootWindow element bindings, same pattern the Recent list uses. -->
+                                        
                                         <Button Tag="{Binding}"
                                                 Click="RecentFileButton_OnClick"
                                                 Background="{Binding #RootWindow.ButtonBrush}"
@@ -2045,9 +2034,9 @@
                                                         Content="Clear" />
                                             </Grid>
 
-                                            <!-- Content row: empty state OR file list, both in row 1 -->
+                                            
 
-                                            <!-- Empty state - vertically and horizontally centred in remaining height -->
+                                            
                                             <StackPanel Grid.Row="1"
                                                         IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
@@ -2191,7 +2180,7 @@
                                             Spacing="16"
                                             VerticalAlignment="Top">
 
-                                    <!-- Community: merged Marketplace + Links (was two stacked cards) -->
+                                    
                                     <Border Padding="16,14"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -2303,7 +2292,7 @@
                                             CornerRadius="12">
                                         <Grid RowDefinitions="Auto,*">
 
-                                            <!-- Shared tab header: was two separate cards (What's New, News) -->
+                                            
                                             <Border Grid.Row="0"
                                                     BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="0,0,0,1"
@@ -2372,7 +2361,7 @@
                                                 </Grid>
                                             </Border>
 
-                                            <!-- Updates tab content (was the standalone What's New card) -->
+                                            
                                             <Border Grid.Row="1"
                                                     Padding="20,14"
                                                     MaxHeight="310"
@@ -2466,7 +2455,7 @@
                                                 </Panel>
                                             </Border>
 
-                                            <!-- News tab content -->
+                                            
                                             <Border Grid.Row="1"
                                                     Padding="16,14"
                                                     MaxHeight="420"
@@ -2867,7 +2856,7 @@
                         Padding="16,10"
                         PointerPressed="StatusBar_OnPointerPressed">
                     <Grid ColumnDefinitions="*,Auto">
-                        <!-- Left side: file path when a file is open, welcome text otherwise -->
+                        
                         <TextBlock Grid.Column="0"
                                    IsVisible="{Binding HasDocumentOpen}"
                                    Foreground="{Binding MutedTextBrush}"
@@ -2886,7 +2875,7 @@
                                 </MultiBinding>
                             </TextBlock.IsVisible>
                         </TextBlock>
-                        <!-- Birthday welcome text (no document, birthday only) -->
+                        
                         <TextBlock Grid.Column="0"
                                    Foreground="{Binding AccentBrush}"
                                    VerticalAlignment="Center"
@@ -3025,7 +3014,7 @@
                                        IsVisible="{Binding IsDocumentViewVisible}"
                                        Text="|" />
 
-                            <!-- Terminal toggle - always visible -->
+                            
                             <Button Classes="statusitem"
                                     VerticalAlignment="Center"
                                     Click="ToggleTerminalButton_OnClick"
@@ -3063,7 +3052,7 @@
                 </Border>
             </Grid>
 
-            <!-- Floating search panel (overlays editor content, positioned top-right) -->
+            
             <Border Classes="searchpanel" x:Name="SearchPanelBorder"
                     IsVisible="{Binding IsSearchPanelActive}"
                     HorizontalAlignment="Right"
@@ -3094,7 +3083,7 @@
                         </Button>
                     </Grid>
 
-                    <!-- Row 1: Search input + option buttons + navigation + Replace -->
+                    
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
                         <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center">
                             <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
@@ -3239,7 +3228,7 @@
                     </Grid>
                 </Border>
 
-                <!-- ═══ Welcome splash - full-bleed centred, no scroll ═══ -->
+                
                 <Grid Grid.Row="1"
                       IsVisible="{Binding IsTutorialWelcomeStep}">
                     <StackPanel Spacing="0"
@@ -3299,7 +3288,7 @@
                     </StackPanel>
                 </Grid>
 
-                <!-- ═══ Normal step content - scrollable, hidden on step 0 ═══ -->
+                
                 <ScrollViewer Grid.Row="1"
                               IsVisible="{Binding IsNotTutorialWelcomeStep}"
                               Padding="24"
@@ -3314,7 +3303,7 @@
                                 Margin="0,0,16,0">
                             <StackPanel Spacing="18">
                             <Panel>
-                                <!-- Normal step content - hidden on setup step -->
+                                
                                 <StackPanel IsVisible="{Binding IsNotTutorialSetupStep}"
                                             Spacing="18">
                                 <StackPanel Spacing="6">
@@ -3371,7 +3360,7 @@
 
                             </StackPanel>
 
-                                <!-- Setup step - full-width, two-column layout inside the main card -->
+                                
                                 <StackPanel IsVisible="{Binding IsTutorialSetupStep}" Spacing="28">
 
                                     <StackPanel Spacing="6">
@@ -3392,7 +3381,7 @@
 
                                     <Grid ColumnDefinitions="*,1,*" ColumnSpacing="0">
 
-                                        <!-- Left: Theme + Accent -->
+                                        
                                         <StackPanel Grid.Column="0" Spacing="24" Margin="0,0,32,0">
 
                                             <StackPanel Spacing="12">
@@ -3486,13 +3475,13 @@
                                                     </Button>
                                                 </WrapPanel>
 
-                                                <!-- Extension themes - wraps freely so all cards are visible -->
+                                                
                                                 <StackPanel Spacing="8" IsVisible="{Binding HasThemeExtensions}">
                                                     <TextBlock FontSize="11"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding MutedTextBrush}"
                                                                Text="INSTALLED THEME EXTENSIONS" />
-                                                    <!-- One group per extension; multi-theme packs are collapsible -->
+                                                    
                                                     <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate>
@@ -3503,7 +3492,7 @@
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                                 <StackPanel Spacing="6">
 
-                                                                    <!-- Collapsible header - only shown for multi-theme groups -->
+                                                                    
                                                                     <Button Classes="chrome groupheader"
                                                                             Click="ThemeGroupHeader_OnClick"
                                                                             IsVisible="{Binding IsMultiTheme}">
@@ -3822,7 +3811,7 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- Consent card - shown once, until the user accepts or declines -->
+                                    
                                     <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3880,7 +3869,7 @@
 
                         <StackPanel Grid.Column="1" Spacing="16">
 
-                            <!-- Standard spotlight card - hidden on the setup step -->
+                            
                             <Border IsVisible="{Binding IsNotTutorialSetupStep}"
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4610,7 +4599,7 @@
                                                Text="The Marketplace is currently unavailable. Please wait a few minutes." />
                                 </StackPanel>
                             </Border>
-                            <!-- Partial failure: some entries loaded but some failed -->
+                            
                             <Border Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding AccentBrush}"
                                     BorderThickness="1"
@@ -4644,7 +4633,7 @@
                                                 Background="{Binding #RootWindow.CardBrush}"
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-                                                <!-- Header row: icon left, name/type stacked beside it -->
+                                                
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                                     <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
                                                             Background="{Binding #RootWindow.AccentBrush}"
@@ -4698,7 +4687,7 @@
                                                     </StackPanel>
                                                 </Grid>
 
-                                                <!-- Description fills remaining tile height, clamped to 3 lines -->
+                                                
                                                 <TextBlock Grid.Row="2"
                                                            FontSize="12"
                                                            Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -4708,7 +4697,7 @@
                                                            MaxLines="3" />
 
                                                 <Grid Grid.Row="3">
-                                                    <!-- Quiet status pill: already installed, nothing to update -->
+                                                    
                                                     <Border Classes="installedtag"
                                                             HorizontalAlignment="Stretch"
                                                             Opacity="0.7"
@@ -5109,7 +5098,7 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Installed Theme Extensions" />
-                                    <!-- One group per extension; multi-theme packs are collapsible -->
+                                    
                                     <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
@@ -5120,7 +5109,7 @@
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                 <StackPanel Spacing="6">
 
-                                                    <!-- Collapsible header - only shown for multi-theme groups -->
+                                                    
                                                     <Button Classes="chrome groupheader"
                                                             Click="ThemeGroupHeader_OnClick"
                                                             IsVisible="{Binding IsMultiTheme}">
@@ -6435,7 +6424,7 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Release notes - only part of this showing when triggered by a version bump -->
+                        
                         <Border IsVisible="{Binding IsReleaseNotesSectionVisible}"
                                 Background="{Binding WindowBackgroundBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -6492,7 +6481,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Consent card - only shown until the user has responded once -->
+                        
                         <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                 Background="{Binding ButtonBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"

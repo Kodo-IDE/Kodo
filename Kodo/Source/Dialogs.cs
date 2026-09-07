@@ -488,7 +488,6 @@ public partial class MainWindow
         var source = isCritical ? "MainWindow.Warning.Critical" : "MainWindow.Warning";
         KodoDiagnostics.LogWarning(source, exception, operation: context);
 
-        // offline: suppress modal, use banner
         if (!isCritical && IsOfflineException(exception) &&
             (context.Contains("Marketplace", StringComparison.OrdinalIgnoreCase) ||
              context.Contains("Plugins", StringComparison.OrdinalIgnoreCase) ||

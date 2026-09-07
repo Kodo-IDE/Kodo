@@ -36,7 +36,6 @@ public sealed class KodoPluginLoadContext : AssemblyLoadContext
 
     private Assembly LoadShadowCopy(string assemblyPath)
     {
-        // Avoid double alloc via File.ReadAllBytes+MemoryStream — use FileStream directly when possible
         var bytes = File.ReadAllBytes(assemblyPath);
         using var stream = new MemoryStream(bytes, writable: false);
         return LoadFromStream(stream);
@@ -161,7 +160,6 @@ public partial class MainWindow
         }
 
         plugin.LoadContext.Unload();
-        // Avoid blocking UI — collect on thread-pool, never WaitForPendingFinalizers on UI (win #5)
         _ = Task.Run(() =>
         {
             GC.Collect(0, GCCollectionMode.Optimized);
