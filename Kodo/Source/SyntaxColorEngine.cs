@@ -46,14 +46,22 @@ public sealed class CompiledSyntaxProfile
         var rules = new List<CompiledSyntaxRule>();
         var traits = SyntaxLanguageTraits.From(extension);
         var isBatch = IsBatchExtension(extension);
+        if (extension.LangRules is { } generated)
+        {
+            var colors = generated.GetColors();
+            foreach (var pair in generated.GetRegexes())
+                rules.Add(new(pair.Value, pair.Key, colors.TryGetValue(pair.Key, out var color) ? color : "#D4D4D4"));
+            if (rules.Count > 0)
+                return CreateGeneratedProfile(extension, rules);
+        }
 
-        if (traits.IsMarkupLike)
+        if (rules.Count == 0 && traits.IsMarkupLike)
         {
             rules.Add(new(new Regex(@"(?<=</?|<!)[\p{L}_:-][\p{L}\p{Nd}_:-]*", RegexOptions.Compiled), "keyword", "#569CD6"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_:-][\p{L}\p{Nd}_:-]*(?:[:.][\p{L}_:-][\p{L}\p{Nd}_:-]*)*(?=\s*=)", RegexOptions.Compiled), "property", "#9CDCFE"));
             rules.Add(new(new Regex(@"(?<=\s)[\p{L}_-][\p{L}\p{Nd}_-]*(?=:[^<>]*\s*=)", RegexOptions.Compiled), "namespace", "#4FC1FF"));
         }
-        else
+        else if (rules.Count == 0)
         {
             if (extension.Keywords.Length > 0)
                 rules.Add(CreateTokenRule(extension.Keywords, traits, SyntaxTokenKind.Keyword, "keyword", "#569CD6"));
@@ -148,6 +156,23 @@ public sealed class CompiledSyntaxProfile
         }
 
         return new CompiledSyntaxProfile(extension, rules, stringRegexes, singleLineCommentRegex);
+    }
+
+    private static CompiledSyntaxProfile CreateGeneratedProfile(LoadedExtension extension, List<CompiledSyntaxRule> rules)
+    {
+        var stringRegexes = new List<Regex>();
+        foreach (var delimiter in extension.MultiLineStringDelimiters.Concat(extension.StringDelimiters)
+                     .Where(d => !string.IsNullOrWhiteSpace(d)).Distinct())
+        {
+            var escaped = Regex.Escape(delimiter);
+            stringRegexes.Add(new Regex($"{escaped}.*?{escaped}", RegexOptions.Compiled | RegexOptions.Singleline));
+        }
+
+        Regex? commentRegex = null;
+        if (!string.IsNullOrWhiteSpace(extension.CommentLine))
+            commentRegex = new Regex(Regex.Escape(extension.CommentLine) + @".*$", RegexOptions.Compiled | RegexOptions.Multiline);
+
+        return new CompiledSyntaxProfile(extension, rules, stringRegexes, commentRegex);
     }
 
     private static CompiledSyntaxRule CreateTokenRule(IEnumerable<string> tokens, SyntaxLanguageTraits traits, SyntaxTokenKind kind, string tokenName, string fallback) =>
@@ -2073,6 +2098,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         new(@"\btype\s*=\s*(?:""(?<value>[^""]*)""|'(?<value>[^']*)'|(?<value>[^\s>]+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private MarkdownSnapshot? _snapshot;
+    private LangRulesAdapter? _langRules;
     private Func<string, CompiledSyntaxProfile?>? _languageResolver;
     private Func<string, LoadedExtension?>? _inlineLanguageResolver;
     private readonly Dictionary<string, EmbeddedSyntaxProfile> _embeddedProfileCache = new(StringComparer.OrdinalIgnoreCase);
@@ -2105,6 +2131,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         }
 
         IsEnabled = true;
+        _langRules = extension.LangRules;
         _keywordBrush = BrushFor(extension, "keyword", "#569CD6");
         _typeBrush = BrushFor(extension, "type", "#BAE6FD");
         _stringBrush = BrushFor(extension, "string", "#CE9178");
@@ -2156,6 +2183,28 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     {
         if (string.IsNullOrWhiteSpace(text))
             return;
+
+        // Markdown owns its lexical highlighting. Kodo only coordinates line
+        // state and embedded-language routing; token scopes/colors come from
+        // the installed Markdown LangRules assembly.
+        if (_langRules is { HasTokenizer: true } rules)
+        {
+            foreach (var token in rules.Tokenize(text))
+            {
+                if (token.Length <= 0 || token.Start < 0 || token.Start >= text.Length)
+                    continue;
+                var length = Math.Min(token.Length, text.Length - token.Start);
+                try
+                {
+                    ApplyBrush(lineOffset, token.Start, token.Start + length, Brush.Parse(token.Color));
+                }
+                catch
+                {
+                    // A malformed extension color must not interrupt editing.
+                }
+            }
+            return;
+        }
 
         var protectedRanges = new bool[text.Length];
 

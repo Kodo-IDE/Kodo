@@ -373,7 +373,10 @@ public partial class MainWindow
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(folderPath, isDirectory: true);
         if (baseExt.PluginAssemblyFileName is not null &&
             File.Exists(Path.Combine(folderPath, baseExt.PluginAssemblyFileName)))
+        {
             baseExt.PluginFolderPath = folderPath;
+            baseExt.LangRules = LangRulesAdapter.TryLoad(folderPath, baseExt.PluginAssemblyFileName);
+        }
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -446,7 +449,10 @@ public partial class MainWindow
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
         if (baseExt.PluginAssemblyFileName is not null &&
             archive.GetEntry(baseExt.PluginAssemblyFileName) is not null)
+        {
             baseExt.PluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id, baseExt.Version);
+            baseExt.LangRules = LangRulesAdapter.TryLoad(baseExt.PluginFolderPath, baseExt.PluginAssemblyFileName);
+        }
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -500,19 +506,43 @@ public partial class MainWindow
         }
     }
 
-    private static LoadedExtension ParseManifest(JsonElement manifest) => new()
+    private static LoadedExtension ParseManifest(JsonElement manifest)
     {
-        Id = manifest.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
-        Version = manifest.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "",
-        Name = manifest.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
-        Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
-        Author = manifest.TryGetProperty("author", out var auth) ? auth.GetString() ?? "" : "",
-        Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
-        Extensions = manifest.TryGetProperty("extensions", out var exts)
-            ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
-            : [],
-        PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
-    };
+        var extension = new LoadedExtension
+        {
+            Id = manifest.TryGetProperty("id", out var id) ? id.GetString() ?? "" : "",
+            Version = manifest.TryGetProperty("version", out var ver) ? ver.GetString() ?? "" : "",
+            Name = manifest.TryGetProperty("name", out var name) ? name.GetString() ?? "" : "",
+            Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
+            Author = manifest.TryGetProperty("author", out var auth) ? auth.GetString() ?? "" : "",
+            Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+            Extensions = manifest.TryGetProperty("extensions", out var exts)
+                ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
+                : [],
+            PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
+        };
+
+        if (manifest.TryGetProperty("externalTools", out var tools) && tools.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var tool in tools.EnumerateArray())
+            {
+                var command = tool.TryGetProperty("command", out var commandValue) ? commandValue.GetString() : null;
+                if (string.IsNullOrWhiteSpace(command)) continue;
+                extension.ExternalTools.Add(new ExternalLanguageTool
+                {
+                    Id = tool.TryGetProperty("id", out var toolId) ? toolId.GetString() ?? command : command,
+                    Command = command,
+                    Arguments = tool.TryGetProperty("arguments", out var arguments) && arguments.ValueKind == JsonValueKind.Array
+                        ? arguments.EnumerateArray().Select(argument => argument.GetString() ?? string.Empty).ToArray()
+                        : ["{file}"],
+                    Format = tool.TryGetProperty("format", out var format) ? format.GetString() ?? "compiler" : "compiler",
+                    Enabled = !tool.TryGetProperty("enabled", out var enabled) || enabled.ValueKind != JsonValueKind.False,
+                });
+            }
+        }
+
+        return extension;
+    }
 
     private static IEnumerable<string> EnumerateLanguageProfileNames()
     {
@@ -936,8 +966,10 @@ public partial class MainWindow
         }
     }
 
-    private static LoadedExtension CloneBaseExtension(LoadedExtension src) => new()
+    private static LoadedExtension CloneBaseExtension(LoadedExtension src)
     {
+        var clone = new LoadedExtension
+        {
         Id = src.Id,
         Version = src.Version,
         Name = src.Name,
@@ -967,7 +999,17 @@ public partial class MainWindow
         PluginFolderPath = src.PluginFolderPath,
         IconImage = src.IconImage,
         IconBytes = src.IconBytes,
-    };
+        };
+        clone.ExternalTools.AddRange(src.ExternalTools.Select(tool => new ExternalLanguageTool
+        {
+            Id = tool.Id,
+            Command = tool.Command,
+            Arguments = tool.Arguments.ToArray(),
+            Format = tool.Format,
+            Enabled = tool.Enabled,
+        }));
+        return clone;
+    }
 
     private static void ApplyLanguageProfile(LoadedExtension ext, LanguageSyntaxProfile profile)
     {
@@ -1101,13 +1143,6 @@ public partial class MainWindow
             return null;
 
         var normalized = token.Trim().TrimStart('.').ToLowerInvariant();
-        if (FenceLanguageAliases.TryGetValue(normalized, out var alias))
-        {
-            if (string.IsNullOrEmpty(alias))
-                return null;
-            normalized = alias;
-        }
-
         var bestMatch = LoadedExtensions
             .Where(extension =>
                 extension.Type == "language" &&

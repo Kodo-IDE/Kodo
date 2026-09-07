@@ -704,6 +704,13 @@
 
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
+            <Setter Property="Background" Value="{Binding CardBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="FontSize" Value="13" />
         </Style>
         <Style Selector="ToolTip TextBlock">
             <Setter Property="TextWrapping" Value="Wrap" />
@@ -1594,6 +1601,19 @@
                                 <MenuItem Name="EditorChangeAllOccurrencesMenuItem"
                                            Header="Change All Occurrences"
                                            Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
+                                <Separator />
+                                <MenuItem Name="EditorGoToDefinitionMenuItem"
+                                           Header="Go to Definition"
+                                           Click="EditorGoToDefinitionMenuItem_OnClick" />
+                                <MenuItem Name="EditorFindReferencesMenuItem"
+                                           Header="Find References"
+                                           Click="EditorFindReferencesMenuItem_OnClick" />
+                                <MenuItem Name="EditorFormatDocumentMenuItem"
+                                           Header="Format Document"
+                                           Click="EditorFormatDocumentMenuItem_OnClick" />
+                                <MenuItem Name="EditorApplyCodeActionMenuItem"
+                                           Header="Apply Quick Fix"
+                                           Click="EditorApplyCodeActionMenuItem_OnClick" />
                                 <Separator />
                                 <MenuItem Name="EditorDismissDiagnosticMenuItem"
                                            Header="Dismiss Diagnostic"

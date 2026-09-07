@@ -135,6 +135,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
     private long _insightDocVersion;
+    private CancellationTokenSource _insightAnalysisCancellation = new();
+    private readonly object _insightAnalysisCacheLock = new();
+    private long _cachedInsightAnalysisVersion = -1;
+    private string? _cachedInsightAnalysisPath;
+    private string? _cachedInsightAnalysisText;
+    private List<InsightEngine.ErrorSpan>? _cachedInsightAnalysisSpans;
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
@@ -477,38 +483,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     };
 
     private static readonly HashSet<char> ClosingChars = new() { ')', ']', '}', '>', '"', '\'', '`' };
-    private static readonly Dictionary<string, string> FenceLanguageAliases = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["c#"] = "cs",
-        ["csharp"] = "cs",
-        ["f#"] = "fs",
-        ["fsharp"] = "fs",
-        ["js"] = "js",
-        ["javascript"] = "js",
-        ["ts"] = "ts",
-        ["typescript"] = "ts",
-        ["py"] = "py",
-        ["python"] = "py",
-        ["rb"] = "rb",
-        ["ruby"] = "rb",
-        ["rs"] = "rs",
-        ["rust"] = "rs",
-        ["ps"] = "ps1",
-        ["powershell"] = "ps1",
-        ["shell"] = "sh",
-        ["bash"] = "sh",
-        ["zsh"] = "sh",
-        ["yml"] = "yml",
-        ["yaml"] = "yml",
-        ["json"] = "json",
-        ["md"] = "md",
-        ["markdown"] = "md",
-        ["text"] = "",
-        ["plain"] = "",
-        ["txt"] = "",
-        ["plaintext"] = "",
-    };
-
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
@@ -4471,6 +4445,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("FindInFile",         "Find in file",            new KeyGesture(Key.F, KeyModifiers.Control),                        "Editor"),
         new("FindInProject",      "Find in project",         new KeyGesture(Key.F, KeyModifiers.Control | KeyModifiers.Shift),  "Editor"),
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
+        new("GoToDefinition",    "Go to Definition",        new KeyGesture(Key.F12, KeyModifiers.None),                         "Editor"),
         new("ToggleLineComment",  "Toggle line comment",     new KeyGesture(Key.Oem2, KeyModifiers.Control),                     "Editor"),
         new("Cut",                "Cut",                     new KeyGesture(Key.X, KeyModifiers.Control),                        "Editor"),
         new("Copy",               "Copy",                    new KeyGesture(Key.C, KeyModifiers.Control),                        "Editor"),
@@ -7594,6 +7569,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 item.IsEnabled = hasDiagnostic;
                 item.Header = hasDiagnostic ? $"Dismiss: {diag?.message ?? "Diagnostic"}" : "Dismiss Diagnostic";
             }
+            if (item.Name == "EditorGoToDefinitionMenuItem")
+            {
+                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasDefinitionProvider == true && GetLanguageWordAtCaret() is not null;
+                item.InputGesture = _keybinds.TryGetValue("GoToDefinition", out var definitionGesture) ? definitionGesture : null;
+            }
+            if (item.Name == "EditorFindReferencesMenuItem")
+                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true && GetLanguageWordAtCaret() is not null;
+            if (item.Name == "EditorFormatDocumentMenuItem")
+                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true;
+            if (item.Name == "EditorApplyCodeActionMenuItem")
+                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasCodeActionProvider == true;
         }
     }
 
@@ -7707,7 +7693,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
-        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null && _hoveredLanguageInfo is null) return;
         _diagnosticPopupHideTimer.Stop();
         _diagnosticPopupHideTimer.Start();
     }
@@ -7725,12 +7711,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _diagnosticPopupHideTimer.Stop();
         var textView = EditorTextBox.TextArea.TextView;
         if (textView.IsPointerOver || DiagnosticPopup.IsPointerOver || DiagnosticPopupBorder.IsPointerOver || DiagnosticPopupHitBorder.IsPointerOver) return;
-        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null && _hoveredLanguageInfo is null) return;
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
         _hoveredErrorReason = null;
         _hoveredDiagnosticLineText = null;
         _hoveredDiagnosticMessage = null;
+        _hoveredLanguageInfo = null;
         DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(textView, null);
         textView.Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -7784,8 +7771,61 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var text = EditorTextBox.Document.Text;
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
+        var scanPath = _currentFilePath;
+        var scanToken = _insightAnalysisCancellation.Token;
 
-        var rawSpans = await Task.Run(() => _InsightEngine.FindErrors(text, languageExtension));
+        List<InsightEngine.ErrorSpan>? rawSpans = null;
+        lock (_insightAnalysisCacheLock)
+        {
+            if (_cachedInsightAnalysisVersion == scanVersion &&
+                string.Equals(_cachedInsightAnalysisPath, scanPath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(_cachedInsightAnalysisText, text, StringComparison.Ordinal))
+            {
+                rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<InsightEngine.ErrorSpan>(_cachedInsightAnalysisSpans);
+            }
+        }
+
+        if (rawSpans is null)
+        {
+            try
+            {
+                rawSpans = await Task.Run(
+                    () => _InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
+                    scanToken);
+                var externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
+                    languageExtension,
+                    _currentFilePath,
+                    text,
+                    scanToken);
+                foreach (var diagnostic in externalDiagnostics)
+                {
+                    if (diagnostic.Start < 0 || diagnostic.Start >= text.Length || string.IsNullOrWhiteSpace(diagnostic.Message))
+                        continue;
+                    rawSpans.Add(new InsightEngine.ErrorSpan(
+                        diagnostic.Start,
+                        Math.Clamp(diagnostic.Length, 1, text.Length - diagnostic.Start),
+                        diagnostic.Message,
+                        diagnostic.Severity,
+                        diagnostic.Code,
+                        diagnostic.Source));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            lock (_insightAnalysisCacheLock)
+            {
+                if (scanVersion == _insightDocVersion && string.Equals(scanPath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _cachedInsightAnalysisVersion = scanVersion;
+                    _cachedInsightAnalysisPath = scanPath;
+                    _cachedInsightAnalysisText = text;
+                    _cachedInsightAnalysisSpans = new List<InsightEngine.ErrorSpan>(rawSpans);
+                }
+            }
+        }
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.Document is null) return;
@@ -8201,6 +8241,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else if (MatchesKeybind(e, "FindInFile"))
         {
             OpenSearchPanel(SearchMode.FindInFile);
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "GoToDefinition"))
+        {
+            GoToDefinitionAtCaret();
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "Cut"))

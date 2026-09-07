@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -132,6 +133,7 @@ public partial class MainWindow
 
     private string? _hoveredDiagnosticLineText;
     private string? _hoveredDiagnosticMessage;
+    private string? _hoveredLanguageInfo;
 
     private void HideDiagnosticPopup()
     {
@@ -151,17 +153,20 @@ public partial class MainWindow
         var nowOverLink = IsPointerOverLink(position, textView);
         var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
+        var languageHover = nowOverLink ? null : GetLanguageHoverAt(position, textView);
 
         string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason);
         string? primaryReason = errorReason ?? deadCodeReason;
 
         if (nowOverLink == _isPointerOverEditorLink &&
-            (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason))
+            (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason) &&
+            languageHover == _hoveredLanguageInfo)
             return;
 
         _isPointerOverEditorLink = nowOverLink;
         _hoveredDeadCodeReason = deadCodeReason;
         _hoveredErrorReason = errorReason;
+        _hoveredLanguageInfo = languageHover;
 
         _hoveredDiagnosticLineText = nowOverLink ? null : GetLineTextAt(position);
         _hoveredDiagnosticMessage = diagnosticMessage;
@@ -202,11 +207,41 @@ public partial class MainWindow
             }
             DiagnosticPopup.IsOpen = true;
         }
+        else if (languageHover is not null)
+        {
+            DiagnosticPopup.IsOpen = false;
+            ToolTip.SetTip(textView, languageHover);
+            ToolTip.SetShowDelay(textView, 450);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+        }
         else
         {
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+        }
+    }
+
+    private string? GetLanguageHoverAt(Point position, AvaloniaEdit.Rendering.TextView textView)
+    {
+        try
+        {
+            if (CurrentLanguageExtension?.LangRules is not { HasHoverProvider: true } rules || EditorTextBox?.Document is null)
+                return null;
+            var floor = textView.GetPositionFloor(position + textView.ScrollOffset);
+            if (floor is null) return null;
+            var line = EditorTextBox.Document.GetLineByNumber(floor.Value.Line);
+            var offset = Math.Clamp(line.Offset + Math.Max(0, floor.Value.Column - 1), 0, EditorTextBox.Document.TextLength);
+            var text = EditorTextBox.Document.Text;
+            var start = InsightEngine.FindWordStart(text, offset);
+            var end = offset;
+            while (end < text.Length && InsightEngine.IsWordChar(text[end])) end++;
+            if (end <= start) return null;
+            return rules.GetHoverInfo(text, text[start..end])?.Contents;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -340,6 +375,9 @@ public partial class MainWindow
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _insightDocVersion++;
+        _insightAnalysisCancellation.Cancel();
+        _insightAnalysisCancellation.Dispose();
+        _insightAnalysisCancellation = new CancellationTokenSource();
         HideDiagnosticPopup();
         _syntaxHighlightDebounceTimer.Stop();
         _syntaxHighlightDebounceTimer.Start();
@@ -482,6 +520,63 @@ public partial class MainWindow
         {
             EndAutoCloseUndoGroupIfOpen(doc);
         }
+    }
+
+    private string? GetLanguageWordAtCaret()
+    {
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return null;
+        var text = EditorTextBox.Document.Text;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, text.Length);
+        var start = InsightEngine.FindWordStart(text, offset);
+        var end = offset;
+        while (end < text.Length && InsightEngine.IsWordChar(text[end])) end++;
+        return end > start ? text[start..end] : null;
+    }
+
+    private void EditorGoToDefinitionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        GoToDefinitionAtCaret();
+    }
+
+    private void GoToDefinitionAtCaret()
+    {
+        var extension = CurrentLanguageExtension;
+        var word = GetLanguageWordAtCaret();
+        if (extension?.LangRules is not { HasDefinitionProvider: true } rules || string.IsNullOrWhiteSpace(word) || EditorTextBox?.Document is null)
+            return;
+        var definition = rules.FindDefinition(EditorTextBox.Document.Text, word);
+        if (definition is null) return;
+        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(definition.Start, 0, EditorTextBox.Document.TextLength);
+        EditorTextBox.TextArea.Caret.BringCaretToView();
+    }
+
+    private void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var word = GetLanguageWordAtCaret();
+        var extension = CurrentLanguageExtension;
+        if (extension?.LangRules is not { HasReferenceProvider: true } || string.IsNullOrWhiteSpace(word)) return;
+        FindText = word;
+        OpenSearchPanel(IsFolderOpen ? SearchMode.ProjectSearch : SearchMode.FindInFile);
+    }
+
+    private void EditorFormatDocumentMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules || EditorTextBox?.Document is null) return;
+        var formatted = rules.FormatDocument(EditorTextBox.Document.Text);
+        if (formatted is null || string.Equals(formatted, EditorTextBox.Document.Text, StringComparison.Ordinal)) return;
+        var caret = EditorTextBox.TextArea.Caret.Offset;
+        EditorTextBox.Document.Text = formatted;
+        EditorTextBox.TextArea.Caret.Offset = Math.Min(caret, EditorTextBox.Document.TextLength);
+    }
+
+    private void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules || EditorTextBox?.Document is null) return;
+        var caret = EditorTextBox.TextArea.Caret.Offset;
+        var action = rules.GetCodeActions(EditorTextBox.Document.Text)
+            .FirstOrDefault(candidate => caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
+        if (action is null) return;
+        EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
     }
 
     private async Task UpdateInsightAsync()
@@ -628,9 +723,9 @@ public partial class MainWindow
         {
             MaxHeight = InsightRowHeight * InsightVisibleRows
                 + InsightListVerticalPadding + InsightBorderThickness,
-            MaxWidth = 480,
-            Width = 440,
-            MinWidth = 360,
+            MaxWidth = 720,
+            Width = 600,
+            MinWidth = 420,
             WindowManagerAddShadowHint = true,
         };
 

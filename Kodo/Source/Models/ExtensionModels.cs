@@ -95,6 +95,15 @@ public sealed class LanguageSyntaxProfile
     public Dictionary<string, string> ColorTokens { get; init; } = new();
 }
 
+public sealed class ExternalLanguageTool
+{
+    public string Id { get; init; } = string.Empty;
+    public string Command { get; init; } = string.Empty;
+    public string[] Arguments { get; init; } = [];
+    public string Format { get; init; } = "compiler";
+    public bool Enabled { get; init; }
+}
+
 public record class LoadedExtension : INotifyPropertyChanged
 {
     private bool _isUpdateAvailable;
@@ -131,6 +140,8 @@ public record class LoadedExtension : INotifyPropertyChanged
     public bool IsDirectorySource { get; set; }
     public string? PluginAssemblyFileName { get; set; }
     public string? PluginFolderPath { get; set; }
+    public LangRulesAdapter? LangRules { get; set; }
+    public List<ExternalLanguageTool> ExternalTools { get; } = [];
     public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
     public DateTime? InstalledOnUtc { get; set; }
     public ExtensionThemeDefinition? ThemeDefinition { get; set; }

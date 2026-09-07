@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
@@ -176,9 +177,8 @@ public sealed class InsightSuggestion : ICompletionData
             Opacity = 0.84,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
-            TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
-            MaxWidth = 120,
+            MaxWidth = 220,
             Margin = new Thickness(0, 0, 2, 0),
         };
 
@@ -189,7 +189,7 @@ public sealed class InsightSuggestion : ICompletionData
             ColumnSpacing = 0,
         };
         row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-        row.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)) { MinWidth = 40 });
+        row.ColumnDefinitions.Add(new ColumnDefinition(new GridLength(1, GridUnitType.Star)) { MinWidth = 120 });
         row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
 
         Grid.SetColumn(iconChip, 0);
@@ -754,6 +754,14 @@ public sealed class InsightEngine
             return;
 
         var variables = new HashSet<string>(StringComparer.Ordinal);
+        if (languageExtension?.LangRules is { } generated)
+        {
+            foreach (var name in generated.GetVariableLikeNames(documentText))
+                variables.Add(name);
+            foreach (var symbol in generated.AnalyzeSymbols(documentText))
+                if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
+                    variables.Add(symbol.Name);
+        }
         if (!string.IsNullOrEmpty(documentText))
         {
             var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
@@ -1040,12 +1048,18 @@ public sealed class InsightEngine
         public int StartOffset { get; }
         public int Length { get; }
         public string Message { get; }
+        public string Severity { get; }
+        public string Code { get; }
+        public string Source { get; }
 
-        public ErrorSpan(int startOffset, int length, string message)
+        public ErrorSpan(int startOffset, int length, string message, string severity = "error", string code = "", string source = "Kodo")
         {
             StartOffset = startOffset;
             Length = Math.Max(1, length);
             Message = message;
+            Severity = string.IsNullOrWhiteSpace(severity) ? "error" : severity;
+            Code = code ?? string.Empty;
+            Source = string.IsNullOrWhiteSpace(source) ? "Kodo" : source;
         }
     }
 
@@ -1174,11 +1188,40 @@ public sealed class InsightEngine
         return dp[a.Length, b.Length];
     }
 
-    public List<ErrorSpan> FindErrors(string documentText, LoadedExtension? languageExtension = null)
+    public List<ErrorSpan> FindErrors(
+        string documentText,
+        LoadedExtension? languageExtension = null,
+        Func<string, LoadedExtension?>? embeddedLanguageResolver = null,
+        CancellationToken cancellationToken = default)
     {
         var spans = new List<ErrorSpan>();
         if (string.IsNullOrEmpty(documentText))
             return spans;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (languageExtension?.LangRules is { HasDiagnostics: true } generated)
+        {
+            foreach (var diagnostic in generated.AnalyzeSyntax(documentText))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentText.Length)
+                    continue;
+                var length = Math.Clamp(diagnostic.Length, 1, documentText.Length - diagnostic.Start);
+                spans.Add(new ErrorSpan(diagnostic.Start, length, diagnostic.Message, diagnostic.Severity, diagnostic.Code, diagnostic.Source));
+            }
+        }
+
+        if (languageExtension?.LangRules is { HasSemanticAnalyzer: true } semanticRules)
+        {
+            foreach (var diagnostic in semanticRules.AnalyzeSemantics(documentText))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentText.Length)
+                    continue;
+                var length = Math.Clamp(diagnostic.Length, 1, documentText.Length - diagnostic.Start);
+                spans.Add(new ErrorSpan(diagnostic.Start, length, diagnostic.Message, diagnostic.Severity, diagnostic.Code, diagnostic.Source));
+            }
+        }
 
         var commentLine = languageExtension?.CommentLine is { Length: > 0 } cl ? cl : "//";
         var blockStart = languageExtension?.CommentBlockStart is { Length: > 0 } bs ? bs : "/*";
@@ -1198,6 +1241,7 @@ public sealed class InsightEngine
 
         for (var i = 0; i < documentText.Length; i++)
         {
+            if ((i & 2047) == 0) cancellationToken.ThrowIfCancellationRequested();
             var c = documentText[i];
 
             if (inLineComment)
@@ -1321,9 +1365,15 @@ public sealed class InsightEngine
         var looksSemicolonStyle = semicolonLines >= 3 && semicolonLines >= nonBlankLines * 0.5;
         var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
 
-        var knownKeywords = languageExtension?.Keywords is { Length: > 0 } kw
-            ? new HashSet<string>(kw, StringComparer.Ordinal)
-            : null;
+        var knownLanguageWords = languageExtension is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : languageExtension.Keywords
+                .Concat(languageExtension.Types ?? Array.Empty<string>())
+                .Concat(languageExtension.Functions ?? Array.Empty<string>())
+                .Concat(languageExtension.Properties ?? Array.Empty<string>())
+                .Concat(languageExtension.Namespaces ?? Array.Empty<string>())
+                .Where(word => !string.IsNullOrWhiteSpace(word) && Regex.IsMatch(word, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var variableNamesInFile = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ml in masked)
@@ -1332,8 +1382,25 @@ public sealed class InsightEngine
                 variableNamesInFile.Add(v);
         }
 
+        // Symbols and variable-like tokens are authoritative declarations supplied by
+        // the language pack. Keep them out of the spelling pass as well as completion
+        // and navigation; otherwise a user-defined identifier can be mistaken for a
+        // misspelled language keyword or API name.
+        var declaredNamesInFile = new HashSet<string>(variableNamesInFile, StringComparer.OrdinalIgnoreCase);
+        if (languageExtension?.LangRules is { HasSymbolAnalyzer: true } symbolRules)
+        {
+            foreach (var name in symbolRules.GetVariableLikeNames(documentText))
+                if (!string.IsNullOrWhiteSpace(name))
+                    declaredNamesInFile.Add(name);
+
+            foreach (var symbol in symbolRules.AnalyzeSymbols(documentText))
+                if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
+                    declaredNamesInFile.Add(symbol.Name);
+        }
+
         for (var i = 0; i < lines.Length; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var line = masked[i];
             var trimmed = line.TrimEnd('\r');
             var trimmedEnd = trimmed.TrimEnd();
@@ -1379,37 +1446,100 @@ public sealed class InsightEngine
                 }
             }
 
-            if (knownKeywords is not null)
+        }
+
+        if (knownLanguageWords.Count > 0)
+        {
+            var spellingSpans = new HashSet<(int Start, int Length)>();
+            foreach (Match match in Regex.Matches(maskedDocForLines, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
             {
-                var wordMatch = Regex.Match(trimmedNoIndent, @"^([A-Za-z_][A-Za-z0-9_]*)\b");
-                if (wordMatch.Success)
+                cancellationToken.ThrowIfCancellationRequested();
+                var word = match.Value;
+                if (word.Length < 4 || knownLanguageWords.Contains(word) || declaredNamesInFile.Contains(word))
+                    continue;
+
+                var before = match.Index > 0 ? maskedDocForLines[match.Index - 1] : '\0';
+                if (before is '.' or ':' || (before == '-' && match.Index > 1 && maskedDocForLines[match.Index - 2] == '>'))
+                    continue;
+
+                var afterIndex = match.Index + match.Length;
+                while (afterIndex < maskedDocForLines.Length && char.IsWhiteSpace(maskedDocForLines[afterIndex]))
+                    afterIndex++;
+
+                if (afterIndex < maskedDocForLines.Length &&
+                    (maskedDocForLines[afterIndex] == '.' ||
+                     (maskedDocForLines[afterIndex] == '?' && afterIndex + 1 < maskedDocForLines.Length && maskedDocForLines[afterIndex + 1] == '.')))
+                    continue;
+
+                var wordLineStart = maskedDocForLines.LastIndexOf('\n', Math.Max(0, match.Index - 1)) + 1;
+                var linePrefix = maskedDocForLines[wordLineStart..match.Index].TrimEnd();
+
+                // Member and lambda parameter declarations commonly place `=>` after
+                // the name. Do not spellcheck that identifier as ordinary text.
+                if (afterIndex + 1 < maskedDocForLines.Length &&
+                    maskedDocForLines[afterIndex] == '=' && maskedDocForLines[afterIndex + 1] == '>')
+                    continue;
+
+                if (char.IsUpper(word[0]) &&
+                    (linePrefix.EndsWith("new", StringComparison.Ordinal) ||
+                     linePrefix.EndsWith("typeof", StringComparison.Ordinal) ||
+                     linePrefix.EndsWith("class", StringComparison.Ordinal) ||
+                     linePrefix.EndsWith("struct", StringComparison.Ordinal) ||
+                     linePrefix.EndsWith("interface", StringComparison.Ordinal) ||
+                     linePrefix.EndsWith("enum", StringComparison.Ordinal)))
+                    continue;
+
+                var closest = knownLanguageWords
+                    .Where(candidate => Math.Abs(candidate.Length - word.Length) <= (word.Length >= 7 ? 2 : 1))
+                    .Select(candidate => new { Word = candidate, Distance = LevenshteinDistance(word, candidate) })
+                    .Where(candidate => candidate.Distance > 0 && candidate.Distance <= (word.Length >= 7 ? 2 : 1))
+                    .OrderBy(candidate => candidate.Distance)
+                    .ThenBy(candidate => Math.Abs(candidate.Word.Length - word.Length))
+                    .FirstOrDefault();
+
+                if (closest is not null && spellingSpans.Add((match.Index, match.Length)))
                 {
-                    var word = wordMatch.Groups[1].Value;
-                    if (word.Length >= 4 && !knownKeywords.Contains(word) && !variableNamesInFile.Contains(word))
-                    {
-                        var afterIdx = wordMatch.Index + word.Length;
-                        var afterWord = afterIdx < trimmedNoIndent.Length ? trimmedNoIndent.Substring(afterIdx).TrimStart() : string.Empty;
-                        if (afterWord.StartsWith(".") || afterWord.StartsWith("(") || afterWord.StartsWith(":") || afterWord.StartsWith("="))
-                        {
-                        }
-                        else
-                        {
-                            var closest = knownKeywords.FirstOrDefault(k => Math.Abs(k.Length - word.Length) <= 1 && LevenshteinDistance(word, k) == 1);
-                            if (closest is not null)
-                            {
-                                var wordOffsetInLine = trimmed.Length - trimmedNoIndent.Length;
-                                spans.Add(new ErrorSpan(
-                                    lineStart[i] + wordOffsetInLine,
-                                    word.Length,
-                                    $"Possibly misspelled '{word}', did you mean '{closest}'?"));
-                            }
-                        }
-                    }
+                    spans.Add(new ErrorSpan(
+                        match.Index,
+                        match.Length,
+                        $"Possibly misspelled '{word}', did you mean '{closest.Word}'?"));
                 }
             }
         }
 
-        return spans;
+        if (embeddedLanguageResolver is not null && languageExtension?.LangRules is { HasEmbeddedRegions: true } embeddedRules)
+        {
+            foreach (var region in embeddedRules.GetEmbeddedRegions(documentText))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (region.Start < 0 || region.Length <= 0 || region.Start >= documentText.Length ||
+                    region.Start + region.Length > documentText.Length)
+                    continue;
+
+                var embeddedExtension = embeddedLanguageResolver(region.LanguageId);
+                if (embeddedExtension?.LangRules is null)
+                    continue;
+
+                var embeddedText = documentText.Substring(region.Start, region.Length);
+                var embeddedSpans = FindErrors(embeddedText, embeddedExtension, null, cancellationToken);
+                foreach (var embeddedSpan in embeddedSpans)
+                {
+                    var mappedStart = region.Start + embeddedSpan.StartOffset;
+                    spans.Add(new ErrorSpan(
+                        mappedStart,
+                        embeddedSpan.Length,
+                        embeddedSpan.Message,
+                        embeddedSpan.Severity,
+                        embeddedSpan.Code,
+                        embeddedSpan.Source));
+                }
+            }
+        }
+
+        var uniqueSpans = new HashSet<(int Start, int Length, string Message, string Severity, string Code, string Source)>();
+        return spans
+            .Where(span => uniqueSpans.Add((span.StartOffset, span.Length, span.Message, span.Severity, span.Code, span.Source)))
+            .ToList();
     }
 
     private static bool MatchesAt(string text, int index, string token)
@@ -1560,6 +1690,13 @@ public sealed class InsightEngine
 
         if (languageExtension is not null)
         {
+            if (languageExtension.LangRules is { } generated)
+            {
+                AddCandidates(generated.GetCompletions(prefix, documentText), InsightKind.Keyword);
+                AddCandidates(generated.AnalyzeSymbols(documentText)
+                    .Where(s => s.IsDeclaration)
+                    .Select(s => s.Name), InsightKind.Variable);
+            }
             AddCandidates(languageExtension.Functions, InsightKind.Function);
             AddCandidates(languageExtension.Properties, InsightKind.Property);
             AddCandidates(languageExtension.Types, InsightKind.Type);
