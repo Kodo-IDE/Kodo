@@ -61,3 +61,8 @@ More bugs from the initial v2.0.0 release, including Marketplace bugs and the mi
 > September 5, 2026
 This patch features updated Insight SVG icons and lag and performance improvements.
 ---
+
+## v2.0.5 is here!
+> September 6, 2026
+This patch fixes a missing toolbar and features minor lag improvements
+---
