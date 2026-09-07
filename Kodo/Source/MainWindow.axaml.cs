@@ -140,6 +140,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private long _cachedInsightAnalysisVersion = -1;
     private string? _cachedInsightAnalysisPath;
     private string? _cachedInsightAnalysisText;
+    private string? _cachedInsightAnalysisExtension;
     private List<InsightEngine.ErrorSpan>? _cachedInsightAnalysisSpans;
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
@@ -7772,6 +7773,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
+        var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
         var scanToken = _insightAnalysisCancellation.Token;
 
         List<InsightEngine.ErrorSpan>? rawSpans = null;
@@ -7779,6 +7781,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_cachedInsightAnalysisVersion == scanVersion &&
                 string.Equals(_cachedInsightAnalysisPath, scanPath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(_cachedInsightAnalysisExtension, scanExtension, StringComparison.Ordinal) &&
                 string.Equals(_cachedInsightAnalysisText, text, StringComparison.Ordinal))
             {
                 rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<InsightEngine.ErrorSpan>(_cachedInsightAnalysisSpans);
@@ -7809,6 +7812,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Code,
                         diagnostic.Source));
                 }
+                rawSpans = rawSpans
+                    .GroupBy(span => (span.StartOffset, span.Length, span.Message, span.Severity, span.Code, span.Source))
+                    .Select(group => group.First())
+                    .ToList();
             }
             catch (OperationCanceledException)
             {
@@ -7821,6 +7828,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     _cachedInsightAnalysisVersion = scanVersion;
                     _cachedInsightAnalysisPath = scanPath;
+                    _cachedInsightAnalysisExtension = scanExtension;
                     _cachedInsightAnalysisText = text;
                     _cachedInsightAnalysisSpans = new List<InsightEngine.ErrorSpan>(rawSpans);
                 }

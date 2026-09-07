@@ -1168,22 +1168,6 @@ public sealed class InsightEngine
         @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
         RegexOptions.Compiled);
 
-    private static int LevenshteinDistance(string a, string b)
-    {
-        var dp = new int[a.Length + 1, b.Length + 1];
-        for (var i = 0; i <= a.Length; i++) dp[i, 0] = i;
-        for (var j = 0; j <= b.Length; j++) dp[0, j] = j;
-        for (var i = 1; i <= a.Length; i++)
-        {
-            for (var j = 1; j <= b.Length; j++)
-            {
-                var cost = a[i - 1] == b[j - 1] ? 0 : 1;
-                dp[i, j] = Math.Min(Math.Min(dp[i - 1, j] + 1, dp[i, j - 1] + 1), dp[i - 1, j - 1] + cost);
-            }
-        }
-        return dp[a.Length, b.Length];
-    }
-
     public List<ErrorSpan> FindErrors(
         string documentText,
         LoadedExtension? languageExtension = null,
@@ -1212,6 +1196,8 @@ public sealed class InsightEngine
             foreach (var diagnostic in semanticRules.AnalyzeSemantics(documentText))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (string.Equals(diagnostic.Code, "semantic.undefined-name", StringComparison.OrdinalIgnoreCase))
+                    continue;
                 if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentText.Length)
                     continue;
                 var length = Math.Clamp(diagnostic.Length, 1, documentText.Length - diagnostic.Start);
@@ -1361,36 +1347,6 @@ public sealed class InsightEngine
         var looksSemicolonStyle = semicolonLines >= 3 && semicolonLines >= nonBlankLines * 0.5;
         var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
 
-        var knownLanguageWords = languageExtension is null
-            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            : languageExtension.Keywords
-                .Concat(languageExtension.Types ?? Array.Empty<string>())
-                .Concat(languageExtension.Functions ?? Array.Empty<string>())
-                .Concat(languageExtension.Properties ?? Array.Empty<string>())
-                .Concat(languageExtension.Namespaces ?? Array.Empty<string>())
-                .Where(word => !string.IsNullOrWhiteSpace(word) && Regex.IsMatch(word, @"^[A-Za-z_][A-Za-z0-9_]*$"))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var variableNamesInFile = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var ml in masked)
-        {
-            foreach (var v in IdentifyVariableInitializations(ml))
-                variableNamesInFile.Add(v);
-        }
-
-        // Exclude language-pack declarations from spelling/completion.
-        var declaredNamesInFile = new HashSet<string>(variableNamesInFile, StringComparer.OrdinalIgnoreCase);
-        if (languageExtension?.LangRules is { HasSymbolAnalyzer: true } symbolRules)
-        {
-            foreach (var name in symbolRules.GetVariableLikeNames(documentText))
-                if (!string.IsNullOrWhiteSpace(name))
-                    declaredNamesInFile.Add(name);
-
-            foreach (var symbol in symbolRules.AnalyzeSymbols(documentText))
-                if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
-                    declaredNamesInFile.Add(symbol.Name);
-        }
-
         for (var i = 0; i < lines.Length; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1439,64 +1395,6 @@ public sealed class InsightEngine
                 }
             }
 
-        }
-
-        if (knownLanguageWords.Count > 0)
-        {
-            var spellingSpans = new HashSet<(int Start, int Length)>();
-            foreach (Match match in Regex.Matches(maskedDocForLines, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var word = match.Value;
-                if (word.Length < 4 || knownLanguageWords.Contains(word) || declaredNamesInFile.Contains(word))
-                    continue;
-
-                var before = match.Index > 0 ? maskedDocForLines[match.Index - 1] : '\0';
-                if (before is '.' or ':' || (before == '-' && match.Index > 1 && maskedDocForLines[match.Index - 2] == '>'))
-                    continue;
-
-                var afterIndex = match.Index + match.Length;
-                while (afterIndex < maskedDocForLines.Length && char.IsWhiteSpace(maskedDocForLines[afterIndex]))
-                    afterIndex++;
-
-                if (afterIndex < maskedDocForLines.Length &&
-                    (maskedDocForLines[afterIndex] == '.' ||
-                     (maskedDocForLines[afterIndex] == '?' && afterIndex + 1 < maskedDocForLines.Length && maskedDocForLines[afterIndex + 1] == '.')))
-                    continue;
-
-                var wordLineStart = maskedDocForLines.LastIndexOf('\n', Math.Max(0, match.Index - 1)) + 1;
-                var linePrefix = maskedDocForLines[wordLineStart..match.Index].TrimEnd();
-
-                // Skip spellcheck for `=>` declarations.
-                if (afterIndex + 1 < maskedDocForLines.Length &&
-                    maskedDocForLines[afterIndex] == '=' && maskedDocForLines[afterIndex + 1] == '>')
-                    continue;
-
-                if (char.IsUpper(word[0]) &&
-                    (linePrefix.EndsWith("new", StringComparison.Ordinal) ||
-                     linePrefix.EndsWith("typeof", StringComparison.Ordinal) ||
-                     linePrefix.EndsWith("class", StringComparison.Ordinal) ||
-                     linePrefix.EndsWith("struct", StringComparison.Ordinal) ||
-                     linePrefix.EndsWith("interface", StringComparison.Ordinal) ||
-                     linePrefix.EndsWith("enum", StringComparison.Ordinal)))
-                    continue;
-
-                var closest = knownLanguageWords
-                    .Where(candidate => Math.Abs(candidate.Length - word.Length) <= (word.Length >= 7 ? 2 : 1))
-                    .Select(candidate => new { Word = candidate, Distance = LevenshteinDistance(word, candidate) })
-                    .Where(candidate => candidate.Distance > 0 && candidate.Distance <= (word.Length >= 7 ? 2 : 1))
-                    .OrderBy(candidate => candidate.Distance)
-                    .ThenBy(candidate => Math.Abs(candidate.Word.Length - word.Length))
-                    .FirstOrDefault();
-
-                if (closest is not null && spellingSpans.Add((match.Index, match.Length)))
-                {
-                    spans.Add(new ErrorSpan(
-                        match.Index,
-                        match.Length,
-                        $"Possibly misspelled '{word}', did you mean '{closest.Word}'?"));
-                }
-            }
         }
 
         if (embeddedLanguageResolver is not null && languageExtension?.LangRules is { HasEmbeddedRegions: true } embeddedRules)
