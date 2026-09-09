@@ -64,5 +64,10 @@ This patch features updated Insight SVG icons and lag and performance improvemen
 
 ## v2.0.5 is here!
 > September 6, 2026
-This patch fixes a missing toolbar and features minor lag improvements
+This patch fixes a missing toolbar and features minor lag improvements.
+---
+
+## Thanks for 100 Kodo downloads!
+> September 8, 2026
+As a thank you, check out the new Arduino extension available in the Marketplace. Thanks for all the support, and long may it continue!
 ---
