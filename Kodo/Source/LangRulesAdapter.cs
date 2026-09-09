@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.RegularExpressions;
 
 namespace Kodo;
@@ -10,7 +11,9 @@ namespace Kodo;
 /// Reflection-based adapter for language-pack LangRules contracts.
 public sealed class LangRulesAdapter
 {
+    private readonly LanguageWorker _worker = new();
     private readonly Type _rules;
+    private readonly AssemblyLoadContext _loadContext;
     private readonly MethodInfo? _tokenize;
     private readonly MethodInfo? _symbols;
     private readonly MethodInfo? _completions;
@@ -26,10 +29,15 @@ public sealed class LangRulesAdapter
     private readonly MethodInfo? _codeActions;
     private readonly MethodInfo? _formatter;
     private readonly MethodInfo? _embeddedRegions;
+    private readonly MethodInfo? _positionDefinition;
+    private readonly MethodInfo? _positionReferences;
+    private readonly MethodInfo? _positionHover;
+    private readonly MethodInfo? _positionCompletions;
 
-    private LangRulesAdapter(Type rules)
+    private LangRulesAdapter(Type rules, AssemblyLoadContext loadContext)
     {
         _rules = rules;
+        _loadContext = loadContext;
         _tokenize = rules.GetMethod("Tokenize", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _symbols = rules.GetMethod("AnalyzeSymbols", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _completions = rules.GetMethod("GetCompletionsForPrefix", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
@@ -45,6 +53,10 @@ public sealed class LangRulesAdapter
         _codeActions = rules.GetMethod("GetCodeActions", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _formatter = rules.GetMethod("FormatDocument", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _embeddedRegions = rules.GetMethod("GetEmbeddedRegions", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
+        _positionDefinition = rules.GetMethod("FindDefinitionAt", BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(int)]);
+        _positionReferences = rules.GetMethod("FindReferencesAt", BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(int)]);
+        _positionHover = rules.GetMethod("GetHoverInfoAt", BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(int)]);
+        _positionCompletions = rules.GetMethod("GetCompletionsAt", BindingFlags.Public | BindingFlags.Static, [typeof(string), typeof(int)]);
     }
 
     public static LangRulesAdapter? TryLoad(string? folder, string? assemblyFile)
@@ -54,11 +66,20 @@ public sealed class LangRulesAdapter
         if (!File.Exists(path)) return null;
         try
         {
-            var assembly = Assembly.LoadFrom(path);
+            // Every language pack intentionally uses the same contract
+            // assembly name (LangRules.dll). Load each pack in its own
+            // context so Python, C#, SQL, etc. cannot collide in the default
+            // AssemblyLoadContext.
+            var loadContext = new AssemblyLoadContext($"Kodo.LangRules.{Guid.NewGuid():N}", isCollectible: false);
+            var assembly = loadContext.LoadFromAssemblyPath(Path.GetFullPath(path));
             var rules = assembly.GetTypes().FirstOrDefault(t => t.IsAbstract && t.IsSealed && t.Name == "LangRules");
-            return rules is null ? null : new LangRulesAdapter(rules);
+            return rules is null ? null : new LangRulesAdapter(rules, loadContext);
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LangRules load failed: path={path}; {ex.GetType().Name}: {ex.Message}");
+            return null;
+        }
     }
 
     public bool HasTokenizer => _tokenize is not null;
@@ -72,19 +93,44 @@ public sealed class LangRulesAdapter
     public bool HasCodeActionProvider => _codeActions is not null;
     public bool HasFormatter => _formatter is not null;
     public bool HasEmbeddedRegions => _embeddedRegions is not null;
+    public bool HasPositionNavigation => _positionDefinition is not null;
+    public bool HasPositionCompletions => _positionCompletions is not null;
+
+    public void OpenDocument(string uri, long version, string text) =>
+        _worker.Open(new LanguageDocumentSnapshot(uri, version, text));
+
+    public bool ApplyDocumentChanges(string uri, long version, IReadOnlyList<LanguageTextChange> changes) =>
+        _worker.Change(uri, version, changes).Result is LanguageDocumentSnapshot;
+
+    public void CloseDocument(string uri) => _worker.Close(uri);
+
+    public LangRuleLocation? FindDefinitionAt(string code, int offset)
+    {
+        if (_positionDefinition is null) return null;
+        var response = Dispatch("textDocument/definition", code, request => _positionDefinition.Invoke(null, [request.Document.Text, request.Offset]), offset);
+        return response.Result is null ? null : ConvertLocation(response.Result);
+    }
+
+    public LangRuleHover? GetHoverInfoAt(string code, int offset)
+    {
+        if (_positionHover is null) return null;
+        var response = Dispatch("textDocument/hover", code, request => _positionHover.Invoke(null, [request.Document.Text, request.Offset]), offset);
+        if (response.Result is null) return null;
+        return new LangRuleHover(Text(response.Result, "Contents"), i(response.Result, "Start"), i(response.Result, "Length"));
+    }
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSyntax(string code)
     {
         if (_diagnostics is null) return [];
-        try { return ConvertDiagnostics(_diagnostics.Invoke(null, [code])); }
-        catch { return []; }
+        var response = Dispatch("textDocument/diagnostics", code, request => _diagnostics.Invoke(null, [request.Document.Text]));
+        return response.Result is null ? [] : ConvertDiagnostics(response.Result);
     }
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSemantics(string code)
     {
         if (_semantics is null) return [];
-        try { return ConvertDiagnostics(_semantics.Invoke(null, [code])); }
-        catch { return []; }
+        var response = Dispatch("textDocument/semanticDiagnostics", code, request => _semantics.Invoke(null, [request.Document.Text]));
+        return response.Result is null ? [] : ConvertDiagnostics(response.Result);
     }
 
     public IReadOnlyList<LangRuleToken> Tokenize(string code)
@@ -97,8 +143,14 @@ public sealed class LangRulesAdapter
     public IReadOnlyList<LangRuleSymbol> AnalyzeSymbols(string code)
     {
         if (_symbols is null) return [];
-        try { return ConvertSymbols(_symbols.Invoke(null, [code])); }
-        catch { return []; }
+        var response = Dispatch("textDocument/documentSymbols", code, request => _symbols.Invoke(null, [request.Document.Text]));
+        return response.Result is null ? [] : ConvertSymbols(response.Result);
+    }
+
+    private LanguageWorkerResponse Dispatch(string method, string code, Func<LanguageWorkerRequest, object?> handler, int offset = 0)
+    {
+        var request = new LanguageWorkerRequest(method, new("untitled", 0, code), Offset: offset);
+        return _worker.Send(request, handler);
     }
 
     public IEnumerable<string> GetVariableLikeNames(string code)

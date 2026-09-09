@@ -11,6 +11,7 @@ using Avalonia;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
+using AvaloniaEdit;
 
 namespace Kodo.Models;
 
@@ -276,6 +277,9 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.18);
     public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.40);
     public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
+    public IBrush WarningHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#CCA700"), 0.18);
+    public IBrush InfoHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#3794FF"), 0.14);
+    public IBrush HintHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#8A8A8A"), 0.12);
 
     private const double StripeWidth = 8.0;
 
@@ -284,7 +288,9 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public IReadOnlyList<InsightEngine.ErrorSpan> Spans => _spans;
 
-    public KnownLayer Layer => KnownLayer.Selection;
+    // Keep diagnostics on the background layer so multiple extension spans
+    // remain visible instead of being obscured by selection rendering.
+    public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<InsightEngine.ErrorSpan> spans) => _spans = spans;
 
@@ -296,9 +302,20 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         foreach (var span in _spans)
         {
             if (span.StartOffset < lineEnd && span.StartOffset + span.Length > lineStart)
-                (messages ??= []).Add(span.Message);
+            {
+                var label = span.Severity.Equals("error", StringComparison.OrdinalIgnoreCase) ? "Error" :
+                            span.Severity.Equals("warning", StringComparison.OrdinalIgnoreCase) ? "Warning" :
+                            span.Severity.Equals("info", StringComparison.OrdinalIgnoreCase) ? "Info" : "Hint";
+                (messages ??= []).Add($"{label}: {span.Message}");
+            }
         }
-        return messages is null ? null : string.Join(Environment.NewLine, messages);
+        if (messages is null) return null;
+        // Keep hover text compact and predictable when several extensions
+        // report the same line. One diagnostic per line also prevents the
+        // popup from jumping as asynchronous checkers complete.
+        return string.Join(Environment.NewLine, messages
+            .GroupBy(message => message.Trim().TrimEnd('.').ToLowerInvariant())
+            .Select(group => group.First()));
     }
 
     private bool LineOverlapsDeadCode(DocumentLine line)
@@ -335,8 +352,25 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
             if (LineOverlapsDeadCode(docLine))
                 DrawStripes(drawingContext, y1, height, width);
-            else
-                drawingContext.DrawRectangle(LineHighlightBrush, null, new Rect(0, y1, width, height));
+            foreach (var span in _spans)
+            {
+                if (span.StartOffset >= docLine.EndOffset || span.StartOffset + span.Length <= docLine.Offset)
+                    continue;
+                var start = Math.Max(span.StartOffset, docLine.Offset);
+                var end = Math.Min(span.StartOffset + span.Length, docLine.EndOffset);
+                try
+                {
+                    var startColumn = Math.Clamp(start - docLine.Offset + 1, 1, docLine.Length + 1);
+                    var endColumn = Math.Clamp(Math.Max(startColumn + 1, end - docLine.Offset + 1), startColumn + 1, docLine.Length + 1);
+                    var left = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, startColumn), VisualYPosition.LineBottom).X;
+                    var right = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, endColumn), VisualYPosition.LineBottom).X;
+                    var brush = UnderlineBrushForSeverity(span.Severity);
+                    var underlineY = y1 + height - 2;
+                    var underlineWidth = Math.Max(3, right - left);
+                    drawingContext.DrawRectangle(brush, null, new Rect(left, underlineY, underlineWidth, 2.5));
+                }
+                catch { }
+            }
         }
     }
 
@@ -349,6 +383,43 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         }
         return false;
     }
+
+    private string GetHighestSeverityForLine(DocumentLine line)
+    {
+        var best = "hint";
+        foreach (var span in _spans)
+        {
+            if (span.StartOffset >= line.EndOffset || span.StartOffset + span.Length <= line.Offset)
+                continue;
+            if (SeverityRank(span.Severity) > SeverityRank(best))
+                best = span.Severity;
+        }
+        return best;
+    }
+
+    private IBrush BrushForSeverity(string severity) => severity switch
+    {
+        "warning" => WarningHighlightBrush,
+        "info" => InfoHighlightBrush,
+        "hint" => HintHighlightBrush,
+        _ => LineHighlightBrush,
+    };
+
+    private static IBrush UnderlineBrushForSeverity(string severity) => severity switch
+    {
+        "warning" => new SolidColorBrush(Color.Parse("#F2C94C")),
+        "info" => new SolidColorBrush(Color.Parse("#5BA7FF")),
+        "hint" => new SolidColorBrush(Color.Parse("#A0A7B4")),
+        _ => new SolidColorBrush(Color.Parse("#FF5C67")),
+    };
+
+    private static int SeverityRank(string severity) => severity switch
+    {
+        "error" => 4,
+        "warning" => 3,
+        "info" => 2,
+        _ => 1,
+    };
 
     private void DrawStripes(DrawingContext drawingContext, double y, double height, double width)
     {

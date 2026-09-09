@@ -250,7 +250,10 @@ public partial class MainWindow
         if (errorReason is null && deadCodeReason is null) return null;
 
         var parts = new List<string>();
-        if (errorReason is not null) parts.Add($"Error: {errorReason}");
+        if (errorReason is not null)
+            parts.Add(errorReason.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
+                ? errorReason
+                : $"Error: {errorReason}");
         if (deadCodeReason is not null) parts.Add($"Dead Code: {deadCodeReason}");
 
         return parts.Count switch

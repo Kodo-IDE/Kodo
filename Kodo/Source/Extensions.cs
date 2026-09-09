@@ -516,6 +516,8 @@ public partial class MainWindow
             Type = manifest.TryGetProperty("type", out var type) ? type.GetString() ?? "" : "",
             Author = manifest.TryGetProperty("author", out var auth) ? auth.GetString() ?? "" : "",
             Description = manifest.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+            EnableSemanticDiagnostics = manifest.TryGetProperty("enableSemanticDiagnostics", out var semantic) &&
+                semantic.ValueKind == JsonValueKind.True,
             Extensions = manifest.TryGetProperty("extensions", out var exts)
                 ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
                 : [],
@@ -537,6 +539,10 @@ public partial class MainWindow
                         : ["{file}"],
                     Format = tool.TryGetProperty("format", out var format) ? format.GetString() ?? "compiler" : "compiler",
                     Enabled = !tool.TryGetProperty("enabled", out var enabled) || enabled.ValueKind != JsonValueKind.False,
+                    ProjectFiles = tool.TryGetProperty("projectFiles", out var projectFiles) && projectFiles.ValueKind == JsonValueKind.Array
+                        ? projectFiles.EnumerateArray().Select(file => file.GetString() ?? string.Empty).Where(file => !string.IsNullOrWhiteSpace(file)).ToArray()
+                        : [],
+                    RequiresProject = tool.TryGetProperty("requiresProject", out var requiresProject) && requiresProject.ValueKind == JsonValueKind.True,
                 });
             }
         }
@@ -996,6 +1002,7 @@ public partial class MainWindow
         IsDirectorySource = src.IsDirectorySource,
         InstalledOnUtc = src.InstalledOnUtc,
         PluginAssemblyFileName = src.PluginAssemblyFileName,
+        EnableSemanticDiagnostics = src.EnableSemanticDiagnostics,
         PluginFolderPath = src.PluginFolderPath,
         IconImage = src.IconImage,
         IconBytes = src.IconBytes,
@@ -1007,6 +1014,8 @@ public partial class MainWindow
             Arguments = tool.Arguments.ToArray(),
             Format = tool.Format,
             Enabled = tool.Enabled,
+            ProjectFiles = tool.ProjectFiles.ToArray(),
+            RequiresProject = tool.RequiresProject,
         }));
         return clone;
     }

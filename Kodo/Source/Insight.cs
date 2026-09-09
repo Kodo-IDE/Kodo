@@ -1053,94 +1053,19 @@ public sealed class InsightEngine
             StartOffset = startOffset;
             Length = Math.Max(1, length);
             Message = message;
-            Severity = string.IsNullOrWhiteSpace(severity) ? "error" : severity;
+            Severity = NormalizeSeverity(severity);
             Code = code ?? string.Empty;
             Source = string.IsNullOrWhiteSpace(source) ? "Kodo" : source;
         }
-    }
 
-    private static readonly Regex BlockKeywordLine = new(
-        @"^\s*(?:if|elif|else|for|while|def|class|try|except|finally|with)\b",
-        RegexOptions.Compiled);
-
-    private static readonly Regex ColonStyleSample = new(
-        @"^\s*(?:if|elif|else|for|while|def|class|try|except|finally|with)\b.*:\s*$",
-        RegexOptions.Compiled);
-
-    private static readonly Regex StatementSafeLineEnd = new(
-        @"[;{}:,\\+\-*/%&|^~<>=!\[(]\s*$|^\s*$|^\s*(?://|#|\*|/\*)|^\s*@|^\s*\)|^\s*\}",
-        RegexOptions.Compiled);
-
-    private static readonly Regex StatementExemptLine = new(
-        @"^\s*(?:#|@|\[|using\s+[\w.]+\s*;?\s*$|namespace\b|package\b|import\b|from\b|module\b)",
-        RegexOptions.Compiled);
-
-    private static readonly Regex NoSemicolonControlHeader = new(
-        @"^\s*(?:if|else|else\s+if|for|foreach|while|do|try|catch|finally|using|lock|switch|case|default)\b",
-        RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-    private static readonly Regex NoSemicolonTypeHeader = new(
-        @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly|const|volatile|new)\s+)*(?:class|struct|interface|enum|record|namespace|void)\b",
-        RegexOptions.Compiled);
-
-    private static readonly Regex NoSemicolonMethodHeader = new(
-        @"^\s*(?:(?:public|private|protected|internal|static|abstract|virtual|override|sealed|async|extern|unsafe|partial|readonly)\s+)*(?:\w+(?:<[^>]+>)?\s+)+\w+\s*\(.*\)\s*$",
-        RegexOptions.Compiled);
-
-    private static string? GetNextNonEmptyLine(string[] maskedLines, int lineIndex)
-    {
-        for (var j = lineIndex + 1; j < maskedLines.Length; j++)
+        private static string NormalizeSeverity(string? severity) => severity?.Trim().ToLowerInvariant() switch
         {
-            var next = maskedLines[j].Trim();
-            if (next.Length == 0) continue;
-            return next;
-        }
-        return null;
-    }
-
-    private static bool IsNoSemicolonNeeded(string trimmedEnd, string trimmedNoIndent, int lineIndex, string[] maskedLines)
-    {
-        if (trimmedNoIndent.StartsWith("?") || trimmedNoIndent.StartsWith(":") ||
-            trimmedNoIndent.StartsWith(".") || trimmedNoIndent.StartsWith("+") ||
-            trimmedNoIndent.StartsWith(","))
-            return true;
-
-        if (NoSemicolonControlHeader.IsMatch(trimmedNoIndent) || NoSemicolonTypeHeader.IsMatch(trimmedNoIndent))
-            return true;
-        if (NoSemicolonMethodHeader.IsMatch(trimmedEnd))
-            return true;
-
-        var next = GetNextNonEmptyLine(maskedLines, lineIndex);
-        if (next is not null)
-        {
-            if (next.StartsWith("{") && trimmedEnd.Contains("= new"))
-                return true;
-            if (next.StartsWith("{") && trimmedEnd.TrimEnd().EndsWith("=", StringComparison.Ordinal))
-                return true;
-            if (next.StartsWith("{") && trimmedEnd.Contains("=") && !trimmedEnd.Contains(";") && trimmedEnd.Contains("new"))
-                return true;
-            if ((next.StartsWith("?") || next.StartsWith(":") || next.StartsWith(".")) && trimmedEnd.Contains("="))
-                return true;
-            if ((next.StartsWith(".") || next.StartsWith("+")) && !trimmedEnd.EndsWith(";", StringComparison.Ordinal) && !trimmedEnd.EndsWith("{", StringComparison.Ordinal))
-                return true;
-            if (next.StartsWith("{") && (trimmedNoIndent.Contains("class") || trimmedNoIndent.Contains("struct") ||
-                trimmedNoIndent.Contains("interface") || trimmedNoIndent.Contains("enum") ||
-                trimmedNoIndent.Contains("record") || trimmedNoIndent.Contains("namespace")))
-                return true;
-            if (trimmedEnd.EndsWith(")", StringComparison.Ordinal) && next.StartsWith("{"))
-                return true;
-            if (next.StartsWith("{") && !trimmedEnd.Contains("=") && !trimmedEnd.Contains(";"))
-                return true;
-            if (trimmedNoIndent.StartsWith("?") && next.StartsWith(":"))
-                return true;
-            if (trimmedNoIndent.StartsWith(":") && (next.StartsWith(",") || next.StartsWith("}")))
-                return true;
-        }
-
-        if (trimmedEnd.EndsWith("=", StringComparison.Ordinal))
-            return true;
-
-        return false;
+            "fatal" or "critical" or "error" => "error",
+            "warn" or "warning" => "warning",
+            "information" or "info" => "info",
+            "hint" => "hint",
+            _ => "error",
+        };
     }
 
     private static bool IsConditionalTerminator(string[] masked, int terminatorIndex)
@@ -1164,10 +1089,6 @@ public sealed class InsightEngine
         return false;
     }
 
-    private static readonly Regex EmptyAssignment = new(
-        @"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>\[\],\s]*)?" + NotCompoundOrArrow + @"\s*$",
-        RegexOptions.Compiled);
-
     public List<ErrorSpan> FindErrors(
         string documentText,
         LoadedExtension? languageExtension = null,
@@ -1181,221 +1102,13 @@ public sealed class InsightEngine
 
         if (languageExtension?.LangRules is { HasDiagnostics: true } generated)
         {
-            foreach (var diagnostic in generated.AnalyzeSyntax(documentText))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentText.Length)
-                    continue;
-                var length = Math.Clamp(diagnostic.Length, 1, documentText.Length - diagnostic.Start);
-                spans.Add(new ErrorSpan(diagnostic.Start, length, diagnostic.Message, diagnostic.Severity, diagnostic.Code, diagnostic.Source));
-            }
+            var extensionDiagnostics = generated.AnalyzeSyntax(documentText);
+            AddDiagnostics(spans, extensionDiagnostics, documentText.Length, cancellationToken);
         }
 
-        if (languageExtension?.LangRules is { HasSemanticAnalyzer: true } semanticRules)
-        {
-            foreach (var diagnostic in semanticRules.AnalyzeSemantics(documentText))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (string.Equals(diagnostic.Code, "semantic.undefined-name", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentText.Length)
-                    continue;
-                var length = Math.Clamp(diagnostic.Length, 1, documentText.Length - diagnostic.Start);
-                spans.Add(new ErrorSpan(diagnostic.Start, length, diagnostic.Message, diagnostic.Severity, diagnostic.Code, diagnostic.Source));
-            }
-        }
-
-        var commentLine = languageExtension?.CommentLine is { Length: > 0 } cl ? cl : "//";
-        var blockStart = languageExtension?.CommentBlockStart is { Length: > 0 } bs ? bs : "/*";
-        var blockEnd = languageExtension?.CommentBlockEnd is { Length: > 0 } be ? be : "*/";
-        var multiLineStringDelims = languageExtension?.MultiLineStringDelimiters is { Length: > 0 } mls
-            ? mls
-            : Array.Empty<string>();
-
-        var stack = new Stack<(char Bracket, int Offset)>();
-        var inLineComment = false;
-        var inBlockComment = false;
-        var inString = false;
-        var stringOpenOffset = -1;
-        var stringDelimiter = '\0';
-        var inMultiLineString = false;
-        var inVerbatimString = false;
-
-        for (var i = 0; i < documentText.Length; i++)
-        {
-            if ((i & 2047) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var c = documentText[i];
-
-            if (inLineComment)
-            {
-                if (c == '\n') inLineComment = false;
-                continue;
-            }
-
-            if (inBlockComment)
-            {
-                if (MatchesAt(documentText, i, blockEnd)) { inBlockComment = false; i += blockEnd.Length - 1; }
-                continue;
-            }
-
-            if (inString)
-            {
-                if (c == '\\' && !inMultiLineString && !inVerbatimString) { i++; continue; }
-                if (c == '\n' && !inMultiLineString && !inVerbatimString)
-                {
-                    spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal"));
-                    inString = false;
-                    continue;
-                }
-                if (inVerbatimString && c == stringDelimiter)
-                {
-                    if (i + 1 < documentText.Length && documentText[i + 1] == stringDelimiter)
-                    {
-                        i++;
-                        continue;
-                    }
-                    inString = false;
-                    inVerbatimString = false;
-                    continue;
-                }
-                var closingDelim = inMultiLineString
-                    ? multiLineStringDelims.FirstOrDefault(d => MatchesAt(documentText, i, d))
-                    : (MatchesAt(documentText, i, stringDelimiter.ToString()) ? stringDelimiter.ToString() : null);
-                if (closingDelim is not null)
-                {
-                    inString = false;
-                    inMultiLineString = false;
-                    i += closingDelim.Length - 1;
-                }
-                continue;
-            }
-
-            if (MatchesAt(documentText, i, commentLine)) { inLineComment = true; i += commentLine.Length - 1; continue; }
-            if (MatchesAt(documentText, i, blockStart)) { inBlockComment = true; i += blockStart.Length - 1; continue; }
-
-            var multiDelim = multiLineStringDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
-            if (multiDelim is not null)
-            {
-                inString = true;
-                inMultiLineString = true;
-                stringOpenOffset = i;
-                i += multiDelim.Length - 1;
-                continue;
-            }
-
-            if (c is '"' or '\'')
-            {
-                var prefixStart = i;
-                while (prefixStart > 0 && documentText[prefixStart - 1] is '@' or '$')
-                    prefixStart--;
-                var hasAtPrefix = prefixStart < i && documentText[prefixStart..i].Contains('@');
-                var hasRPrefix = i > 0 && (documentText[i - 1] is 'r' or 'R') &&
-                                  (i < 2 || !char.IsLetterOrDigit(documentText[i - 2]));
-
-                inString = true;
-                inMultiLineString = false;
-                inVerbatimString = hasAtPrefix || hasRPrefix;
-                stringDelimiter = c;
-                stringOpenOffset = i;
-                continue;
-            }
-
-            switch (c)
-            {
-                case '(' or '{' or '[':
-                    stack.Push((c, i));
-                    break;
-                case ')' or '}' or ']':
-                    var expected = c switch { ')' => '(', '}' => '{', _ => '[' };
-                    if (stack.Count > 0 && stack.Peek().Bracket == expected)
-                    {
-                        stack.Pop();
-                    }
-                    else
-                    {
-                        spans.Add(new ErrorSpan(i, 1, $"Unexpected '{c}' - no matching '{expected}'"));
-                    }
-                    break;
-            }
-        }
-
-        if (inString && !inMultiLineString)
-            spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal"));
-        else if (inString && inMultiLineString)
-            spans.Add(new ErrorSpan(stringOpenOffset, 1, "Unterminated string literal (unclosed multi-line string)"));
-
-        foreach (var (bracket, offset) in stack)
-        {
-            var expectedClose = bracket switch { '(' => ')', '{' => '}', _ => ']' };
-            spans.Add(new ErrorSpan(offset, 1, $"'{bracket}' is never closed it's missing a '{expectedClose}'"));
-        }
-
-        var lines = documentText.Split('\n');
-        var lineStart = new int[lines.Length];
-        var offsetAcc = 0;
-        for (var i = 0; i < lines.Length; i++)
-        {
-            lineStart[i] = offsetAcc;
-            offsetAcc += lines[i].Length + 1;
-        }
-
-        var maskedDocForLines = BuildMaskedDocument(documentText, languageExtension);
-        var masked = maskedDocForLines.Split('\n');
-
-        var nonBlankLines = masked.Count(l => l.Trim().Length > 0);
-        var semicolonLines = masked.Count(l => l.TrimEnd().EndsWith(';'));
-        var looksSemicolonStyle = semicolonLines >= 3 && semicolonLines >= nonBlankLines * 0.5;
-        var looksColonStyle = !looksSemicolonStyle && masked.Any(l => ColonStyleSample.IsMatch(l));
-
-        for (var i = 0; i < lines.Length; i++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = masked[i];
-            var trimmed = line.TrimEnd('\r');
-            var trimmedEnd = trimmed.TrimEnd();
-            var trimmedNoIndent = trimmedEnd.TrimStart();
-
-            if (looksSemicolonStyle && trimmedNoIndent.Length > 0 &&
-                !StatementSafeLineEnd.IsMatch(trimmedEnd) && !StatementExemptLine.IsMatch(trimmedNoIndent) &&
-                !IsNoSemicolonNeeded(trimmedEnd, trimmedNoIndent, i, masked))
-            {
-                var contentLen = ContentLength(lines[i]);
-                if (contentLen > 0)
-                    spans.Add(new ErrorSpan(lineStart[i] + contentLen - 1, 1, "Missing ';'"));
-            }
-
-            if (looksColonStyle && BlockKeywordLine.IsMatch(trimmedNoIndent) &&
-                !trimmed.TrimEnd().EndsWith(':') && !trimmed.TrimEnd().EndsWith('\\') &&
-                trimmedNoIndent.Length > 0)
-            {
-                var contentLen = ContentLength(lines[i]);
-                if (contentLen > 0)
-                    spans.Add(new ErrorSpan(lineStart[i] + contentLen - 1, 1, "Missing ':'"));
-            }
-
-            var emptyAssignMatch = EmptyAssignment.Match(trimmedNoIndent);
-            if (emptyAssignMatch.Success &&
-                !ReservedWords.Contains(emptyAssignMatch.Groups[1].Value) &&
-                !BatchSetDeclaration.IsMatch(trimmedNoIndent))
-            {
-                var nextForEmpty = GetNextNonEmptyLine(masked, i);
-                if (nextForEmpty is not null &&
-                    (nextForEmpty.StartsWith("{") || nextForEmpty.StartsWith("?") || nextForEmpty.StartsWith(":") ||
-                     nextForEmpty.StartsWith("\"") || nextForEmpty.StartsWith("'") || nextForEmpty.StartsWith("new", StringComparison.Ordinal) ||
-                     nextForEmpty.StartsWith("(") || nextForEmpty.StartsWith("[")))
-                {
-                }
-                else
-                {
-                    var contentLen = ContentLength(lines[i]);
-                    if (contentLen > 0)
-                        spans.Add(new ErrorSpan(
-                            lineStart[i], contentLen,
-                            $"'{emptyAssignMatch.Groups[1].Value}' declares nothing, expected a value after '='"));
-                }
-            }
-
-        }
+        if (languageExtension?.EnableSemanticDiagnostics == true &&
+            languageExtension.LangRules is { HasSemanticAnalyzer: true } semanticRules)
+            AddDiagnostics(spans, semanticRules.AnalyzeSemantics(documentText), documentText.Length, cancellationToken);
 
         if (embeddedLanguageResolver is not null && languageExtension?.LangRules is { HasEmbeddedRegions: true } embeddedRules)
         {
@@ -1426,10 +1139,38 @@ public sealed class InsightEngine
             }
         }
 
-        var uniqueSpans = new HashSet<(int Start, int Length, string Message, string Severity, string Code, string Source)>();
+        // Extensions may combine a recovery analyzer with a grammar analyzer.
+        // Collapse duplicate locations so users see one authoritative marker,
+        // preferring the extension recovery diagnostic over a generic fallback.
         return spans
-            .Where(span => uniqueSpans.Add((span.StartOffset, span.Length, span.Message, span.Severity, span.Code, span.Source)))
+            .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant()))
+            .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
             .ToList();
+    }
+
+    // Language packs own syntax. The host only rejects malformed ranges so a faulty
+    // extension cannot misplace a diagnostic in another part of the document.
+    private static void AddDiagnostics(
+        ICollection<ErrorSpan> destination,
+        IReadOnlyList<LangRuleDiagnostic> diagnostics,
+        int documentLength,
+        CancellationToken cancellationToken)
+    {
+        foreach (var diagnostic in diagnostics)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentLength)
+                continue;
+
+            var length = Math.Clamp(diagnostic.Length, 1, documentLength - diagnostic.Start);
+            destination.Add(new ErrorSpan(
+                diagnostic.Start,
+                length,
+                diagnostic.Message.Trim(),
+                diagnostic.Severity,
+                diagnostic.Code,
+                diagnostic.Source));
+        }
     }
 
     private static bool MatchesAt(string text, int index, string token)

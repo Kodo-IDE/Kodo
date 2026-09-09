@@ -6,6 +6,9 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Disable Avalonia's build-time telemetry task. It can fail builds when
+         the per-user BuildServices log is locked or not writable. -->
+    <UsedAvaloniaProducts></UsedAvaloniaProducts>
     <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>

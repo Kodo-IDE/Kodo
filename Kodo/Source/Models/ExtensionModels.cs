@@ -102,6 +102,8 @@ public sealed class ExternalLanguageTool
     public string[] Arguments { get; init; } = [];
     public string Format { get; init; } = "compiler";
     public bool Enabled { get; init; }
+    public string[] ProjectFiles { get; init; } = [];
+    public bool RequiresProject { get; init; }
 }
 
 public record class LoadedExtension : INotifyPropertyChanged
@@ -139,6 +141,8 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string SourcePath { get; set; } = string.Empty;
     public bool IsDirectorySource { get; set; }
     public string? PluginAssemblyFileName { get; set; }
+    /// <summary>Enables extension semantic diagnostics after the pack supplies fixtures.</summary>
+    public bool EnableSemanticDiagnostics { get; set; }
     public string? PluginFolderPath { get; set; }
     public LangRulesAdapter? LangRules { get; set; }
     public List<ExternalLanguageTool> ExternalTools { get; } = [];

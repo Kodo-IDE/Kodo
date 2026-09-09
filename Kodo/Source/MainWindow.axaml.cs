@@ -7795,11 +7795,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 rawSpans = await Task.Run(
                     () => _InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
                     scanToken);
+                KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count}");
                 var externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
                     languageExtension,
                     _currentFilePath,
                     text,
                     scanToken);
+                KodoDiagnostics.LogDebug($"External diagnostics: extension={languageExtension?.Id ?? "<none>"}, tools={languageExtension?.ExternalTools.Count ?? 0}, results={externalDiagnostics.Count}");
                 foreach (var diagnostic in externalDiagnostics)
                 {
                     if (diagnostic.Start < 0 || diagnostic.Start >= text.Length || string.IsNullOrWhiteSpace(diagnostic.Message))
@@ -7813,8 +7815,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Source));
                 }
                 rawSpans = rawSpans
-                    .GroupBy(span => (span.StartOffset, span.Length, span.Message, span.Severity, span.Code, span.Source))
-                    .Select(group => group.First())
+                    .GroupBy(span => (span.StartOffset, span.Severity.Trim().ToLowerInvariant()))
+                    .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
                     .ToList();
             }
             catch (OperationCanceledException)
@@ -7845,6 +7847,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (spans.Count != rawSpans.Count)
             HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         EditorTextBox.TextArea.TextView.Redraw();
     }
 
