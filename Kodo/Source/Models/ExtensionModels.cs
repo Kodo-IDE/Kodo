@@ -1,5 +1,6 @@
 // Licensed under GPL-v3.0
 using System;
+using System.Text.Json;
 using Avalonia.Media;
 using System.Runtime.CompilerServices;
 using System.ComponentModel;
@@ -106,6 +107,33 @@ public sealed class ExternalLanguageTool
     public bool RequiresProject { get; init; }
 }
 
+public sealed class LspConfiguration
+{
+    /// <summary>Executable for the language server – must be on PATH or absolute. Not hardcoded in core.</summary>
+    public string Command { get; init; } = string.Empty;
+
+    /// <summary>Arguments passed to the server (e.g. ["--stdio"]). Aliases: "args" / "arguments".</summary>
+    public string[] Arguments { get; init; } = [];
+
+    /// <summary>LSP language identifiers (e.g. ["python","python3"]). Used for textDocument/languageId and server initialization.</summary>
+    public string[] Languages { get; init; } = [];
+
+    /// <summary>File extensions handled by this LSP (e.g. [".py"]). Falls back to manifest "extensions" if empty.</summary>
+    public string[] FileExtensions { get; init; } = [];
+
+    /// <summary>Optional environment variables for the server process. Values may contain placeholders.</summary>
+    public Dictionary<string, string> Env { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Optional working directory for the server. Supports placeholders like {workspace}.</summary>
+    public string? WorkingDirectory { get; init; }
+
+    /// <summary>Optional initializationOptions forwarded in initialize request. Cloned JsonElement when present.</summary>
+    public JsonElement? InitializationOptions { get; init; }
+
+    /// <summary>Optional root markers for workspace detection (e.g. ["pyproject.toml","setup.py"]). Future use.</summary>
+    public string[] RootMarkers { get; init; } = [];
+}
+
 public record class LoadedExtension : INotifyPropertyChanged
 {
     private bool _isUpdateAvailable;
@@ -141,12 +169,18 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string SourcePath { get; set; } = string.Empty;
     public bool IsDirectorySource { get; set; }
     public string? PluginAssemblyFileName { get; set; }
+    public string? LanguagePluginAssemblyFileName { get; set; }
     /// <summary>Enables extension semantic diagnostics after the pack supplies fixtures.</summary>
     public bool EnableSemanticDiagnostics { get; set; }
     public string? PluginFolderPath { get; set; }
+    public string? LanguagePluginFolderPath { get; set; }
     public LangRulesAdapter? LangRules { get; set; }
     public List<ExternalLanguageTool> ExternalTools { get; } = [];
+    public LspConfiguration? Lsp { get; set; }
+    public bool HasLsp => Lsp is not null && !string.IsNullOrWhiteSpace(Lsp.Command);
     public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
+    public bool HasLanguagePlugin => LanguagePluginAssemblyFileName is not null && LanguagePluginFolderPath is not null;
+    public bool HasAnyPlugin => HasPlugin || HasLanguagePlugin;
     public DateTime? InstalledOnUtc { get; set; }
     public ExtensionThemeDefinition? ThemeDefinition { get; set; }
     public string ThemeCardThemeId => ThemeDefinition?.ThemeId ?? string.Empty;

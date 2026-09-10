@@ -377,6 +377,11 @@ public partial class MainWindow
             baseExt.PluginFolderPath = folderPath;
             baseExt.LangRules = LangRulesAdapter.TryLoad(folderPath, baseExt.PluginAssemblyFileName);
         }
+        if (baseExt.LanguagePluginAssemblyFileName is not null &&
+            File.Exists(Path.Combine(folderPath, baseExt.LanguagePluginAssemblyFileName)))
+        {
+            baseExt.LanguagePluginFolderPath = folderPath;
+        }
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -453,6 +458,26 @@ public partial class MainWindow
             baseExt.PluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id, baseExt.Version);
             baseExt.LangRules = LangRulesAdapter.TryLoad(baseExt.PluginFolderPath, baseExt.PluginAssemblyFileName);
         }
+        if (baseExt.LanguagePluginAssemblyFileName is not null &&
+            archive.GetEntry(baseExt.LanguagePluginAssemblyFileName) is not null)
+        {
+            if (baseExt.PluginFolderPath is not null)
+            {
+                var destPath = Path.Combine(baseExt.PluginFolderPath, baseExt.LanguagePluginAssemblyFileName);
+                if (!File.Exists(destPath))
+                {
+                    var entry = archive.GetEntry(baseExt.LanguagePluginAssemblyFileName)!;
+                    using var entryStream = entry.Open();
+                    using var destStream = File.Create(destPath);
+                    entryStream.CopyTo(destStream);
+                }
+                baseExt.LanguagePluginFolderPath = baseExt.PluginFolderPath;
+            }
+            else
+            {
+                baseExt.LanguagePluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id + "_lp", baseExt.Version);
+            }
+        }
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
@@ -521,7 +546,8 @@ public partial class MainWindow
             Extensions = manifest.TryGetProperty("extensions", out var exts)
                 ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
                 : [],
-            PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null
+            PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null,
+            LanguagePluginAssemblyFileName = manifest.TryGetProperty("languagePlugin", out var langPlugin) ? langPlugin.GetString() : null
         };
 
         if (manifest.TryGetProperty("externalTools", out var tools) && tools.ValueKind == JsonValueKind.Array)
@@ -547,7 +573,102 @@ public partial class MainWindow
             }
         }
 
+        if (manifest.TryGetProperty("lsp", out var lspElement))
+        {
+            try
+            {
+                var lsp = ParseLspConfiguration(lspElement, extension.Extensions);
+                if (lsp is not null)
+                    extension.Lsp = lsp;
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"Invalid lsp configuration for '{extension.Id}': {ex.Message}");
+            }
+        }
+
         return extension;
+    }
+
+    internal static LspConfiguration? ParseLspConfiguration(JsonElement lspElement, string[] fallbackExtensions)
+    {
+        if (lspElement.ValueKind != JsonValueKind.Object)
+        {
+            KodoDiagnostics.LogDebug($"lsp must be an object, got {lspElement.ValueKind}");
+            return null;
+        }
+
+        if (!lspElement.TryGetProperty("command", out var commandEl) || string.IsNullOrWhiteSpace(commandEl.GetString()))
+            return null;
+
+        var command = commandEl.GetString()!.Trim();
+
+        // arguments / args alias
+        string[] arguments = [];
+        if (lspElement.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Array)
+            arguments = ReadStringArray(argsEl);
+        else if (lspElement.TryGetProperty("args", out var args2) && args2.ValueKind == JsonValueKind.Array)
+            arguments = ReadStringArray(args2);
+
+        // languages / languageIds alias
+        string[] languages = [];
+        if (lspElement.TryGetProperty("languages", out var langEl) && langEl.ValueKind == JsonValueKind.Array)
+            languages = ReadStringArray(langEl);
+        else if (lspElement.TryGetProperty("languageIds", out var lang2) && lang2.ValueKind == JsonValueKind.Array)
+            languages = ReadStringArray(lang2);
+        else if (lspElement.TryGetProperty("language", out var langSingle) && langSingle.ValueKind == JsonValueKind.String)
+            languages = [langSingle.GetString()!];
+
+        // fileExtensions / extensions alias
+        string[] fileExtensions = [];
+        if (lspElement.TryGetProperty("fileExtensions", out var fe) && fe.ValueKind == JsonValueKind.Array)
+            fileExtensions = ReadStringArray(fe);
+        else if (lspElement.TryGetProperty("extensions", out var fe2) && fe2.ValueKind == JsonValueKind.Array)
+            fileExtensions = ReadStringArray(fe2);
+
+        if (fileExtensions.Length == 0 && fallbackExtensions.Length > 0)
+            fileExtensions = fallbackExtensions;
+
+        // normalize extensions to have dot
+        fileExtensions = fileExtensions.Select(e => e.StartsWith(".") ? e : "." + e).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        languages = languages.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+
+        var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (lspElement.TryGetProperty("env", out var envEl) && envEl.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in envEl.EnumerateObject())
+                env[prop.Name] = prop.Value.GetString() ?? prop.Value.ToString();
+        }
+
+        string? workingDirectory = null;
+        if (lspElement.TryGetProperty("cwd", out var cwdEl) && cwdEl.ValueKind == JsonValueKind.String)
+            workingDirectory = cwdEl.GetString();
+        else if (lspElement.TryGetProperty("workingDirectory", out var wdEl) && wdEl.ValueKind == JsonValueKind.String)
+            workingDirectory = wdEl.GetString();
+
+        JsonElement? initOptions = null;
+        if (lspElement.TryGetProperty("initializationOptions", out var initEl) && initEl.ValueKind != JsonValueKind.Undefined && initEl.ValueKind != JsonValueKind.Null)
+            initOptions = initEl.Clone();
+        else if (lspElement.TryGetProperty("initialization_options", out var init2) && init2.ValueKind != JsonValueKind.Undefined && init2.ValueKind != JsonValueKind.Null)
+            initOptions = init2.Clone();
+
+        string[] rootMarkers = [];
+        if (lspElement.TryGetProperty("rootMarkers", out var rmEl) && rmEl.ValueKind == JsonValueKind.Array)
+            rootMarkers = ReadStringArray(rmEl);
+        else if (lspElement.TryGetProperty("rootPatterns", out var rpEl) && rpEl.ValueKind == JsonValueKind.Array)
+            rootMarkers = ReadStringArray(rpEl);
+
+        return new LspConfiguration
+        {
+            Command = command,
+            Arguments = arguments,
+            Languages = languages,
+            FileExtensions = fileExtensions,
+            Env = env,
+            WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
+            InitializationOptions = initOptions,
+            RootMarkers = rootMarkers
+        };
     }
 
     private static IEnumerable<string> EnumerateLanguageProfileNames()
@@ -1002,8 +1123,11 @@ public partial class MainWindow
         IsDirectorySource = src.IsDirectorySource,
         InstalledOnUtc = src.InstalledOnUtc,
         PluginAssemblyFileName = src.PluginAssemblyFileName,
+        LanguagePluginAssemblyFileName = src.LanguagePluginAssemblyFileName,
         EnableSemanticDiagnostics = src.EnableSemanticDiagnostics,
         PluginFolderPath = src.PluginFolderPath,
+        LanguagePluginFolderPath = src.LanguagePluginFolderPath,
+        Lsp = src.Lsp,
         IconImage = src.IconImage,
         IconBytes = src.IconBytes,
         };

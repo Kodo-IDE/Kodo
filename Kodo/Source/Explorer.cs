@@ -214,6 +214,8 @@ public partial class MainWindow
 
         if (focusEditor)
             FocusEditor();
+        if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
+            _ = LspNotifyDidOpenAsync(tab.Path, tab.Content);
     }
 
     private void CloseTab(EditorTab tab)
@@ -225,6 +227,7 @@ public partial class MainWindow
 
         if (closingActiveTab)
             CloseCompletionWindow();
+        if (!tab.IsUntitled) _ = LspNotifyDidCloseAsync(tab.Path);
         _InsightEngine.ForgetFile(tab.Path);
         OpenTabs.RemoveAt(index);
         _corruptedTabs.Remove(tab);
@@ -338,6 +341,7 @@ public partial class MainWindow
         {
             AddRecentFile(path);
             ActivateTab(existingTab);
+            if (!existingTab.IsUntitled) _ = LspNotifyDidOpenAsync(existingTab.Path, existingTab.Content);
             return;
         }
 
@@ -399,6 +403,7 @@ public partial class MainWindow
         OpenTabs.Add(tab);
         AddRecentFile(path);
         ActivateTab(tab);
+        if (!isCorrupted && !IsImagePreviewFile(path)) _ = LspNotifyDidOpenAsync(path, content);
     }
 
     private static async Task<string> ReadLargeFileAsync(string path, System.Text.Encoding encoding)

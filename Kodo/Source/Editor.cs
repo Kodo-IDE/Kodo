@@ -214,6 +214,68 @@ public partial class MainWindow
             ToolTip.SetShowDelay(textView, 450);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
+        else if (!nowOverLink && diagnosticMessage is null && ResolveLspExtensionForFile(_currentFilePath) is not null && EditorTextBox?.Document is not null)
+        {
+            DiagnosticPopup.IsOpen = false;
+            ToolTip.SetTip(textView, null);
+            textView.Cursor = new Cursor(StandardCursorType.Ibeam);
+            // Debounced LSP hover – cancel previous, delay, then query (generic, throttled)
+            CancellationTokenSource hoverCts;
+            lock (_lspHoverLock)
+            {
+                _lspHoverCts?.Cancel();
+                _lspHoverCts?.Dispose();
+                _lspHoverCts = new CancellationTokenSource();
+                hoverCts = _lspHoverCts;
+            }
+            var hoverPos = position;
+            var hoverView = textView;
+            var hoverPath = _currentFilePath;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(250, hoverCts.Token);
+                    var hoverState = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (hoverCts.IsCancellationRequested) return (-1, (string?)null);
+                        try
+                        {
+                            var f = hoverView.GetPositionFloor(hoverPos + hoverView.ScrollOffset);
+                            if (f is null || EditorTextBox?.Document is null) return (-1, (string?)null);
+                            var l = EditorTextBox.Document.GetLineByNumber(f.Value.Line);
+                            var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, EditorTextBox.Document.TextLength);
+                            var txt = EditorTextBox.Document.Text;
+                            return (off, txt);
+                        }
+                        catch { return (-1, (string?)null); }
+                    });
+                    if (hoverCts.IsCancellationRequested) return;
+                    var hoverOffset = hoverState.Item1;
+                    var hoverText = hoverState.Item2;
+                    if (hoverOffset < 0 || hoverText is null) return;
+                    KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset}");
+                    var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, hoverText, hoverCts.Token).ConfigureAwait(false);
+                    if (hoverCts.IsCancellationRequested) return;
+                    if (string.IsNullOrWhiteSpace(hoverInfo))
+                    {
+                        KodoDiagnostics.LogDebug($"LSP hover response empty for {hoverPath}");
+                        return;
+                    }
+                    KodoDiagnostics.LogDebug($"LSP hover response len={hoverInfo.Length} for {hoverPath}");
+                    await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (hoverCts.IsCancellationRequested) return;
+                        if (DiagnosticPopup.IsOpen) return;
+                        ToolTip.SetTip(hoverView, hoverInfo);
+                        ToolTip.SetShowDelay(hoverView, 450);
+                        KodoDiagnostics.LogDebug($"LSP hover UI displayed for {hoverPath}");
+                    });
+                }
+                catch (OperationCanceledException) { }
+                catch (Exception ex) { KodoDiagnostics.LogDebug("LSP hover async failed", ex); }
+            }, hoverCts.Token);
+        }
         else
         {
             DiagnosticPopup.IsOpen = false;
@@ -384,6 +446,8 @@ public partial class MainWindow
         HideDiagnosticPopup();
         _syntaxHighlightDebounceTimer.Stop();
         _syntaxHighlightDebounceTimer.Start();
+        if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
+            QueueLspDidChange(_currentFilePath);
 
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
@@ -541,16 +605,35 @@ public partial class MainWindow
         GoToDefinitionAtCaret();
     }
 
-    private void GoToDefinitionAtCaret()
+    private async void GoToDefinitionAtCaret()
     {
+        if (EditorTextBox?.Document is null) return;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength);
+        var text = EditorTextBox.Document.Text;
+        var path = _currentFilePath;
+
+        // Try LSP first (generic, Phase 9)
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
+            {
+                if (await TryLspGoToDefinitionAsync(path, offset, text).ConfigureAwait(false))
+                    return;
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP go-to-definition failed, falling back to LangRules", ex); }
+
         var extension = CurrentLanguageExtension;
         var word = GetLanguageWordAtCaret();
         if (extension?.LangRules is not { HasDefinitionProvider: true } rules || string.IsNullOrWhiteSpace(word) || EditorTextBox?.Document is null)
             return;
         var definition = rules.FindDefinition(EditorTextBox.Document.Text, word);
         if (definition is null) return;
-        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(definition.Start, 0, EditorTextBox.Document.TextLength);
+        var start = Math.Clamp(definition.Start, 0, EditorTextBox.Document.TextLength);
+        var length = Math.Clamp(definition.Length, 0, EditorTextBox.Document.TextLength - start);
+        EditorTextBox.Select(start, length);
         EditorTextBox.TextArea.Caret.BringCaretToView();
+        EditorTextBox.Focus();
     }
 
     private void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -615,21 +698,58 @@ public partial class MainWindow
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
-        if (prefix.Length == 0)
+        var hasLspForCompletion = ResolveLspExtensionForFile(_currentFilePath) is not null;
+        if (prefix.Length == 0 && !hasLspForCompletion)
         {
             CloseCompletionWindow();
             return;
         }
+        // For LSP, allow empty prefix (e.g., after '.' or '[') – server will filter
 
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
+        var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
+        var isLspPrimaryForCompletion = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
 
-        var suggestions = await Task.Run(() =>
+        List<InsightSuggestion> suggestions;
+        if (isLspPrimaryForCompletion)
         {
-            _InsightEngine.ScanDocument(fileKey, text, languageExtension);
-            return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
-        });
+            // Zed-like: LSP is primary semantic provider – don't duplicate with Insight's regex/semantic variables
+            // Keep .kox snippets/keywords via LSP already, but still allow LSP completions
+            suggestions = new List<InsightSuggestion>();
+            KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
+        }
+        else
+        {
+            suggestions = await Task.Run(() =>
+            {
+                _InsightEngine.ScanDocument(fileKey, text, languageExtension);
+                return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
+            });
+        }
+
+        // LSP completions (generic, Phase 7) – always tried when LSP available, even if Insight was skipped
+        try
+        {
+            var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix);
+            if (lspSuggestions.Count > 0)
+            {
+                var seen = new HashSet<string>(suggestions.Select(s => s.Text), StringComparer.OrdinalIgnoreCase);
+                foreach (var s in lspSuggestions)
+                {
+                    if (seen.Add(s.Text))
+                        suggestions.Add(s);
+                }
+                // Re-sort by priority then text
+                suggestions = suggestions.OrderByDescending(s => s.Priority).ThenBy(s => s.Text, StringComparer.OrdinalIgnoreCase).Take(25).ToList();
+            }
+            else if (isLspPrimaryForCompletion)
+            {
+                KodoDiagnostics.LogDebug($"LSP completion: no results for prefix '{prefix}' at offset {offset}");
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP completion merge failed", ex); }
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.TextArea is null) return;

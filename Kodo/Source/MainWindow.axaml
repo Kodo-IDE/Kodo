@@ -1611,9 +1611,6 @@
                                 <MenuItem Name="EditorFormatDocumentMenuItem"
                                            Header="Format Document"
                                            Click="EditorFormatDocumentMenuItem_OnClick" />
-                                <MenuItem Name="EditorApplyCodeActionMenuItem"
-                                           Header="Apply Quick Fix"
-                                           Click="EditorApplyCodeActionMenuItem_OnClick" />
                                 <Separator />
                                 <MenuItem Name="EditorDismissDiagnosticMenuItem"
                                            Header="Dismiss Diagnostic"

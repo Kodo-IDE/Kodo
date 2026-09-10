@@ -53,6 +53,8 @@ public partial class MainWindow
 {
     private readonly Dictionary<string, LoadedKodoPlugin> _activePlugins =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, LoadedKodoPlugin> _activeLanguagePlugins =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private string PluginCacheFolderPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -108,6 +110,26 @@ public partial class MainWindow
 
             LoadPlugin(ext);
         }
+        SyncActiveLanguagePlugins();
+    }
+
+    private void SyncActiveLanguagePlugins()
+    {
+        var currentIds = LoadedExtensions.Where(e => e.HasLanguagePlugin).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var staleId in _activeLanguagePlugins.Keys.Where(id => !currentIds.Contains(id)).ToList())
+            UnloadLanguagePlugin(staleId);
+
+        foreach (var ext in LoadedExtensions.Where(e => e.HasLanguagePlugin))
+        {
+            if (_activeLanguagePlugins.TryGetValue(ext.Id, out var existing) && existing.Version == ext.Version)
+                continue;
+
+            if (_activeLanguagePlugins.ContainsKey(ext.Id))
+                UnloadLanguagePlugin(ext.Id);
+
+            LoadLanguagePlugin(ext);
+        }
     }
 
     private void LoadPlugin(LoadedExtension ext)
@@ -157,6 +179,63 @@ public partial class MainWindow
         {
             try { instance.OnUnload(); }
             catch (Exception ex) { Console.WriteLine($"[Plugins] '{extensionId}' threw during unload: {ex.Message}"); }
+        }
+
+        plugin.LoadContext.Unload();
+        _ = Task.Run(() =>
+        {
+            GC.Collect(0, GCCollectionMode.Optimized);
+            GC.WaitForPendingFinalizers();
+        });
+    }
+
+    private void LoadLanguagePlugin(LoadedExtension ext)
+    {
+        var assemblyPath = Path.Combine(ext.LanguagePluginFolderPath!, ext.LanguagePluginAssemblyFileName!);
+        if (!File.Exists(assemblyPath)) return;
+
+        var loadContext = new KodoPluginLoadContext(ext.Id + "_lp", ext.LanguagePluginFolderPath!);
+        var instances = new List<IKodoPlugin>();
+
+        try
+        {
+            var assembly = loadContext.LoadMainAssembly(assemblyPath);
+            foreach (var type in assembly.GetTypes())
+            {
+                if (type.IsAbstract || !typeof(IKodoPlugin).IsAssignableFrom(type)) continue;
+                if (Activator.CreateInstance(type) is not IKodoPlugin instance) continue;
+
+                instance.OnLoad(this, ext);
+                instances.Add(instance);
+            }
+
+            _activeLanguagePlugins[ext.Id] = new LoadedKodoPlugin
+            {
+                Version = ext.Version,
+                LoadContext = loadContext,
+                Instances = instances
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[LanguagePlugins] Failed to load '{ext.Id}': {ex.Message}");
+            ExtensionLoadErrors.Add($"Language plugin '{ext.Name}' failed to load: {ex.Message}");
+            foreach (var instance in instances)
+            {
+                try { instance.OnUnload(); } catch { }
+            }
+            loadContext.Unload();
+        }
+    }
+
+    private void UnloadLanguagePlugin(string extensionId)
+    {
+        if (!_activeLanguagePlugins.Remove(extensionId, out var plugin)) return;
+
+        foreach (var instance in plugin.Instances)
+        {
+            try { instance.OnUnload(); }
+            catch (Exception ex) { Console.WriteLine($"[LanguagePlugins] '{extensionId}' threw during unload: {ex.Message}"); }
         }
 
         plugin.LoadContext.Unload();

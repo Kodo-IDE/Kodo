@@ -872,6 +872,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
         _extensionAutoUpdateTimer.Tick += ExtensionAutoUpdateTimer_OnTick;
+        InitLspDocumentSync();
         _appUpdateScheduler = new AppUpdateScheduler(
             isEnabled: () => IsAutoUpdateAppEnabled,
             isManualCheckInProgress: () => IsCheckingForUpdatesManually,
@@ -7572,15 +7573,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (item.Name == "EditorGoToDefinitionMenuItem")
             {
-                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasDefinitionProvider == true && GetLanguageWordAtCaret() is not null;
+                var word = GetLanguageWordAtCaret();
+                var isVariable = false;
+                if (word is not null && CurrentLanguageExtension?.LangRules is { HasDefinitionProvider: true } rules && EditorTextBox?.Document is not null)
+                {
+                    // Check if word is a variable via symbols or token kind
+                    var symbols = rules.AnalyzeSymbols(EditorTextBox.Document.Text);
+                    isVariable = symbols.Any(s => s.Name == word && (s.Kind == "Variable" || s.Kind == "Parameter" || s.Kind == "Field" || s.Kind == "Constant") && s.IsDeclaration)
+                               || rules.Tokenize(EditorTextBox.Document.Text).Any(t => t.Text == word && (t.Kind == "Variable" || t.Kind == "Parameter"));
+                    // Fallback: also consider declared variables set
+                    if (!isVariable)
+                    {
+                        var declared = rules.AnalyzeSymbols(EditorTextBox.Document.Text).Where(s => s.IsDeclaration).Select(s => s.Name).ToHashSet();
+                        isVariable = declared.Contains(word);
+                    }
+                }
+                item.IsEnabled = isVariable;
+                // Also control visibility so it only appears for variables
+                item.IsVisible = isVariable;
                 item.InputGesture = _keybinds.TryGetValue("GoToDefinition", out var definitionGesture) ? definitionGesture : null;
             }
             if (item.Name == "EditorFindReferencesMenuItem")
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true && GetLanguageWordAtCaret() is not null;
             if (item.Name == "EditorFormatDocumentMenuItem")
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true;
-            if (item.Name == "EditorApplyCodeActionMenuItem")
-                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasCodeActionProvider == true;
         }
     }
 
@@ -7757,12 +7773,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task UpdateErrorHighlightingAsync()
     {
-        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled ||
-            EditorTextBox?.Document is null ||
+        var hasLspForFile = ResolveLspExtensionForFile(_currentFilePath) is not null;
+        // Zed-like: LSP diagnostics should still show even if Insight is disabled, but respect plain-text/blacklist
+        if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
             HasNoFileExtension(_currentFilePath) ||
             IsInsightBlacklisted(_currentFilePath))
+        {
+            ClearErrorHighlighting();
+            HideDiagnosticPopup();
+            return;
+        }
+        if ((!IsInsightEnabled || !IsInsightErrorDetectionEnabled) && !hasLspForFile)
         {
             ClearErrorHighlighting();
             HideDiagnosticPopup();
@@ -7788,14 +7811,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
+        // Zed-like: when LSP is primary semantic provider, don't duplicate with Insight's semantic analysis
+        var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
+        var isLspPrimary = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
+        // Also consider configured LSP even if not yet initialized – suppress Insight semantic to avoid duplicate once LSP comes online
+        var hasConfiguredLsp = lspForFile?.Lsp != null;
+
         if (rawSpans is null)
         {
             try
             {
-                rawSpans = await Task.Run(
-                    () => _InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
-                    scanToken);
-                KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count}");
+                if (isLspPrimary)
+                {
+                    // LSP provides semantic diagnostics – skip Insight's language-semantic analyzer
+                    // Keep only non-semantic editor/syntax would remain, but FindErrors is semantic for now, so skip entirely
+                    rawSpans = new List<InsightEngine.ErrorSpan>();
+                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id})");
+                }
+                else
+                {
+                    rawSpans = await Task.Run(
+                        () => _InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
+                        scanToken);
+                    KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count} hasConfiguredLsp={hasConfiguredLsp}");
+                }
                 var externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
                     languageExtension,
                     _currentFilePath,
@@ -7814,6 +7853,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Code,
                         diagnostic.Source));
                 }
+                // Group Insight+External (keep LSP separate for cache)
                 rawSpans = rawSpans
                     .GroupBy(span => (span.StartOffset, span.Severity.Trim().ToLowerInvariant()))
                     .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
@@ -7836,6 +7876,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
             }
         }
+
+        // LSP diagnostics (generic, Phase 6) – always merged, not cached (publishDiagnostics can update without text change)
+        try
+        {
+            var lspSpans = GetLspDiagnosticsForFile(_currentFilePath, text);
+            if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
+            rawSpans.AddRange(lspSpans);
+            // Re-group: dedupe only identical diagnostics (same range+severity+message+code), prefer LSP over Recovery
+            rawSpans = rawSpans
+                .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
+                .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())
+                .ToList();
+            if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics after dedupe: rawAfter={rawSpans.Count}");
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP diagnostics merge failed", ex); }
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.Document is null) return;
@@ -8079,6 +8134,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NetworkChange.NetworkAvailabilityChanged -= NetworkChange_OnNetworkAvailabilityChanged;
         NetworkChange.NetworkAddressChanged -= NetworkChange_OnNetworkAddressChanged;
         CloseAllTerminalSessions();
+        try { _lspManager.Dispose(); } catch { }
         DisposeExtensionFolderWatchers();
         DisposeProjectFolderWatcher();
         DisposeDiscordPresence();

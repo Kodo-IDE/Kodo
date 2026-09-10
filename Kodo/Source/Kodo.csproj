@@ -33,6 +33,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Kodo.Lsp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
   </ItemGroup>
