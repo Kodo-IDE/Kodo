@@ -257,23 +257,32 @@ public partial class MainWindow
                     await Task.Delay(250, hoverCts.Token);
                     var hoverState = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (hoverCts.IsCancellationRequested) return (-1, (string?)null);
+                        if (hoverCts.IsCancellationRequested) return (-1, (string?)null, -1, -1, ' ', "");
                         try
                         {
                             var f = hoverView.GetPositionFloor(hoverPos + hoverView.ScrollOffset);
-                            if (f is null || EditorTextBox?.Document is null) return (-1, (string?)null);
+                            if (f is null || EditorTextBox?.Document is null) return (-1, (string?)null, -1, -1, ' ', "");
                             var l = EditorTextBox.Document.GetLineByNumber(f.Value.Line);
                             var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, EditorTextBox.Document.TextLength);
                             var txt = EditorTextBox.Document.Text;
-                            return (off, txt);
+                            var ch = off >= 0 && off < txt.Length ? txt[off] : ' ';
+                            var lineText = l.Length > 0 ? txt.Substring(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
+                            var snippet = off >= 0 && txt.Length > 0 ? txt.Substring(Math.Max(0, off-10), Math.Min(20, txt.Length - Math.Max(0, off-10))).Replace("\n","\\n").Replace("\r","\\r") : "";
+                            KodoDiagnostics.LogDebug($"LSP hover mapping: mouse=({hoverPos.X:F1},{hoverPos.Y:F1}) TextView line={f.Value.Line} col={f.Value.Column} docOffset={off} char='{ch}' lineText='{lineText}' snippet='{snippet}'");
+                            return (off, txt, f.Value.Line, f.Value.Column, ch, snippet);
                         }
-                        catch { return (-1, (string?)null); }
+                        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover mapping failed: {ex.Message}"); return (-1, (string?)null, -1, -1, ' ', ""); }
                     });
                     if (hoverCts.IsCancellationRequested) return;
                     var hoverOffset = hoverState.Item1;
                     var hoverText = hoverState.Item2;
+                    var hoverLine = hoverState.Item3;
+                    var hoverCol = hoverState.Item4;
+                    var hoverChar = hoverState.Item5;
+                    var hoverSnippet = hoverState.Item6;
                     if (hoverOffset < 0 || hoverText is null) return;
-                    KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset}");
+                    var (lspLine, lspChar) = OffsetToLspPosition(hoverText, hoverOffset);
+                    KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset} char='{hoverChar}' line={hoverLine} col={hoverCol} -> LSP line={lspLine} char={lspChar} snippet='{hoverSnippet}'");
                     var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, hoverText, hoverCts.Token).ConfigureAwait(false);
                     if (hoverCts.IsCancellationRequested) return;
                     if (string.IsNullOrWhiteSpace(hoverInfo))
