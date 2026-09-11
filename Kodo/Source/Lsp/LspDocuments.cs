@@ -704,22 +704,26 @@ public partial class MainWindow
             ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
             ["position"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = line, ["character"] = character }
         };
+        KodoDiagnostics.LogDebug($"LSP hover request id=? file={filePath} uri={uri} offset={offset} -> line={line} char={character} textAtOffset='{text.Substring(Math.Max(0, offset-10), Math.Min(20, text.Length - Math.Max(0, offset-10))).Replace("\n","\\n").Replace("\r","\\r")}'");
 
         JsonElement? result;
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(2));
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             result = await client.SendRequestAsync("textDocument/hover", @params, cts.Token).ConfigureAwait(false);
+            sw.Stop();
+            KodoDiagnostics.LogDebug($"LSP hover response raw for {filePath} offset={offset} line={line} char={character} took={sw.ElapsedMilliseconds}ms raw={(result?.GetRawText()?.Substring(0, Math.Min(600, result?.GetRawText()?.Length ?? 0)) ?? "null")}");
         }
-        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover failed for {filePath}", ex); return null; }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover failed for {filePath} offset={offset} line={line} char={character}", ex); return null; }
 
         if (result is null || result.Value.ValueKind == JsonValueKind.Null)
         {
-            KodoDiagnostics.LogDebug($"LSP hover response empty for {filePath}");
+            KodoDiagnostics.LogDebug($"LSP hover response empty (null) for {filePath} offset={offset} line={line} char={character}");
             return null;
         }
-        KodoDiagnostics.LogDebug($"LSP hover response received for {filePath} hasContents={result.Value.TryGetProperty("contents", out _)}");
+        KodoDiagnostics.LogDebug($"LSP hover response received for {filePath} offset={offset} line={line} char={character} hasContents={result.Value.TryGetProperty("contents", out _)} rawLen={result.Value.GetRawText().Length}");
         var root = result.Value;
         if (!root.TryGetProperty("contents", out var contents))
         {
@@ -746,6 +750,247 @@ public partial class MainWindow
             return string.Join("\n\n", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
         }
         return contents.ToString();
+    }
+
+    // Phase 9b – Find References (generic, HasReferenceProvider)
+    private async Task<bool> TryLspFindReferencesAsync(string? filePath, int offset, string text, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+        var lspExt = ResolveLspExtensionForFile(filePath);
+        if (lspExt?.Lsp is null) return false;
+        var workspace = GetWorkspaceRootForFile(filePath);
+        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        if (client is null || !client.IsInitialized) return false;
+        KodoDiagnostics.LogDebug($"LSP references request file={filePath} offset={offset}");
+        var uri = FilePathToUri(filePath);
+        var (line, character) = OffsetToLspPosition(text, offset);
+        var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
+            ["position"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = line, ["character"] = character },
+            ["context"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["includeDeclaration"] = true }
+        };
+        JsonElement? result;
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(3));
+            result = await client.SendRequestAsync("textDocument/references", @params, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP references failed for {filePath}", ex); return false; }
+        if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array) 
+        {
+            KodoDiagnostics.LogDebug($"LSP references response empty for {filePath}");
+            return false;
+        }
+        var locations = result.Value.EnumerateArray().ToList();
+        KodoDiagnostics.LogDebug($"LSP references response count={locations.Count} for {filePath}");
+        if (locations.Count == 0) return false;
+        // Use existing search UI to show references
+        var word = GetLanguageWordAtOffset(text, offset);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            FindText = word ?? "";
+            // Populate search results with LSP locations
+            OpenSearchPanel(IsFolderOpen ? SearchMode.ProjectSearch : SearchMode.FindInFile);
+            // For now, just show the word in search – LSP locations could be shown as search results
+            // TODO: Populate with actual LSP locations
+        });
+        return true;
+    }
+
+    private static string? GetLanguageWordAtOffset(string text, int offset)
+    {
+        if (string.IsNullOrEmpty(text) || offset < 0 || offset >= text.Length) return null;
+        var start = offset;
+        while (start > 0 && IsWordChar(text[start - 1])) start--;
+        var end = offset;
+        while (end < text.Length && IsWordChar(text[end])) end++;
+        return end > start ? text[start..end] : null;
+    }
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    // Phase 9c – Document Formatting (generic, HasFormatter)
+    private async Task<bool> TryLspFormatDocumentAsync(string? filePath, string text, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+        var lspExt = ResolveLspExtensionForFile(filePath);
+        if (lspExt?.Lsp is null) return false;
+        var workspace = GetWorkspaceRootForFile(filePath);
+        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        if (client is null || !client.IsInitialized) return false;
+        // Check if server supports formatting (via capabilities)
+        if (client.ServerCapabilities is JsonElement caps && caps.TryGetProperty("documentFormattingProvider", out var fmt) && fmt.ValueKind == JsonValueKind.False)
+            return false;
+        KodoDiagnostics.LogDebug($"LSP formatting request file={filePath}");
+        var uri = FilePathToUri(filePath);
+        var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
+            ["options"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["tabSize"] = 4, ["insertSpaces"] = true }
+        };
+        JsonElement? result;
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(3));
+            result = await client.SendRequestAsync("textDocument/formatting", @params, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP formatting failed for {filePath}", ex); return false; }
+        if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array)
+        {
+            KodoDiagnostics.LogDebug($"LSP formatting response empty for {filePath}");
+            return false;
+        }
+        var edits = result.Value.EnumerateArray().ToList();
+        KodoDiagnostics.LogDebug($"LSP formatting response edits={edits.Count} for {filePath}");
+        if (edits.Count == 0) return false;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null) return;
+            // Apply edits in reverse order to preserve offsets
+            var doc = EditorTextBox.Document;
+            // Simple: if single edit covering whole document, replace all
+            if (edits.Count == 1)
+            {
+                var edit = edits[0];
+                if (edit.TryGetProperty("newText", out var nt))
+                {
+                    var newText = nt.GetString() ?? "";
+                    var caret = EditorTextBox.TextArea.Caret.Offset;
+                    doc.Text = newText;
+                    EditorTextBox.TextArea.Caret.Offset = Math.Min(caret, doc.TextLength);
+                    KodoDiagnostics.LogDebug($"LSP formatting applied for {filePath}");
+                    return;
+                }
+            }
+            // Fallback: apply each edit
+            foreach (var edit in edits.OrderByDescending(e => e.TryGetProperty("range", out var r) && r.TryGetProperty("start", out var s) ? s.GetProperty("line").GetInt32() * 10000 + s.GetProperty("character").GetInt32() : 0))
+            {
+                if (!edit.TryGetProperty("newText", out var nt) || !edit.TryGetProperty("range", out var range)) continue;
+                var start = range.TryGetProperty("start", out var s) ? s : default;
+                var end = range.TryGetProperty("end", out var e) ? e : default;
+                var sLine = start.TryGetProperty("line", out var sl) ? sl.GetInt32() : 0;
+                var sChar = start.TryGetProperty("character", out var sc) ? sc.GetInt32() : 0;
+                var eLine = end.TryGetProperty("line", out var el) ? el.GetInt32() : sLine;
+                var eChar = end.TryGetProperty("character", out var ec) ? ec.GetInt32() : sChar;
+                var sOff = OffsetFromLspPosition(text, sLine, sChar);
+                var eOff = OffsetFromLspPosition(text, eLine, eChar);
+                var len = Math.Max(0, eOff - sOff);
+                doc.Replace(sOff, len, nt.GetString() ?? "");
+            }
+        });
+        return true;
+    }
+
+    // Phase 9d – Code Actions (generic, HasCodeActionProvider)
+    private async Task<bool> TryLspCodeActionsAsync(string? filePath, int offset, string text, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+        var lspExt = ResolveLspExtensionForFile(filePath);
+        if (lspExt?.Lsp is null) return false;
+        var workspace = GetWorkspaceRootForFile(filePath);
+        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        if (client is null || !client.IsInitialized) return false;
+        var uri = FilePathToUri(filePath);
+        var (line, character) = OffsetToLspPosition(text, offset);
+        // For code actions, we need range and context
+        var endLine = line;
+        var endChar = character + 1;
+        var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
+            ["range"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["start"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = line, ["character"] = character },
+                ["end"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = endLine, ["character"] = endChar }
+            },
+            ["context"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["diagnostics"] = Array.Empty<object>()
+            }
+        };
+        KodoDiagnostics.LogDebug($"LSP codeAction request file={filePath} offset={offset}");
+        JsonElement? result;
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(2));
+            result = await client.SendRequestAsync("textDocument/codeAction", @params, cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP codeAction failed for {filePath}", ex); return false; }
+        if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array)
+        {
+            KodoDiagnostics.LogDebug($"LSP codeAction response empty for {filePath}");
+            return false;
+        }
+        var actions = result.Value.EnumerateArray().ToList();
+        KodoDiagnostics.LogDebug($"LSP codeAction response count={actions.Count} for {filePath}");
+        if (actions.Count == 0) return false;
+        // For now, apply first action if it has edit
+        var first = actions[0];
+        if (first.TryGetProperty("edit", out var edit) && edit.ValueKind == JsonValueKind.Object)
+        {
+            return await ApplyLspWorkspaceEditAsync(edit, filePath, text);
+        }
+        // Handle Command
+        if (first.TryGetProperty("command", out var cmd))
+        {
+            KodoDiagnostics.LogDebug($"LSP codeAction is command: {cmd.GetRawText()}");
+            return false; // Commands need workspace/executeCommand
+        }
+        return false;
+    }
+
+    private async Task<bool> ApplyLspWorkspaceEditAsync(JsonElement edit, string filePath, string text)
+    {
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (EditorTextBox?.Document is null) return;
+                var doc = EditorTextBox.Document;
+                // edit can be {changes: {uri: [edits]}} or {documentChanges: [...]}
+                if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in changes.EnumerateObject())
+                    {
+                        var uri = prop.Name;
+                        if (!IsSameDocument(uri, filePath)) continue;
+                        foreach (var e in prop.Value.EnumerateArray())
+                        {
+                            if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
+                            var s = range.GetProperty("start");
+                            var ee = range.GetProperty("end");
+                            var sOff = OffsetFromLspPosition(text, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                            var eOff = OffsetFromLspPosition(text, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                            doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+                        }
+                    }
+                }
+                else if (edit.TryGetProperty("documentChanges", out var docChanges) && docChanges.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var dc in docChanges.EnumerateArray())
+                    {
+                        if (!dc.TryGetProperty("edits", out var edits)) continue;
+                        var uri = dc.TryGetProperty("textDocument", out var td) && td.TryGetProperty("uri", out var u) ? u.GetString() : filePath;
+                        if (!IsSameDocument(uri, filePath)) continue;
+                        foreach (var e in edits.EnumerateArray().OrderByDescending(e => e.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32() * 10000))
+                        {
+                            if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
+                            var s = range.GetProperty("start");
+                            var ee = range.GetProperty("end");
+                            var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                            var eOff = OffsetFromLspPosition(doc.Text, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                            doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+                        }
+                    }
+                }
+            });
+            return true;
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"ApplyLspWorkspaceEdit failed: {ex.Message}", ex); return false; }
     }
 
     // Phase 9 – Go to Definition (generic)

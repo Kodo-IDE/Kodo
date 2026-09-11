@@ -119,6 +119,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _syntaxHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    private readonly DispatcherTimer _diagnosticPopupShowTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
@@ -134,6 +135,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
+    private string? _lastSuggestionsText;
     private long _insightDocVersion;
     private CancellationTokenSource _insightAnalysisCancellation = new();
     private readonly object _insightAnalysisCacheLock = new();
@@ -867,6 +869,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
         _InsightRefreshTimer.Tick += InsightRefreshTimer_OnTick;
         _diagnosticPopupHideTimer.Tick += DiagnosticPopupHideTimer_OnTick;
+        _diagnosticPopupShowTimer.Tick += DiagnosticPopupShowTimer_OnTick;
         _syntaxHighlightDebounceTimer.Tick += SyntaxHighlightDebounceTimer_OnTick;
         _findHighlightDebounceTimer.Tick += FindHighlightDebounceTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;

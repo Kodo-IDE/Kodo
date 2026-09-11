@@ -209,6 +209,12 @@ internal sealed class LspClient : IDisposable
         var id = Interlocked.Increment(ref _nextId);
         var json = LspProtocol.CreateRequest(id, method, @params);
         var frame = LspProtocol.Frame(json);
+        try
+        {
+            var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
+            KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
+        }
+        catch { }
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = tcs;
 
@@ -384,6 +390,12 @@ internal sealed class LspClient : IDisposable
         // Response (has id and no method)
         if (id.HasValue && method is null)
         {
+            try
+            {
+                var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
+                KodoDiagnostics.LogDebug($"LSP response id={id} json={preview}");
+            }
+            catch { }
             if (_pending.TryRemove(id.Value, out var tcs))
             {
                 try

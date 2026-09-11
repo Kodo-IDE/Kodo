@@ -134,10 +134,15 @@ public partial class MainWindow
     private string? _hoveredDiagnosticLineText;
     private string? _hoveredDiagnosticMessage;
     private string? _hoveredLanguageInfo;
+    private string? _pendingDiagnosticMessage;
+    private double _pendingDiagnosticOffsetX;
+    private double _pendingDiagnosticOffsetY;
 
     private void HideDiagnosticPopup()
     {
         _diagnosticPopupHideTimer.Stop();
+        _diagnosticPopupShowTimer.Stop();
+        _pendingDiagnosticMessage = null;
         if (DiagnosticPopup.IsOpen)
             DiagnosticPopup.IsOpen = false;
         var textView = EditorTextBox?.TextArea?.TextView;
@@ -173,6 +178,8 @@ public partial class MainWindow
 
         if (nowOverLink)
         {
+            _diagnosticPopupShowTimer.Stop();
+            _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, "Ctrl+click to open link");
             ToolTip.SetShowDelay(textView, 400);
@@ -182,8 +189,9 @@ public partial class MainWindow
         {
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
-            DiagnosticPopupText.Text = diagnosticMessage;
             DiagnosticPopup.PlacementTarget = textView;
+
+            double offsetX, offsetY;
             try
             {
                 var floor = textView.GetPositionFloor(position + textView.ScrollOffset);
@@ -191,24 +199,33 @@ public partial class MainWindow
                 {
                     var y = textView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(floor.Value.Line, 1), AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y - textView.ScrollOffset.Y;
                     if (double.IsNaN(y) || double.IsInfinity(y)) y = position.Y;
-                    DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, Math.Max(8, textView.Bounds.Width - 430));
-                    DiagnosticPopup.VerticalOffset = Math.Clamp(y, 4, Math.Max(4, textView.Bounds.Height - 100));
+                    offsetX = Math.Clamp(position.X, 8, Math.Max(8, textView.Bounds.Width - 430));
+                    offsetY = Math.Clamp(y, 4, Math.Max(4, textView.Bounds.Height - 100));
                 }
                 else
                 {
-                    DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, 300);
-                    DiagnosticPopup.VerticalOffset = Math.Clamp(position.Y, 4, 300);
+                    offsetX = Math.Clamp(position.X, 8, 300);
+                    offsetY = Math.Clamp(position.Y, 4, 300);
                 }
             }
             catch
             {
-                DiagnosticPopup.HorizontalOffset = Math.Clamp(position.X, 8, 300);
-                DiagnosticPopup.VerticalOffset = Math.Clamp(position.Y, 4, 300);
+                offsetX = Math.Clamp(position.X, 8, 300);
+                offsetY = Math.Clamp(position.Y, 4, 300);
             }
-            DiagnosticPopup.IsOpen = true;
+
+            // Defer the actual open/reposition until the hover settles, so sweeping the
+            // mouse across several diagnostics in a row does not rapidly flicker the popup.
+            _pendingDiagnosticMessage = diagnosticMessage;
+            _pendingDiagnosticOffsetX = offsetX;
+            _pendingDiagnosticOffsetY = offsetY;
+            _diagnosticPopupShowTimer.Stop();
+            _diagnosticPopupShowTimer.Start();
         }
         else if (languageHover is not null)
         {
+            _diagnosticPopupShowTimer.Stop();
+            _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, languageHover);
             ToolTip.SetShowDelay(textView, 450);
@@ -216,6 +233,8 @@ public partial class MainWindow
         }
         else if (!nowOverLink && diagnosticMessage is null && ResolveLspExtensionForFile(_currentFilePath) is not null && EditorTextBox?.Document is not null)
         {
+            _diagnosticPopupShowTimer.Stop();
+            _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -278,10 +297,22 @@ public partial class MainWindow
         }
         else
         {
+            _diagnosticPopupShowTimer.Stop();
+            _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
+    }
+
+    private void DiagnosticPopupShowTimer_OnTick(object? sender, EventArgs e)
+    {
+        _diagnosticPopupShowTimer.Stop();
+        if (_pendingDiagnosticMessage is null || EditorTextBox?.TextArea?.TextView is null) return;
+        DiagnosticPopupText.Text = _pendingDiagnosticMessage;
+        DiagnosticPopup.HorizontalOffset = _pendingDiagnosticOffsetX;
+        DiagnosticPopup.VerticalOffset = _pendingDiagnosticOffsetY;
+        DiagnosticPopup.IsOpen = true;
     }
 
     private string? GetLanguageHoverAt(Point position, AvaloniaEdit.Rendering.TextView textView)
@@ -636,8 +667,22 @@ public partial class MainWindow
         EditorTextBox.Focus();
     }
 
-    private void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (EditorTextBox?.Document is null) return;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength);
+        var text = EditorTextBox.Document.Text;
+        var path = _currentFilePath;
+        // Try LSP first (generic)
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
+            {
+                if (await TryLspFindReferencesAsync(path, offset, text).ConfigureAwait(false))
+                    return;
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP find references failed, falling back", ex); }
         var word = GetLanguageWordAtCaret();
         var extension = CurrentLanguageExtension;
         if (extension?.LangRules is not { HasReferenceProvider: true } || string.IsNullOrWhiteSpace(word)) return;
@@ -645,21 +690,47 @@ public partial class MainWindow
         OpenSearchPanel(IsFolderOpen ? SearchMode.ProjectSearch : SearchMode.FindInFile);
     }
 
-    private void EditorFormatDocumentMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void EditorFormatDocumentMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules || EditorTextBox?.Document is null) return;
-        var formatted = rules.FormatDocument(EditorTextBox.Document.Text);
-        if (formatted is null || string.Equals(formatted, EditorTextBox.Document.Text, StringComparison.Ordinal)) return;
+        if (EditorTextBox?.Document is null) return;
+        var path = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        // Try LSP first (generic)
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
+            {
+                if (await TryLspFormatDocumentAsync(path, text).ConfigureAwait(false))
+                    return;
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP formatting failed, falling back", ex); }
+        if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules) return;
+        var formatted = rules.FormatDocument(text);
+        if (formatted is null || string.Equals(formatted, text, StringComparison.Ordinal)) return;
         var caret = EditorTextBox.TextArea.Caret.Offset;
         EditorTextBox.Document.Text = formatted;
         EditorTextBox.TextArea.Caret.Offset = Math.Min(caret, EditorTextBox.Document.TextLength);
     }
 
-    private void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private async void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules || EditorTextBox?.Document is null) return;
+        if (EditorTextBox?.Document is null) return;
         var caret = EditorTextBox.TextArea.Caret.Offset;
-        var action = rules.GetCodeActions(EditorTextBox.Document.Text)
+        var text = EditorTextBox.Document.Text;
+        var path = _currentFilePath;
+        // Try LSP first (generic)
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
+            {
+                if (await TryLspCodeActionsAsync(path, caret, text).ConfigureAwait(false))
+                    return;
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP code actions failed, falling back", ex); }
+        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules) return;
+        var action = rules.GetCodeActions(text)
             .FirstOrDefault(candidate => caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
         if (action is null) return;
         EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
@@ -763,6 +834,11 @@ public partial class MainWindow
             return;
         }
 
+        // Only create/recreate the window when it isn't already open. AvaloniaEdit's
+        // CompletionWindow tracks the caret on its own once shown, so while it's open we
+        // just swap its contents in place instead of closing/recreating on every keystroke
+        // (which was the source of the visible jitter/flicker as suggestions were filtered).
+        var suggestionsText = string.Join(",", suggestions.Select(s => s.Text));
         if (_completionWindow is null)
         {
             _completionWindow = CreateCompletionWindow();
@@ -770,13 +846,21 @@ public partial class MainWindow
             foreach (var suggestion in suggestions)
                 _completionWindow.CompletionList.CompletionData.Add(suggestion);
             _completionWindow.Show();
+            _lastSuggestionsText = suggestionsText;
         }
-        else
+        else if (_lastSuggestionsText != suggestionsText)
         {
+            // Update content in place, no window teardown/rebuild.
             _completionWindow.StartOffset = wordStart;
             _completionWindow.CompletionList.CompletionData.Clear();
             foreach (var suggestion in suggestions)
                 _completionWindow.CompletionList.CompletionData.Add(suggestion);
+            _lastSuggestionsText = suggestionsText;
+        }
+        else
+        {
+            // Suggestions unchanged; still keep StartOffset current as the caret moves.
+            _completionWindow.StartOffset = wordStart;
         }
     }
 
