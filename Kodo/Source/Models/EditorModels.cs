@@ -767,10 +767,13 @@ public class FileTreeItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+
     internal static string GetFileIcon(string fileName)
     {
+        if (_iconCache.TryGetValue(fileName, out var cached)) return cached;
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        return ext switch
+        var icon = ext switch
         {
             ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
             ".xml" => "XML",
@@ -820,5 +823,7 @@ public class FileTreeItem : INotifyPropertyChanged
             ".iss" => "ISS",
             _ => "..",
         };
+        _iconCache.TryAdd(fileName, icon);
+        return icon;
     }
 }

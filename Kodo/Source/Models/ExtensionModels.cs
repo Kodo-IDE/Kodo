@@ -110,32 +110,32 @@ public sealed class ExternalLanguageTool
 
 public sealed class LspConfiguration
 {
-    /// <summary>Executable for the language server – must be on PATH or absolute. Not hardcoded in core.</summary>
+    /// <summary>Executable for the language server – must be on PATH or absolute. Not...
     public string Command { get; init; } = string.Empty;
 
-    /// <summary>Arguments passed to the server (e.g. ["--stdio"]). Aliases: "args" / "arguments".</summary>
+    /// <summary>Arguments passed to the server (e.g. ["--stdio"]). Aliases: "args" /...
     public string[] Arguments { get; init; } = [];
 
-    /// <summary>LSP language identifiers (e.g. ["python","python3"]). Used for textDocument/languageId and server initialization.</summary>
+    /// <summary>LSP language identifiers (e.g. ["python","python3"]). Used for...
     public string[] Languages { get; init; } = [];
 
-    /// <summary>File extensions handled by this LSP (e.g. [".py"]). Falls back to manifest "extensions" if empty.</summary>
+    /// <summary>File extensions handled by this LSP (e.g. [".py"]). Falls back to...
     public string[] FileExtensions { get; init; } = [];
 
-    /// <summary>Optional environment variables for the server process. Values may contain placeholders.</summary>
+    /// <summary>Optional environment variables for the server process. Values may...
     public Dictionary<string, string> Env { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Optional working directory for the server. Supports placeholders like {workspace}.</summary>
+    /// <summary>Optional working directory for the server. Supports placeholders like...
     public string? WorkingDirectory { get; init; }
 
-    /// <summary>Optional initializationOptions forwarded in initialize request. Cloned JsonElement when present.</summary>
+    /// <summary>Optional initializationOptions forwarded in initialize request. Cloned...
     public JsonElement? InitializationOptions { get; init; }
 
-    /// <summary>Optional root markers for workspace detection (e.g. ["pyproject.toml","setup.py"]). Future use.</summary>
+    /// <summary>Optional root markers for workspace detection (e.g....
     public string[] RootMarkers { get; init; } = [];
 
     // --- Centralized LSP Management metadata (optional, backward-compatible) ---
-    /// <summary>Stable provider id (e.g. "clangd", "rust-analyzer"). Defaults to command without extension.</summary>
+    /// <summary>Stable provider id (e.g. "clangd", "rust-analyzer"). Defaults to...
     public string ProviderId { get; init; } = string.Empty;
 
     /// <summary>Human display name for UI.</summary>
@@ -144,7 +144,7 @@ public sealed class LspConfiguration
     /// <summary>Version pinned for managed install (e.g. "18.1.3").</summary>
     public string? Version { get; init; }
 
-    /// <summary>Installation method: "github", "npm", "manual", "standalone". Manual = no auto-install.</summary>
+    /// <summary>Installation method: "github", "npm", "manual", "standalone". Manual =...
     public string? InstallMethod { get; init; }
 
     /// <summary>npm package name when InstallMethod == "npm".</summary>
@@ -162,7 +162,7 @@ public sealed class LspConfiguration
     /// <summary>Minimum runtime version (e.g. "18.0.0" for Node, "17" for Java).</summary>
     public string? RuntimeMinVersion { get; init; }
 
-    /// <summary>Whether Kodo may attempt automatic managed install (default true unless method==manual).</summary>
+    /// <summary>Whether Kodo may attempt automatic managed install (default true...
     public bool AllowAutoInstall { get; init; } = true;
 
     /// <summary>Whether system/PATH installations are allowed (default true).</summary>

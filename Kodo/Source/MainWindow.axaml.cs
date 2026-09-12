@@ -636,27 +636,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_currentLanguageExtension == value) return;
             _currentLanguageExtension = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(HighlightingSourceText));
-            OnPropertyChanged(nameof(IsHighlightingSourceVisible));
         }
     }
-
-    public string HighlightingSourceText
-    {
-        get
-        {
-            if (!HasDocumentOpen || CurrentLanguageExtension is null)
-                return string.Empty;
-            var ext = CurrentLanguageExtension;
-            if (ext.HasLsp)
-                return "Highlighted by an LSP-powered .kox extension";
-            if (ext.LangRules is not null)
-                return "Highlighted by an embedded rules .kox extension.";
-            return "Highlighted by a legacy .kox extension";
-        }
-    }
-
-    public bool IsHighlightingSourceVisible => !string.IsNullOrEmpty(HighlightingSourceText);
 
     public Bitmap? CurrentImagePreview
     {
@@ -720,6 +701,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public MainWindow() : this(null) { }
 
+    private readonly System.Diagnostics.Stopwatch _startupStopwatch = System.Diagnostics.Stopwatch.StartNew();
     public MainWindow(string? startupFilePath)
     {
         _suppressSettingsSave = true;
@@ -920,8 +902,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
-        LoadExtensions();
+        // Theme fast-path: themes must be available before first paint to avoid flicker
+        try
+        {
+            var themeScan = ScanInstalledThemeExtensions();
+            if (themeScan.Extensions.Count > 0)
+                ApplyLoadedExtensionsResult(themeScan);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
         ApplyThemeBrushes(_requestedThemeName);
+
+        // Startup fast-path: defer heavy language .kox scan + DLL loads until after first frame
+        // Theme packs already loaded above (~15ms for 3 kox); language packs (20 kox,...
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(50);
+                var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ApplyLoadedExtensionsResult(scan);
+                    RefreshCurrentFileSyntaxHighlighting();
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("Deferred LoadExtensions failed", ex); }
+        });
 
         Closed += (_, _) =>
         {
@@ -940,6 +946,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
         RefreshState(fullRefresh: true);
+        KodoDiagnostics.LogDebug($"Startup ctor fast-path: {_startupStopwatch.ElapsedMilliseconds}ms (extensions deferred)");
     }
 
     private async Task RefreshLatestReleaseAsync(bool forceNetwork = false)
@@ -4271,7 +4278,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(HighlightingSourceText), nameof(IsHighlightingSourceVisible), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -7849,7 +7856,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task UpdateErrorHighlightingAsync()
     {
         var hasLspForFile = ResolveLspExtensionForFile(_currentFilePath) is not null;
-        // Zed-like: LSP diagnostics should still show even if Insight is disabled, but respect plain-text/blacklist
+        // Zed-like: LSP diagnostics should still show even if Insight is disabled, but...
         if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
@@ -7886,7 +7893,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // LSP ALWAYS prioritized: when an extension declares an LSP, Insight/LangRules diagnostics are suppressed entirely
+        // LSP ALWAYS prioritized: when an extension declares an LSP, Insight/LangRules...
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var isLspPrimary = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
         var hasConfiguredLsp = lspForFile?.Lsp != null;
@@ -7897,7 +7904,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (hasConfiguredLsp)
                 {
-                    // LSP is authoritative – skip Insight/LangRules to avoid duplicates and ensure LSP wins even before initialized
+                    // LSP is authoritative – skip Insight/LangRules to avoid duplicates and ensure...
                     rawSpans = new List<InsightEngine.ErrorSpan>();
                     KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP prioritized for {lspForFile?.Id}, initialized={isLspPrimary})");
                 }
@@ -7950,13 +7957,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // LSP diagnostics (generic, Phase 6) – always merged, not cached (publishDiagnostics can update without text change)
+        // LSP diagnostics (generic, Phase 6) – always merged, not cached...
         try
         {
             var lspSpans = GetLspDiagnosticsForFile(_currentFilePath, text);
             if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
             rawSpans.AddRange(lspSpans);
-            // Re-group: dedupe only identical diagnostics (same range+severity+message+code), prefer LSP over Recovery
+            // Re-group: dedupe only identical diagnostics (same range+severity+message+code),...
             rawSpans = rawSpans
                 .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
                 .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())

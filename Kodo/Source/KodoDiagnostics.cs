@@ -12,8 +12,6 @@ using Microsoft.Win32;
 
 namespace Kodo;
 
-public enum KodoSeverity { Critical, Warning, Debug }
-
 internal static class KodoDiagnostics
 {
     public static string AppVersion { get; } = ResolveAppVersion();

@@ -849,7 +849,7 @@ public partial class MainWindow
         List<InsightSuggestion> suggestions;
         if (hasConfiguredLspForCompletion)
         {
-            // LSP ALWAYS prioritized – suppress Insight's regex/semantic variables, LSP will provide completions
+            // LSP ALWAYS prioritized – suppress Insight's regex/semantic variables, LSP will...
             suggestions = new List<InsightSuggestion>();
             KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
         }

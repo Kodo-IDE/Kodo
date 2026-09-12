@@ -264,6 +264,79 @@ public partial class MainWindow
         return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
     }
 
+    private ExtensionScanResult ScanInstalledThemeExtensions()
+    {
+        var loadedExtensions = new List<LoadedExtension>();
+        var extensionLoadErrors = new List<string>();
+        var searchPaths = GetExtensionSearchPaths().ToList();
+
+        foreach (var searchPath in searchPaths)
+        {
+            if (!Directory.Exists(searchPath)) continue;
+
+            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
+            {
+                try
+                {
+                    if (!IsThemeKox(koxFile)) continue;
+                    foreach (var ext in LoadExtensionsFromKox(koxFile))
+                    {
+                        if (ext.Type == "theme" || ext.ThemeDefinition != null)
+                            AddOrReplaceLoadedExtension(loadedExtensions, ext);
+                    }
+                }
+                catch { }
+            }
+
+            foreach (var dir in Directory.GetDirectories(searchPath))
+            {
+                try
+                {
+                    if (!File.Exists(Path.Combine(dir, "manifest.json"))) continue;
+                    if (!IsThemeExtensionFolder(dir)) continue;
+                    foreach (var ext in LoadExtensionsFromFolder(dir))
+                    {
+                        if (ext.Type == "theme" || ext.ThemeDefinition != null)
+                            AddOrReplaceLoadedExtension(loadedExtensions, ext);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+    }
+
+    private static bool IsThemeKox(string koxPath)
+    {
+        try
+        {
+            using var archive = ZipFile.OpenRead(koxPath);
+            var manifestEntry = archive.GetEntry("manifest.json");
+            if (manifestEntry is null) return false;
+            using var stream = manifestEntry.Open();
+            using var doc = JsonDocument.Parse(stream);
+            if (doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "theme")
+                return true;
+            // Also treat as theme if theme.json exists
+            return archive.GetEntry("theme.json") != null;
+        }
+        catch { return false; }
+    }
+
+    private static bool IsThemeExtensionFolder(string folderPath)
+    {
+        try
+        {
+            var manifestPath = Path.Combine(folderPath, "manifest.json");
+            using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+            if (doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "theme")
+                return true;
+            return File.Exists(Path.Combine(folderPath, "theme.json"));
+        }
+        catch { return false; }
+    }
+
     private void ApplyLoadedExtensionsResult(ExtensionScanResult result)
     {
         _highlightingCache.Clear();

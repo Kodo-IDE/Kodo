@@ -2880,29 +2880,12 @@
                         PointerPressed="StatusBar_OnPointerPressed">
                     <Grid ColumnDefinitions="*,Auto">
                          
-                        <StackPanel Grid.Column="0"
-                                    Orientation="Horizontal"
-                                    VerticalAlignment="Center"
-                                    Spacing="8"
-                                    IsVisible="{Binding HasDocumentOpen}">
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding FilePathText}" />
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Text="|"
-                                       IsVisible="{Binding IsHighlightingSourceVisible}" />
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding HighlightingSourceText}"
-                                       IsVisible="{Binding IsHighlightingSourceVisible}"
-                                       Opacity="0.85"
-                                       FontSize="11"
-                                       FontStyle="Italic" />
-                        </StackPanel>
+                        <TextBlock Grid.Column="0"
+                                   IsVisible="{Binding HasDocumentOpen}"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="{Binding FilePathText}" />
                          
                         <TextBlock Grid.Column="0"
                                    Foreground="{Binding MutedTextBrush}"
