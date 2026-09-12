@@ -1,5 +1,6 @@
 // Licensed under GPL-v3.0
 using System;
+using System.IO;
 using System.Text.Json;
 using Avalonia.Media;
 using System.Runtime.CompilerServices;
@@ -132,6 +133,60 @@ public sealed class LspConfiguration
 
     /// <summary>Optional root markers for workspace detection (e.g. ["pyproject.toml","setup.py"]). Future use.</summary>
     public string[] RootMarkers { get; init; } = [];
+
+    // --- Centralized LSP Management metadata (optional, backward-compatible) ---
+    /// <summary>Stable provider id (e.g. "clangd", "rust-analyzer"). Defaults to command without extension.</summary>
+    public string ProviderId { get; init; } = string.Empty;
+
+    /// <summary>Human display name for UI.</summary>
+    public string? DisplayName { get; init; }
+
+    /// <summary>Version pinned for managed install (e.g. "18.1.3").</summary>
+    public string? Version { get; init; }
+
+    /// <summary>Installation method: "github", "npm", "manual", "standalone". Manual = no auto-install.</summary>
+    public string? InstallMethod { get; init; }
+
+    /// <summary>npm package name when InstallMethod == "npm".</summary>
+    public string? PackageName { get; init; }
+
+    /// <summary>HTTPS download URL for github/standalone installs (versioned artifact).</summary>
+    public string? DownloadUrl { get; init; }
+
+    /// <summary>SHA256 checksum (hex) for download validation where upstream provides it.</summary>
+    public string? Sha256 { get; init; }
+
+    /// <summary>Required runtime: "node", "java", "dotnet", "powershell", or null.</summary>
+    public string? Runtime { get; init; }
+
+    /// <summary>Minimum runtime version (e.g. "18.0.0" for Node, "17" for Java).</summary>
+    public string? RuntimeMinVersion { get; init; }
+
+    /// <summary>Whether Kodo may attempt automatic managed install (default true unless method==manual).</summary>
+    public bool AllowAutoInstall { get; init; } = true;
+
+    /// <summary>Whether system/PATH installations are allowed (default true).</summary>
+    public bool AllowSystem { get; init; } = true;
+
+    /// <summary>Arguments to probe version (e.g. ["--version"]). Used for version detection.</summary>
+    public string[] VersionArgs { get; init; } = [];
+
+    /// <summary>Effective provider id (ProviderId or derived from Command).</summary>
+    public string EffectiveProviderId
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(ProviderId)) return ProviderId;
+            var cmd = Command.Trim().Trim('"');
+            // strip .cmd/.bat/.exe
+            foreach (var suf in new[] { ".cmd", ".bat", ".exe" })
+                if (cmd.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
+                    cmd = cmd[..^suf.Length];
+            cmd = Path.GetFileNameWithoutExtension(cmd);
+            if (string.IsNullOrWhiteSpace(cmd)) cmd = Command;
+            return cmd.ToLowerInvariant();
+        }
+    }
 }
 
 public record class LoadedExtension : INotifyPropertyChanged

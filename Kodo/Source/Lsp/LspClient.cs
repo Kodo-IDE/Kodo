@@ -471,74 +471,73 @@ internal sealed class LspClient : IDisposable
                         catch { }
                     }
                 }
-                // Generic: for any python/pyright related section, return a config that matches VS Code defaults
-                // This makes Termyx clean like VS Code without hardcoding per-language in core
-                var lowerSection = section?.ToLowerInvariant() ?? "";
-                if (lowerSection.Contains("python") || lowerSection.Contains("pyright"))
+                // Generic: try to satisfy request from .kox initializationOptions; otherwise return null to let server use its defaults/project config
+                // Do NOT invent generic defaults like typeCheckingMode: off – let the extension's config drive it
+                if (!string.IsNullOrWhiteSpace(section) && _config.InitializationOptions is JsonElement initOptsCheck && initOptsCheck.ValueKind == JsonValueKind.Object)
                 {
-                    // Check if initializationOptions has this exact section
-                    if (!string.IsNullOrWhiteSpace(section) && _config.InitializationOptions is JsonElement initOptsCheck && initOptsCheck.ValueKind == JsonValueKind.Object)
+                    if (TryGetSection(initOptsCheck, section, out var directValue))
                     {
-                        if (TryGetSection(initOptsCheck, section, out var directValue))
+                        try
                         {
-                            try
-                            {
-                                var obj = JsonSerializer.Deserialize<object>(directValue.GetRawText());
-                                results.Add(obj);
-                                continue;
-                            }
-                            catch { }
+                            var obj = JsonSerializer.Deserialize<object>(directValue.GetRawText());
+                            results.Add(obj);
+                            continue;
                         }
+                        catch { }
                     }
-                    // Fallback: return VS Code-like defaults for python analysis
-                    // VS Code default is typeCheckingMode: off, diagnosticMode: openFilesOnly
-                    var defaultConfig = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    // Handle "python" vs "python.analysis" nesting
+                    if (section == "python" && initOptsCheck.TryGetProperty("python", out var py))
                     {
-                        ["typeCheckingMode"] = "off",
-                        ["diagnosticMode"] = "openFilesOnly",
-                        ["autoImportCompletions"] = true,
-                        ["useLibraryCodeForTypes"] = true
-                    };
-                    // Merge any python.analysis from initializationOptions
-                    if (_config.InitializationOptions is JsonElement init2 && init2.ValueKind == JsonValueKind.Object)
-                    {
-                        JsonElement analysisEl = default;
-                        bool hasAnalysis = false;
-                        if (init2.TryGetProperty("python", out var py2) && py2.ValueKind == JsonValueKind.Object && py2.TryGetProperty("analysis", out analysisEl))
-                            hasAnalysis = true;
-                        else if (TryGetSection(init2, "python.analysis", out var secVal) && secVal.ValueKind == JsonValueKind.Object)
-                        {
-                            analysisEl = secVal;
-                            hasAnalysis = true;
-                        }
-                        if (hasAnalysis)
-                        {
-                            try
-                            {
-                                var anaDict = JsonSerializer.Deserialize<Dictionary<string, object?>>(analysisEl.GetRawText());
-                                if (anaDict != null)
-                                    foreach (var kv in anaDict) defaultConfig[kv.Key] = kv.Value;
-                            }
-                            catch { }
-                        }
+                        try { results.Add(JsonSerializer.Deserialize<object>(py.GetRawText())); continue; }
+                        catch { }
                     }
-                    // For "python" section (not python.analysis), return {analysis: defaultConfig}
-                    if (section == "python" && lowerSection == "python")
+                    if (section == "pyright" && initOptsCheck.TryGetProperty("pyright", out var pr))
                     {
-                        results.Add(new Dictionary<string, object?>(StringComparer.Ordinal) { ["analysis"] = defaultConfig });
+                        try { results.Add(JsonSerializer.Deserialize<object>(pr.GetRawText())); continue; }
+                        catch { }
                     }
-                    else
-                    {
-                        results.Add(defaultConfig);
-                    }
-                    continue;
                 }
-                // For other sections, try initializationOptions, otherwise null
-                if (!string.IsNullOrWhiteSpace(section) && _config.InitializationOptions is JsonElement initOpts2 && initOpts2.ValueKind == JsonValueKind.Object && TryGetSection(initOpts2, section, out var secVal2))
+                // For python analysis, if .kox has python.analysis, return it; otherwise let server use pyrightconfig.json / defaults
+                // Don't force typeCheckingMode: off globally – respect project config
+                if (!string.IsNullOrWhiteSpace(section))
                 {
-                    try { results.Add(JsonSerializer.Deserialize<object>(secVal2.GetRawText())); continue; }
-                    catch { }
+                    var lower = section.ToLowerInvariant();
+                    if (lower == "python" || lower == "python.analysis" || lower == "pyright")
+                    {
+                        // Check .kox for python.analysis specifically
+                        if (_config.InitializationOptions is JsonElement init2 && init2.ValueKind == JsonValueKind.Object)
+                        {
+                            JsonElement analysisEl = default;
+                            bool hasAnalysis = false;
+                            if (init2.TryGetProperty("python", out var py2) && py2.ValueKind == JsonValueKind.Object && py2.TryGetProperty("analysis", out analysisEl))
+                                hasAnalysis = true;
+                            else if (TryGetSection(init2, section, out var secVal) && secVal.ValueKind == JsonValueKind.Object)
+                            {
+                                analysisEl = secVal;
+                                hasAnalysis = true;
+                            }
+                            if (hasAnalysis)
+                            {
+                                try
+                                {
+                                    var obj = JsonSerializer.Deserialize<object>(analysisEl.GetRawText());
+                                    // For "python" section, wrap as {analysis: obj} if needed
+                                    if (section == "python" && lower == "python" && analysisEl.ValueKind == JsonValueKind.Object && !analysisEl.TryGetProperty("analysis", out _))
+                                    {
+                                        results.Add(new Dictionary<string, object?>(StringComparer.Ordinal) { ["analysis"] = obj });
+                                    }
+                                    else
+                                    {
+                                        results.Add(obj);
+                                    }
+                                    continue;
+                                }
+                                catch { }
+                            }
+                        }
+                    }
                 }
+                // For other sections or if no .kox config, return null to let server use its defaults/project file discovery
                 results.Add(null);
             }
             return results.ToArray();

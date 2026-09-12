@@ -75,6 +75,16 @@ internal sealed class AppSettings
     public Dictionary<string, string> CustomKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
+
+    // --- LSP Management Settings ---
+    public bool LspEnabled { get; set; } = true;
+    public bool LspAutoInstall { get; set; } = false;
+    public bool LspPreferManaged { get; set; } = true;
+    public bool LspPreferSystem { get; set; } = true;
+    public string? LspInstallDir { get; set; }
+    public Dictionary<string, string> LspExecutableOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, bool> LspDisabledLanguages { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> LspDismissedInstallPrompts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class RecentFileEntry

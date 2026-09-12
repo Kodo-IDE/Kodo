@@ -658,6 +658,71 @@ public partial class MainWindow
         else if (lspElement.TryGetProperty("rootPatterns", out var rpEl) && rpEl.ValueKind == JsonValueKind.Array)
             rootMarkers = ReadStringArray(rpEl);
 
+        // --- LSP Management metadata (optional) ---
+        string providerId = "";
+        if (lspElement.TryGetProperty("providerId", out var pidEl) && pidEl.ValueKind == JsonValueKind.String)
+            providerId = pidEl.GetString() ?? "";
+        else if (lspElement.TryGetProperty("provider", out var provEl) && provEl.ValueKind == JsonValueKind.String)
+            providerId = provEl.GetString() ?? "";
+        else if (lspElement.TryGetProperty("id", out var idEl2) && idEl2.ValueKind == JsonValueKind.String)
+            providerId = idEl2.GetString() ?? "";
+
+        string? displayName = null;
+        if (lspElement.TryGetProperty("displayName", out var dnEl) && dnEl.ValueKind == JsonValueKind.String)
+            displayName = dnEl.GetString();
+        string? version = null;
+        if (lspElement.TryGetProperty("version", out var verEl) && verEl.ValueKind == JsonValueKind.String)
+            version = verEl.GetString();
+        string? installMethod = null;
+        if (lspElement.TryGetProperty("installMethod", out var imEl) && imEl.ValueKind == JsonValueKind.String)
+            installMethod = imEl.GetString();
+        else if (lspElement.TryGetProperty("installationMethod", out var im2) && im2.ValueKind == JsonValueKind.String)
+            installMethod = im2.GetString();
+        string? packageName = null;
+        if (lspElement.TryGetProperty("packageName", out var pnEl) && pnEl.ValueKind == JsonValueKind.String)
+            packageName = pnEl.GetString();
+        else if (lspElement.TryGetProperty("package", out var pkgEl) && pkgEl.ValueKind == JsonValueKind.String)
+            packageName = pkgEl.GetString();
+        string? downloadUrl = null;
+        if (lspElement.TryGetProperty("downloadUrl", out var duEl) && duEl.ValueKind == JsonValueKind.String)
+            downloadUrl = duEl.GetString();
+        else if (lspElement.TryGetProperty("url", out var urlEl) && urlEl.ValueKind == JsonValueKind.String)
+            downloadUrl = urlEl.GetString();
+        else if (lspElement.TryGetProperty("downloadSource", out var dsEl) && dsEl.ValueKind == JsonValueKind.String)
+            downloadUrl = dsEl.GetString();
+        string? sha256 = null;
+        if (lspElement.TryGetProperty("sha256", out var shaEl) && shaEl.ValueKind == JsonValueKind.String)
+            sha256 = shaEl.GetString();
+        else if (lspElement.TryGetProperty("checksum", out var csEl) && csEl.ValueKind == JsonValueKind.String)
+            sha256 = csEl.GetString();
+        else if (lspElement.TryGetProperty("sha256Checksum", out var sha2) && sha2.ValueKind == JsonValueKind.String)
+            sha256 = sha2.GetString();
+        string? runtime = null;
+        if (lspElement.TryGetProperty("runtime", out var rtEl) && rtEl.ValueKind == JsonValueKind.String)
+            runtime = rtEl.GetString();
+        else if (lspElement.TryGetProperty("requiresRuntime", out var rrEl) && rrEl.ValueKind == JsonValueKind.String)
+            runtime = rrEl.GetString();
+        string? runtimeMinVersion = null;
+        if (lspElement.TryGetProperty("runtimeMinVersion", out var rmvEl) && rmvEl.ValueKind == JsonValueKind.String)
+            runtimeMinVersion = rmvEl.GetString();
+        else if (lspElement.TryGetProperty("runtimeVersion", out var rvEl) && rvEl.ValueKind == JsonValueKind.String)
+            runtimeMinVersion = rvEl.GetString();
+        bool allowAutoInstall = true;
+        if (lspElement.TryGetProperty("allowAutoInstall", out var aaiEl) && aaiEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            allowAutoInstall = aaiEl.GetBoolean();
+        else if (lspElement.TryGetProperty("autoInstall", out var aiEl) && aiEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            allowAutoInstall = aiEl.GetBoolean();
+        bool allowSystem = true;
+        if (lspElement.TryGetProperty("allowSystem", out var asEl) && asEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            allowSystem = asEl.GetBoolean();
+        else if (lspElement.TryGetProperty("allowSystemInstall", out var asiEl) && asiEl.ValueKind is JsonValueKind.True or JsonValueKind.False)
+            allowSystem = asiEl.GetBoolean();
+        string[] versionArgs = [];
+        if (lspElement.TryGetProperty("versionArgs", out var vaEl) && vaEl.ValueKind == JsonValueKind.Array)
+            versionArgs = ReadStringArray(vaEl);
+        else if (lspElement.TryGetProperty("versionArgument", out var va2) && va2.ValueKind == JsonValueKind.String)
+            versionArgs = new[] { va2.GetString()! };
+
         return new LspConfiguration
         {
             Command = command,
@@ -667,7 +732,19 @@ public partial class MainWindow
             Env = env,
             WorkingDirectory = string.IsNullOrWhiteSpace(workingDirectory) ? null : workingDirectory,
             InitializationOptions = initOptions,
-            RootMarkers = rootMarkers
+            RootMarkers = rootMarkers,
+            ProviderId = providerId ?? "",
+            DisplayName = displayName,
+            Version = version,
+            InstallMethod = installMethod,
+            PackageName = packageName,
+            DownloadUrl = downloadUrl,
+            Sha256 = sha256,
+            Runtime = runtime,
+            RuntimeMinVersion = runtimeMinVersion,
+            AllowAutoInstall = allowAutoInstall,
+            AllowSystem = allowSystem,
+            VersionArgs = versionArgs
         };
     }
 

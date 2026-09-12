@@ -183,6 +183,8 @@ public partial class MainWindow
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
+        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
+            ApplyIndentationForContent(tab.Content);
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
         var savedOffsetY = tab.ScrollOffsetY;
@@ -386,6 +388,7 @@ public partial class MainWindow
         if (!IsImagePreviewFile(path) && !isCorrupted && !string.IsNullOrEmpty(content))
         {
             _currentLineEnding = DetectLineEnding(content);
+            ApplyIndentationForContent(content);
         }
         else if (!IsImagePreviewFile(path) && !isCorrupted && string.IsNullOrEmpty(content))
         {

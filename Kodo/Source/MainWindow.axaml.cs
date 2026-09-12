@@ -128,6 +128,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastSeenWindowsAccentHex = string.Empty;
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private string _lastSeenWindowsThemeName = string.Empty;
+    // LSP centralized management settings
+    private bool _lspEnabled = true;
+    private bool _lspAutoInstall;
+    private bool _lspPreferManaged = true;
+    private bool _lspPreferSystem = true;
+    private string? _lspInstallDir;
+    private readonly Dictionary<string, string> _lspExecutableOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _lspDisabledLanguages = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _lspDismissedInstallPrompts = new(StringComparer.OrdinalIgnoreCase);
+
     private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
     private readonly InterpolatedStringColorizer _interpolatedStringColorizer = new();
     private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
@@ -626,8 +636,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_currentLanguageExtension == value) return;
             _currentLanguageExtension = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(HighlightingSourceText));
+            OnPropertyChanged(nameof(IsHighlightingSourceVisible));
         }
     }
+
+    public string HighlightingSourceText
+    {
+        get
+        {
+            if (!HasDocumentOpen || CurrentLanguageExtension is null)
+                return string.Empty;
+            var ext = CurrentLanguageExtension;
+            if (ext.HasLsp)
+                return "Highlighted by an LSP-powered .kox extension";
+            if (ext.LangRules is not null)
+                return "Highlighted by an embedded rules .kox extension.";
+            return "Highlighted by a legacy .kox extension";
+        }
+    }
+
+    public bool IsHighlightingSourceVisible => !string.IsNullOrEmpty(HighlightingSourceText);
 
     public Bitmap? CurrentImagePreview
     {
@@ -815,6 +844,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isAutoUpdateExtensionsInBackgroundEnabled = settings.AutoUpdateExtensionsInBackgroundEnabled;
         _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
         _isAutoUpdateAppInBackgroundEnabled = settings.AutoUpdateAppInBackgroundEnabled;
+        _lspEnabled = settings.LspEnabled;
+        _lspAutoInstall = settings.LspAutoInstall;
+        _lspPreferManaged = settings.LspPreferManaged;
+        _lspPreferSystem = settings.LspPreferSystem;
+        _lspInstallDir = settings.LspInstallDir;
+        foreach (var kv in settings.LspExecutableOverrides ?? new Dictionary<string,string>()) _lspExecutableOverrides[kv.Key] = kv.Value;
+        foreach (var kv in settings.LspDisabledLanguages ?? new Dictionary<string,bool>()) _lspDisabledLanguages[kv.Key] = kv.Value;
+        foreach (var id in settings.LspDismissedInstallPrompts ?? new HashSet<string>()) _lspDismissedInstallPrompts.Add(id);
         _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
         if (_isPerformanceModeEnabled)
             _latestReleaseStatusText = "Disabled by Performance mode.";
@@ -2782,6 +2819,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    // LSP management settings (lightweight UI bindings)
+    public bool LspEnabled
+    {
+        get => _lspEnabled;
+        set { if (_lspEnabled == value) return; _lspEnabled = value; OnPropertyChanged(); SaveSettings(); }
+    }
+    public bool LspAutoInstall
+    {
+        get => _lspAutoInstall;
+        set { if (_lspAutoInstall == value) return; _lspAutoInstall = value; OnPropertyChanged(); SaveSettings(); }
+    }
+    public bool LspPreferManaged
+    {
+        get => _lspPreferManaged;
+        set { if (_lspPreferManaged == value) return; _lspPreferManaged = value; OnPropertyChanged(); SaveSettings(); }
+    }
+    public bool LspPreferSystem
+    {
+        get => _lspPreferSystem;
+        set { if (_lspPreferSystem == value) return; _lspPreferSystem = value; OnPropertyChanged(); SaveSettings(); }
+    }
+    public string? LspInstallDir
+    {
+        get => _lspInstallDir ?? LspInstallationManager.GetManagedRoot(BuildLspResolverSettings());
+        set { if (_lspInstallDir == value) return; _lspInstallDir = value; OnPropertyChanged(); SaveSettings(); }
+    }
+
     public string InsightBlacklistExtensions
     {
         get => _insightBlacklistExtensions;
@@ -4207,7 +4271,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(HighlightingSourceText), nameof(IsHighlightingSourceVisible), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -4706,7 +4770,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CustomBuildCommands = new Dictionary<string, string>(_customBuildCommands, StringComparer.OrdinalIgnoreCase),
             CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase),
             CustomBuildScripts = new Dictionary<string, string>(_customBuildScripts, StringComparer.OrdinalIgnoreCase),
-            CustomKeybinds = BuildCustomKeybindsSnapshot()
+            CustomKeybinds = BuildCustomKeybindsSnapshot(),
+            LspEnabled = _lspEnabled,
+            LspAutoInstall = _lspAutoInstall,
+            LspPreferManaged = _lspPreferManaged,
+            LspPreferSystem = _lspPreferSystem,
+            LspInstallDir = _lspInstallDir,
+            LspExecutableOverrides = new Dictionary<string, string>(_lspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
+            LspDisabledLanguages = new Dictionary<string, bool>(_lspDisabledLanguages, StringComparer.OrdinalIgnoreCase),
+            LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase)
         };
     }
 
@@ -7814,22 +7886,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // Zed-like: when LSP is primary semantic provider, don't duplicate with Insight's semantic analysis
+        // LSP ALWAYS prioritized: when an extension declares an LSP, Insight/LangRules diagnostics are suppressed entirely
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var isLspPrimary = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
-        // Also consider configured LSP even if not yet initialized – suppress Insight semantic to avoid duplicate once LSP comes online
         var hasConfiguredLsp = lspForFile?.Lsp != null;
 
         if (rawSpans is null)
         {
             try
             {
-                if (isLspPrimary)
+                if (hasConfiguredLsp)
                 {
-                    // LSP provides semantic diagnostics – skip Insight's language-semantic analyzer
-                    // Keep only non-semantic editor/syntax would remain, but FindErrors is semantic for now, so skip entirely
+                    // LSP is authoritative – skip Insight/LangRules to avoid duplicates and ensure LSP wins even before initialized
                     rawSpans = new List<InsightEngine.ErrorSpan>();
-                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id})");
+                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP prioritized for {lspForFile?.Id}, initialized={isLspPrimary})");
                 }
                 else
                 {
@@ -8380,6 +8450,131 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private static int NormalizeTabSize(int value) => value is 2 or 4 or 8 ? value : 4;
+
+    private (bool insertSpaces, int tabSize)? DetectIndentation(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        var lines = text.Split('\n');
+        int tabLines = 0;
+        int spaceLines = 0;
+        var orderedSpaceIndents = new List<int>(Math.Min(lines.Length, 2000));
+        int sampled = 0;
+
+        foreach (var raw in lines)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            int i = 0;
+            bool hasTab = false;
+            bool hasSpace = false;
+            while (i < raw.Length && (raw[i] == ' ' || raw[i] == '\t'))
+            {
+                if (raw[i] == '\t') hasTab = true;
+                else hasSpace = true;
+                i++;
+            }
+
+            if (i == 0)
+                continue;
+
+            // Mixed indentation on same line – ignore for detection.
+            if (hasTab && hasSpace)
+                continue;
+
+            if (hasTab)
+                tabLines++;
+            else
+            {
+                spaceLines++;
+                orderedSpaceIndents.Add(i);
+            }
+
+            sampled++;
+            if (sampled >= 2000)
+                break;
+        }
+
+        if (tabLines == 0 && spaceLines == 0)
+            return null;
+
+        // Need a minimum signal to avoid flipping on tiny files.
+        if (tabLines + spaceLines < 2)
+            return null;
+
+        if (tabLines > spaceLines)
+        {
+            // Tabs dominate – keep current TabSize for visual width.
+            return (false, TabSize);
+        }
+
+        // Spaces dominate – infer width from indent deltas.
+        var deltas = new Dictionary<int, int>();
+        for (var idx = 0; idx < orderedSpaceIndents.Count - 1; idx++)
+        {
+            var a = orderedSpaceIndents[idx];
+            var b = orderedSpaceIndents[idx + 1];
+            if (b > a)
+            {
+                var d = b - a;
+                if (d is >= 1 and <= 8)
+                {
+                    deltas.TryGetValue(d, out var cnt);
+                    deltas[d] = cnt + 1;
+                }
+            }
+        }
+
+        int bestSize = 4;
+        int bestCount = -1;
+        foreach (var kv in deltas)
+        {
+            if (kv.Value > bestCount)
+            {
+                bestCount = kv.Value;
+                bestSize = kv.Key;
+            }
+        }
+
+        if (deltas.Count == 0 && orderedSpaceIndents.Count > 0)
+        {
+            var min = orderedSpaceIndents.Where(v => v > 0).DefaultIfEmpty(4).Min();
+            if (min == 2) bestSize = 2;
+            else if (min == 4) bestSize = 4;
+            else if (min == 8) bestSize = 8;
+            else if (min % 4 == 0) bestSize = 4;
+            else if (min % 2 == 0) bestSize = 2;
+            else bestSize = 4;
+        }
+
+        bestSize = NormalizeTabSize(bestSize);
+        return (true, bestSize);
+    }
+
+    private void ApplyIndentationForContent(string text, bool saveSettings = false)
+    {
+        var detected = DetectIndentation(text);
+        if (detected is null)
+            return;
+
+        var (useSpaces, size) = detected.Value;
+        var normalizedSize = NormalizeTabSize(size);
+        if (useSpaces == _insertSpaces && normalizedSize == _tabSize)
+            return;
+
+        _insertSpaces = useSpaces;
+        _tabSize = normalizedSize;
+        OnPropertyChanged(nameof(InsertSpaces));
+        OnPropertyChanged(nameof(TabSize));
+        OnPropertyChanged(nameof(TabSizeIndex));
+        OnPropertyChanged(nameof(IndentationDisplayText));
+        OnPropertyChanged(nameof(EditorBehaviorStatusText));
+        ApplyEditorSettings();
+        if (saveSettings)
+            SaveSettings();
+    }
 
     private static Button CreateDialogButton(
         string text,

@@ -318,6 +318,25 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             .Select(group => group.First()));
     }
 
+    public string? GetMessageAt(int offset)
+    {
+        List<string>? messages = null;
+        foreach (var span in _spans)
+        {
+            if (offset >= span.StartOffset && offset < span.StartOffset + span.Length)
+            {
+                var label = span.Severity.Equals("error", StringComparison.OrdinalIgnoreCase) ? "Error" :
+                            span.Severity.Equals("warning", StringComparison.OrdinalIgnoreCase) ? "Warning" :
+                            span.Severity.Equals("info", StringComparison.OrdinalIgnoreCase) ? "Info" : "Hint";
+                (messages ??= []).Add($"{label}: {span.Message}");
+            }
+        }
+        if (messages is null) return null;
+        return string.Join(Environment.NewLine, messages
+            .GroupBy(message => message.Trim().TrimEnd('.').ToLowerInvariant())
+            .Select(group => group.First()));
+    }
+
     private bool LineOverlapsDeadCode(DocumentLine line)
     {
         foreach (var deadSpan in _deadCodeSpans)

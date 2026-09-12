@@ -151,6 +151,165 @@ public partial class MainWindow
         });
     }
 
+    private AppSettings BuildLspResolverSettings()
+    {
+        return new AppSettings
+        {
+            LspEnabled = _lspEnabled,
+            LspAutoInstall = _lspAutoInstall,
+            LspPreferManaged = _lspPreferManaged,
+            LspPreferSystem = _lspPreferSystem,
+            LspInstallDir = _lspInstallDir,
+            LspExecutableOverrides = new Dictionary<string, string>(_lspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
+            LspDisabledLanguages = new Dictionary<string, bool>(_lspDisabledLanguages, StringComparer.OrdinalIgnoreCase),
+            LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    private async Task<bool> HandleLspNotReadyAsync(LoadedExtension lspExt, LspResolution resolution, string filePath)
+    {
+        // Respect dismissed prompts unless auto-install enabled
+        if (resolution.Source == LspServerSource.Disabled)
+        {
+            KodoDiagnostics.LogDebug($"LSP disabled for {lspExt.Id}");
+            return false;
+        }
+        if (resolution.Source == LspServerSource.RuntimeMissing)
+        {
+            var runtime = lspExt.Lsp?.Runtime ?? "required runtime";
+            var msg = resolution.Error ?? $"Runtime '{runtime}' is required for {lspExt.Name}.";
+            KodoDiagnostics.LogDebug($"LSP runtime missing for {lspExt.Id}: {msg}");
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                ExtensionsStatusText = msg;
+                await ShowWarningDialogAsync($"{lspExt.Name} – runtime required", new InvalidOperationException($"{msg}\n\nPlease install {runtime} and restart Kodo.\n\nHighlighting still works."));
+            });
+            return false;
+        }
+        if (resolution.Source == LspServerSource.Installable)
+        {
+            // Check if dismissed
+            if (!_lspAutoInstall && _lspDismissedInstallPrompts.Contains(lspExt.Id))
+            {
+                KodoDiagnostics.LogDebug($"LSP install prompt dismissed for {lspExt.Id}");
+                return false;
+            }
+            if (_lspAutoInstall)
+            {
+                // Auto-install without prompt
+                var autoResult = await PromptAndInstallLspAsync(lspExt, resolution, autoInstall: true).ConfigureAwait(false);
+                return autoResult;
+            }
+            // Offer install
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                ExtensionsStatusText = $"{lspExt.Name} language support requires {resolution.ResolvedConfiguration.EffectiveProviderId}.";
+                await PromptAndInstallLspAsync(lspExt, resolution, autoInstall: false).ConfigureAwait(false);
+            });
+            return false;
+        }
+        if (resolution.Source == LspServerSource.ManualRequired)
+        {
+            KodoDiagnostics.LogDebug($"LSP manual required for {lspExt.Id}");
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                ExtensionsStatusText = $"Language server '{lspExt.Lsp!.Command}' not found for '{lspExt.Name}'. Manual install required.";
+                await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
+                    new FileNotFoundException($"{lspExt.Name} language support requires manual installation.\n\n'{lspExt.Lsp.Command}' was not found on PATH and cannot be auto-installed.\n\nPlease install {lspExt.Lsp.DisplayName ?? lspExt.Lsp.EffectiveProviderId} manually and ensure it is on PATH.\n\nHighlighting remains available."));
+            });
+            return false;
+        }
+        // Generic missing
+        if (_lspMissingNotified.Add(lspExt.Id))
+        {
+            KodoDiagnostics.LogDebug($"LSP missing for {lspExt.Id}: {resolution.Error}");
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                ExtensionsStatusText = resolution.Error ?? $"Language server '{lspExt.Lsp!.Command}' not found.";
+                await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
+                    new FileNotFoundException($"{resolution.Error}\n\nHighlighting remains available."));
+            });
+        }
+        return false;
+    }
+
+    private async Task<bool> PromptAndInstallLspAsync(LoadedExtension lspExt, LspResolution resolution, bool autoInstall)
+    {
+        try
+        {
+            var providerName = lspExt.Lsp?.DisplayName ?? lspExt.Lsp?.EffectiveProviderId ?? lspExt.Name;
+            var title = $"{lspExt.Name} – language server required";
+            var body = autoInstall
+                ? $"Installing {providerName} for {lspExt.Name}..."
+                : $"{lspExt.Name} language support requires {providerName}.\n\nStatus: Not installed\n\nInstall {providerName} now?\n\nKodo will download it to %LocalAppData%\\Kodo\\Lsp\\{lspExt.Lsp?.EffectiveProviderId} and verify it before use. You can also use an existing system installation.";
+            bool shouldInstall = autoInstall;
+            if (!autoInstall)
+            {
+                // Use confirmation dialog with Install / Not Now
+                shouldInstall = await ShowConfirmationDialogAsync(title, body, confirmLabel: $"Install {providerName}", isDestructive: false).ConfigureAwait(false);
+                if (!shouldInstall)
+                {
+                    _lspDismissedInstallPrompts.Add(lspExt.Id);
+                    SaveSettings(immediate: true);
+                    return false;
+                }
+            }
+            if (shouldInstall)
+            {
+                ExtensionsStatusText = $"Installing {providerName}...";
+                var progress = new Progress<string>(msg => Dispatcher.UIThread.Post(() => ExtensionsStatusText = msg));
+                var result = await LspInstallationManager.InstallAsync(lspExt.Lsp!, progress).ConfigureAwait(false);
+                if (result.Kind == LspInstallationManager.InstallResultKind.Success)
+                {
+                    ExtensionsStatusText = $"{providerName} installed successfully.";
+                    KodoDiagnostics.LogDebug($"LSP installed {providerName}: {result.InstalledPath}");
+                    // Clear dismissed and missing flags so next open succeeds
+                    _lspDismissedInstallPrompts.Remove(lspExt.Id);
+                    _lspMissingNotified.Remove(lspExt.Id);
+                    SaveSettings(immediate: true);
+                    // Trigger retry by reopening current file if still same
+                    if (!string.IsNullOrWhiteSpace(_currentFilePath) && IsSameDocument(_currentFilePath, _currentFilePath))
+                    {
+                        // Remove pending open so next didOpen can proceed
+                        lock (_lspOpenLock) _lspPendingOpens.Remove(NormalizeFilePath(_currentFilePath));
+                        if (EditorTextBox?.Document != null)
+                            _ = LspNotifyDidOpenAsync(_currentFilePath, EditorTextBox.Document.Text);
+                    }
+                    return true;
+                }
+                else if (result.Kind == LspInstallationManager.InstallResultKind.Offline)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        ExtensionsStatusText = $"{providerName} could not be downloaded because Kodo is offline.";
+                        await ShowWarningDialogAsync($"{providerName} – offline", new IOException(result.Message ?? "Offline"));
+                    });
+                }
+                else if (result.Kind == LspInstallationManager.InstallResultKind.RuntimeMissing)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        await ShowWarningDialogAsync($"{providerName} – runtime missing", new InvalidOperationException(result.Message ?? "Runtime missing"));
+                    });
+                }
+                else
+                {
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        ExtensionsStatusText = $"Failed to install {providerName}: {result.Message}";
+                        await ShowWarningDialogAsync($"{providerName} – installation failed", new InvalidOperationException(result.Message ?? "Installation failed"));
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP install prompt failed for {lspExt.Id}", ex);
+            await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync($"{lspExt.Name} – installation error", ex));
+        }
+        return false;
+    }
+
     private async Task LspNotifyDidOpenAsync(string filePath, string content)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -163,11 +322,23 @@ public partial class MainWindow
             _lspPendingOpens.Add(filePath);
         }
 
+        // Centralized resolution: managed -> system -> installable
+        var settings = BuildLspResolverSettings();
+        var resolution = await LspServerResolver.ResolveAsync(lspExt, settings).ConfigureAwait(false);
+        KodoDiagnostics.LogDebug($"LSP resolve {lspExt.Id} source={resolution.Source} exe={resolution.ExecutablePath} canInstall={resolution.CanInstall} err={resolution.Error}");
+        if (!resolution.IsReady)
+        {
+            lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+            await HandleLspNotReadyAsync(lspExt, resolution, filePath).ConfigureAwait(false);
+            return;
+        }
+
+        var resolvedConfig = resolution.ResolvedConfiguration;
         var workspace = GetWorkspaceRootForFile(filePath);
         LspClient client;
         try
         {
-            client = await _lspManager.GetOrStartAsync(workspace, lspExt.Lsp).ConfigureAwait(false);
+            client = await _lspManager.GetOrStartAsync(workspace, resolvedConfig).ConfigureAwait(false);
             SetupLspClientHandlers(client);
         }
         catch (FileNotFoundException ex)
@@ -178,9 +349,9 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug($"LSP start missing for '{lspExt.Id}'", ex);
                 await Dispatcher.UIThread.InvokeAsync(async () =>
                 {
-                    ExtensionsStatusText = $"Language server '{lspExt.Lsp!.Command}' not found for '{lspExt.Name}'. Install it and ensure it is on PATH. Highlighting still works.";
+                    ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' not found for '{lspExt.Name}'. Install it and ensure it is on PATH. Highlighting still works.";
                     await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
-                        new FileNotFoundException($"{lspExt.Name} language server could not be started.\n\n'{lspExt.Lsp.Command}' was not found.\nCheck that {lspExt.Lsp.Command} is installed and available on PATH.\n\nHighlighting remains available.", ex));
+                        new FileNotFoundException($"{lspExt.Name} language server could not be started.\n\n'{resolvedConfig.Command}' was not found.\nCheck that {resolvedConfig.Command} is installed and available on PATH.\n\nHighlighting remains available.", ex));
                 });
             }
             return;
@@ -189,7 +360,7 @@ public partial class MainWindow
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
             KodoDiagnostics.LogDebug($"LSP start failed for '{lspExt.Id}'", ex);
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{lspExt.Lsp!.Command}' failed to start: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start: {ex.Message}");
             return;
         }
 
@@ -201,7 +372,7 @@ public partial class MainWindow
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
             KodoDiagnostics.LogDebug($"LSP initialize failed for '{lspExt.Id}'", ex);
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{lspExt.Lsp!.Command}' initialization failed: {ex.Message}");
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' initialization failed: {ex.Message}");
             return;
         }
 
@@ -216,7 +387,7 @@ public partial class MainWindow
             _lspDocumentVersions[filePath] = version;
             _lspOpenDocuments.Add(filePath);
         }
-        var languageId = GetLanguageId(lspExt.Lsp, filePath);
+        var languageId = GetLanguageId(resolvedConfig, filePath);
 
         var didOpenParams = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -232,7 +403,7 @@ public partial class MainWindow
         try
         {
             await client.SendNotificationAsync("textDocument/didOpen", didOpenParams).ConfigureAwait(false);
-            KodoDiagnostics.LogDebug($"LSP didOpen {uri} lang={languageId} ver={version}");
+            KodoDiagnostics.LogDebug($"LSP didOpen {uri} lang={languageId} ver={version} via {resolution.Source} {resolution.ExecutablePath}");
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP didOpen failed for {uri}", ex); }
     }
@@ -251,7 +422,11 @@ public partial class MainWindow
         var lspExt = ResolveLspExtensionForFile(filePath);
         if (lspExt?.Lsp is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        // Resolve using centralized resolver to match didOpen's resolved path
+        var settings2 = BuildLspResolverSettings();
+        var res2 = await LspServerResolver.ResolveAsync(lspExt, settings2).ConfigureAwait(false);
+        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : lspExt.Lsp;
+        var client = _lspManager.TryGetClient(workspace, effectiveConfig);
         if (client is null || !client.IsInitialized) return;
 
         var uri = FilePathToUri(filePath);
@@ -295,7 +470,16 @@ public partial class MainWindow
         var lspExt = ResolveLspExtensionForFile(filePath);
         if (lspExt?.Lsp is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        // Try resolved config first, then fallback to original for backward compat
+        LspClient? client = null;
+        try
+        {
+            var cs = BuildLspResolverSettings();
+            var res = await LspServerResolver.ResolveAsync(lspExt, cs).ConfigureAwait(false);
+            var effective = res.IsReady ? res.ResolvedConfiguration : lspExt.Lsp;
+            client = _lspManager.TryGetClient(workspace, effective) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        }
+        catch { client = _lspManager.TryGetClient(workspace, lspExt.Lsp); }
         if (client is null) return;
 
         var uri = FilePathToUri(filePath);

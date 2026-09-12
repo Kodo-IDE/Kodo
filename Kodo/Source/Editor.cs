@@ -353,9 +353,13 @@ public partial class MainWindow
 
         var parts = new List<string>();
         if (errorReason is not null)
-            parts.Add(errorReason.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
-                ? errorReason
-                : $"Error: {errorReason}");
+        {
+            var alreadyLabeled = errorReason.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
+                || errorReason.StartsWith("Warning:", StringComparison.OrdinalIgnoreCase)
+                || errorReason.StartsWith("Info:", StringComparison.OrdinalIgnoreCase)
+                || errorReason.StartsWith("Hint:", StringComparison.OrdinalIgnoreCase);
+            parts.Add(alreadyLabeled ? errorReason : $"Error: {errorReason}");
+        }
         if (deadCodeReason is not null) parts.Add($"Dead Code: {deadCodeReason}");
 
         return parts.Count switch
@@ -382,6 +386,21 @@ public partial class MainWindow
         }
     }
 
+    private static string StripDiagnosticLabel(string message)
+    {
+        if (message.StartsWith("Error: ", StringComparison.OrdinalIgnoreCase))
+            return message.Substring("Error: ".Length);
+        if (message.StartsWith("Warning: ", StringComparison.OrdinalIgnoreCase))
+            return message.Substring("Warning: ".Length);
+        if (message.StartsWith("Info: ", StringComparison.OrdinalIgnoreCase))
+            return message.Substring("Info: ".Length);
+        if (message.StartsWith("Hint: ", StringComparison.OrdinalIgnoreCase))
+            return message.Substring("Hint: ".Length);
+        if (message.StartsWith("Dead Code: ", StringComparison.OrdinalIgnoreCase))
+            return message.Substring("Dead Code: ".Length);
+        return message;
+    }
+
     private async void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
     {
         var lineText = _hoveredDiagnosticLineText;
@@ -392,12 +411,12 @@ public partial class MainWindow
         {
             if (_hoveredErrorReason is not null)
             {
-                DismissDiagnostic(filePath, lineText, _hoveredErrorReason);
+                DismissDiagnostic(filePath, lineText, StripDiagnosticLabel(_hoveredErrorReason));
                 didDismiss = true;
             }
             if (_hoveredDeadCodeReason is not null)
             {
-                DismissDiagnostic(filePath, lineText, _hoveredDeadCodeReason);
+                DismissDiagnostic(filePath, lineText, StripDiagnosticLabel(_hoveredDeadCodeReason));
                 didDismiss = true;
             }
         }
@@ -409,10 +428,7 @@ public partial class MainWindow
             {
                 var msg = p.Trim();
                 if (string.IsNullOrWhiteSpace(msg)) continue;
-                if (msg.StartsWith("Error: ", StringComparison.Ordinal))
-                    msg = msg.Substring("Error: ".Length);
-                else if (msg.StartsWith("Dead Code: ", StringComparison.Ordinal))
-                    msg = msg.Substring("Dead Code: ".Length);
+                msg = StripDiagnosticLabel(msg);
                 if (!string.IsNullOrWhiteSpace(msg))
                 {
                     DismissDiagnostic(filePath, lineText, msg);
@@ -446,7 +462,9 @@ public partial class MainWindow
             var ln = pos.Value.Line;
             if (ln < 1 || ln > doc.LineCount) return null;
             var line = doc.GetLineByNumber(ln);
-            return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
+            var offset = line.Offset + colOffset;
+            return _errorHighlightRenderer.GetMessageAt(offset);
         }
         catch
         {
@@ -778,25 +796,60 @@ public partial class MainWindow
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
-        var hasLspForCompletion = ResolveLspExtensionForFile(_currentFilePath) is not null;
-        if (prefix.Length == 0 && !hasLspForCompletion)
+        // Don't auto-popup on file open / focus when there's no active prefix or trigger.
+        // Completion should only appear while the user is actively typing a word or after a
+        // trigger character (e.g. '.' '(' '['). An empty document or a caret at offset 0
+        // with no previous trigger must not show the window.
+        if (string.IsNullOrWhiteSpace(text))
         {
             CloseCompletionWindow();
             return;
         }
-        // For LSP, allow empty prefix (e.g., after '.' or '[') – server will filter
+
+        var hasLspForCompletion = ResolveLspExtensionForFile(_currentFilePath) is not null;
+        if (prefix.Length == 0)
+        {
+            if (!hasLspForCompletion)
+            {
+                CloseCompletionWindow();
+                return;
+            }
+
+            // For LSP, allow empty prefix only directly after a trigger char – otherwise
+            // opening an empty file (offset 0, no trigger) would immediately flood the
+            // popup with every symbol (the reported bug: empty main.py shows Annotated, etc.).
+            if (offset == 0 || offset > text.Length)
+            {
+                CloseCompletionWindow();
+                return;
+            }
+
+            var prevChar = text[offset - 1];
+            if (prevChar == ' ' || prevChar == '\t' || prevChar == '\n' || prevChar == '\r')
+            {
+                CloseCompletionWindow();
+                return;
+            }
+            var isTrigger = prevChar is '.' or '(' or '[' or '{' or ':' or '/' or '\\' or '"' or '\'' or '<' or ',';
+
+            if (!isTrigger)
+            {
+                CloseCompletionWindow();
+                return;
+            }
+        }
 
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
-        var isLspPrimaryForCompletion = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
+        var hasConfiguredLspForCompletion = lspForFile?.Lsp != null;
+        var isLspPrimaryForCompletion = hasConfiguredLspForCompletion && lspForFile!.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
 
         List<InsightSuggestion> suggestions;
-        if (isLspPrimaryForCompletion)
+        if (hasConfiguredLspForCompletion)
         {
-            // Zed-like: LSP is primary semantic provider – don't duplicate with Insight's regex/semantic variables
-            // Keep .kox snippets/keywords via LSP already, but still allow LSP completions
+            // LSP ALWAYS prioritized – suppress Insight's regex/semantic variables, LSP will provide completions
             suggestions = new List<InsightSuggestion>();
             KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
         }
