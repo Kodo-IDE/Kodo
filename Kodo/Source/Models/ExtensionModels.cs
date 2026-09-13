@@ -200,6 +200,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string Author { get; init; } = string.Empty;
     public string Description { get; init; } = string.Empty;
     public string[] Extensions { get; init; } = [];
+    public string[] Dependencies { get; init; } = [];
     public string[] Keywords { get; set; } = [];
     public string[] Types { get; set; } = [];
     public string[] Functions { get; set; } = [];
@@ -329,6 +330,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public string[] FileExtensions { get; init; } = [];
     public string[] LanguageExtensionIds { get; init; } = [];
+    public string[] Dependencies { get; init; } = [];
     public string? RunCommandTemplate { get; init; }
     public string? BuildCommandTemplate { get; init; }
     public IReadOnlyDictionary<string, (string? Run, string? Build)>? FileCommands { get; init; }

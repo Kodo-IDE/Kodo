@@ -1127,6 +1127,16 @@ public partial class MainWindow
         var canonicalFileName = GetCanonicalMarketplaceFileName(declaredFileName, urlFileName, bestKnownVersion);
         var canonicalDownloadUrl = NormalizeMarketplaceDownloadUrl(rawDownloadUrl, canonicalFileName);
 
+        var dependencies = item.TryGetProperty("dependencies", out var depsEl) && depsEl.ValueKind == JsonValueKind.Array
+            ? depsEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+            : [];
+        var fileExtensions = item.TryGetProperty("fileExtensions", out var feEl) && feEl.ValueKind == JsonValueKind.Array
+            ? feEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+            : [];
+        var languageExtensionIds = item.TryGetProperty("languageExtensionIds", out var leEl) && leEl.ValueKind == JsonValueKind.Array
+            ? leEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+            : [];
+
         return new MarketplaceExtension
         {
             Id = id,
@@ -1137,7 +1147,10 @@ public partial class MainWindow
             Description = description,
             DownloadUrl = canonicalDownloadUrl,
             FileName = canonicalFileName,
-            IconUrl = iconUrl
+            IconUrl = iconUrl,
+            FileExtensions = fileExtensions,
+            LanguageExtensionIds = languageExtensionIds,
+            Dependencies = dependencies
         };
     }
 
@@ -1292,6 +1305,50 @@ public partial class MainWindow
 
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
+
+            // Dependencies are handled exclusively through extension downloads
+            if (marketplaceExtension.Dependencies.Length > 0)
+            {
+                foreach (var depId in marketplaceExtension.Dependencies)
+                {
+                    var dep = MarketplaceExtensions.FirstOrDefault(m => m.Id.Equals(depId, StringComparison.OrdinalIgnoreCase));
+                    if (dep is null) continue;
+                    if (dep.IsInstalled) continue;
+                    ExtensionsStatusText = $"Installing dependency {dep.Name} for {marketplaceExtension.Name}...";
+                    await InstallMarketplaceExtensionAsync(dep);
+                }
+            }
+
+            // For extensions with embedded LSP, auto-install like compiler downloads
+            var installed = GetPreferredLoadedExtension(marketplaceExtension.Id);
+            if (installed?.Lsp != null)
+            {
+                var lspSettings = BuildLspResolverSettings();
+                var lspRes = await LspServerResolver.ResolveAsync(installed, lspSettings).ConfigureAwait(false);
+                if (lspRes.Source == LspServerSource.Installable || lspRes.Source == LspServerSource.ManualRequired || lspRes.Source == LspServerSource.Missing)
+                {
+                    var provider = installed.Lsp.DisplayName ?? installed.Lsp.EffectiveProviderId;
+                    var shouldInstall = await ShowConfirmationDialogAsync(
+                        $"{installed.Name} – language server required",
+                        $"{installed.Name} installed, but '{provider}' is missing.\n\nWithout it, Kodo uses embedded diagnostics (may show false positives).\n\nInstall {provider} now?",
+                        confirmLabel: $"Install {provider}",
+                        cancelLabel: "Use embedded").ConfigureAwait(false);
+                    if (shouldInstall)
+                    {
+                        await PromptAndInstallLspAsync(installed, lspRes, autoInstall: false).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        ExtensionsStatusText = $"{installed.Name}: Using embedded diagnostics.";
+                        KodoDiagnostics.LogDebug($"User declined LSP install for {installed.Id}");
+                        await Dispatcher.UIThread.InvokeAsync(async () =>
+                        {
+                            await ShowWarningDialogAsync($"{installed.Name} – embedded diagnostics",
+                                new InvalidOperationException($"'{provider}' not installed. Embedded diagnostics will be used (may be inaccurate). Install later via Extensions → {installed.Name}."));
+                        });
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {

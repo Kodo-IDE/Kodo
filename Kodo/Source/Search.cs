@@ -1065,8 +1065,19 @@ public partial class MainWindow
         if (match.Offset < 0)
             return;
 
-        EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
-        FindInEditor(forward: true);
+        try
+{
+    EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
+}
+catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+{
+    KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
+    Dispatcher.UIThread.Post(() =>
+    {
+        try { EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty); } catch { }
+    }, Avalonia.Threading.DispatcherPriority.Background);
+}
+FindInEditor(forward: true);
     }
 
     private void ReplaceAllMatches()
@@ -1099,7 +1110,18 @@ public partial class MainWindow
         if (pos < text.Length)
             sb.Append(text, pos, text.Length - pos);
 
-        doc.Replace(0, text.Length, sb.ToString());
+        try
+        {
+            doc.Replace(0, text.Length, sb.ToString());
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("Search.ReplaceAll: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { doc.Replace(0, text.Length, sb.ToString()); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
 
         SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
     }

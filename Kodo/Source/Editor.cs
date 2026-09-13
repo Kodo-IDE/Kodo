@@ -17,6 +17,7 @@ using Avalonia.Animation;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
+using Avalonia.Threading;
 using Kodo.Models;
 
 namespace Kodo;
@@ -553,18 +554,29 @@ public partial class MainWindow
         var offset = caret.Offset;
         var selection = EditorTextBox.TextArea.Selection;
 
-        if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
-        {
-            var segment = selection.SurroundingSegment;
-            if (segment is not null)
+if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
             {
-                var selectedText = selection.GetText();
-                doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
-                caret.Offset = segment.Offset + selectedText.Length + 2;
-                e.Handled = true;
-                return;
+                var segment = selection.SurroundingSegment;
+                if (segment is not null)
+                {
+                    var selectedText = selection.GetText();
+                    try
+                    {
+                        doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
+                    }
+                    catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KodoDiagnostics.LogDebug("EditorTextArea_OnTextEntering: Visual line race suppressed", ex);
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            try { doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}"); } catch { }
+                        }, Avalonia.Threading.DispatcherPriority.Background);
+                    }
+                    caret.Offset = segment.Offset + selectedText.Length + 2;
+                    e.Handled = true;
+                    return;
+                }
             }
-        }
 
         var isPairOpener = BracketPairs.ContainsKey(ch);
 
@@ -736,7 +748,18 @@ public partial class MainWindow
         var formatted = rules.FormatDocument(text);
         if (formatted is null || string.Equals(formatted, text, StringComparison.Ordinal)) return;
         var caret = EditorTextBox.TextArea.Caret.Offset;
-        EditorTextBox.Document.Text = formatted;
+        try
+        {
+            EditorTextBox.Document.Text = formatted;
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("EditorFormatDocument: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { EditorTextBox.Document.Text = formatted; } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
         EditorTextBox.TextArea.Caret.Offset = Math.Min(caret, EditorTextBox.Document.TextLength);
     }
 
@@ -760,7 +783,18 @@ public partial class MainWindow
         var action = rules.GetCodeActions(text)
             .FirstOrDefault(candidate => caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
         if (action is null) return;
-        EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
+        try
+{
+    EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
+}
+catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+{
+    KodoDiagnostics.LogDebug("EditorApplyCodeAction: Visual line race suppressed", ex);
+    Dispatcher.UIThread.Post(() =>
+    {
+        try { EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText); } catch { }
+    }, Avalonia.Threading.DispatcherPriority.Background);
+}
     }
 
     private async Task UpdateInsightAsync()
@@ -1238,70 +1272,104 @@ public partial class MainWindow
         if (doc.GetCharAt(offset) != closing)
             return false;
 
-        doc.Remove(offset - 1, 2);
+        try
+        {
+            doc.Remove(offset - 1, 2);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("HandleSmartBackspace: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { doc.Remove(offset - 1, 2); SetCaretOffsetSafely(caret, doc, offset - 1); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+            return true;
+        }
         SetCaretOffsetSafely(caret, doc, offset - 1);
         return true;
     }
 
     private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
-        if (selection is null || selection.IsEmpty)
+        try
         {
-            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
-            doc.Insert(safeOffset, GetIndentUnit());
-            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
-            return;
-        }
+            if (selection is null || selection.IsEmpty)
+            {
+                var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+                doc.Insert(safeOffset, GetIndentUnit());
+                SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+                return;
+            }
 
-        var segment = selection.SurroundingSegment;
-        if (segment is null)
+            var segment = selection.SurroundingSegment;
+            if (segment is null)
+            {
+                var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+                doc.Insert(safeOffset, GetIndentUnit());
+                SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+                return;
+            }
+
+            var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
+            var indentedLines = lines.OrderByDescending(l => l.Offset)
+                .Select(l => GetIndentUnit() + doc.GetText(l));
+            var newText = string.Join(Environment.NewLine, indentedLines);
+
+            doc.Replace(segment, newText);
+
+            SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
-            var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
-            doc.Insert(safeOffset, GetIndentUnit());
-            SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
-            return;
+            KodoDiagnostics.LogDebug("HandleIndent: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { HandleIndent(doc, selection, caret); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
         }
-
-        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        var indentedLines = lines.OrderByDescending(l => l.Offset)
-            .Select(l => GetIndentUnit() + doc.GetText(l));
-        var newText = string.Join(Environment.NewLine, indentedLines);
-
-        doc.Replace(segment, newText);
-
-        SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
     }
 
-    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
-        if (selection is null || selection.IsEmpty)
+        try
         {
-            var line = doc.GetLineByOffset(caret.Offset);
-            var lineText = doc.GetText(line);
-            var caretColumnInLine = caret.Offset - line.Offset;
-            var removable = GetOutdentLength(lineText, caretColumnInLine);
-            if (removable <= 0)
+            if (selection is null || selection.IsEmpty)
+            {
+                var line = doc.GetLineByOffset(caret.Offset);
+                var lineText = doc.GetText(line);
+                var caretColumnInLine = caret.Offset - line.Offset;
+                var removable = GetOutdentLength(lineText, caretColumnInLine);
+                if (removable <= 0)
+                    return;
+
+                var outdentedText = lineText.TrimStart();
+                doc.Replace(line.Offset, line.Length, outdentedText);
+
+                SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
+                return;
+            }
+
+            var segment = selection.SurroundingSegment;
+            if (segment is null)
                 return;
 
-            var outdentedText = lineText.TrimStart();
-            doc.Replace(line.Offset, line.Length, outdentedText);
+            var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
+            var linesText = lines.OrderByDescending(l => l.Offset)
+                .Select(l => doc.GetText(l).TrimStart());
+            var replacedText = string.Join(Environment.NewLine, linesText);
 
-            SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
-            return;
+            doc.Replace(segment, replacedText);
+
+            SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
         }
-
-        var segment = selection.SurroundingSegment;
-        if (segment is null)
-            return;
-
-        var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-        var linesText = lines.OrderByDescending(l => l.Offset)
-            .Select(l => doc.GetText(l).TrimStart());
-        var replacedText = string.Join(Environment.NewLine, linesText);
-
-        doc.Replace(segment, replacedText);
-
-        SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("HandleOutdent: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { HandleOutdent(doc, selection, caret); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
     }
 
     private static string GetLeadingWhitespace(string text)
@@ -1396,16 +1464,28 @@ public partial class MainWindow
             return;
 
         var insertionText = ReindentPastedText(text, doc, caret.Offset);
+        var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
+
         var selection = textArea.Selection;
         if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
         {
             var segment = selection.SurroundingSegment;
-            doc.Replace(segment, insertionText);
-            SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
+            try
+            {
+                doc.Replace(segment, insertionText);
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+            {
+                KodoDiagnostics.LogDebug("HandleSmartPasteAsync: Visual line race suppressed", ex);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try { doc.Replace(segment, insertionText); } catch { }
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }
+SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
             return;
         }
 
-        var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
         doc.Insert(safeOffset, insertionText);
         SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
     }

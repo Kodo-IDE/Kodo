@@ -294,6 +294,22 @@ public partial class App : Application
 
     private static void DispatcherUiThread_OnUnhandledException(object? sender, DispatcherUnhandledExceptionEventArgs e)
     {
+        var ex = e.Exception;
+        var inner = ex is System.Reflection.TargetInvocationException tie ? tie.InnerException : null;
+        var msg = inner?.Message ?? ex.Message;
+        if (msg != null && msg.Contains("Cannot dispose visual line because it is in construction", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("Dispatcher: Ignored AvaloniaEdit visual line construction race (non-critical)", ex);
+            e.Handled = true;
+            return;
+        }
+        if (inner is ArgumentException ae && ae.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase) && ae.Message.Contains("construction", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("Dispatcher: Ignored visual line dispose race", ex);
+            e.Handled = true;
+            return;
+        }
+
         KodoDiagnostics.LogCritical("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         e.Handled = true;

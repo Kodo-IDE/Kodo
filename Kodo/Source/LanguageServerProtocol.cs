@@ -302,6 +302,7 @@ internal sealed class LspClient : IDisposable
 
     private async Task ReadLoopAsync(Stream stdout, CancellationToken ct)
     {
+        stdout = new BufferedStream(stdout, 8192);
         var headerBuf = new List<string>(4);
         var headerBytes = new List<byte>(256);
         var singleByte = new byte[1];
@@ -691,6 +692,23 @@ public partial class MainWindow
 
     private string GetWorkspaceRootForFile(string? filePath)
     {
+        if (!string.IsNullOrWhiteSpace(filePath))
+        {
+            var markers = ResolveLspExtensionForFile(filePath)?.Lsp?.RootMarkers;
+            if (markers != null && markers.Length > 0)
+            {
+                var dir = Path.GetDirectoryName(filePath);
+                while (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+                {
+                    foreach (var m in markers)
+                        if (File.Exists(Path.Combine(dir, m)) || Directory.Exists(Path.Combine(dir, m)))
+                            return dir;
+                    var parent = Path.GetDirectoryName(dir);
+                    if (parent == dir) break;
+                    dir = parent;
+                }
+            }
+        }
         if (!string.IsNullOrWhiteSpace(_currentFolderPath) && !string.IsNullOrWhiteSpace(filePath) && IsPathInsideDirectory(filePath, _currentFolderPath))
             return _currentFolderPath;
         if (!string.IsNullOrWhiteSpace(filePath))
@@ -1201,6 +1219,7 @@ public partial class MainWindow
 
             lock (_lspDiagnosticsLock)
             {
+                if (!_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(filePath)) return;
                 _lspDiagnostics[filePath] = diagnostics;
                 // also store by uri for fallback
                 _lspDiagnostics[uri] = diagnostics;
@@ -1360,9 +1379,10 @@ public partial class MainWindow
         var lineEnd = text.IndexOf('\n', offset);
         if (lineEnd < 0) lineEnd = text.Length;
         var lineLen = lineEnd - offset;
-        // LSP character is UTF-16 code units; for ASCII, same as offset. Clamp.
         var col = Math.Min(character, Math.Max(0, lineLen));
-        return Math.Clamp(offset + col, 0, Math.Max(0, text.Length - 1));
+        if (col > 0 && col < lineLen && offset + col < text.Length && char.IsHighSurrogate(text[offset + col - 1]) && char.IsLowSurrogate(text[offset + col]))
+            col++;
+        return Math.Clamp(offset + col, 0, Math.Max(0, text.Length));
     }
 
     private static (int line, int character) OffsetToLspPosition(string text, int offset)
@@ -1703,7 +1723,18 @@ public partial class MainWindow
                 var sOff = OffsetFromLspPosition(text, sLine, sChar);
                 var eOff = OffsetFromLspPosition(text, eLine, eChar);
                 var len = Math.Max(0, eOff - sOff);
-                doc.Replace(sOff, len, nt.GetString() ?? "");
+                try
+                {
+                    doc.Replace(sOff, len, nt.GetString() ?? "");
+                }
+                catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                {
+                    KodoDiagnostics.LogDebug("LSP edit: Visual line race suppressed", ex);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { doc.Replace(sOff, len, nt.GetString() ?? ""); } catch { }
+                    }, Avalonia.Threading.DispatcherPriority.Background);
+                }
             }
         });
         return true;
@@ -1777,7 +1808,7 @@ public partial class MainWindow
                 if (EditorTextBox?.Document is null) return;
                 var doc = EditorTextBox.Document;
                 // edit can be {changes: {uri: [edits]}} or {documentChanges: [...]}
-                if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
+if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var prop in changes.EnumerateObject())
                     {
@@ -1790,7 +1821,19 @@ public partial class MainWindow
                             var ee = range.GetProperty("end");
                             var sOff = OffsetFromLspPosition(text, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
                             var eOff = OffsetFromLspPosition(text, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
-                            doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+                            var len = Math.Max(0, eOff - sOff);
+                            try
+                            {
+                                doc.Replace(sOff, len, nt.GetString() ?? "");
+                            }
+                            catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                            {
+                                KodoDiagnostics.LogDebug("LSP changes edit: Visual line race suppressed", ex);
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    try { doc.Replace(sOff, len, nt.GetString() ?? ""); } catch { }
+                                }, Avalonia.Threading.DispatcherPriority.Background);
+                            }
                         }
                     }
                 }
@@ -1806,9 +1849,20 @@ public partial class MainWindow
                             if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
                             var s = range.GetProperty("start");
                             var ee = range.GetProperty("end");
-                            var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
-                            var eOff = OffsetFromLspPosition(doc.Text, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
-                            doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                var eOff = OffsetFromLspPosition(doc.Text, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                try
+                {
+                    doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+                }
+                catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                {
+                    KodoDiagnostics.LogDebug("LSP code action edit: Visual line race suppressed", ex);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? ""); } catch { }
+                    }, Avalonia.Threading.DispatcherPriority.Background);
+                }
                         }
                     }
                 }
@@ -1930,7 +1984,7 @@ internal static class LspInstallationManager
     private static HttpClient CreateHttpClient()
     {
         var c = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
-        c.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)");
+        c.DefaultRequestHeaders.UserAgent.ParseAdd($"Kodo/{KodoDiagnostics.AppVersion} (https://github.com/Kodo-IDE/Kodo)");
         return c;
     }
 
@@ -2111,13 +2165,8 @@ internal static class LspInstallationManager
             {
                 // Enforce SHA-256 for github/standalone artifacts
                 var isGithub = method == "github" || cfg.DownloadUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase) || cfg.DownloadUrl.Contains("githubusercontent.com", StringComparison.OrdinalIgnoreCase);
-                if (isGithub && string.IsNullOrWhiteSpace(cfg.Sha256))
+                if (string.IsNullOrWhiteSpace(cfg.Sha256))
                     return new(InstallResultKind.NotInstallable, $"Provider '{cfg.EffectiveProviderId}' download requires SHA-256 verification. No checksum provided – please install manually from {cfg.DownloadUrl} and configure an override, or update the provider to include a trusted checksum.", null);
-                if (string.IsNullOrWhiteSpace(cfg.Sha256) && method != "npm")
-                {
-                    // For non-npm standalone, also require checksum
-                    return new(InstallResultKind.NotInstallable, $"Provider '{cfg.EffectiveProviderId}' cannot be auto-installed without a SHA-256 checksum. This is a security requirement. Install manually or provide a checksum.", null);
-                }
                 return await InstallViaDownloadAsync(cfg, settings, progress, ct).ConfigureAwait(false);
             }
 
@@ -2571,7 +2620,8 @@ internal sealed class LspManager : IDisposable
     private static string MakeKey(string workspaceRoot, LspConfiguration config)
     {
         var root = Path.GetFullPath(workspaceRoot ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return $"{root}|{config.Command}|{string.Join(" ", config.Arguments)}";
+        var expandedArgs = string.Join(" ", config.Arguments.Select(a => a.Replace("{workspace}", root, StringComparison.OrdinalIgnoreCase).Replace("{workspaceFolder}", root, StringComparison.OrdinalIgnoreCase).Replace("{root}", root, StringComparison.OrdinalIgnoreCase)));
+        return $"{root}|{config.Command}|{expandedArgs}";
     }
 
     public void Dispose()
@@ -2734,9 +2784,16 @@ internal static class LspRuntimeDetector
     private static string? ExtractVersion(string output)
     {
         if (string.IsNullOrWhiteSpace(output)) return null;
-        // find first version-like token
-        var m = System.Text.RegularExpressions.Regex.Match(output, @"v?(\d+\.\d+(\.\d+)?)");
-        return m.Success ? m.Groups[1].Value : output.Trim().Split(' ')[0].TrimStart('v');
+        var m = System.Text.RegularExpressions.Regex.Match(output, @"v?(\d+\.\d+(?:\.\d+)?(?:[.-]\w+)*)");
+        if (m.Success) return m.Groups[1].Value;
+        // Fallback for 'openjdk 21.0.1' or 'Python 3.11.5'
+        var parts = output.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var p in parts)
+        {
+            var mm = System.Text.RegularExpressions.Regex.Match(p, @"\d+\.\d+.*");
+            if (mm.Success) return mm.Value.TrimStart('v');
+        }
+        return output.Trim().Split(' ')[0].TrimStart('v');
     }
 
     private static async Task<(bool found, string? output, string? error)> TryRunAsync(string exe, string args, CancellationToken ct)

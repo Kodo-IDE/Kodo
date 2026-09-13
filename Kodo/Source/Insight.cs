@@ -12,6 +12,7 @@ using Avalonia.Media;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
+using Avalonia.Threading;
 using Kodo.Models;
 
 namespace Kodo;
@@ -46,8 +47,21 @@ public sealed class InsightSuggestion : ICompletionData
         Kind = kind;
     }
 
-    public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs) =>
-        textArea.Document.Replace(completionSegment, Text);
+    public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
+        {
+            try
+            {
+                textArea.Document.Replace(completionSegment, Text);
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+            {
+                KodoDiagnostics.LogDebug("InsightSuggestion.Complete: Visual line race suppressed", ex);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try { textArea.Document.Replace(completionSegment, Text); } catch { }
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }
+        }
 
     private static string KindLabel(InsightKind kind) => kind switch
     {

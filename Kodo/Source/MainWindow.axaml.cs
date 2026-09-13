@@ -499,7 +499,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd($"Kodo/{KodoDiagnostics.AppVersion} (https://github.com/Kodo-IDE/Kodo)");
         return client;
     }
 
@@ -7981,9 +7981,46 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorTextDarkener.SetSpans(spans, _deadCodeHighlightRenderer.Spans);
         if (spans.Count != rawSpans.Count)
             HideDiagnosticPopup();
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-        EditorTextBox.TextArea.TextView.Redraw();
+        try
+        {
+            if (EditorTextBox.TextArea.TextView.VisualLinesValid)
+            {
+                EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+                EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                EditorTextBox.TextArea.TextView.Redraw();
+            }
+            else
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try
+                    {
+                        if (EditorTextBox?.TextArea?.TextView?.VisualLinesValid == true)
+                        {
+                            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
+                            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                            EditorTextBox.TextArea.TextView.Redraw();
+                        }
+                    }
+                    catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KodoDiagnostics.LogDebug("UpdateErrorHighlighting: Deferred redraw race suppressed", ex);
+                    }
+                }, DispatcherPriority.Background);
+            }
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("UpdateErrorHighlighting: Redraw race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    EditorTextBox?.TextArea?.TextView?.Redraw();
+                }
+                catch { }
+            }, DispatcherPriority.Background);
+        }
     }
 
     private List<InsightEngine.ErrorSpan> FilterDismissedErrorSpans(List<InsightEngine.ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)

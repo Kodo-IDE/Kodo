@@ -384,9 +384,12 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
                     var left = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, startColumn), VisualYPosition.LineBottom).X;
                     var right = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, endColumn), VisualYPosition.LineBottom).X;
                     var brush = UnderlineBrushForSeverity(span.Severity);
+                    var isHint = span.Severity.Equals("hint", StringComparison.OrdinalIgnoreCase);
+                    var isInfo = span.Severity.Equals("info", StringComparison.OrdinalIgnoreCase);
+                    var thickness = isHint ? 1.5 : isInfo ? 2.0 : 2.5;
                     var underlineY = y1 + height - 2;
                     var underlineWidth = Math.Max(3, right - left);
-                    drawingContext.DrawRectangle(brush, null, new Rect(left, underlineY, underlineWidth, 2.5));
+                    drawingContext.DrawRectangle(brush, null, new Rect(left, underlineY, underlineWidth, thickness));
                 }
                 catch { }
             }

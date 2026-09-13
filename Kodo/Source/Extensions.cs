@@ -619,6 +619,9 @@ public partial class MainWindow
             Extensions = manifest.TryGetProperty("extensions", out var exts)
                 ? exts.EnumerateArray().Select(e => e.GetString() ?? "").ToArray()
                 : [],
+            Dependencies = manifest.TryGetProperty("dependencies", out var deps)
+                ? deps.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+                : [],
             PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null,
             LanguagePluginAssemblyFileName = manifest.TryGetProperty("languagePlugin", out var langPlugin) ? langPlugin.GetString() : null
         };

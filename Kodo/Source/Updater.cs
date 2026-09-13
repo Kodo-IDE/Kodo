@@ -23,7 +23,7 @@ internal static class UpdateService
     private const string LatestReleaseUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest";
     private const string ReleasesListUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases";
     private const string ReleaseNotesUrl = "https://github.com/Kodo-IDE/Kodo/releases";
-    private const string UserAgent = "Kodo/2.0.0-DEV (https://github.com/Kodo-IDE/Kodo)";
+    private static string UserAgent => $"Kodo/{KodoDiagnostics.AppVersion} (https://github.com/Kodo-IDE/Kodo)";
 
     private static readonly HttpClient Http = CreateHttpClient();
 
