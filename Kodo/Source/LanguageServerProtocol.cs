@@ -2207,7 +2207,20 @@ internal static class LspInstallationManager
     public static string? FindSystemExecutable(LspConfiguration cfg)
     {
         if (!cfg.AllowSystem) return null;
-        return LspRuntimeDetector.FindOnPath(cfg.Command);
+        var found = LspRuntimeDetector.FindOnPath(cfg.Command);
+        if (found != null) return found;
+        // Dotnet tool fallback: check %USERPROFILE%\.dotnet\tools
+        if (cfg.InstallMethod?.Equals("dotnet", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            try
+            {
+                var toolsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", "tools");
+                var candidates = new[] { Path.Combine(toolsDir, cfg.Command), Path.Combine(toolsDir, cfg.Command + ".exe"), Path.Combine(toolsDir, cfg.EffectiveProviderId), Path.Combine(toolsDir, cfg.EffectiveProviderId + ".exe") };
+                foreach (var c in candidates) if (File.Exists(c)) return c;
+            }
+            catch { }
+        }
+        return null;
     }
 
     public static string? FindManagedExecutable(LspConfiguration cfg) => FindManagedExecutable(cfg, null);
@@ -2316,6 +2329,8 @@ internal static class LspInstallationManager
                 return new(InstallResultKind.AlreadyInstalled, "Already installed", GetProviderDir(cfg, settings));
 
             var method = (cfg.InstallMethod ?? "").Trim().ToLowerInvariant();
+            if (method == "dotnet")
+                return await InstallViaDotnetAsync(cfg, settings, progress, ct).ConfigureAwait(false);
             if (method == "npm" || (!string.IsNullOrWhiteSpace(cfg.PackageName) && string.IsNullOrWhiteSpace(cfg.DownloadUrl)))
                 return await InstallViaNpmAsync(cfg, settings, progress, ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(cfg.DownloadUrl))
@@ -2417,6 +2432,59 @@ internal static class LspInstallationManager
         {
             try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
             KodoDiagnostics.LogDebug($"LSP npm install failed for {pkg}", ex);
+            return new(InstallResultKind.Failed, $"Installation failed: {ex.Message}", null);
+        }
+    }
+
+    private static async Task<InstallResult> InstallViaDotnetAsync(LspConfiguration cfg, AppSettings? settings, IProgress<string>? progress, CancellationToken ct)
+    {
+        var pkg = cfg.PackageName ?? cfg.EffectiveProviderId;
+        var dotnetRt = await LspRuntimeDetector.DetectAsync("dotnet", cfg.RuntimeMinVersion ?? "6.0.0", ct).ConfigureAwait(false);
+        if (!dotnetRt.Found) return new(InstallResultKind.RuntimeMissing, dotnetRt.Error ?? "dotnet SDK is required. Install from https://dotnet.microsoft.com/download", null);
+        progress?.Report($"Installing {pkg} via dotnet...");
+        KodoDiagnostics.LogDebug($"LSP dotnet tool install {pkg}");
+        try
+        {
+            // Check if already installed globally
+            var listPsi = new ProcessStartInfo { FileName = "dotnet", Arguments = "tool list --global", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            using var listProc = new Process { StartInfo = listPsi };
+            if (listProc.Start())
+            {
+                var outTxt = await listProc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+                await listProc.WaitForExitAsync(ct).ConfigureAwait(false);
+                if (outTxt.Contains(pkg, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Update instead of install
+                    var updPsi = new ProcessStartInfo { FileName = "dotnet", Arguments = $"tool update --global {pkg}", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+                    using var updProc = new Process { StartInfo = updPsi };
+                    if (updProc.Start())
+                    {
+                        var uo = await updProc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+                        var ue = await updProc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+                        await updProc.WaitForExitAsync(ct).ConfigureAwait(false);
+                        KodoDiagnostics.LogDebug($"dotnet tool update stdout: {uo} stderr: {ue} exit:{updProc.ExitCode}");
+                        if (updProc.ExitCode == 0) return new(InstallResultKind.Success, $"Updated {pkg} via dotnet tool", null);
+                    }
+                }
+            }
+            var psi = new ProcessStartInfo { FileName = "dotnet", Arguments = $"tool install --global {pkg}", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            using var proc = new Process { StartInfo = psi };
+            if (!proc.Start()) return new(InstallResultKind.Failed, "Failed to start dotnet", null);
+            var stdout = await proc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            var stderr = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+            KodoDiagnostics.LogDebug($"dotnet tool install stdout: {stdout} stderr: {stderr} exit:{proc.ExitCode}");
+            if (proc.ExitCode != 0)
+                return new(InstallResultKind.Failed, $"dotnet tool install failed (exit {proc.ExitCode}): {stderr.Trim()}", null);
+            return new(InstallResultKind.Success, $"Installed {pkg} via dotnet tool", null);
+        }
+        catch (Exception ex) when (IsOffline(ex))
+        {
+            return new(InstallResultKind.Offline, $"Offline – could not download {pkg}: {ex.Message}", null);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP dotnet install failed for {pkg}", ex);
             return new(InstallResultKind.Failed, $"Installation failed: {ex.Message}", null);
         }
     }
@@ -3322,13 +3390,13 @@ internal static class LspServerResolver
             || (cfg.DownloadUrl?.Contains("github.com", StringComparison.OrdinalIgnoreCase) ?? false);
         bool hasSha = !string.IsNullOrWhiteSpace(cfg.Sha256);
         bool canInstall = cfg.AllowAutoInstall && !string.Equals(cfg.InstallMethod, "manual", StringComparison.OrdinalIgnoreCase)
-            && (!string.IsNullOrWhiteSpace(cfg.DownloadUrl) || !string.IsNullOrWhiteSpace(cfg.PackageName) || cfg.InstallMethod == "npm" || cfg.InstallMethod == "github");
+            && (!string.IsNullOrWhiteSpace(cfg.DownloadUrl) || !string.IsNullOrWhiteSpace(cfg.PackageName) || cfg.InstallMethod == "npm" || cfg.InstallMethod == "github" || cfg.InstallMethod == "dotnet");
         // For github/standalone without checksum, treat as manual – security requirement
         if (canInstall && isGithub && !hasSha)
         {
             return new(LspServerSource.ManualRequired, null, cfg, null, $"Language server '{cfg.EffectiveProviderId}' download requires SHA-256 verification (no checksum provided). Please install manually from {cfg.DownloadUrl} or update provider metadata.", false);
         }
-        if (canInstall && !isGithub && !hasSha && !string.IsNullOrWhiteSpace(cfg.DownloadUrl) && cfg.InstallMethod != "npm")
+        if (canInstall && !isGithub && !hasSha && !string.IsNullOrWhiteSpace(cfg.DownloadUrl) && cfg.InstallMethod != "npm" && cfg.InstallMethod != "dotnet")
         {
             return new(LspServerSource.ManualRequired, null, cfg, null, $"Language server '{cfg.EffectiveProviderId}' cannot be auto-installed without SHA-256. Install manually.", false);
         }
