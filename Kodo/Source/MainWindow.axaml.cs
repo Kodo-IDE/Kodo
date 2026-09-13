@@ -7904,8 +7904,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         // LSP ALWAYS prioritized: when an extension declares an LSP, Insight/LangRules...
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
-        var isLspPrimary = lspForFile?.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
-        var hasConfiguredLsp = lspForFile?.Lsp != null;
+        var cfgForFile = ResolveLspConfigurationForFile(_currentFilePath);
+        var isLspPrimary = lspForFile?.HasLsp == true && cfgForFile != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForFile) is { IsInitialized: true };
+        var hasConfiguredLsp = lspForFile?.HasLsp == true;
 
         if (rawSpans is null)
         {

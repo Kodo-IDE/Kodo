@@ -436,6 +436,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         RefreshExtensionTheme();
         SyncMarketplaceInstallStates();
         SyncActivePlugins();
+        LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
     }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
@@ -654,17 +655,62 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             }
         }
 
-        if (manifest.TryGetProperty("lsp", out var lspElement))
+        // --- LSP declarations: supports both "lsp":{} and "lsps":[] for multiple providers (backward compatible) ---
+        if (manifest.TryGetProperty("lsps", out var lspsElement) && lspsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in lspsElement.EnumerateArray())
+            {
+                try
+                {
+                    var lsp = ParseLspConfiguration(item, extension.Extensions);
+                    if (lsp is not null)
+                    {
+                        extension.Lsps.Add(lsp);
+                        // Keep Lsp as first for backward compat
+                        extension.Lsp ??= lsp;
+                    }
+                    else
+                    {
+                        KodoDiagnostics.LogDebug($"Skipped malformed lsp entry for '{extension.Id}': lsp must have a non-empty command.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"Invalid lsp configuration for '{extension.Id}' (lsps array): {ex.Message}");
+                }
+            }
+        }
+        else if (manifest.TryGetProperty("lsp", out var lspElement))
         {
             try
             {
                 var lsp = ParseLspConfiguration(lspElement, extension.Extensions);
                 if (lsp is not null)
+                {
                     extension.Lsp = lsp;
+                    extension.Lsps.Add(lsp);
+                }
             }
             catch (Exception ex)
             {
                 KodoDiagnostics.LogDebug($"Invalid lsp configuration for '{extension.Id}': {ex.Message}");
+            }
+        }
+        // Also support alternative name "languageServers"
+        if (extension.Lsps.Count == 0 && manifest.TryGetProperty("languageServers", out var langServersEl) && langServersEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in langServersEl.EnumerateArray())
+            {
+                try
+                {
+                    var lsp = ParseLspConfiguration(item, extension.Extensions);
+                    if (lsp is not null)
+                    {
+                        extension.Lsps.Add(lsp);
+                        extension.Lsp ??= lsp;
+                    }
+                }
+                catch (Exception ex) { KodoDiagnostics.LogDebug($"Invalid languageServers entry for '{extension.Id}': {ex.Message}"); }
             }
         }
 
@@ -1286,9 +1332,13 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         PluginFolderPath = src.PluginFolderPath,
         LanguagePluginFolderPath = src.LanguagePluginFolderPath,
         Lsp = src.Lsp,
+        LspStatus = src.LspStatus,
+        LspStatusMessage = src.LspStatusMessage,
         IconImage = src.IconImage,
         IconBytes = src.IconBytes,
         };
+        clone.Lsps.AddRange(src.Lsps);
+        foreach (var kv in src.LspProviderStatuses) clone.LspProviderStatuses[kv.Key] = kv.Value;
         clone.ExternalTools.AddRange(src.ExternalTools.Select(tool => new ExternalLanguageTool
         {
             Id = tool.Id,

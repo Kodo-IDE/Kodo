@@ -680,21 +680,28 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(filePath) || IsPlainTextFile(filePath) || HasNoFileExtension(filePath))
             return null;
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
-        // Prefer explicit LSP fileExtensions, fallback to manifest extensions
         var candidates = LoadedExtensions.Where(e => e.HasLsp).ToList();
-        // First try exact fileExtension match
-        var match = candidates.FirstOrDefault(e => e.Lsp!.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)));
+        var match = candidates.FirstOrDefault(e => e.AllLspConfigurations.Any(c => c.FileExtensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase))));
         if (match is not null) return match;
-        // Fallback to top-level extensions (already copied into Lsp.FileExtensions if...
         match = candidates.FirstOrDefault(e => e.Extensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)));
         return match;
+    }
+
+    private LspConfiguration? ResolveLspConfigurationForFile(string? filePath)
+    {
+        var ext = ResolveLspExtensionForFile(filePath);
+        if (ext is null) return null;
+        if (string.IsNullOrWhiteSpace(filePath)) return ext.Lsp ?? ext.Lsps.FirstOrDefault();
+        var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
+        var specific = ext.AllLspConfigurations.FirstOrDefault(c => c.FileExtensions.Any(fe => fe.Equals(fileExt, StringComparison.OrdinalIgnoreCase)));
+        return specific ?? ext.Lsp ?? ext.Lsps.FirstOrDefault();
     }
 
     private string GetWorkspaceRootForFile(string? filePath)
     {
         if (!string.IsNullOrWhiteSpace(filePath))
         {
-            var markers = ResolveLspExtensionForFile(filePath)?.Lsp?.RootMarkers;
+            var markers = ResolveLspConfigurationForFile(filePath)?.RootMarkers ?? ResolveLspExtensionForFile(filePath)?.Lsp?.RootMarkers;
             if (markers != null && markers.Length > 0)
             {
                 var dir = Path.GetDirectoryName(filePath);
@@ -826,6 +833,13 @@ public partial class MainWindow
 
     private async Task<bool> HandleLspNotReadyAsync(LoadedExtension lspExt, LspResolution resolution, string filePath)
     {
+        // Update provider registry and extension status
+        var providerId = resolution.ResolvedConfiguration.EffectiveProviderId;
+        LspProviderRegistry.SetStatus(providerId, resolution.ToDependencyStatus(), resolution.Error, resolution.Version, resolution.ExecutablePath, resolution.Source == LspServerSource.Managed);
+        lspExt.LspStatus = resolution.ToDependencyStatus();
+        lspExt.LspStatusMessage = resolution.Error;
+        lspExt.LspProviderStatuses[providerId] = (resolution.ToDependencyStatus(), resolution.Error);
+
         // Respect dismissed prompts unless auto-install enabled
         if (resolution.Source == LspServerSource.Disabled)
         {
@@ -834,7 +848,7 @@ public partial class MainWindow
         }
         if (resolution.Source == LspServerSource.RuntimeMissing)
         {
-            var runtime = lspExt.Lsp?.Runtime ?? "required runtime";
+            var runtime = resolution.ResolvedConfiguration.Runtime ?? lspExt.Lsp?.Runtime ?? "required runtime";
             var msg = resolution.Error ?? $"Runtime '{runtime}' is required for {lspExt.Name}.";
             KodoDiagnostics.LogDebug($"LSP runtime missing for {lspExt.Id}: {msg}");
             await Dispatcher.UIThread.InvokeAsync(async () =>
@@ -842,6 +856,34 @@ public partial class MainWindow
                 ExtensionsStatusText = msg;
                 await ShowWarningDialogAsync($"{lspExt.Name} – runtime required", new InvalidOperationException($"{msg}\n\nPlease install {runtime} and restart Kodo.\n\nHighlighting still works."));
             });
+            return false;
+        }
+        if (resolution.Source == LspServerSource.Incompatible)
+        {
+            var msg = resolution.Error ?? $"Language server '{providerId}' version {resolution.Version ?? "unknown"} is incompatible.";
+            KodoDiagnostics.LogDebug($"LSP incompatible for {lspExt.Id}: {msg}");
+            if (resolution.CanInstall && resolution.ResolvedConfiguration.AllowAutoInstall)
+            {
+                if (_lspAutoInstall)
+                {
+                    var r = await PromptAndInstallLspAsync(lspExt, resolution, autoInstall: true).ConfigureAwait(false);
+                    return r;
+                }
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    ExtensionsStatusText = msg;
+                    await PromptAndInstallLspAsync(lspExt, resolution, autoInstall: false).ConfigureAwait(false);
+                });
+                return false;
+            }
+            if (_lspMissingNotified.Add(lspExt.Id + ":" + providerId))
+            {
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    ExtensionsStatusText = msg;
+                    await ShowWarningDialogAsync($"{lspExt.Name} – incompatible version", new InvalidOperationException($"{msg}\n\nHighlighting remains available. Update the language server to a compatible version."));
+                });
+            }
             return false;
         }
         if (resolution.Source == LspServerSource.Installable)
@@ -896,11 +938,14 @@ public partial class MainWindow
     {
         try
         {
-            var providerName = lspExt.Lsp?.DisplayName ?? lspExt.Lsp?.EffectiveProviderId ?? lspExt.Name;
+            var targetCfg = resolution.ResolvedConfiguration ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+            if (targetCfg is null) return false;
+            var providerName = targetCfg.DisplayName ?? targetCfg.EffectiveProviderId ?? lspExt.Name;
+            var providerId = targetCfg.EffectiveProviderId;
             var title = $"{lspExt.Name} – language server required";
             var body = autoInstall
                 ? $"Installing {providerName} for {lspExt.Name}..."
-                : $"{lspExt.Name} language support requires {providerName}.\n\nStatus: Not installed\n\nInstall {providerName} now?\n\nKodo will download it to %LocalAppData%\\Kodo\\Lsp\\{lspExt.Lsp?.EffectiveProviderId} and verify it before use. You can also use an existing system installation.";
+                : $"{lspExt.Name} language support requires {providerName}.\n\nStatus: {(resolution.Source == LspServerSource.Incompatible ? $"Incompatible ({resolution.Version ?? "unknown"})" : "Not installed")}\n\nInstall {providerName} now?\n\nKodo will download it to %LocalAppData%\\Kodo\\Lsp\\{targetCfg.EffectiveProviderId} and verify it before use. You can also use an existing system installation.";
             bool shouldInstall = autoInstall;
             if (!autoInstall)
             {
@@ -909,6 +954,10 @@ public partial class MainWindow
                 if (!shouldInstall)
                 {
                     _lspDismissedInstallPrompts.Add(lspExt.Id);
+                    lspExt.LspStatus = LspDependencyStatus.Declined;
+                    lspExt.LspStatusMessage = $"User declined installation of {providerName}";
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Declined, "User declined");
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Declined, "User declined");
                     SaveSettings(immediate: true);
                     return false;
                 }
@@ -916,15 +965,25 @@ public partial class MainWindow
             if (shouldInstall)
             {
                 ExtensionsStatusText = $"Installing {providerName}...";
+                lspExt.LspStatus = LspDependencyStatus.Installing;
+                lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installing, null);
+                LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installing);
                 var progress = new Progress<string>(msg => Dispatcher.UIThread.Post(() => ExtensionsStatusText = msg));
-                var result = await LspInstallationManager.InstallAsync(lspExt.Lsp!, progress).ConfigureAwait(false);
-                if (result.Kind == LspInstallationManager.InstallResultKind.Success)
+                var settings = BuildLspResolverSettings();
+                var result = await LspInstallationManager.InstallAsync(targetCfg, settings, progress).ConfigureAwait(false);
+                if (result.Kind == LspInstallationManager.InstallResultKind.Success || result.Kind == LspInstallationManager.InstallResultKind.AlreadyInstalled)
                 {
                     ExtensionsStatusText = $"{providerName} installed successfully.";
                     KodoDiagnostics.LogDebug($"LSP installed {providerName}: {result.InstalledPath}");
+                    lspExt.LspStatus = LspDependencyStatus.Installed;
+                    lspExt.LspStatusMessage = null;
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installed, null);
+                    LspProviderRegistry.RegisterConsumer(providerId, lspExt.Id);
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installed, null, result.InstalledPath, result.InstalledPath, true);
                     // Clear dismissed and missing flags so next open succeeds
                     _lspDismissedInstallPrompts.Remove(lspExt.Id);
                     _lspMissingNotified.Remove(lspExt.Id);
+                    _lspMissingNotified.Remove(lspExt.Id + ":" + providerId);
                     SaveSettings(immediate: true);
                     // Trigger retry by reopening current file if still same
                     if (!string.IsNullOrWhiteSpace(_currentFilePath) && IsSameDocument(_currentFilePath, _currentFilePath))
@@ -938,6 +997,10 @@ public partial class MainWindow
                 }
                 else if (result.Kind == LspInstallationManager.InstallResultKind.Offline)
                 {
+                    lspExt.LspStatus = LspDependencyStatus.Failed;
+                    lspExt.LspStatusMessage = result.Message;
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Failed, result.Message);
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Failed, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         ExtensionsStatusText = $"{providerName} could not be downloaded because Kodo is offline.";
@@ -946,6 +1009,10 @@ public partial class MainWindow
                 }
                 else if (result.Kind == LspInstallationManager.InstallResultKind.RuntimeMissing)
                 {
+                    lspExt.LspStatus = LspDependencyStatus.RuntimeMissing;
+                    lspExt.LspStatusMessage = result.Message;
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.RuntimeMissing, result.Message);
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.RuntimeMissing, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         await ShowWarningDialogAsync($"{providerName} – runtime missing", new InvalidOperationException(result.Message ?? "Runtime missing"));
@@ -953,6 +1020,10 @@ public partial class MainWindow
                 }
                 else
                 {
+                    lspExt.LspStatus = LspDependencyStatus.Failed;
+                    lspExt.LspStatusMessage = result.Message;
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Failed, result.Message);
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Failed, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         ExtensionsStatusText = $"Failed to install {providerName}: {result.Message}";
@@ -974,22 +1045,34 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(filePath)) return;
         filePath = NormalizeFilePath(filePath);
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return;
+        if (lspExt is null || !lspExt.HasLsp) return;
+        var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (targetCfg is null) return;
         lock (_lspOpenLock)
         {
             if (_lspOpenDocuments.Contains(filePath) || _lspPendingOpens.Contains(filePath)) return;
             _lspPendingOpens.Add(filePath);
         }
 
-        // Centralized resolution: managed -> system -> installable
+        // Centralized resolution: managed -> system -> installable (per-provider)
         var settings = BuildLspResolverSettings();
-        var resolution = await LspServerResolver.ResolveAsync(lspExt, settings).ConfigureAwait(false);
+        var resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);
         KodoDiagnostics.LogDebug($"LSP resolve {lspExt.Id} source={resolution.Source} exe={resolution.ExecutablePath} canInstall={resolution.CanInstall} err={resolution.Error}");
         if (!resolution.IsReady)
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
             await HandleLspNotReadyAsync(lspExt, resolution, filePath).ConfigureAwait(false);
             return;
+        }
+        else
+        {
+            // Record successful resolution
+            lspExt.LspStatus = LspDependencyStatus.Available;
+            lspExt.LspStatusMessage = null;
+            var pidOk = resolution.ResolvedConfiguration.EffectiveProviderId;
+            lspExt.LspProviderStatuses[pidOk] = (LspDependencyStatus.Available, null);
+            LspProviderRegistry.RegisterConsumer(pidOk, lspExt.Id);
+            LspProviderRegistry.SetStatus(pidOk, LspDependencyStatus.Available, null, resolution.Version, resolution.ExecutablePath, resolution.Source == LspServerSource.Managed);
         }
 
         var resolvedConfig = resolution.ResolvedConfiguration;
@@ -1079,12 +1162,14 @@ public partial class MainWindow
             return;
         }
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return;
+        if (lspExt is null || !lspExt.HasLsp) return;
+        var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (targetCfg is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
-        // Resolve using centralized resolver to match didOpen's resolved path
+        // Resolve using centralized resolver to match didOpen's resolved path (per-provider)
         var settings2 = BuildLspResolverSettings();
-        var res2 = await LspServerResolver.ResolveAsync(lspExt, settings2).ConfigureAwait(false);
-        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : lspExt.Lsp;
+        var res2 = await LspServerResolver.ResolveAsync(targetCfg, settings2, lspExt.Id).ConfigureAwait(false);
+        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : targetCfg;
         var client = _lspManager.TryGetClient(workspace, effectiveConfig);
         if (client is null || !client.IsInitialized) return;
 
@@ -1127,18 +1212,20 @@ public partial class MainWindow
         }
 
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return;
+        if (lspExt is null || !lspExt.HasLsp) return;
+        var closeCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (closeCfg is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
         // Try resolved config first, then fallback to original for backward compat
         LspClient? client = null;
         try
         {
             var cs = BuildLspResolverSettings();
-            var res = await LspServerResolver.ResolveAsync(lspExt, cs).ConfigureAwait(false);
-            var effective = res.IsReady ? res.ResolvedConfiguration : lspExt.Lsp;
-            client = _lspManager.TryGetClient(workspace, effective) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp);
+            var res = await LspServerResolver.ResolveAsync(closeCfg, cs, lspExt.Id).ConfigureAwait(false);
+            var effective = res.IsReady ? res.ResolvedConfiguration : closeCfg;
+            client = _lspManager.TryGetClient(workspace, effective) ?? _lspManager.TryGetClient(workspace, closeCfg);
         }
-        catch { client = _lspManager.TryGetClient(workspace, lspExt.Lsp); }
+        catch { client = _lspManager.TryGetClient(workspace, closeCfg); }
         if (client is null) return;
 
         var uri = FilePathToUri(filePath);
@@ -1404,9 +1491,20 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(filePath)) return Array.Empty<InsightSuggestion>();
         // Allow empty prefix for trigger characters like '.' – LSP will filter
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return Array.Empty<InsightSuggestion>();
+        if (lspExt is null || !lspExt.HasLsp) return Array.Empty<InsightSuggestion>();
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return Array.Empty<InsightSuggestion>();
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            // Try any AllLspConfigurations client
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return Array.Empty<InsightSuggestion>();
         KodoDiagnostics.LogDebug($"LSP completion request file={filePath} offset={offset} prefix='{prefix}'");
 
@@ -1536,9 +1634,19 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return null;
+        if (lspExt is null || !lspExt.HasLsp) return null;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return null;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return null;
         KodoDiagnostics.LogDebug($"LSP hover request file={filePath} offset={offset}");
 
@@ -1602,9 +1710,19 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return false;
+        if (lspExt is null || !lspExt.HasLsp) return false;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return false;
         KodoDiagnostics.LogDebug($"LSP references request file={filePath} offset={offset}");
         var uri = FilePathToUri(filePath);
@@ -1661,9 +1779,19 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return false;
+        if (lspExt is null || !lspExt.HasLsp) return false;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return false;
         // Check if server supports formatting (via capabilities)
         if (client.ServerCapabilities is JsonElement caps && caps.TryGetProperty("documentFormattingProvider", out var fmt) && fmt.ValueKind == JsonValueKind.False)
@@ -1745,9 +1873,19 @@ public partial class MainWindow
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return false;
+        if (lspExt is null || !lspExt.HasLsp) return false;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return false;
         var uri = FilePathToUri(filePath);
         var (line, character) = OffsetToLspPosition(text, offset);
@@ -1877,9 +2015,19 @@ var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.G
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
         var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt?.Lsp is null) return false;
+        if (lspExt is null || !lspExt.HasLsp) return false;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, lspExt.Lsp);
+        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        if (client is null || !client.IsInitialized)
+        {
+            foreach (var c in lspExt.AllLspConfigurations)
+            {
+                client = _lspManager.TryGetClient(workspace, c);
+                if (client is not null && client.IsInitialized) break;
+            }
+        }
         if (client is null || !client.IsInitialized) return false;
 
         var uri = FilePathToUri(filePath);
@@ -2097,10 +2245,19 @@ internal static class LspInstallationManager
         var args = versionArgs != null && versionArgs.Length > 0 ? string.Join(" ", versionArgs) : "--version";
         try
         {
+            bool isCmdScript = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+            string fileName = exePath;
+            string arguments = args;
+            if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+                fileName = comSpec;
+                arguments = $"/c \"{exePath}\" {args}";
+            }
             var psi = new ProcessStartInfo
             {
-                FileName = exePath,
-                Arguments = args,
+                FileName = fileName,
+                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -2863,6 +3020,102 @@ internal static class LspRuntimeDetector
     }
 }
 
+// --- LspProviderRegistry.cs ---
+/// <summary>Centralized LSP provider registry – single source of truth for provider lifecycle, shared consumers, and status.</summary>
+internal static class LspProviderRegistry
+{
+    private static readonly object _lock = new();
+    private static readonly Dictionary<string, HashSet<string>> _consumers = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, LspDependencyStatus> _status = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string?> _statusMessage = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string?> _installedVersion = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string?> _executablePath = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, bool> _isManaged = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void RegisterConsumer(string providerId, string extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(extensionId)) return;
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            if (!_consumers.TryGetValue(pid, out var set))
+            {
+                set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _consumers[pid] = set;
+            }
+            set.Add(extensionId);
+        }
+    }
+
+    public static void UnregisterConsumer(string providerId, string extensionId)
+    {
+        if (string.IsNullOrWhiteSpace(providerId)) return;
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            if (_consumers.TryGetValue(pid, out var set))
+            {
+                set.Remove(extensionId);
+                if (set.Count == 0) _consumers.Remove(pid);
+            }
+        }
+    }
+
+    public static IReadOnlyCollection<string> GetConsumers(string providerId)
+    {
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock) return _consumers.TryGetValue(pid, out var set) ? set.ToList().AsReadOnly() : Array.Empty<string>();
+    }
+
+    public static bool HasOtherConsumers(string providerId, string excludingExtensionId)
+    {
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            if (!_consumers.TryGetValue(pid, out var set)) return false;
+            return set.Any(id => !id.Equals(excludingExtensionId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    public static void SetStatus(string providerId, LspDependencyStatus status, string? message = null, string? version = null, string? exePath = null, bool isManaged = false)
+    {
+        if (string.IsNullOrWhiteSpace(providerId)) return;
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            _status[pid] = status;
+            _statusMessage[pid] = message;
+            if (version != null) _installedVersion[pid] = version;
+            if (exePath != null) _executablePath[pid] = exePath;
+            _isManaged[pid] = isManaged;
+        }
+    }
+
+    public static (LspDependencyStatus status, string? message, string? version, string? exePath, bool isManaged) GetProviderInfo(string providerId)
+    {
+        var pid = providerId.Trim().ToLowerInvariant();
+        lock (_lock)
+        {
+            _status.TryGetValue(pid, out var st);
+            _statusMessage.TryGetValue(pid, out var msg);
+            _installedVersion.TryGetValue(pid, out var ver);
+            _executablePath.TryGetValue(pid, out var exe);
+            _isManaged.TryGetValue(pid, out var managed);
+            return (st, msg, ver, exe, managed);
+        }
+    }
+
+    public static void RefreshFromLoadedExtensions(IEnumerable<LoadedExtension> extensions)
+    {
+        lock (_lock) _consumers.Clear();
+        foreach (var ext in extensions)
+        {
+            foreach (var cfg in ext.AllLspConfigurations)
+                RegisterConsumer(cfg.EffectiveProviderId, ext.Id);
+        }
+    }
+}
+
 // --- LspServerResolver.cs ---
 public enum LspServerSource
 {
@@ -2873,7 +3126,8 @@ public enum LspServerSource
     RuntimeMissing,
     ManualRequired,
     Missing,
-    Disabled
+    Disabled,
+    Incompatible
 }
 
 public sealed record LspResolution(
@@ -2885,6 +3139,16 @@ public sealed record LspResolution(
     bool CanInstall)
 {
     public bool IsReady => Source == LspServerSource.Managed || Source == LspServerSource.System || Source == LspServerSource.UserOverride;
+    public LspDependencyStatus ToDependencyStatus() => Source switch
+    {
+        LspServerSource.Managed or LspServerSource.System or LspServerSource.UserOverride => LspDependencyStatus.Available,
+        LspServerSource.Installable => LspDependencyStatus.Missing,
+        LspServerSource.Incompatible => LspDependencyStatus.Incompatible,
+        LspServerSource.RuntimeMissing => LspDependencyStatus.RuntimeMissing,
+        LspServerSource.ManualRequired => LspDependencyStatus.ManualRequired,
+        LspServerSource.Disabled => LspDependencyStatus.Disabled,
+        _ => LspDependencyStatus.Missing
+    };
 }
 
 internal static class LspServerResolver
@@ -2896,6 +3160,14 @@ internal static class LspServerResolver
     /// 4. Installable / manual / missing
     /// Also checks runtime requirements.
     /// </summary>
+    /// <summary>Resolve a specific provider configuration (for extensions with multiple LSPs).</summary>
+    public static Task<LspResolution> ResolveAsync(
+        LspConfiguration cfg,
+        AppSettings? settings = null,
+        string extensionId = "",
+        CancellationToken ct = default)
+        => ResolveInternalAsync(cfg, extensionId, settings, ct);
+
     public static async Task<LspResolution> ResolveAsync(
         LoadedExtension extension,
         AppSettings? settings = null,
@@ -2903,9 +3175,23 @@ internal static class LspServerResolver
     {
         var cfg = extension.Lsp;
         if (cfg == null || string.IsNullOrWhiteSpace(cfg.Command))
+        {
+            // Try first from Lsps collection if Lsp is null but Lsps has entries
+            if (extension.Lsps.Count > 0) cfg = extension.Lsps[0];
+        }
+        if (cfg == null || string.IsNullOrWhiteSpace(cfg.Command))
             return new(LspServerSource.Missing, null, cfg ?? new LspConfiguration(), null, "No LSP configured", false);
+        return await ResolveInternalAsync(cfg, extension.Id, settings, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<LspResolution> ResolveInternalAsync(
+        LspConfiguration cfg,
+        string extensionId,
+        AppSettings? settings,
+        CancellationToken ct)
+    {
         // Per-language disabled?
-        if (settings != null && settings.LspDisabledLanguages.TryGetValue(extension.Id, out var disabled) && disabled)
+        if (!string.IsNullOrWhiteSpace(extensionId) && settings != null && settings.LspDisabledLanguages.TryGetValue(extensionId, out var disabled) && disabled)
             return new(LspServerSource.Disabled, null, cfg, null, "LSP disabled for this language", false);
         if (settings != null && !settings.LspEnabled)
             return new(LspServerSource.Disabled, null, cfg, null, "LSP globally disabled", false);
@@ -2920,14 +3206,25 @@ internal static class LspServerResolver
             }
         }
 
-        // 1. User override
-        if (settings != null && settings.LspExecutableOverrides.TryGetValue(extension.Id, out var ov) && !string.IsNullOrWhiteSpace(ov))
+        // 1. User override (per-extensionId; also try providerId as key for shared providers)
+        string? overrideKey = null;
+        string? ov = null;
+        if (settings != null)
         {
-            var trimmed = ov.Trim().Trim('"');
+            if (!string.IsNullOrWhiteSpace(extensionId) && settings.LspExecutableOverrides.TryGetValue(extensionId, out var ov1) && !string.IsNullOrWhiteSpace(ov1))
+            { ov = ov1; overrideKey = extensionId; }
+            else if (settings.LspExecutableOverrides.TryGetValue(cfg.EffectiveProviderId, out var ov2) && !string.IsNullOrWhiteSpace(ov2))
+            { ov = ov2; overrideKey = cfg.EffectiveProviderId; }
+        }
+        if (!string.IsNullOrWhiteSpace(ov))
+        {
+            var trimmed = ov!.Trim().Trim('"');
             if (File.Exists(trimmed))
             {
                 var resolved = CloneWithCommand(cfg, trimmed);
                 var ver = await ProbeVersionAsync(trimmed, cfg.VersionArgs, ct).ConfigureAwait(false);
+                if (!IsVersionCompatible(ver, cfg.Version))
+                    return new(LspServerSource.Incompatible, trimmed, resolved, ver, $"Language server '{cfg.EffectiveProviderId}' version {ver ?? "unknown"} is incompatible with required {cfg.Version}.", cfg.AllowAutoInstall);
                 return new(LspServerSource.UserOverride, trimmed, resolved, ver, null, false);
             }
             // also try FindOnPath for override value
@@ -2936,10 +3233,12 @@ internal static class LspServerResolver
             {
                 var resolved = CloneWithCommand(cfg, found);
                 var ver = await ProbeVersionAsync(found, cfg.VersionArgs, ct).ConfigureAwait(false);
+                if (!IsVersionCompatible(ver, cfg.Version))
+                    return new(LspServerSource.Incompatible, found, resolved, ver, $"Language server '{cfg.EffectiveProviderId}' version {ver ?? "unknown"} is incompatible with required {cfg.Version}.", cfg.AllowAutoInstall);
                 return new(LspServerSource.UserOverride, found, resolved, ver, null, false);
             }
             // override points to non-existent – treat as error but fallback to other sources
-            KodoDiagnostics.LogDebug($"LSP user override for {extension.Id} not found: {trimmed}");
+            KodoDiagnostics.LogDebug($"LSP user override for {overrideKey} not found: {trimmed}");
         }
 
         // 2 & 3: Deterministic preference handling
@@ -2965,29 +3264,41 @@ internal static class LspServerResolver
         // - If preferManaged && !preferSystem => Managed only
         // - If !preferManaged && preferSystem => System first, then Managed
         // - If !preferManaged && !preferSystem => neither (go to installable)
+        // Helper to check managed/system and return with version compatibility
+        async Task<LspResolution?> TryResolveManagedOrSystemAsync(string exe, LspServerSource source)
+        {
+            var resolved = CloneWithCommand(cfg, exe);
+            var ver = await ProbeVersionAsync(exe, cfg.VersionArgs, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(cfg.Version) && !string.IsNullOrWhiteSpace(ver) && !IsVersionCompatible(ver, cfg.Version))
+            {
+                KodoDiagnostics.LogDebug($"LSP {source} {cfg.EffectiveProviderId} version {ver} incompatible with required {cfg.Version}");
+                return new(LspServerSource.Incompatible, exe, resolved, ver, $"Language server '{cfg.EffectiveProviderId}' version {ver} is incompatible with required {cfg.Version}.", cfg.AllowAutoInstall);
+            }
+            // Version unknown treated as compatible (don't block valid install)
+            if (!string.IsNullOrWhiteSpace(cfg.Version) && string.IsNullOrWhiteSpace(ver))
+                KodoDiagnostics.LogDebug($"LSP {source} {cfg.EffectiveProviderId} version unknown; treating as compatible with required {cfg.Version}");
+            return new(source, exe, resolved, ver, null, false);
+        }
+
         if (preferManaged && preferSystem)
         {
             if (managedExists)
             {
-                var resolved = CloneWithCommand(cfg, managedExe!);
-                var ver = await ProbeVersionAsync(managedExe!, cfg.VersionArgs, ct).ConfigureAwait(false);
-                // Verify executable actually works (version probe not required to succeed, but file must exist)
-                return new(LspServerSource.Managed, managedExe!, resolved, ver, null, false);
+                var r = await TryResolveManagedOrSystemAsync(managedExe!, LspServerSource.Managed).ConfigureAwait(false);
+                return r!;
             }
             if (systemExists)
             {
-                var resolved = CloneWithCommand(cfg, systemExe!);
-                var ver = await ProbeVersionAsync(systemExe!, cfg.VersionArgs, ct).ConfigureAwait(false);
-                return new(LspServerSource.System, systemExe!, resolved, ver, null, false);
+                var r = await TryResolveManagedOrSystemAsync(systemExe!, LspServerSource.System).ConfigureAwait(false);
+                return r!;
             }
         }
         else if (preferManaged && !preferSystem)
         {
             if (managedExists)
             {
-                var resolved = CloneWithCommand(cfg, managedExe!);
-                var ver = await ProbeVersionAsync(managedExe!, cfg.VersionArgs, ct).ConfigureAwait(false);
-                return new(LspServerSource.Managed, managedExe!, resolved, ver, null, false);
+                var r = await TryResolveManagedOrSystemAsync(managedExe!, LspServerSource.Managed).ConfigureAwait(false);
+                return r!;
             }
             // System explicitly disabled – don't fall back
         }
@@ -2995,15 +3306,13 @@ internal static class LspServerResolver
         {
             if (systemExists)
             {
-                var resolved = CloneWithCommand(cfg, systemExe!);
-                var ver = await ProbeVersionAsync(systemExe!, cfg.VersionArgs, ct).ConfigureAwait(false);
-                return new(LspServerSource.System, systemExe!, resolved, ver, null, false);
+                var r = await TryResolveManagedOrSystemAsync(systemExe!, LspServerSource.System).ConfigureAwait(false);
+                return r!;
             }
             if (managedExists)
             {
-                var resolved = CloneWithCommand(cfg, managedExe!);
-                var ver = await ProbeVersionAsync(managedExe!, cfg.VersionArgs, ct).ConfigureAwait(false);
-                return new(LspServerSource.Managed, managedExe!, resolved, ver, null, false);
+                var r = await TryResolveManagedOrSystemAsync(managedExe!, LspServerSource.Managed).ConfigureAwait(false);
+                return r!;
             }
         }
         // If both disabled, skip both and go to installable/manual
@@ -3078,11 +3387,57 @@ internal static class LspServerResolver
             LspServerSource.System => $"System ({r.Version ?? "found"})",
             LspServerSource.UserOverride => $"Custom ({r.Version ?? "override"})",
             LspServerSource.Installable => "Not installed – can install",
+            LspServerSource.Incompatible => $"Incompatible ({r.Version ?? "unknown"} vs required {r.ResolvedConfiguration.Version})",
             LspServerSource.RuntimeMissing => $"Runtime missing: {r.Error}",
             LspServerSource.ManualRequired => "Manual install required",
             LspServerSource.Disabled => "Disabled",
             _ => "Not installed"
         };
+    }
+
+    internal static bool IsVersionCompatible(string? installedRaw, string? required)
+    {
+        if (string.IsNullOrWhiteSpace(required)) return true;
+        if (string.IsNullOrWhiteSpace(installedRaw)) return true; // unknown -> don't block
+        try
+        {
+            // Extract versions via same logic as LspRuntimeDetector
+            string Extract(string s)
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(s, @"v?(\d+\.\d+(?:\.\d+)?)");
+                if (m.Success) return m.Groups[1].Value;
+                return s.Trim().TrimStart('v','V').Split(' ')[0];
+            }
+            var inst = Extract(installedRaw);
+            var req = Extract(required);
+            var f = ParseVersionNumbers(inst);
+            var r = ParseVersionNumbers(req);
+            var len = Math.Max(f.Length, r.Length);
+            for (int i = 0; i < len; i++)
+            {
+                var fv = i < f.Length ? f[i] : 0;
+                var rv = i < r.Length ? r[i] : 0;
+                if (fv > rv) return true;
+                if (fv < rv) return false;
+            }
+            return true;
+        }
+        catch { return true; }
+    }
+
+    private static int[] ParseVersionNumbers(string v)
+    {
+        var list = new List<int>();
+        var cur = "";
+        foreach (var c in v)
+        {
+            if (char.IsDigit(c)) cur += c;
+            else if (c == '.' && cur.Length > 0) { if (int.TryParse(cur, out var n)) list.Add(n); cur = ""; }
+            else if (cur.Length > 0) break;
+        }
+        if (cur.Length > 0 && int.TryParse(cur, out var last)) list.Add(last);
+        if (list.Count == 0) return new[] { 0 };
+        return list.ToArray();
     }
 }
 

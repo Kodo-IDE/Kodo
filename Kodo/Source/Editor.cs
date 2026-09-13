@@ -877,8 +877,8 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
-        var hasConfiguredLspForCompletion = lspForFile?.Lsp != null;
-        var isLspPrimaryForCompletion = hasConfiguredLspForCompletion && lspForFile!.Lsp != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), lspForFile.Lsp) is { IsInitialized: true };
+        var hasConfiguredLspForCompletion = lspForFile?.HasLsp == true;
+        var isLspPrimaryForCompletion = hasConfiguredLspForCompletion && lspForFile!.HasLsp && ResolveLspConfigurationForFile(_currentFilePath) is { } cfgForCompletion && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForCompletion) is { IsInitialized: true };
 
         List<InsightSuggestion> suggestions;
         if (hasConfiguredLspForCompletion)

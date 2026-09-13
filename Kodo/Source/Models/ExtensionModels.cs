@@ -108,6 +108,21 @@ public sealed class ExternalLanguageTool
     public bool RequiresProject { get; init; }
 }
 
+public enum LspDependencyStatus
+{
+    Unknown = 0,
+    Available = 1,
+    Missing = 2,
+    Installing = 3,
+    Installed = 4,
+    Incompatible = 5,
+    Failed = 6,
+    Disabled = 7,
+    Declined = 8,
+    RuntimeMissing = 9,
+    ManualRequired = 10
+}
+
 public sealed class LspConfiguration
 {
     /// <summary>Executable for the language server – must be on PATH or absolute. Not...
@@ -233,7 +248,22 @@ public record class LoadedExtension : INotifyPropertyChanged
     public LangRulesAdapter? LangRules { get; set; }
     public List<ExternalLanguageTool> ExternalTools { get; } = [];
     public LspConfiguration? Lsp { get; set; }
-    public bool HasLsp => Lsp is not null && !string.IsNullOrWhiteSpace(Lsp.Command);
+    /// <summary>All LSP configurations declared by this extension (supports multiple LSPs per extension). Backward-compatible: when only "lsp" is declared, this contains that single entry.</summary>
+    public List<LspConfiguration> Lsps { get; } = [];
+    public bool HasLsp => (Lsp is not null && !string.IsNullOrWhiteSpace(Lsp.Command)) || Lsps.Count > 0;
+    public IEnumerable<LspConfiguration> AllLspConfigurations
+    {
+        get
+        {
+            if (Lsps.Count > 0) foreach (var c in Lsps) yield return c;
+            else if (Lsp is not null) yield return Lsp;
+        }
+    }
+    /// <summary>Current dependency status for primary LSP (aggregated). For multiple LSPs, reflects the most severe state.</summary>
+    public LspDependencyStatus LspStatus { get; set; } = LspDependencyStatus.Unknown;
+    public string? LspStatusMessage { get; set; }
+    /// <summary>Per-provider status for extensions declaring multiple LSPs.</summary>
+    public Dictionary<string, (LspDependencyStatus status, string? message)> LspProviderStatuses { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
     public bool HasLanguagePlugin => LanguagePluginAssemblyFileName is not null && LanguagePluginFolderPath is not null;
     public bool HasAnyPlugin => HasPlugin || HasLanguagePlugin;

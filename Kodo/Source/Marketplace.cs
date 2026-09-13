@@ -1319,35 +1319,11 @@ public partial class MainWindow
                 }
             }
 
-            // For extensions with embedded LSP, auto-install like compiler downloads
-            var installed = GetPreferredLoadedExtension(marketplaceExtension.Id);
-            if (installed?.Lsp != null)
+            // Ensure LSP dependencies for this extension (handles multiple LSPs, shared providers, auto-install)
+            var installedExt = GetPreferredLoadedExtension(marketplaceExtension.Id);
+            if (installedExt != null && installedExt.HasLsp)
             {
-                var lspSettings = BuildLspResolverSettings();
-                var lspRes = await LspServerResolver.ResolveAsync(installed, lspSettings).ConfigureAwait(false);
-                if (lspRes.Source == LspServerSource.Installable || lspRes.Source == LspServerSource.ManualRequired || lspRes.Source == LspServerSource.Missing)
-                {
-                    var provider = installed.Lsp.DisplayName ?? installed.Lsp.EffectiveProviderId;
-                    var shouldInstall = await ShowConfirmationDialogAsync(
-                        $"{installed.Name} – language server required",
-                        $"{installed.Name} installed, but '{provider}' is missing.\n\nWithout it, Kodo uses embedded diagnostics (may show false positives).\n\nInstall {provider} now?",
-                        confirmLabel: $"Install {provider}",
-                        cancelLabel: "Use embedded").ConfigureAwait(false);
-                    if (shouldInstall)
-                    {
-                        await PromptAndInstallLspAsync(installed, lspRes, autoInstall: false).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        ExtensionsStatusText = $"{installed.Name}: Using embedded diagnostics.";
-                        KodoDiagnostics.LogDebug($"User declined LSP install for {installed.Id}");
-                        await Dispatcher.UIThread.InvokeAsync(async () =>
-                        {
-                            await ShowWarningDialogAsync($"{installed.Name} – embedded diagnostics",
-                                new InvalidOperationException($"'{provider}' not installed. Embedded diagnostics will be used (may be inaccurate). Install later via Extensions → {installed.Name}."));
-                        });
-                    }
-                }
+                await EnsureLspDependenciesForExtensionAsync(installedExt).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1365,6 +1341,135 @@ public partial class MainWindow
             NotifyExtensionActionStateChanged();
             SyncMarketplaceInstallStates();
         }
+    }
+
+    private async Task EnsureLspDependenciesForExtensionAsync(LoadedExtension installed)
+    {
+        var lspSettings = BuildLspResolverSettings();
+        foreach (var cfg in installed.AllLspConfigurations.ToList())
+        {
+            try
+            {
+                // Register as consumer for shared provider tracking
+                LspProviderRegistry.RegisterConsumer(cfg.EffectiveProviderId, installed.Id);
+                var res = await LspServerResolver.ResolveAsync(cfg, lspSettings, installed.Id).ConfigureAwait(false);
+                // Update statuses
+                installed.LspProviderStatuses[cfg.EffectiveProviderId] = (res.ToDependencyStatus(), res.Error);
+                // Aggregate status
+                installed.LspStatus = res.ToDependencyStatus();
+                installed.LspStatusMessage = res.Error;
+                LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, res.ToDependencyStatus(), res.Error, res.Version, res.ExecutablePath, res.Source == LspServerSource.Managed);
+
+                if (res.IsReady)
+                {
+                    KodoDiagnostics.LogDebug($"LSP dependency ready for {installed.Id} provider {cfg.EffectiveProviderId} source={res.Source}");
+                    continue; // already available
+                }
+
+                // Incompatible also considered not ready – try managed install if allowed
+                if (res.Source == LspServerSource.Incompatible)
+                {
+                    if (res.CanInstall && cfg.AllowAutoInstall)
+                    {
+                        if (_lspAutoInstall)
+                        {
+                            await PromptAndInstallLspAsync(installed, res, autoInstall: true).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            var provider = cfg.DisplayName ?? cfg.EffectiveProviderId;
+                            var shouldInstall = await ShowConfirmationDialogAsync(
+                                $"{installed.Name} – language server update required",
+                                $"{installed.Name} requires {provider} version {cfg.Version}, but installed {res.Version ?? "unknown"} is incompatible.\n\nInstall compatible version?",
+                                confirmLabel: $"Install {provider}",
+                                cancelLabel: "Not now").ConfigureAwait(false);
+                            if (shouldInstall) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
+                            else
+                            {
+                                installed.LspStatus = LspDependencyStatus.Declined;
+                                LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, LspDependencyStatus.Declined, "User declined update");
+                                ExtensionsStatusText = $"{installed.Name}: Using incompatible {provider} ({res.Version}). Diagnostics may be inaccurate.";
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ExtensionsStatusText = res.Error ?? $"{installed.Name}: Incompatible {cfg.EffectiveProviderId}";
+                        KodoDiagnostics.LogDebug($"LSP incompatible and cannot auto-install for {installed.Id}");
+                    }
+                    continue;
+                }
+
+                if (res.Source == LspServerSource.Installable)
+                {
+                    if (_lspAutoInstall && cfg.AllowAutoInstall)
+                    {
+                        await PromptAndInstallLspAsync(installed, res, autoInstall: true).ConfigureAwait(false);
+                    }
+                    else if (cfg.AllowAutoInstall)
+                    {
+                        var provider = cfg.DisplayName ?? cfg.EffectiveProviderId;
+                        var shouldInstall = await ShowConfirmationDialogAsync(
+                            $"{installed.Name} – language server required",
+                            $"{installed.Name} installed, but '{provider}' is missing.\n\nWithout it, Kodo uses embedded diagnostics (may show false positives).\n\nInstall {provider} now?",
+                            confirmLabel: $"Install {provider}",
+                            cancelLabel: "Use embedded").ConfigureAwait(false);
+                        if (shouldInstall) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
+                        else
+                        {
+                            installed.LspStatus = LspDependencyStatus.Declined;
+                            LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, LspDependencyStatus.Declined, "User declined");
+                            _lspDismissedInstallPrompts.Add(installed.Id);
+                            SaveSettings(immediate: true);
+                            ExtensionsStatusText = $"{installed.Name}: Using embedded diagnostics.";
+                            KodoDiagnostics.LogDebug($"User declined LSP install for {installed.Id} provider {cfg.EffectiveProviderId}");
+                        }
+                    }
+                    else
+                    {
+                        installed.LspStatus = LspDependencyStatus.Disabled;
+                        ExtensionsStatusText = $"{installed.Name}: {cfg.EffectiveProviderId} auto-install disabled; manual install required.";
+                    }
+                    continue;
+                }
+
+                if (res.Source == LspServerSource.RuntimeMissing)
+                {
+                    installed.LspStatus = LspDependencyStatus.RuntimeMissing;
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        ExtensionsStatusText = res.Error ?? $"Runtime missing for {cfg.EffectiveProviderId}";
+                        await ShowWarningDialogAsync($"{installed.Name} – runtime required", new InvalidOperationException($"{res.Error}\n\nPlease install {cfg.Runtime} and restart Kodo."));
+                    });
+                    continue;
+                }
+
+                if (res.Source == LspServerSource.ManualRequired || res.Source == LspServerSource.Missing)
+                {
+                    ExtensionsStatusText = res.Error ?? $"{installed.Name}: {cfg.EffectiveProviderId} not found";
+                    KodoDiagnostics.LogDebug($"LSP manual required/missing for {installed.Id} provider {cfg.EffectiveProviderId}: {res.Error}");
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        await ShowWarningDialogAsync($"{installed.Name} – language server not found", new FileNotFoundException($"{res.Error}\n\nInstall {cfg.DisplayName ?? cfg.EffectiveProviderId} manually and ensure it is on PATH."));
+                    });
+                    continue;
+                }
+
+                if (res.Source == LspServerSource.Disabled)
+                {
+                    KodoDiagnostics.LogDebug($"LSP disabled for {installed.Id}");
+                    continue;
+                }
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"EnsureLspDependencies failed for {installed.Id} provider {cfg.EffectiveProviderId}", ex);
+                ExtensionsStatusText = $"LSP check failed for {cfg.EffectiveProviderId}: {ex.Message}";
+            }
+        }
+        // Keep extension installed even if LSP failed – do NOT uninstall extension (separates failures)
+        // Refresh registry consumers
+        LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
     }
 
     private static void ValidateDownloadedExtensionPackage(MarketplaceExtension marketplaceExtension, byte[] packageBytes)
@@ -1507,6 +1612,9 @@ public partial class MainWindow
 
         try
         {
+            // Capture provider IDs before removal for registry check
+            var providerIds = extension.AllLspConfigurations.Select(c => c.EffectiveProviderId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
             var resolvedPath = Path.GetFullPath(extension.SourcePath);
             if (!IsPathInsideDirectory(resolvedPath, ExtensionsFolderPath) &&
                 !IsPathInsideDirectory(resolvedPath, ProjectExtensionsFolderPath))
@@ -1527,6 +1635,24 @@ public partial class MainWindow
             }
 
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
+
+            // Update provider registry: remove this extension as consumer, keep shared LSPs
+            foreach (var pid in providerIds)
+            {
+                LspProviderRegistry.UnregisterConsumer(pid, extension.Id);
+                if (LspProviderRegistry.HasOtherConsumers(pid, extension.Id))
+                {
+                    KodoDiagnostics.LogDebug($"LSP provider '{pid}' stays installed – still required by other extensions.");
+                }
+                else
+                {
+                    // No other consumers – prefer keeping unused provider rather than deleting (per spec)
+                    KodoDiagnostics.LogDebug($"LSP provider '{pid}' now has no consumers but is kept (no auto-cleanup).");
+                    // Do NOT auto-delete managed installation; user can clean via settings if needed
+                }
+            }
+            LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
+
             ExtensionsStatusText = $"{extension.Name} uninstalled.";
         }
         catch (Exception ex)
