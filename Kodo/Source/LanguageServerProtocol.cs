@@ -956,8 +956,11 @@ public partial class MainWindow
                     _lspDismissedInstallPrompts.Add(lspExt.Id);
                     lspExt.LspStatus = LspDependencyStatus.Declined;
                     lspExt.LspStatusMessage = $"User declined installation of {providerName}";
-                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Declined, "User declined");
-                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Declined, "User declined");
+                    if (!string.IsNullOrWhiteSpace(providerId))
+                    {
+                        lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Declined, "User declined");
+                        LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Declined, "User declined");
+                    }
                     SaveSettings(immediate: true);
                     return false;
                 }
@@ -966,8 +969,11 @@ public partial class MainWindow
             {
                 ExtensionsStatusText = $"Installing {providerName}...";
                 lspExt.LspStatus = LspDependencyStatus.Installing;
-                lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installing, null);
-                LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installing);
+                if (!string.IsNullOrWhiteSpace(providerId))
+                {
+                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installing, null);
+                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installing);
+                }
                 var progress = new Progress<string>(msg => Dispatcher.UIThread.Post(() => ExtensionsStatusText = msg));
                 var settings = BuildLspResolverSettings();
                 var result = await LspInstallationManager.InstallAsync(targetCfg, settings, progress).ConfigureAwait(false);
@@ -977,9 +983,9 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP installed {providerName}: {result.InstalledPath}");
                     lspExt.LspStatus = LspDependencyStatus.Installed;
                     lspExt.LspStatusMessage = null;
-                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installed, null);
-                    LspProviderRegistry.RegisterConsumer(providerId, lspExt.Id);
-                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installed, null, result.InstalledPath, result.InstalledPath, true);
+                    lspExt.LspProviderStatuses[providerId!] = (LspDependencyStatus.Installed, null);
+                    LspProviderRegistry.RegisterConsumer(providerId!, lspExt.Id);
+                    LspProviderRegistry.SetStatus(providerId!, LspDependencyStatus.Installed, null, result.InstalledPath, result.InstalledPath, true);
                     // Clear dismissed and missing flags so next open succeeds
                     _lspDismissedInstallPrompts.Remove(lspExt.Id);
                     _lspMissingNotified.Remove(lspExt.Id);
@@ -999,8 +1005,8 @@ public partial class MainWindow
                 {
                     lspExt.LspStatus = LspDependencyStatus.Failed;
                     lspExt.LspStatusMessage = result.Message;
-                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Failed, result.Message);
-                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Failed, result.Message);
+                    lspExt.LspProviderStatuses[providerId!] = (LspDependencyStatus.Failed, result.Message);
+                    LspProviderRegistry.SetStatus(providerId!, LspDependencyStatus.Failed, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         ExtensionsStatusText = $"{providerName} could not be downloaded because Kodo is offline.";
@@ -1011,8 +1017,8 @@ public partial class MainWindow
                 {
                     lspExt.LspStatus = LspDependencyStatus.RuntimeMissing;
                     lspExt.LspStatusMessage = result.Message;
-                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.RuntimeMissing, result.Message);
-                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.RuntimeMissing, result.Message);
+                    lspExt.LspProviderStatuses[providerId!] = (LspDependencyStatus.RuntimeMissing, result.Message);
+                    LspProviderRegistry.SetStatus(providerId!, LspDependencyStatus.RuntimeMissing, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         await ShowWarningDialogAsync($"{providerName} – runtime missing", new InvalidOperationException(result.Message ?? "Runtime missing"));
@@ -1022,8 +1028,8 @@ public partial class MainWindow
                 {
                     lspExt.LspStatus = LspDependencyStatus.Failed;
                     lspExt.LspStatusMessage = result.Message;
-                    lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Failed, result.Message);
-                    LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Failed, result.Message);
+                    lspExt.LspProviderStatuses[providerId!] = (LspDependencyStatus.Failed, result.Message);
+                    LspProviderRegistry.SetStatus(providerId!, LspDependencyStatus.Failed, result.Message);
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
                         ExtensionsStatusText = $"Failed to install {providerName}: {result.Message}";
@@ -3025,10 +3031,21 @@ internal static class LspRuntimeDetector
     {
         try
         {
+            // Resolve exe via PATH and handle .cmd/.bat wrappers on Windows (npm is npm.cmd)
+            var resolvedExe = FindOnPath(exe) ?? exe;
+            var isCmdScript = resolvedExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+            string fileName = resolvedExe;
+            string arguments = args;
+            if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+                fileName = comSpec;
+                arguments = $"/c \"{resolvedExe}\" {args}";
+            }
             var psi = new ProcessStartInfo
             {
-                FileName = exe,
-                Arguments = args,
+                FileName = fileName,
+                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

@@ -131,10 +131,9 @@ public partial class MainWindow
         Action discardAction,
         Action cancelAction)
     {
-        var headerRow = new StackPanel
+        var headerRow = new Grid
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
             Children =
             {
                 new Border
@@ -151,10 +150,13 @@ public partial class MainWindow
                     FontSize = 16,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(8, 0, 0, 0)
                 }
             }
         };
+        Grid.SetColumn(headerRow.Children[1], 1);
 
         var divider = new Border
         {
@@ -226,10 +228,9 @@ public partial class MainWindow
         {
             var kind = isFolder ? "Folder" : "File";
 
-            var headerRow = new StackPanel
+            var headerRow = new Grid
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                 Children =
                 {
                     new Border
@@ -247,15 +248,17 @@ public partial class MainWindow
                         FontWeight = FontWeight.SemiBold,
                         Foreground = PrimaryTextBrush,
                         TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 0, 0)
                     }
                 }
             };
+            Grid.SetColumn(headerRow.Children[1], 1);
 
             var bodyText = new TextBlock
             {
-                Text = $"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
-                               $"It may be on a drive that isn't connected, or it may have been moved or deleted.\n\n{path}",
+                Text = ($"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
+                               $"It may be on a drive that isn't connected, or it may have been moved or deleted.\n\n{path}").Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                 FontSize = 13,
                 Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -364,10 +367,9 @@ public partial class MainWindow
     {
         try
         {
-            var headerRow = new StackPanel
+            var headerRow = new Grid
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                 Children =
                 {
                     new Border
@@ -385,14 +387,16 @@ public partial class MainWindow
                         FontWeight = FontWeight.SemiBold,
                         Foreground = PrimaryTextBrush,
                         TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 0, 0)
                     }
                 }
             };
+            Grid.SetColumn(headerRow.Children[1], 1);
 
             var bodyText = new TextBlock
             {
-                Text = body,
+                Text = body.Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                 FontSize = 13,
                 Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -401,7 +405,7 @@ public partial class MainWindow
 
             var cancelButton = new Button
             {
-                Content = cancelLabel,
+                Content = new TextBlock { Text = cancelLabel, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center },
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(16, 8),
                 Background = ButtonBrush,
@@ -409,23 +413,37 @@ public partial class MainWindow
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(8),
+                MaxWidth = 180,
+                MinWidth = 80,
             };
 
             var confirmButton = new Button
             {
-                Content = confirmLabel,
+                Content = new TextBlock { Text = confirmLabel, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 },
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding = new Thickness(20, 8),
                 Background = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
                 Foreground = Brushes.White,
                 BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(8),
+                MaxWidth = 320,
+                MinWidth = 100,
             };
 
-            var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            buttonRow.Children.Add(cancelButton);
-            Grid.SetColumn(confirmButton, 1);
-            buttonRow.Children.Add(confirmButton);
+            var buttonRow = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                Children =
+                {
+                    cancelButton,
+                    new Border { Width = 10 },
+                    confirmButton
+                }
+            };
+            Grid.SetColumn(cancelButton, 0);
+            Grid.SetColumn(buttonRow.Children[1], 1);
+            Grid.SetColumn(confirmButton, 2);
 
             var divider = new Border
             {
@@ -438,6 +456,7 @@ public partial class MainWindow
             var content = new StackPanel
             {
                 Spacing = 12,
+                MaxWidth = 520,
                 Children = { headerRow, bodyText, divider, buttonRow },
             };
 
@@ -452,18 +471,27 @@ public partial class MainWindow
                 Child = content
             };
 
+            var scrollContent = new ScrollViewer
+            {
+                Content = outer,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+                MaxHeight = 600,
+            };
+
             Window? dialog = null;
             dialog = new Window
             {
                 Title = "Kodo",
-                Width = 440,
+                Width = 520,
                 SizeToContent = SizeToContent.Height,
-                MinWidth = 360,
-                MaxHeight = 360,
+                MinWidth = 420,
+                MaxWidth = 560,
+                MaxHeight = 640,
                 CanResize = false,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 Background = WindowBackgroundBrush,
-                Content = outer,
+                Content = scrollContent,
             };
 
             var result = false;
@@ -516,10 +544,9 @@ public partial class MainWindow
             var windowTitle = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath = KodoDiagnostics.MainLogFilePath;
 
-            var headerRow = new StackPanel
+            var headerRow = new Grid
             {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
+                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
                 Children =
                 {
                     new Border
@@ -537,10 +564,12 @@ public partial class MainWindow
                         FontWeight = FontWeight.SemiBold,
                         Foreground = PrimaryTextBrush,
                         TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(8, 0, 0, 0)
                     }
                 }
             };
+            Grid.SetColumn(headerRow.Children[1], 1);
 
             var subtitleText = new TextBlock
             {
@@ -583,13 +612,15 @@ public partial class MainWindow
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(6),
                 Padding = new Thickness(10, 5),
-                HorizontalAlignment = HorizontalAlignment.Left,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
                 Child = new TextBlock
                 {
-                    Text = context,
+                    Text = context.Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                     FontSize = 12,
                     FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
                     Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
+                    TextWrapping = TextWrapping.Wrap,
+                    MaxWidth = 500,
                 },
             };
 
@@ -604,9 +635,9 @@ public partial class MainWindow
 
             var errorMessageText = new TextBlock
             {
-                Text = string.IsNullOrWhiteSpace(exception.Message)
+                Text = (string.IsNullOrWhiteSpace(exception.Message)
                                    ? "An unexpected error occurred."
-                                   : DescribeFetchFailure(exception),
+                                   : DescribeFetchFailure(exception)).Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                 FontSize = 13,
                 Foreground = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,

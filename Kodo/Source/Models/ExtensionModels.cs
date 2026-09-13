@@ -247,6 +247,10 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string? LanguagePluginFolderPath { get; set; }
     public LangRulesAdapter? LangRules { get; set; }
     public List<ExternalLanguageTool> ExternalTools { get; } = [];
+    /// <summary>Generic feature overrides: extension can declare "overrides": { "bracketAutoClose": false, "smartEnter": false, ... } to disable Kodo's hardcoded behaviors. This is the generic framework for extensions to override Kodo's own code.</summary>
+    public Dictionary<string, bool> FeatureOverrides { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool IsFeatureDisabled(string feature) => FeatureOverrides.TryGetValue(feature, out var enabled) && !enabled;
+    public bool IsFeatureEnabled(string feature) => !FeatureOverrides.TryGetValue(feature, out var enabled) || enabled;
     public LspConfiguration? Lsp { get; set; }
     /// <summary>All LSP configurations declared by this extension (supports multiple LSPs per extension). Backward-compatible: when only "lsp" is declared, this contains that single entry.</summary>
     public List<LspConfiguration> Lsps { get; } = [];

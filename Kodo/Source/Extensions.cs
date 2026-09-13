@@ -632,6 +632,22 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             LanguagePluginAssemblyFileName = manifest.TryGetProperty("languagePlugin", out var langPlugin) ? langPlugin.GetString() : null
         };
 
+
+
+        // Generic framework: "overrides": { "bracketAutoClose": false, "smartIndent": false, ... }
+        // Allows any hardcoded Kodo behavior to be disabled by the extension declaratively
+        if (manifest.TryGetProperty("overrides", out var overridesEl) && overridesEl.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in overridesEl.EnumerateObject())
+            {
+                if (prop.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                    extension.FeatureOverrides[prop.Name] = prop.Value.GetBoolean();
+                else if (prop.Value.ValueKind == JsonValueKind.String && bool.TryParse(prop.Value.GetString(), out var bVal))
+                    extension.FeatureOverrides[prop.Name] = bVal;
+            }
+        }
+
+
         if (manifest.TryGetProperty("externalTools", out var tools) && tools.ValueKind == JsonValueKind.Array)
         {
             foreach (var tool in tools.EnumerateArray())
@@ -1338,6 +1354,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         IconBytes = src.IconBytes,
         };
         clone.Lsps.AddRange(src.Lsps);
+        foreach (var kv in src.FeatureOverrides) clone.FeatureOverrides[kv.Key] = kv.Value;
         foreach (var kv in src.LspProviderStatuses) clone.LspProviderStatuses[kv.Key] = kv.Value;
         clone.ExternalTools.AddRange(src.ExternalTools.Select(tool => new ExternalLanguageTool
         {

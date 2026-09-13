@@ -553,7 +553,7 @@ public partial class MainWindow
         var doc = EditorTextBox.Document;
         var offset = caret.Offset;
         var selection = EditorTextBox.TextArea.Selection;
-
+            if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true) return;
 if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
             {
                 var segment = selection.SurroundingSegment;
@@ -635,6 +635,9 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             if (IsMarkdownFile(_currentFilePath)) return;
             if (string.IsNullOrEmpty(e.Text)) return;
             var ch = e.Text[0];
+
+            if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true)
+                return;
 
             if (!BracketPairs.TryGetValue(ch, out var closing)) return;
 
@@ -881,9 +884,9 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         var isLspPrimaryForCompletion = hasConfiguredLspForCompletion && lspForFile!.HasLsp && ResolveLspConfigurationForFile(_currentFilePath) is { } cfgForCompletion && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForCompletion) is { IsInitialized: true };
 
         List<InsightSuggestion> suggestions;
-        if (hasConfiguredLspForCompletion)
+        if (isLspPrimaryForCompletion)
         {
-            // LSP ALWAYS prioritized – suppress Insight's regex/semantic variables, LSP will...
+            // LSP is actually running – suppress Insight's regex/semantic variables, LSP will provide completions
             suggestions = new List<InsightSuggestion>();
             KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
         }

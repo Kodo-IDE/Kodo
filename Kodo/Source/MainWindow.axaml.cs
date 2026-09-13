@@ -7912,11 +7912,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                if (hasConfiguredLsp)
+                if (isLspPrimary)
                 {
-                    // LSP is authoritative – skip Insight/LangRules to avoid duplicates and ensure...
+                    // LSP is authoritative only when actually running – otherwise fall back to Insight/LangRules so HTML tags still complete without LSP
                     rawSpans = new List<InsightEngine.ErrorSpan>();
-                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP prioritized for {lspForFile?.Id}, initialized={isLspPrimary})");
+                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id}, initialized={isLspPrimary})");
                 }
                 else
                 {
