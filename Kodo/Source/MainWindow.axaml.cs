@@ -256,6 +256,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<string> _startupOpenTabPaths = [];
     private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
+    private ExtensionScanResult? _cachedThemeScan;
+    private DateTime _cachedThemeScanUtc = DateTime.MinValue;
+    private readonly TimeSpan ThemeScanCacheValidity = TimeSpan.FromHours(24);
     private readonly ConcurrentDictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _marketplaceSvgCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
@@ -905,9 +908,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         // Theme fast-path: themes must be available before first paint to avoid flicker
         try
         {
-            var themeScan = ScanInstalledThemeExtensions();
+            var themeScan = _cachedThemeScan is not null && DateTime.UtcNow - _cachedThemeScanUtc < ThemeScanCacheValidity
+                ? _cachedThemeScan
+                : ScanInstalledThemeExtensions();
             if (themeScan.Extensions.Count > 0)
+            {
                 ApplyLoadedExtensionsResult(themeScan);
+                _cachedThemeScan = themeScan;
+                _cachedThemeScanUtc = DateTime.UtcNow;
+            }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
         ApplyThemeBrushes(_requestedThemeName);

@@ -75,10 +75,16 @@ public partial class MainWindow
         });
     }
 
-    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
-    {
+private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
+{
         if (_isRefreshingExtensions)
             return;
+
+        if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
+            return;
+
+        // Invalidate theme scan cache since extensions may have changed
+        this._cachedThemeScan = null;
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
             return;
@@ -422,7 +428,6 @@ public partial class MainWindow
 
         OnPropertyChanged(nameof(ExtensionLoadErrors));
         OnPropertyChanged(nameof(VisibleLoadedExtensions));
-        NotifyExtensionFiltersChanged();
         OnPropertyChanged(nameof(IsNoExtensionsVisible));
         OnPropertyChanged(nameof(ThemeExtensions));
         OnPropertyChanged(nameof(HasThemeExtensions));

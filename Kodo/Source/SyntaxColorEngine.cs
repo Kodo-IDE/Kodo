@@ -2184,23 +2184,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         if (string.IsNullOrWhiteSpace(text))
             return;
 
-        // Markdown highlighting is delegated to its LangRules.
-        if (_langRules is { HasTokenizer: true } rules)
-        {
-            foreach (var token in rules.Tokenize(text))
-            {
-                if (token.Length <= 0 || token.Start < 0 || token.Start >= text.Length)
-                    continue;
-                var length = Math.Min(token.Length, text.Length - token.Start);
-                try
-                {
-                    ApplyBrush(lineOffset, token.Start, token.Start + length, Brush.Parse(token.Color));
-                }
-                catch { }
-            }
-            return;
-        }
-
         var protectedRanges = new bool[text.Length];
 
         var headingMatch = HeadingRegex.Match(text);
