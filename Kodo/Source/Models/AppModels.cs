@@ -76,7 +76,6 @@ internal sealed class AppSettings
 
     public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
 
-    // --- LSP Management Settings ---
     public bool LspEnabled { get; set; } = true;
     public bool LspAutoInstall { get; set; } = false;
     public bool LspPreferManaged { get; set; } = true;

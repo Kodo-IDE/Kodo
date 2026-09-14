@@ -6,9 +6,6 @@ namespace Kodo;
 
 internal static class WelcomeMessageBuilder
 {
-
-    private record HolidayEntry(string Name, string? Greeting);
-
     private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
     {
         var m = date.Month;
@@ -457,7 +454,7 @@ internal static class WelcomeMessageBuilder
         var dow = now.DayOfWeek;
         var dayName = now.ToString("dddd");
 
-        var messages = new List<string>();
+        var messages = new List<string>(64);
 
         void Add(string text, int times = 1)
         {

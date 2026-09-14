@@ -1,4 +1,5 @@
 // Licensed under GPL-v3.0
+using Avalonia.Media;
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -180,4 +181,38 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+}
+
+public enum TerminalParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
+
+public readonly record struct TermCell(char Char, Color? Fg, Color? Bg, bool Bold, bool Underline);
+
+public sealed class TerminalSnapshot(
+    TermCell[,] cells,
+    int rows, int cols,
+    int cursorRow, int cursorCol, bool cursorVisible,
+    Color fg, Color bg, bool bold, bool underline, bool reverse,
+    TerminalParseState parseState, string csiParam)
+{
+    internal TermCell[,] Cells { get; } = cells;
+    public int Rows { get; } = rows;
+    public int Cols { get; } = cols;
+    internal int CursorRow { get; } = cursorRow;
+    internal int CursorCol { get; } = cursorCol;
+    internal bool CursorVisible { get; } = cursorVisible;
+    internal Color Fg { get; } = fg;
+    internal Color Bg { get; } = bg;
+    internal bool Bold { get; } = bold;
+    internal bool Underline { get; } = underline;
+    internal bool Reverse { get; } = reverse;
+    internal TerminalParseState ParseState { get; } = parseState;
+    internal string CsiParam { get; } = csiParam;
+}
+
+public sealed class TerminalShellOption
+{
+    public string Id { get; init; } = string.Empty;
+    public string DisplayName { get; init; } = string.Empty;
+    public string FileName { get; init; } = string.Empty;
+    public string Arguments { get; init; } = string.Empty;
 }

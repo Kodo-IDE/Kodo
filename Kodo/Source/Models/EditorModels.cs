@@ -144,9 +144,9 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 
     public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
 
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
+    private IReadOnlyList<DeadCodeSpan> _spans = Array.Empty<DeadCodeSpan>();
 
-    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans) => _spans = spans;
 
     protected override void ColorizeLine(DocumentLine line)
     {
@@ -171,13 +171,13 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 {
     public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _spans = Array.Empty<InsightEngine.DeadCodeSpan>();
+    private IReadOnlyList<DeadCodeSpan> _spans = Array.Empty<DeadCodeSpan>();
 
-    public IReadOnlyList<InsightEngine.DeadCodeSpan> Spans => _spans;
+    public IReadOnlyList<DeadCodeSpan> Spans => _spans;
 
     public KnownLayer Layer => KnownLayer.Background;
 
-    public void SetSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans) => _spans = spans;
 
     public string? GetReasonAt(int offset)
     {
@@ -234,12 +234,12 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
 
     public bool IsLightTheme { get; set; }
 
-    private IReadOnlyList<InsightEngine.ErrorSpan> _errorSpans = Array.Empty<InsightEngine.ErrorSpan>();
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
+    private IReadOnlyList<ErrorSpan> _errorSpans = Array.Empty<ErrorSpan>();
+    private IReadOnlyList<DeadCodeSpan> _deadCodeSpans = Array.Empty<DeadCodeSpan>();
 
     public void SetSpans(
-        IReadOnlyList<InsightEngine.ErrorSpan> errorSpans,
-        IReadOnlyList<InsightEngine.DeadCodeSpan> deadCodeSpans)
+        IReadOnlyList<ErrorSpan> errorSpans,
+        IReadOnlyList<DeadCodeSpan> deadCodeSpans)
     {
         _errorSpans = errorSpans;
         _deadCodeSpans = deadCodeSpans;
@@ -283,18 +283,18 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     private const double StripeWidth = 8.0;
 
-    private IReadOnlyList<InsightEngine.ErrorSpan> _spans = Array.Empty<InsightEngine.ErrorSpan>();
-    private IReadOnlyList<InsightEngine.DeadCodeSpan> _deadCodeSpans = Array.Empty<InsightEngine.DeadCodeSpan>();
+    private IReadOnlyList<ErrorSpan> _spans = Array.Empty<ErrorSpan>();
+    private IReadOnlyList<DeadCodeSpan> _deadCodeSpans = Array.Empty<DeadCodeSpan>();
 
-    public IReadOnlyList<InsightEngine.ErrorSpan> Spans => _spans;
+    public IReadOnlyList<ErrorSpan> Spans => _spans;
 
     // Keep diagnostics on the background layer so multiple extension spans
     // remain visible instead of being obscured by selection rendering.
     public KnownLayer Layer => KnownLayer.Background;
 
-    public void SetSpans(IReadOnlyList<InsightEngine.ErrorSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<ErrorSpan> spans) => _spans = spans;
 
-    public void SetDeadCodeSpans(IReadOnlyList<InsightEngine.DeadCodeSpan> spans) => _deadCodeSpans = spans;
+    public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans) => _deadCodeSpans = spans;
 
     public string? GetMessageForLine(int lineStart, int lineEnd)
     {

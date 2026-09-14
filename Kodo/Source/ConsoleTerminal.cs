@@ -84,8 +84,7 @@ public sealed class ConsoleTerminal : Control
     private readonly List<(int AbsRow, int Col)> _searchMatches = new();
     private int _searchIndex = -1;
 
-    public enum ParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
-    private ParseState _parseState = ParseState.Ground;
+    private TerminalParseState _parseState = TerminalParseState.Ground;
     private readonly StringBuilder _csiParam = new();
     private readonly StringBuilder _oscBuf = new();
 
@@ -816,10 +815,10 @@ public sealed class ConsoleTerminal : Control
     {
         switch (_parseState)
         {
-            case ParseState.Ground:
+            case TerminalParseState.Ground:
                 switch (ch)
                 {
-                    case '\x1B': _parseState = ParseState.Escape; break;
+                    case '\x1B': _parseState = TerminalParseState.Escape; break;
                     case '\r': _cursorCol = 0; break;
                     case '\n': LineFeed(); break;
                     case '\b': if (_cursorCol > 0) _cursorCol--; break;
@@ -838,53 +837,53 @@ public sealed class ConsoleTerminal : Control
                 }
                 break;
 
-            case ParseState.Escape:
+            case TerminalParseState.Escape:
                 switch (ch)
                 {
-                    case '[': _csiParam.Clear(); _parseState = ParseState.CsiEntry; break;
-                    case ']': _oscBuf.Clear(); _parseState = ParseState.OscString; break;
-                    case 'M': ReverseLineFeed(); _parseState = ParseState.Ground; break;
-                    case 'c': ResetTerminal(); _parseState = ParseState.Ground; break;
-                    default: _parseState = ParseState.Ground; break;
+                    case '[': _csiParam.Clear(); _parseState = TerminalParseState.CsiEntry; break;
+                    case ']': _oscBuf.Clear(); _parseState = TerminalParseState.OscString; break;
+                    case 'M': ReverseLineFeed(); _parseState = TerminalParseState.Ground; break;
+                    case 'c': ResetTerminal(); _parseState = TerminalParseState.Ground; break;
+                    default: _parseState = TerminalParseState.Ground; break;
                 }
                 break;
 
-            case ParseState.CsiEntry:
-            case ParseState.CsiParam:
+            case TerminalParseState.CsiEntry:
+            case TerminalParseState.CsiParam:
                 if (ch == '?' || ch == '>' || ch == '!')
                 {
                     _csiParam.Append(ch);
-                    _parseState = ParseState.CsiParam;
+                    _parseState = TerminalParseState.CsiParam;
                 }
                 else if (ch >= '0' && ch <= '9' || ch == ';')
                 {
                     _csiParam.Append(ch);
-                    _parseState = ParseState.CsiParam;
+                    _parseState = TerminalParseState.CsiParam;
                 }
                 else if (ch >= 0x40 && ch <= 0x7E)
                 {
                     DispatchCsi(ch, _csiParam.ToString());
-                    _parseState = ParseState.Ground;
+                    _parseState = TerminalParseState.Ground;
                 }
                 else
                 {
-                    _parseState = ParseState.CsiIgnore;
+                    _parseState = TerminalParseState.CsiIgnore;
                 }
                 break;
 
-            case ParseState.CsiIgnore:
-                if (ch >= 0x40 && ch <= 0x7E) _parseState = ParseState.Ground;
+            case TerminalParseState.CsiIgnore:
+                if (ch >= 0x40 && ch <= 0x7E) _parseState = TerminalParseState.Ground;
                 break;
 
-            case ParseState.OscString:
-                if (ch == '\x07' || ch == '\x9C') { HandleOscComplete(); _parseState = ParseState.Ground; }
-                else if (ch == '\x1B') _parseState = ParseState.OscStringEsc;
+            case TerminalParseState.OscString:
+                if (ch == '\x07' || ch == '\x9C') { HandleOscComplete(); _parseState = TerminalParseState.Ground; }
+                else if (ch == '\x1B') _parseState = TerminalParseState.OscStringEsc;
                 else _oscBuf.Append(ch);
                 break;
 
-            case ParseState.OscStringEsc:
+            case TerminalParseState.OscStringEsc:
                 if (ch == '\\') HandleOscComplete();
-                _parseState = ParseState.Ground;
+                _parseState = TerminalParseState.Ground;
                 break;
         }
     }
@@ -1241,35 +1240,6 @@ public sealed class ConsoleTerminal : Control
     }
 }
 
-public readonly record struct TermCell(
-    char Char,
-    Color? Fg,
-    Color? Bg,
-    bool Bold,
-    bool Underline);
-
-public sealed class TerminalSnapshot(
-    TermCell[,] cells,
-    int rows, int cols,
-    int cursorRow, int cursorCol, bool cursorVisible,
-    Color fg, Color bg, bool bold, bool underline, bool reverse,
-    ConsoleTerminal.ParseState parseState, string csiParam)
-{
-    internal TermCell[,] Cells { get; } = cells;
-    public int Rows { get; } = rows;
-    public int Cols { get; } = cols;
-    internal int CursorRow { get; } = cursorRow;
-    internal int CursorCol { get; } = cursorCol;
-    internal bool CursorVisible { get; } = cursorVisible;
-    internal Color Fg { get; } = fg;
-    internal Color Bg { get; } = bg;
-    internal bool Bold { get; } = bold;
-    internal bool Underline { get; } = underline;
-    internal bool Reverse { get; } = reverse;
-    internal ConsoleTerminal.ParseState ParseState { get; } = parseState;
-    internal string CsiParam { get; } = csiParam;
-}
-
 internal static class NativeConPty
 {
     [StructLayout(LayoutKind.Sequential)]
@@ -1385,14 +1355,6 @@ internal static class NativeConPty
             Marshal.FreeHGlobal(attrList);
         }
     }
-}
-
-public sealed class TerminalShellOption
-{
-    public string Id { get; init; } = string.Empty;
-    public string DisplayName { get; init; } = string.Empty;
-    public string FileName { get; init; } = string.Empty;
-    public string Arguments { get; init; } = string.Empty;
 }
 
 public static class TerminalShellSupport

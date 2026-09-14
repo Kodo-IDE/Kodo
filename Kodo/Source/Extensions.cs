@@ -82,8 +82,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
             return;
-
-        // Invalidate theme scan cache since extensions may have changed
         this._cachedThemeScan = null;
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
@@ -213,7 +211,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     {
         var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() => ApplyLoadedExtensionsResult(scan), DispatcherPriority.Background);
-        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
     }
 
     private ExtensionScanResult ScanInstalledExtensions()
@@ -324,7 +321,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             using var doc = JsonDocument.Parse(stream);
             if (doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "theme")
                 return true;
-            // Also treat as theme if theme.json exists
             return archive.GetEntry("theme.json") != null;
         }
         catch { return false; }
@@ -631,11 +627,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null,
             LanguagePluginAssemblyFileName = manifest.TryGetProperty("languagePlugin", out var langPlugin) ? langPlugin.GetString() : null
         };
-
-
-
-        // Generic framework: "overrides": { "bracketAutoClose": false, "smartIndent": false, ... }
-        // Allows any hardcoded Kodo behavior to be disabled by the extension declaratively
         if (manifest.TryGetProperty("overrides", out var overridesEl) && overridesEl.ValueKind == JsonValueKind.Object)
         {
             foreach (var prop in overridesEl.EnumerateObject())
@@ -671,7 +662,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             }
         }
 
-        // --- LSP declarations: supports both "lsp":{} and "lsps":[] for multiple providers (backward compatible) ---
         if (manifest.TryGetProperty("lsps", out var lspsElement) && lspsElement.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in lspsElement.EnumerateArray())
@@ -801,7 +791,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         else if (lspElement.TryGetProperty("rootPatterns", out var rpEl) && rpEl.ValueKind == JsonValueKind.Array)
             rootMarkers = ReadStringArray(rpEl);
 
-        // --- LSP Management metadata (optional) ---
         string providerId = "";
         if (lspElement.TryGetProperty("providerId", out var pidEl) && pidEl.ValueKind == JsonValueKind.String)
             providerId = pidEl.GetString() ?? "";

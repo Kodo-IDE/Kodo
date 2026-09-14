@@ -66,10 +66,6 @@ public sealed class LangRulesAdapter
         if (!File.Exists(path)) return null;
         try
         {
-            // Every language pack intentionally uses the same contract
-            // assembly name (LangRules.dll). Load each pack in its own
-            // context so Python, C#, SQL, etc. cannot collide in the default
-            // AssemblyLoadContext.
             var loadContext = new AssemblyLoadContext($"Kodo.LangRules.{Guid.NewGuid():N}", isCollectible: false);
             var assembly = loadContext.LoadFromAssemblyPath(Path.GetFullPath(path));
             var rules = assembly.GetTypes().FirstOrDefault(t => t.IsAbstract && t.IsSealed && t.Name == "LangRules");
@@ -157,7 +153,6 @@ public sealed class LangRulesAdapter
     {
         foreach (var token in Tokenize(code))
         {
-            // TokenKind is extension-owned; compare by name.
             if (token.Kind.Equals("Variable", StringComparison.OrdinalIgnoreCase) ||
                 token.Kind.Equals("Parameter", StringComparison.OrdinalIgnoreCase) ||
                 token.Kind.Equals("Field", StringComparison.OrdinalIgnoreCase) ||
@@ -285,18 +280,3 @@ public sealed class LangRulesAdapter
     private static int i(object x, string n) => Convert.ToInt32(x.GetType().GetProperty(n)?.GetValue(x) ?? 0);
     private static bool b(object x, string n) => Convert.ToBoolean(x.GetType().GetProperty(n)?.GetValue(x) ?? false);
 }
-
-public sealed record LangRuleToken(string Kind, string Text, int Start, int Length, string Scope, string Color);
-public sealed record LangRuleSymbol(string Name, string Kind, int Line, int Start, int Length, bool IsDeclaration);
-public sealed record LangRuleDiagnostic(
-    int Start,
-    int Length,
-    string Message,
-    string Severity,
-    string Code = "",
-    string Source = "LangRules");
-public sealed record LangRuleLocation(string Name, string Kind, int Start, int Length, bool IsDeclaration);
-public sealed record LangRuleHover(string Contents, int Start, int Length);
-public sealed record LangRuleSignatureHelp(string Label, string Documentation, int ActiveParameter);
-public sealed record LangRuleCodeAction(string Title, string Kind, int Start, int Length, string NewText, string DiagnosticCode);
-public sealed record LangRuleEmbeddedRegion(string LanguageId, int Start, int Length);

@@ -2672,7 +2672,7 @@
                                             </Style>
                                         </ComboBox.Styles>
                                         <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:TerminalShellOption" x:CompileBindings="True">
+                                            <DataTemplate x:DataType="kodoModels:TerminalShellOption" x:CompileBindings="True">
                                                 <TextBlock Text="{Binding DisplayName}" />
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
@@ -5591,7 +5591,7 @@
                                               BorderBrush="{Binding SurfaceBorderBrush}"
                                               CornerRadius="8">
                                         <ComboBox.ItemTemplate>
-                                            <DataTemplate x:DataType="kodo:TerminalShellOption" x:CompileBindings="True">
+                                            <DataTemplate x:DataType="kodoModels:TerminalShellOption" x:CompileBindings="True">
                                                 <TextBlock Text="{Binding DisplayName}" />
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>

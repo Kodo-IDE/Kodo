@@ -11,8 +11,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-public sealed record ExternalToolDiagnostic(int Start, int Length, string Message, string Severity, string Code, string Source);
-
 public static class ExternalLanguageToolRunner
 {
     private static readonly Regex CompilerLine = new(
@@ -264,9 +262,6 @@ public static class ExternalLanguageToolRunner
 
     private static int OffsetAtLineColumnFromJson(JsonElement position, string text)
     {
-        // JSON external tools may provide LSP positions. Conversion to offsets is
-        // completed by the caller when a source text is available; this fallback
-        // keeps malformed/incomplete payloads harmless.
         if (position.TryGetProperty("offset", out var offset) && offset.ValueKind == JsonValueKind.Number)
             return Math.Clamp(offset.GetInt32(), 0, Math.Max(0, text.Length - 1));
         var line = position.TryGetProperty("line", out var lineValue) ? lineValue.GetInt32() + 1 : 1;

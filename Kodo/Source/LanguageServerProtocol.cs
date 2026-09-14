@@ -1,5 +1,4 @@
 // Licensed under GPL-v3.0
-// CONSOLIDATED LSP - all LSP logic in one file (was 7 files in Source/Lsp/)
 using Avalonia.Threading;
 using Kodo.Models;
 using System.Collections.Concurrent;
@@ -18,7 +17,6 @@ using System;
 
 namespace Kodo;
 
-// --- LspClient.cs ---
 /// <summary>Generic LSP client – speaks LSP, not Python/clangd/etc. One instance...
 internal sealed class LspClient : IDisposable
 {
@@ -73,9 +71,7 @@ internal sealed class LspClient : IDisposable
 
         if (useCmdWrapper)
         {
-            // Windows .cmd/.bat must run via cmd.exe /c to preserve stdio redirection.
-            // Generic: any .cmd/.bat LSP (Pyright, etc.) works without Python-specific code.
-            psi.ArgumentList.Add("/c");
+                        psi.ArgumentList.Add("/c");
             psi.ArgumentList.Add(cmdArgs);
             foreach (var arg in _config.Arguments)
                 psi.ArgumentList.Add(ExpandPlaceholder(arg));
@@ -185,8 +181,6 @@ internal sealed class LspClient : IDisposable
                 KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialize timed out after 10s");
                 throw new TimeoutException($"Language server '{_config.Command}' did not respond to initialize within 10s");
             }
-
-            // Store server capabilities if present
             if (result.HasValue && result.Value.ValueKind == JsonValueKind.Object && result.Value.TryGetProperty("capabilities", out var caps))
                 ServerCapabilities = caps.Clone();
 
@@ -311,14 +305,12 @@ internal sealed class LspClient : IDisposable
         {
             while (!ct.IsCancellationRequested && _process?.HasExited == false)
             {
-                // Read headers until empty line (\r\n)
                 headerBuf.Clear();
                 headerBytes.Clear();
                 var contentLength = -1;
 
                 while (true)
                 {
-                    // Read one line terminated by \n (handle \r\n)
                     var lineBytes = new List<byte>(64);
                     while (true)
                     {
@@ -344,7 +336,6 @@ internal sealed class LspClient : IDisposable
                 if (contentLength > 8 * 1024 * 1024)
                 {
                     KodoDiagnostics.LogDebug($"LSP message too large: {contentLength}");
-                    // drain
                     var drain = new byte[contentLength];
                     var drainRead = 0;
                     while (drainRead < contentLength)
@@ -393,8 +384,6 @@ internal sealed class LspClient : IDisposable
             KodoDiagnostics.LogDebug($"LSP invalid JSON: {json}", ex);
             return;
         }
-
-        // Response (has id and no method)
         if (id.HasValue && method is null)
         {
             try
@@ -419,11 +408,8 @@ internal sealed class LspClient : IDisposable
             }
             return;
         }
-
-        // Notification or server->client request
         if (method is not null)
         {
-            // Server request (has id + method) – handle workspace/configuration generically
             if (id.HasValue)
             {
                 object? result = null;
@@ -436,7 +422,6 @@ internal sealed class LspClient : IDisposable
                 }
                 else if (method == "window/showMessage" || method == "window/logMessage")
                 {
-                    // Log and acknowledge
                     if (root.Value.TryGetProperty("params", out var p2))
                         KodoDiagnostics.LogDebug($"LSP {method}: {p2.GetRawText()}");
                 }
@@ -651,7 +636,6 @@ internal sealed class LspClient : IDisposable
     }
 }
 
-// --- LspDocuments.cs ---
 public partial class MainWindow
 {
     private readonly LspManager _lspManager = new();
@@ -1407,7 +1391,7 @@ public partial class MainWindow
         return uriOrPath;
     }
 
-    private List<InsightEngine.ErrorSpan> GetLspDiagnosticsForFile(string? filePath, string text)
+    private List<ErrorSpan> GetLspDiagnosticsForFile(string? filePath, string text)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return new();
         var normPath = NormalizeFilePath(filePath);
@@ -1434,7 +1418,7 @@ public partial class MainWindow
             }
             raw = new List<LspRawDiagnostic>(raw);
         }
-        var spans = new List<InsightEngine.ErrorSpan>(raw.Count);
+        var spans = new List<ErrorSpan>(raw.Count);
         foreach (var d in raw)
         {
             if (string.IsNullOrWhiteSpace(d.Message)) continue;
@@ -1447,7 +1431,7 @@ public partial class MainWindow
             }
             var len = Math.Max(1, end - start);
             if (start + len > text.Length) len = Math.Max(1, text.Length - start);
-            spans.Add(new InsightEngine.ErrorSpan(start, len, d.Message.Trim(), d.Severity, d.Code ?? "", d.Source ?? "lsp"));
+            spans.Add(new ErrorSpan(start, len, d.Message.Trim(), d.Severity, d.Code ?? "", d.Source ?? "lsp"));
         }
         if (spans.Count > 0)
             KodoDiagnostics.LogDebug($"LSP GetDiagnosticsForFile {filePath} textLen={text.Length} raw={raw.Count} spans={spans.Count} first=[{spans[0].StartOffset}:{spans[0].Length}] {spans[0].Message}");
@@ -2126,7 +2110,6 @@ var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.G
     }
 }
 
-// --- LspInstallationManager.cs ---
 /// <summary>Manages Kodo-managed LSP installations under %LocalAppData%\Kodo\Lsp\...
 /// Hardened: HTTPS-only, mandatory SHA-256 for github artifacts, atomic temp-dir install,
 /// ZipSlip guard, TAR support, per-provider concurrency lock, path-traversal safe.</summary>
@@ -2142,7 +2125,6 @@ internal static class LspInstallationManager
         return c;
     }
 
-    // --- Managed root handling (respects custom LspInstallDir setting if provided) ---
     public static string ManagedRoot => GetManagedRoot(null);
 
     public static string GetManagedRoot(AppSettings? settings)
@@ -2753,7 +2735,6 @@ internal static class LspInstallationManager
     }
 }
 
-// --- LspManager.cs ---
 /// <summary>Manages <see cref="LspClient"/> lifetimes – one per (workspace, command).
 /// Generic, no language-specific logic.</summary>
 internal sealed class LspManager : IDisposable
@@ -2863,7 +2844,6 @@ internal sealed class LspManager : IDisposable
     }
 }
 
-// --- LspProtocol.cs ---
 /// <summary>Generic JSON-RPC + LSP Content-Length framing. No language-specific logic.</summary>
 internal static class LspProtocol
 {
@@ -2941,7 +2921,6 @@ internal static class LspProtocol
     }
 }
 
-// --- LspRuntimeDetector.cs ---
 /// <summary>Detects external runtimes required by LSPs (Node, Java, dotnet, PowerShell).
 /// Lightweight – only probes version, does not install runtimes.</summary>
 internal static class LspRuntimeDetector
@@ -3105,7 +3084,6 @@ internal static class LspRuntimeDetector
     }
 }
 
-// --- LspProviderRegistry.cs ---
 /// <summary>Centralized LSP provider registry – single source of truth for provider lifecycle, shared consumers, and status.</summary>
 internal static class LspProviderRegistry
 {
@@ -3199,41 +3177,6 @@ internal static class LspProviderRegistry
                 RegisterConsumer(cfg.EffectiveProviderId, ext.Id);
         }
     }
-}
-
-// --- LspServerResolver.cs ---
-public enum LspServerSource
-{
-    Managed,
-    System,
-    UserOverride,
-    Installable,
-    RuntimeMissing,
-    ManualRequired,
-    Missing,
-    Disabled,
-    Incompatible
-}
-
-public sealed record LspResolution(
-    LspServerSource Source,
-    string? ExecutablePath,
-    LspConfiguration ResolvedConfiguration,
-    string? Version,
-    string? Error,
-    bool CanInstall)
-{
-    public bool IsReady => Source == LspServerSource.Managed || Source == LspServerSource.System || Source == LspServerSource.UserOverride;
-    public LspDependencyStatus ToDependencyStatus() => Source switch
-    {
-        LspServerSource.Managed or LspServerSource.System or LspServerSource.UserOverride => LspDependencyStatus.Available,
-        LspServerSource.Installable => LspDependencyStatus.Missing,
-        LspServerSource.Incompatible => LspDependencyStatus.Incompatible,
-        LspServerSource.RuntimeMissing => LspDependencyStatus.RuntimeMissing,
-        LspServerSource.ManualRequired => LspDependencyStatus.ManualRequired,
-        LspServerSource.Disabled => LspDependencyStatus.Disabled,
-        _ => LspDependencyStatus.Missing
-    };
 }
 
 internal static class LspServerResolver

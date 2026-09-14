@@ -264,21 +264,19 @@ internal static class KodoDiagnostics
             EnsureSessionLog(CrashLogFilePath, ref _crashLogSessionInitialized);
 
             var sb = new StringBuilder();
-            sb.AppendLine("════════════════════════════════════════════════════════════");
             sb.Append('[').Append(UtcNow().ToString("yyyy-MM-dd HH:mm:ss")).AppendLine(" UTC] CRASH REPORT");
-            sb.AppendLine("════════════════════════════════════════════════════════════");
             sb.AppendLine();
 
             var crumbs = DrainBreadcrumbs();
             if (crumbs.Count > 0)
             {
-                sb.AppendLine("── Recent activity ──────────────────────────────────────────");
+                sb.AppendLine("Recent activity:");
                 foreach (var crumb in crumbs)
                     sb.AppendLine(crumb);
                 sb.AppendLine();
             }
 
-            sb.AppendLine("── Crash ────────────────────────────────────────────────────");
+            sb.AppendLine("Crash:");
             sb.AppendLine(BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, operation));
 
             WritePayloadToDisk(sb.ToString(), CrashLogFilePath);
@@ -286,15 +284,19 @@ internal static class KodoDiagnostics
         catch { }
     }
 
+    private static readonly string CachedAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string CachedLocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    private static readonly string CachedRepoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+
     private static string RedactExceptionText(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return text;
 
         var result = text;
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        var appData = CachedAppData;
+        var localAppData = CachedLocalAppData;
+        var repoRoot = CachedRepoRoot;
 
         if (!string.IsNullOrWhiteSpace(appData))
             result = result.Replace(appData, @"%AppData%", StringComparison.OrdinalIgnoreCase);
@@ -315,9 +317,9 @@ internal static class KodoDiagnostics
         if (string.IsNullOrWhiteSpace(path))
             return path;
 
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        var appData = CachedAppData;
+        var localAppData = CachedLocalAppData;
+        var repoRoot = CachedRepoRoot;
 
         if (!string.IsNullOrWhiteSpace(repoRoot) &&
             path.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase))

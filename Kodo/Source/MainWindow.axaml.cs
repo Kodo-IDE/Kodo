@@ -153,7 +153,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _cachedInsightAnalysisPath;
     private string? _cachedInsightAnalysisText;
     private string? _cachedInsightAnalysisExtension;
-    private List<InsightEngine.ErrorSpan>? _cachedInsightAnalysisSpans;
+    private List<ErrorSpan>? _cachedInsightAnalysisSpans;
     private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
@@ -7854,9 +7854,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ClearDeadCodeHighlighting()
     {
-        _deadCodeHighlightRenderer.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
-        _deadCodeTextBrightener.SetSpans(Array.Empty<InsightEngine.DeadCodeSpan>());
-        var emptyDead = Array.Empty<InsightEngine.DeadCodeSpan>();
+        _deadCodeHighlightRenderer.SetSpans(Array.Empty<DeadCodeSpan>());
+        _deadCodeTextBrightener.SetSpans(Array.Empty<DeadCodeSpan>());
+        var emptyDead = Array.Empty<DeadCodeSpan>();
         _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, emptyDead);
         EditorTextBox?.TextArea.TextView.Redraw();
@@ -7890,7 +7890,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
         var scanToken = _insightAnalysisCancellation.Token;
 
-        List<InsightEngine.ErrorSpan>? rawSpans = null;
+        List<ErrorSpan>? rawSpans = null;
         lock (_insightAnalysisCacheLock)
         {
             if (_cachedInsightAnalysisVersion == scanVersion &&
@@ -7898,7 +7898,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 string.Equals(_cachedInsightAnalysisExtension, scanExtension, StringComparison.Ordinal) &&
                 string.Equals(_cachedInsightAnalysisText, text, StringComparison.Ordinal))
             {
-                rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<InsightEngine.ErrorSpan>(_cachedInsightAnalysisSpans);
+                rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<ErrorSpan>(_cachedInsightAnalysisSpans);
             }
         }
 
@@ -7915,7 +7915,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (isLspPrimary)
                 {
                     // LSP is authoritative only when actually running – otherwise fall back to Insight/LangRules so HTML tags still complete without LSP
-                    rawSpans = new List<InsightEngine.ErrorSpan>();
+                    rawSpans = new List<ErrorSpan>();
                     KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id}, initialized={isLspPrimary})");
                 }
                 else
@@ -7935,7 +7935,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     if (diagnostic.Start < 0 || diagnostic.Start >= text.Length || string.IsNullOrWhiteSpace(diagnostic.Message))
                         continue;
-                    rawSpans.Add(new InsightEngine.ErrorSpan(
+                    rawSpans.Add(new ErrorSpan(
                         diagnostic.Start,
                         Math.Clamp(diagnostic.Length, 1, text.Length - diagnostic.Start),
                         diagnostic.Message,
@@ -7962,7 +7962,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _cachedInsightAnalysisPath = scanPath;
                     _cachedInsightAnalysisExtension = scanExtension;
                     _cachedInsightAnalysisText = text;
-                    _cachedInsightAnalysisSpans = new List<InsightEngine.ErrorSpan>(rawSpans);
+                    _cachedInsightAnalysisSpans = new List<ErrorSpan>(rawSpans);
                 }
             }
         }
@@ -8033,10 +8033,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private List<InsightEngine.ErrorSpan> FilterDismissedErrorSpans(List<InsightEngine.ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
+    private List<ErrorSpan> FilterDismissedErrorSpans(List<ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
     {
         if (_dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
-        var filtered = new List<InsightEngine.ErrorSpan>(spans.Count);
+        var filtered = new List<ErrorSpan>(spans.Count);
         foreach (var span in spans)
         {
             try
@@ -8054,8 +8054,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ClearErrorHighlighting()
     {
-        var emptyErr = Array.Empty<InsightEngine.ErrorSpan>();
-        var emptyDead = Array.Empty<InsightEngine.DeadCodeSpan>();
+        var emptyErr = Array.Empty<ErrorSpan>();
+        var emptyDead = Array.Empty<DeadCodeSpan>();
         _errorHighlightRenderer.SetSpans(emptyErr);
         _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
         _errorTextDarkener.SetSpans(emptyErr, emptyDead);

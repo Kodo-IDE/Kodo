@@ -149,7 +149,6 @@ public sealed class LspConfiguration
     /// <summary>Optional root markers for workspace detection (e.g....
     public string[] RootMarkers { get; init; } = [];
 
-    // --- Centralized LSP Management metadata (optional, backward-compatible) ---
     /// <summary>Stable provider id (e.g. "clangd", "rust-analyzer"). Defaults to...
     public string ProviderId { get; init; } = string.Empty;
 

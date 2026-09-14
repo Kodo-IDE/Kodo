@@ -215,8 +215,6 @@ public partial class MainWindow
                 offsetY = Math.Clamp(position.Y, 4, 300);
             }
 
-            // Defer the actual open/reposition until the hover settles, so sweeping the
-            // mouse across several diagnostics in a row does not rapidly flicker the popup.
             _pendingDiagnosticMessage = diagnosticMessage;
             _pendingDiagnosticOffsetX = offsetX;
             _pendingDiagnosticOffsetY = offsetY;
@@ -239,7 +237,6 @@ public partial class MainWindow
             DiagnosticPopup.IsOpen = false;
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
-            // Debounced LSP hover – cancel previous, delay, then query (generic, throttled)
             CancellationTokenSource hoverCts;
             lock (_lspHoverLock)
             {
@@ -833,10 +830,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
 
-        // Don't auto-popup on file open / focus when there's no active prefix or trigger.
-        // Completion should only appear while the user is actively typing a word or after a
-        // trigger character (e.g. '.' '(' '['). An empty document or a caret at offset 0
-        // with no previous trigger must not show the window.
         if (string.IsNullOrWhiteSpace(text))
         {
             CloseCompletionWindow();
@@ -852,9 +845,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
                 return;
             }
 
-            // For LSP, allow empty prefix only directly after a trigger char – otherwise
-            // opening an empty file (offset 0, no trigger) would immediately flood the
-            // popup with every symbol (the reported bug: empty main.py shows Annotated, etc.).
             if (offset == 0 || offset > text.Length)
             {
                 CloseCompletionWindow();
@@ -911,7 +901,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
                     if (seen.Add(s.Text))
                         suggestions.Add(s);
                 }
-                // Re-sort by priority then text
                 suggestions = suggestions.OrderByDescending(s => s.Priority).ThenBy(s => s.Text, StringComparer.OrdinalIgnoreCase).Take(25).ToList();
             }
             else if (isLspPrimaryForCompletion)
@@ -933,10 +922,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
             return;
         }
 
-        // Only create/recreate the window when it isn't already open. AvaloniaEdit's
-        // CompletionWindow tracks the caret on its own once shown, so while it's open we
-        // just swap its contents in place instead of closing/recreating on every keystroke
-        // (which was the source of the visible jitter/flicker as suggestions were filtered).
         var suggestionsText = string.Join(",", suggestions.Select(s => s.Text));
         if (_completionWindow is null)
         {
@@ -949,7 +934,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         }
         else if (_lastSuggestionsText != suggestionsText)
         {
-            // Update content in place, no window teardown/rebuild.
             _completionWindow.StartOffset = wordStart;
             _completionWindow.CompletionList.CompletionData.Clear();
             foreach (var suggestion in suggestions)
@@ -958,7 +942,6 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         }
         else
         {
-            // Suggestions unchanged; still keep StartOffset current as the caret moves.
             _completionWindow.StartOffset = wordStart;
         }
     }
@@ -1004,10 +987,10 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         EditorTextBox.TextArea.TextView.Redraw();
     }
 
-    private List<InsightEngine.DeadCodeSpan> FilterDismissedDeadCodeSpans(List<InsightEngine.DeadCodeSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
+    private List<DeadCodeSpan> FilterDismissedDeadCodeSpans(List<DeadCodeSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
     {
         if (_dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
-        var filtered = new List<InsightEngine.DeadCodeSpan>(spans.Count);
+        var filtered = new List<DeadCodeSpan>(spans.Count);
         foreach (var span in spans)
         {
             try

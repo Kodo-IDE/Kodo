@@ -257,15 +257,6 @@ public sealed class CompiledSyntaxProfile
     }
 }
 
-public readonly record struct CompiledSyntaxRule(Regex Regex, string ColorTokenName, string FallbackHex);
-
-public enum EmbeddedBlockContentMode
-{
-    AwaitingContent,
-    Raw,
-    InCData
-}
-
 public static class EmbeddedTagContent
 {
     private const string CDataStart = "<![CDATA[";
@@ -325,25 +316,6 @@ public static class EmbeddedTagContent
         contentEnd = end;
         return contentEnd > contentStart;
     }
-}
-
-public enum EmbeddedSyntaxScanMode
-{
-    Normal,
-    LineComment,
-    BlockComment,
-    String,
-    MultiLineString
-}
-
-public readonly record struct EmbeddedSyntaxState(
-    string BracketStack,
-    EmbeddedSyntaxScanMode Mode,
-    string? Delimiter,
-    bool IsVerbatimString,
-    bool CanSpanMultipleLines)
-{
-    public static EmbeddedSyntaxState Empty { get; } = new(string.Empty, EmbeddedSyntaxScanMode.Normal, null, false, false);
 }
 
 public sealed class EmbeddedSyntaxProfile
