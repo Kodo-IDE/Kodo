@@ -1,4 +1,5 @@
 // Licensed under GPL-v3.0
+#pragma warning disable CA1416 // Validate platform compatibility - guarded with IsOSPlatform checks
 using Avalonia.Threading;
 using Kodo.Models;
 using System.Collections.Concurrent;
@@ -1108,8 +1109,6 @@ public partial class MainWindow
             return;
         }
 
-        SetupLspClientHandlers(client);
-
         var uri = FilePathToUri(filePath);
         int version;
         lock (_lspOpenLock)
@@ -1198,7 +1197,14 @@ public partial class MainWindow
         lock (_lspDiagnosticsLock)
         {
             _lspDiagnostics.Remove(filePath);
-            _lspDiagnostics.Remove(FilePathToUri(filePath));
+            var _uri = FilePathToUri(filePath);
+            _lspDiagnostics.Remove(_uri);
+            _lspDiagnostics.Remove(NormalizeFilePath(_uri));
+            // Remove any stale uri-keyed entries that outlive filePath via different encoding (audit #4)
+            List<string>? _stale = null;
+            foreach (var _k in _lspDiagnostics.Keys)
+                if (IsSameDocument(_k, filePath)) (_stale ??= new List<string>()).Add(_k);
+            if (_stale != null) foreach (var _k in _stale) _lspDiagnostics.Remove(_k);
         }
 
         var lspExt = ResolveLspExtensionForFile(filePath);
@@ -1250,7 +1256,12 @@ public partial class MainWindow
             if (!_lspSubscribedClients.Add(client)) return;
         }
         client.OnNotification += HandleLspNotification;
-        client.OnExit += code => Dispatcher.UIThread.Post(() => { _ = UpdateErrorHighlightingAsync(); });
+        client.OnExit += code =>
+        {
+            try { client.OnNotification -= HandleLspNotification; } catch { }
+            lock (_lspDiagnosticsLock) _lspSubscribedClients.Remove(client);
+            Dispatcher.UIThread.Post(() => { _ = UpdateErrorHighlightingAsync(); });
+        };
     }
 
     private void HandleLspNotification(string method, JsonElement? @params)
@@ -1296,10 +1307,10 @@ public partial class MainWindow
 
             lock (_lspDiagnosticsLock)
             {
-                if (!_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(filePath)) return;
-                _lspDiagnostics[filePath] = diagnostics;
-                // also store by uri for fallback
-                _lspDiagnostics[uri] = diagnostics;
+                // Normalize so lookups use consistent key; filePath came from FileUriToPath which may not be normalized
+                var normPath = NormalizeFilePath(filePath);
+                if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
+                _lspDiagnostics[normPath] = diagnostics;
             }
             KodoDiagnostics.LogDebug($"LSP publishDiagnostics {filePath} count={diagnostics.Count} uri={uri}");
             for (var i = 0; i < Math.Min(diagnostics.Count, 3); i++)
@@ -2335,10 +2346,64 @@ internal static class LspInstallationManager
         finally { sem.Release(); }
     }
 
+    private static readonly System.Text.RegularExpressions.Regex NpmPackageNameRegex = new(@"^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[a-z0-9-._~][a-z0-9-._~.-]*)?$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static bool IsValidNpmPackageName(string pkg)
+    {
+        if (string.IsNullOrWhiteSpace(pkg)) return false;
+        // Reject shell metacharacters, traversal, absolute paths
+        if (pkg.IndexOfAny(new[] { ';', '&', '|', '`', '$', '(', ')', '<', '>', '"', '\'', '\\', ' ', '\n', '\r', '\t' }) >= 0) return false;
+        if (pkg.Contains("..", StringComparison.Ordinal)) return false;
+        return NpmPackageNameRegex.IsMatch(pkg.Trim());
+    }
+
+    private static ProcessStartInfo BuildNpmProcessStartInfo(string npmExe, string[] npmArgs, string workingDirectory)
+    {
+        var isCmdScript = npmExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || npmExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
+        if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+        {
+            var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+            // Escape each arg for cmd: quote if contains space or quote
+            static string EscapeArg(string a)
+            {
+                if (string.IsNullOrEmpty(a)) return "\"\"";
+                if (!a.Contains(' ') && !a.Contains('"') && !a.Contains('\t')) return a;
+                return "\"" + a.Replace("\"", "\"\"") + "\"";
+            }
+            var inner = $"\"{npmExe}\" {string.Join(" ", npmArgs.Select(EscapeArg))}";
+            return new ProcessStartInfo
+            {
+                FileName = comSpec,
+                Arguments = $"/d /s /c \"{inner}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDirectory,
+            };
+        }
+        else
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = npmExe,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+                WorkingDirectory = workingDirectory,
+            };
+            foreach (var a in npmArgs) psi.ArgumentList.Add(a);
+            return psi;
+        }
+    }
+
     private static async Task<InstallResult> InstallViaNpmAsync(LspConfiguration cfg, AppSettings? settings, IProgress<string>? progress, CancellationToken ct)
     {
         var pkg = cfg.PackageName ?? cfg.EffectiveProviderId;
-        // Detect node + npm
+        if (!IsValidNpmPackageName(pkg))
+            return new(InstallResultKind.Failed, $"Invalid npm package name '{pkg}'. Package name contains illegal characters or pattern.", null);
+        // Detect node + npm via enhanced lookup (PATH + known locations + where.exe)
         var nodeRt = await LspRuntimeDetector.DetectAsync("node", cfg.RuntimeMinVersion ?? "16.0.0", ct).ConfigureAwait(false);
         if (!nodeRt.Found) return new(InstallResultKind.RuntimeMissing, nodeRt.Error ?? "Node.js is required. Install Node.js 16+ from https://nodejs.org/", null);
         var npmRt = await LspRuntimeDetector.DetectAsync("npm", null, ct).ConfigureAwait(false);
@@ -2351,34 +2416,10 @@ internal static class LspInstallationManager
         try
         {
             Directory.CreateDirectory(stagingDir);
-            var args = $"install --prefix \"{stagingDir}\" {pkg}";
-            var npmExe = LspRuntimeDetector.FindOnPath("npm") ?? "npm";
-            // On Windows npm is npm.cmd – must invoke via cmd.exe wrapper handling already in...
-            // Use npm.cmd if found
-            if (File.Exists(npmExe) && npmExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
-            {
-                // keep as is; Process will handle via cmd? We need to invoke via cmd.exe /c for .cmd
-                // Instead, use npx or node? Simpler: if npm is .cmd, invoke via cmd.exe
-                // We'll handle by switching to use cmd.exe
-            }
-            var useCmdWrapper = npmExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || npmExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
-            string fileName = npmExe;
-            string cmdArgs = args;
-            if (useCmdWrapper)
-            {
-                var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-                fileName = comSpec;
-                cmdArgs = $"/c \"{npmExe}\" {args}";
-            }
-            var psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = useCmdWrapper ? cmdArgs : args,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
+            var npmExe = LspRuntimeDetector.FindExecutable("npm") ?? LspRuntimeDetector.FindOnPath("npm") ?? "npm";
+            // Harden npm install: disable lifecycle scripts (supply-chain), no audit/fund, no progress
+            var npmArgs = new[] { "install", "--prefix", stagingDir, "--ignore-scripts", "--no-audit", "--no-fund", "--progress=false", "--loglevel=error", pkg };
+            var psi = BuildNpmProcessStartInfo(npmExe, npmArgs, Path.GetTempPath());
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return new(InstallResultKind.Failed, "Failed to start npm", null);
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
@@ -2401,13 +2442,33 @@ internal static class LspInstallationManager
                 try { Directory.Delete(stagingDir, true); } catch { }
                 return new(InstallResultKind.Failed, "npm install produced no files", null);
             }
-            // Atomic move staging -> providerDir
+            // Atomic move staging -> providerDir with retry for locked files (LSP running)
+            const int maxRetries = 5;
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                try
+                {
+                    if (Directory.Exists(providerDir)) Directory.Delete(providerDir, true);
+                    break;
+                }
+                catch (IOException) when (attempt < maxRetries - 1)
+                {
+                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
+                }
+                catch (UnauthorizedAccessException) when (attempt < maxRetries - 1)
+                {
+                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
+                }
+            }
             try
             {
-                if (Directory.Exists(providerDir)) Directory.Delete(providerDir, true);
+                Directory.Move(stagingDir, providerDir);
             }
-            catch { }
-            Directory.Move(stagingDir, providerDir);
+            catch (IOException ex)
+            {
+                try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
+                return new(InstallResultKind.Failed, $"Failed to finalize installation (directory locked or in use): {ex.Message}", null);
+            }
             progress?.Report($"Installed {pkg}");
             return new(InstallResultKind.Success, $"Installed {pkg} via npm", providerDir);
         }
@@ -2741,6 +2802,7 @@ internal sealed class LspManager : IDisposable
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, LspClient> _clients = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Task<LspClient>> _starting = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
     public LspClient? TryGetClient(string workspaceRoot, LspConfiguration config)
@@ -2749,60 +2811,82 @@ internal sealed class LspManager : IDisposable
         lock (_lock) return _clients.TryGetValue(key, out var c) ? c : null;
     }
 
-    public async Task<LspClient> GetOrStartAsync(string workspaceRoot, LspConfiguration config, CancellationToken ct = default)
+    public Task<LspClient> GetOrStartAsync(string workspaceRoot, LspConfiguration config, CancellationToken ct = default)
     {
         var key = MakeKey(workspaceRoot, config);
-        LspClient? client;
-        bool needsStart = false;
-
+        Task<LspClient> taskToAwait;
         lock (_lock)
         {
-            if (_clients.TryGetValue(key, out client) && client.IsStarted)
-                return client;
+            if (_disposed) throw new ObjectDisposedException(nameof(LspManager));
+            if (_clients.TryGetValue(key, out var existing) && existing.IsStarted)
+                return Task.FromResult(existing);
+            if (_starting.TryGetValue(key, out var inProgress))
+                return inProgress;
 
-            // stale entry
-            if (client is not null)
+            // stale entry (IsStarted == false and no in-progress task)
+            if (existing is not null)
             {
                 _clients.Remove(key);
-                try { client.Dispose(); } catch { }
+                try { existing.Dispose(); } catch { }
             }
 
-            client = new LspClient(config, workspaceRoot);
-            _clients[key] = client;
-            needsStart = true;
+            var newClient = new LspClient(config, workspaceRoot);
+            var startTask = StartAndRegisterAsync(newClient, key, config, workspaceRoot, ct);
+            _starting[key] = startTask;
+            taskToAwait = startTask;
         }
+        return taskToAwait;
+    }
 
-        if (needsStart)
+    private async Task<LspClient> StartAndRegisterAsync(LspClient client, string key, LspConfiguration config, string workspaceRoot, CancellationToken ct)
+    {
+        client.OnExit += code =>
         {
-            client.OnExit += code =>
-            {
-                lock (_lock) _clients.Remove(key);
-                KodoDiagnostics.LogDebug($"LSP manager removed exited client '{config.Command}' ws={workspaceRoot} code={code}");
-            };
+            lock (_lock) _clients.Remove(key);
+            KodoDiagnostics.LogDebug($"LSP manager removed exited client '{config.Command}' ws={workspaceRoot} code={code}");
+        };
 
-            try
+        try
+        {
+            await client.StartAsync(ct).ConfigureAwait(false);
+            lock (_lock)
             {
-                await client.StartAsync(ct).ConfigureAwait(false);
-                // initialize is caller's responsibility (Phase 4) – but we can lazy-initialize here if needed
+                if (!_disposed)
+                    _clients[key] = client;
+                else
+                {
+                    // Manager disposed while starting – clean up
+                    try { client.Dispose(); } catch { }
+                    _starting.Remove(key);
+                    throw new ObjectDisposedException(nameof(LspManager));
+                }
+                _starting.Remove(key);
             }
-            catch (Exception ex)
-            {
-                lock (_lock) _clients.Remove(key);
-                try { client.Dispose(); } catch { }
-                // Surface useful message without crashing – caller shows dialog
-                KodoDiagnostics.LogDebug($"LSP manager failed to start '{config.Command}'", ex);
-                throw;
-            }
+            return client;
         }
-
-        return client;
+        catch (Exception ex)
+        {
+            lock (_lock) _starting.Remove(key);
+            try { client.Dispose(); } catch { }
+            KodoDiagnostics.LogDebug($"LSP manager failed to start '{config.Command}'", ex);
+            throw;
+        }
     }
 
     public async Task ShutdownAsync(string workspaceRoot, LspConfiguration config, string reason = "manager shutdown")
     {
         var key = MakeKey(workspaceRoot, config);
-        LspClient? client;
-        lock (_lock) _clients.TryGetValue(key, out client);
+        LspClient? client = null;
+        Task<LspClient>? startingTask = null;
+        lock (_lock)
+        {
+            _clients.TryGetValue(key, out client);
+            if (client is null) _starting.TryGetValue(key, out startingTask);
+        }
+        if (startingTask != null)
+        {
+            try { client = await startingTask.ConfigureAwait(false); } catch { return; }
+        }
         if (client is null) return;
         await client.ShutdownAsync(reason).ConfigureAwait(false);
         lock (_lock) _clients.Remove(key);
@@ -2812,10 +2896,23 @@ internal sealed class LspManager : IDisposable
     public async Task ShutdownAllAsync(string reason = "manager shutdown all")
     {
         List<LspClient> snapshot;
+        List<Task<LspClient>> startingSnapshot;
         lock (_lock)
         {
             snapshot = new List<LspClient>(_clients.Values);
+            startingSnapshot = new List<Task<LspClient>>(_starting.Values);
             _clients.Clear();
+            _starting.Clear();
+        }
+        // Wait for any in-progress starts to finish, then shut them down too
+        foreach (var t in startingSnapshot)
+        {
+            try
+            {
+                var c = await t.ConfigureAwait(false);
+                if (!snapshot.Contains(c)) snapshot.Add(c);
+            }
+            catch { }
         }
         foreach (var c in snapshot)
         {
@@ -2840,7 +2937,29 @@ internal sealed class LspManager : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        try { ShutdownAllAsync("manager dispose").GetAwaiter().GetResult(); } catch { }
+        try
+        {
+            // Avoid sync-over-async deadlock if called on UI thread (DispatcherSynchronizationContext).
+            // Offload to thread-pool so the async shutdown path never needs the UI thread.
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                var task = Task.Run(async () => await ShutdownAllAsync("manager dispose").ConfigureAwait(false));
+                if (!task.Wait(TimeSpan.FromSeconds(5)))
+                    KodoDiagnostics.LogDebug("LSP manager dispose timed out waiting for shutdown");
+            }
+            else
+            {
+                ShutdownAllAsync("manager dispose").GetAwaiter().GetResult();
+            }
+        }
+        catch { }
+        // Fallback: ensure any remaining clients are disposed even if shutdown timed out
+        lock (_lock)
+        {
+            foreach (var c in _clients.Values) try { c.Dispose(); } catch { }
+            _clients.Clear();
+            _starting.Clear();
+        }
     }
 }
 
@@ -3010,26 +3129,36 @@ internal static class LspRuntimeDetector
     {
         try
         {
-            // Resolve exe via PATH and handle .cmd/.bat wrappers on Windows (npm is npm.cmd)
-            var resolvedExe = FindOnPath(exe) ?? exe;
+            // Resolve exe via enhanced PATH + known locations and handle .cmd/.bat wrappers on Windows (npm is npm.cmd)
+            var resolvedExe = FindExecutable(exe) ?? exe;
             var isCmdScript = resolvedExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
-            string fileName = resolvedExe;
-            string arguments = args;
+            ProcessStartInfo psi;
             if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-                fileName = comSpec;
-                arguments = $"/c \"{resolvedExe}\" {args}";
+                // Use /d /s /c ""exe" args" so paths with spaces are handled correctly by cmd
+                psi = new ProcessStartInfo
+                {
+                    FileName = comSpec,
+                    Arguments = $"/d /s /c \"\"{resolvedExe}\" {args}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
             }
-            var psi = new ProcessStartInfo
+            else
             {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            };
+                psi = new ProcessStartInfo
+                {
+                    FileName = resolvedExe,
+                    Arguments = args,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
+            }
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return (false, null, $"Failed to start {exe}");
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
@@ -3053,29 +3182,122 @@ internal static class LspRuntimeDetector
         }
     }
 
+    /// <summary>Find executable via PATH plus well-known Node install locations, App Paths registry, and where.exe fallback.</summary>
+    public static string? FindExecutable(string command)
+    {
+        var viaPath = FindOnPath(command);
+        if (viaPath != null) return viaPath;
+        var viaKnown = FindInKnownLocations(command);
+        if (viaKnown != null) return viaKnown;
+        var viaWhere = FindViaWhere(command);
+        if (viaWhere != null) return viaWhere;
+        return null;
+    }
+
+    private static string? FindInKnownLocations(string command)
+    {
+        try
+        {
+            var lower = command.Trim().ToLowerInvariant();
+            if (lower != "node" && lower != "npm" && lower != "npx") return null;
+            var candidates = new List<string>();
+            // NVM env vars
+            var nvmHome = Environment.GetEnvironmentVariable("NVM_HOME");
+            if (!string.IsNullOrWhiteSpace(nvmHome)) { candidates.Add(Path.Combine(nvmHome, "node.exe")); candidates.Add(Path.Combine(nvmHome, "npm.cmd")); }
+            var nvmSymlink = Environment.GetEnvironmentVariable("NVM_SYMLINK");
+            if (!string.IsNullOrWhiteSpace(nvmSymlink)) { candidates.Add(Path.Combine(nvmSymlink, "node.exe")); candidates.Add(Path.Combine(nvmSymlink, "npm.cmd")); }
+            // Volta
+            try { var voltaBin = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Volta", "bin"); candidates.Add(Path.Combine(voltaBin, "node.exe")); candidates.Add(Path.Combine(voltaBin, "npm.cmd")); } catch { }
+            // fnm
+            var fnmDir = Environment.GetEnvironmentVariable("FNM_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "fnm");
+            if (!string.IsNullOrWhiteSpace(fnmDir) && Directory.Exists(fnmDir))
+                try { var fnmNode = Directory.EnumerateFiles(fnmDir, "node.exe", SearchOption.AllDirectories).FirstOrDefault(); if (fnmNode != null) candidates.Add(fnmNode); } catch { }
+            // Standard Program Files
+            try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "npm.cmd")); } catch { }
+            try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "npm.cmd")); } catch { }
+            // AppData local nodejs (npm global prefix sometimes)
+            // Registry App Paths
+            foreach (var hive in new[] { Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryHive.CurrentUser })
+            {
+                try
+                {
+                    using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry64);
+                    using var appPaths = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
+                    var pathVal = appPaths?.GetValue(null) as string ?? appPaths?.GetValue("Path") as string;
+                    if (!string.IsNullOrWhiteSpace(pathVal) && File.Exists(pathVal)) candidates.Add(pathVal);
+                }
+                catch { }
+                try
+                {
+                    using var baseKey32 = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry32);
+                    using var appPaths32 = baseKey32.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
+                    var pathVal32 = appPaths32?.GetValue(null) as string ?? appPaths32?.GetValue("Path") as string;
+                    if (!string.IsNullOrWhiteSpace(pathVal32) && File.Exists(pathVal32)) candidates.Add(pathVal32);
+                }
+                catch { }
+            }
+            var target = lower == "node" ? "node.exe" : "npm.cmd";
+            foreach (var c in candidates)
+            {
+                if (string.IsNullOrWhiteSpace(c)) continue;
+                var file = Path.GetFileName(c);
+                if (!file.Equals(target, StringComparison.OrdinalIgnoreCase)) continue;
+                if (File.Exists(c)) return Path.GetFullPath(c);
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    private static string? FindViaWhere(string command)
+    {
+        try
+        {
+            if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) return null;
+            var whereExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
+            if (!File.Exists(whereExe)) whereExe = "where";
+            var psi = new ProcessStartInfo { FileName = whereExe, Arguments = command, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            using var proc = Process.Start(psi);
+            if (proc == null) return null;
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit(2000);
+            if (proc.ExitCode != 0) return null;
+            var first = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim().Trim('"');
+            if (!string.IsNullOrWhiteSpace(first) && File.Exists(first)) return Path.GetFullPath(first);
+            return null;
+        }
+        catch { return null; }
+    }
+
     public static string? FindOnPath(string command)
     {
         try
         {
-            var fileName = command.Trim().Trim('"');
+            var fileName = command.Trim().Trim('"').Trim();
+            if (string.IsNullOrWhiteSpace(fileName)) return null;
             if (Path.IsPathRooted(fileName) && File.Exists(fileName)) return Path.GetFullPath(fileName);
             // Try with extensions on Windows
             var pathext = Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
-            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-            foreach (var dir in path.Split(Path.PathSeparator))
+            var pathexts = pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var rawPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (var rawDir in rawPath.Split(Path.PathSeparator))
             {
-                if (string.IsNullOrWhiteSpace(dir)) continue;
-                var trimmed = dir.Trim().Trim('"');
-                if (!Directory.Exists(trimmed)) continue;
+                if (string.IsNullOrWhiteSpace(rawDir)) continue;
+                var expanded = Environment.ExpandEnvironmentVariables(rawDir.Trim().Trim('"').Trim());
+                if (string.IsNullOrWhiteSpace(expanded)) continue;
+                // Normalize trailing slash
+                string dir;
+                try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
+                if (!Directory.Exists(dir)) continue;
                 // direct
-                var candidate = Path.Combine(trimmed, fileName);
-                if (File.Exists(candidate)) return candidate;
-                // try with pathext
+                var candidate = Path.Combine(dir, fileName);
+                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+                // try with pathext only if no extension supplied
                 if (Path.HasExtension(fileName)) continue;
-                foreach (var ext in pathext.Split(';'))
+                foreach (var ext in pathexts)
                 {
-                    var withExt = candidate + ext;
-                    if (File.Exists(withExt)) return withExt;
+                    var withExt = candidate + (ext.StartsWith(".") ? ext : "." + ext);
+                    if (File.Exists(withExt)) return Path.GetFullPath(withExt);
                 }
             }
             return null;
