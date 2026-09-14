@@ -81,7 +81,6 @@ public partial class App : Application
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             DeferUpdateChecks();
-            DeferStandaloneUpdaterLaunch();
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -111,62 +110,6 @@ public partial class App : Application
         }
     }
 
-    [SupportedOSPlatform("windows")]
-    private static void LaunchStandaloneUpdaterIfNeeded()
-    {
-        try
-        {
-            if (!UpdateService.IsAutoUpdateEnabledInSettings())
-            {
-                UpdateService.RemoveAutostartRegistration();
-                return;
-            }
-
-            var exeDir = AppContext.BaseDirectory;
-            var updaterPath = Path.Combine(exeDir, "KodoUpdater.exe");
-            if (!File.Exists(updaterPath))
-                return;
-
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = updaterPath,
-                WorkingDirectory = exeDir,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-
-            UpdateService.EnsureAutostartRegistered();
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogWarning("App.LaunchStandaloneUpdaterIfNeeded", ex, operation: "AutoUpdate");
-        }
-    }
-
-    private static bool CheckPendingUpdateSentinel()
-    {
-        try
-        {
-            var pending = PendingUpdateService.TryGetPendingUpdate();
-            if (pending is null) return false;
-
-            var (version, installerPath) = pending.Value;
-            var update = new UpdateInfo(
-                Version: version,
-                ReleaseNotesUrl: "https://github.com/Kodo-IDE/Kodo/releases",
-                AssetDownloadUrl: string.Empty,
-                AssetName: Path.GetFileName(installerPath),
-                AssetSizeBytes: 0);
-
-            UpdateDialog.ShowFor(update, installerPath);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private static void CheckForUpdatesInBackground()
     {
         _ = Task.Run(async () =>
@@ -178,13 +121,15 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                if (UpdateService.IsAutoUpdateInBackgroundEnabledInSettings())
-                    return;
-
-                await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
+                // Single scheduler in Kodo owns discovery. Even when background
+                // download enabled, we still check – CheckAndHandleUpdateAsync
+                // stages in background and shows "Ready" dialog.
+                var bg = UpdateService.IsAutoUpdateInBackgroundEnabledInSettings();
+                await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
             }
-            catch
+            catch (Exception ex)
             {
+                KodoDiagnostics.LogDebug("Background update check failed", ex);
             }
         });
     }
@@ -209,25 +154,10 @@ public partial class App : Application
         {
             try
             {
+                // Clean stale staging/transactions from previous interrupted updates
+                UpdateService.CleanupStaleArtifacts();
                 await Task.Delay(TimeSpan.FromSeconds(3));
-                var hasPending = false;
-                await Dispatcher.UIThread.InvokeAsync(() => { hasPending = CheckPendingUpdateSentinel(); });
-                if (!hasPending)
-                    CheckForUpdatesInBackground();
-            }
-            catch { }
-        });
-    }
-
-    [SupportedOSPlatform("windows")]
-    private static void DeferStandaloneUpdaterLaunch()
-    {
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(6));
-                LaunchStandaloneUpdaterIfNeeded();
+                CheckForUpdatesInBackground();
             }
             catch { }
         });

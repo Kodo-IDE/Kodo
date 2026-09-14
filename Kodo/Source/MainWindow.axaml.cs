@@ -3136,12 +3136,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(AutoUpdateAppStatusText));
             SaveSettings();
             _appUpdateScheduler.UpdateLifecycle();
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                if (value) Task.Run(UpdateService.EnsureAutostartRegistered);
-                else Task.Run(UpdateService.RemoveAutostartRegistration);
-            }
         }
     }
 
