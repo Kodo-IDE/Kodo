@@ -288,8 +288,7 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public IReadOnlyList<ErrorSpan> Spans => _spans;
 
-    // Keep diagnostics on the background layer so multiple extension spans
-    // remain visible instead of being obscured by selection rendering.
+    // Keep diagnostics on the background layer so multiple extension
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<ErrorSpan> spans) => _spans = spans;
@@ -311,8 +310,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         }
         if (messages is null) return null;
         // Keep hover text compact and predictable when several extensions
-        // report the same line. One diagnostic per line also prevents the
-        // popup from jumping as asynchronous checkers complete.
         return string.Join(Environment.NewLine, messages
             .GroupBy(message => message.Trim().TrimEnd('.').ToLowerInvariant())
             .Select(group => group.First()));

@@ -905,7 +905,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
-        // Theme fast-path: themes must be available before first paint to avoid flicker
+        // Theme fast-path: themes must be available before first paint
         try
         {
             var themeScan = _cachedThemeScan is not null && DateTime.UtcNow - _cachedThemeScanUtc < ThemeScanCacheValidity
@@ -921,8 +921,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
         ApplyThemeBrushes(_requestedThemeName);
 
-        // Startup fast-path: defer heavy language .kox scan + DLL loads until after first frame
-        // Theme packs already loaded above (~15ms for 3 kox); language packs (20 kox,...
+        // Startup fast-path: defer heavy language .kox scan + DLL loads
         _ = Task.Run(async () =>
         {
             try
@@ -7859,7 +7858,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task UpdateErrorHighlightingAsync()
     {
         var hasLspForFile = ResolveLspExtensionForFile(_currentFilePath) is not null;
-        // Zed-like: LSP diagnostics should still show even if Insight is disabled, but...
+        // Zed-like: LSP diagnostics should still show even if Insight is
         if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
@@ -7896,7 +7895,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // LSP ALWAYS prioritized: when an extension declares an LSP, Insight/LangRules...
+        // LSP ALWAYS prioritized: when an extension declares an LSP,
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var cfgForFile = ResolveLspConfigurationForFile(_currentFilePath);
         var isLspPrimary = lspForFile?.HasLsp == true && cfgForFile != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForFile) is { IsInitialized: true };
@@ -7908,7 +7907,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (isLspPrimary)
                 {
-                    // LSP is authoritative only when actually running – otherwise fall back to Insight/LangRules so HTML tags still complete without LSP
+                    // LSP is authoritative only when actually running – otherwise
                     rawSpans = new List<ErrorSpan>();
                     KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id}, initialized={isLspPrimary})");
                 }
@@ -7967,7 +7966,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var lspSpans = GetLspDiagnosticsForFile(_currentFilePath, text);
             if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
             rawSpans.AddRange(lspSpans);
-            // Re-group: dedupe only identical diagnostics (same range+severity+message+code),...
+            // Re-group: dedupe only identical diagnostics (same
             rawSpans = rawSpans
                 .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
                 .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())

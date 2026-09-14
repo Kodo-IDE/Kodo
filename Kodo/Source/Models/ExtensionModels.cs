@@ -125,74 +125,52 @@ public enum LspDependencyStatus
 
 public sealed class LspConfiguration
 {
-    /// <summary>Executable for the language server – must be on PATH or absolute. Not...
     public string Command { get; init; } = string.Empty;
 
-    /// <summary>Arguments passed to the server (e.g. ["--stdio"]). Aliases: "args" /...
     public string[] Arguments { get; init; } = [];
 
-    /// <summary>LSP language identifiers (e.g. ["python","python3"]). Used for...
     public string[] Languages { get; init; } = [];
 
-    /// <summary>File extensions handled by this LSP (e.g. [".py"]). Falls back to...
     public string[] FileExtensions { get; init; } = [];
 
-    /// <summary>Optional environment variables for the server process. Values may...
     public Dictionary<string, string> Env { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Optional working directory for the server. Supports placeholders like...
     public string? WorkingDirectory { get; init; }
 
-    /// <summary>Optional initializationOptions forwarded in initialize request. Cloned...
     public JsonElement? InitializationOptions { get; init; }
 
-    /// <summary>Optional root markers for workspace detection (e.g....
     public string[] RootMarkers { get; init; } = [];
 
-    /// <summary>Stable provider id (e.g. "clangd", "rust-analyzer"). Defaults to...
     public string ProviderId { get; init; } = string.Empty;
 
-    /// <summary>Human display name for UI.</summary>
     public string? DisplayName { get; init; }
 
-    /// <summary>Version pinned for managed install (e.g. "18.1.3").</summary>
     public string? Version { get; init; }
 
-    /// <summary>Installation method: "github", "npm", "manual", "standalone". Manual =...
     public string? InstallMethod { get; init; }
 
-    /// <summary>npm package name when InstallMethod == "npm".</summary>
     public string? PackageName { get; init; }
 
-    /// <summary>HTTPS download URL for github/standalone installs (versioned artifact).</summary>
     public string? DownloadUrl { get; init; }
 
-    /// <summary>SHA256 checksum (hex) for download validation where upstream provides it.</summary>
     public string? Sha256 { get; init; }
 
-    /// <summary>Required runtime: "node", "java", "dotnet", "powershell", or null.</summary>
     public string? Runtime { get; init; }
 
-    /// <summary>Minimum runtime version (e.g. "18.0.0" for Node, "17" for Java).</summary>
     public string? RuntimeMinVersion { get; init; }
 
-    /// <summary>Whether Kodo may attempt automatic managed install (default true...
     public bool AllowAutoInstall { get; init; } = true;
 
-    /// <summary>Whether system/PATH installations are allowed (default true).</summary>
     public bool AllowSystem { get; init; } = true;
 
-    /// <summary>Arguments to probe version (e.g. ["--version"]). Used for version detection.</summary>
     public string[] VersionArgs { get; init; } = [];
 
-    /// <summary>Effective provider id (ProviderId or derived from Command).</summary>
     public string EffectiveProviderId
     {
         get
         {
             if (!string.IsNullOrWhiteSpace(ProviderId)) return ProviderId;
             var cmd = Command.Trim().Trim('"');
-            // strip .cmd/.bat/.exe
             foreach (var suf in new[] { ".cmd", ".bat", ".exe" })
                 if (cmd.EndsWith(suf, StringComparison.OrdinalIgnoreCase))
                     cmd = cmd[..^suf.Length];
@@ -240,18 +218,15 @@ public record class LoadedExtension : INotifyPropertyChanged
     public bool IsDirectorySource { get; set; }
     public string? PluginAssemblyFileName { get; set; }
     public string? LanguagePluginAssemblyFileName { get; set; }
-    /// <summary>Enables extension semantic diagnostics after the pack supplies fixtures.</summary>
     public bool EnableSemanticDiagnostics { get; set; }
     public string? PluginFolderPath { get; set; }
     public string? LanguagePluginFolderPath { get; set; }
     public LangRulesAdapter? LangRules { get; set; }
     public List<ExternalLanguageTool> ExternalTools { get; } = [];
-    /// <summary>Generic feature overrides: extension can declare "overrides": { "bracketAutoClose": false, "smartEnter": false, ... } to disable Kodo's hardcoded behaviors. This is the generic framework for extensions to override Kodo's own code.</summary>
     public Dictionary<string, bool> FeatureOverrides { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool IsFeatureDisabled(string feature) => FeatureOverrides.TryGetValue(feature, out var enabled) && !enabled;
     public bool IsFeatureEnabled(string feature) => !FeatureOverrides.TryGetValue(feature, out var enabled) || enabled;
     public LspConfiguration? Lsp { get; set; }
-    /// <summary>All LSP configurations declared by this extension (supports multiple LSPs per extension). Backward-compatible: when only "lsp" is declared, this contains that single entry.</summary>
     public List<LspConfiguration> Lsps { get; } = [];
     public bool HasLsp => (Lsp is not null && !string.IsNullOrWhiteSpace(Lsp.Command)) || Lsps.Count > 0;
     public IEnumerable<LspConfiguration> AllLspConfigurations
@@ -262,10 +237,8 @@ public record class LoadedExtension : INotifyPropertyChanged
             else if (Lsp is not null) yield return Lsp;
         }
     }
-    /// <summary>Current dependency status for primary LSP (aggregated). For multiple LSPs, reflects the most severe state.</summary>
     public LspDependencyStatus LspStatus { get; set; } = LspDependencyStatus.Unknown;
     public string? LspStatusMessage { get; set; }
-    /// <summary>Per-provider status for extensions declaring multiple LSPs.</summary>
     public Dictionary<string, (LspDependencyStatus status, string? message)> LspProviderStatuses { get; } = new(StringComparer.OrdinalIgnoreCase);
     public bool HasPlugin => PluginAssemblyFileName is not null && PluginFolderPath is not null;
     public bool HasLanguagePlugin => LanguagePluginAssemblyFileName is not null && LanguagePluginFolderPath is not null;

@@ -122,8 +122,6 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
                 // Single scheduler in Kodo owns discovery. Even when background
-                // download enabled, we still check – CheckAndHandleUpdateAsync
-                // stages in background and shows "Ready" dialog.
                 var bg = UpdateService.IsAutoUpdateInBackgroundEnabledInSettings();
                 await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
             }

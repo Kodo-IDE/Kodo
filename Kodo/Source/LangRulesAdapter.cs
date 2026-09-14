@@ -8,7 +8,6 @@ using System.Text.RegularExpressions;
 
 namespace Kodo;
 
-/// Reflection-based adapter for language-pack LangRules contracts.
 public sealed class LangRulesAdapter
 {
     private readonly LanguageWorker _worker = new();

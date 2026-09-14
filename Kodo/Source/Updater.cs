@@ -18,23 +18,6 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// -------------------------------------------------------------------
-// Single authoritative update implementation. Kodo owns discovery + download.
-// KodoUpdater (one-shot helper) owns orchestration via a transaction file.
-// Inno Setup owns installation. No resident polling, no Task Scheduler,
-// no named pipes, no BAT.
-// -------------------------------------------------------------------
-
-// Update transaction written by Kodo, consumed by KodoUpdater.
-internal sealed record UpdateTransaction(
-    string TransactionId,
-    string InstallerPath,
-    string KodoExePath,
-    int KodoPid,
-    bool RestartAfterUpdate,
-    DateTime CreatedAtUtc,
-    string Version);
-
 internal static class UpdateService
 {
     private const string LatestReleaseUrl = "https://api.github.com/repos/Kodo-IDE/Kodo/releases/latest";
@@ -54,7 +37,6 @@ internal static class UpdateService
         return client;
     }
 
-    // ----- GitHub discovery (single implementation) -----
 
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
@@ -145,7 +127,6 @@ internal static class UpdateService
         return parts.Length > 0 ? parts : null;
     }
 
-    // ----- Settings (preserve sensible auto-update separation) -----
 
     private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
     {
@@ -164,20 +145,12 @@ internal static class UpdateService
     public static bool IsAutoUpdateEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppEnabled, true);
     public static bool IsAutoUpdateInBackgroundEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppInBackgroundEnabled, false);
 
-    private sealed class AutoUpdateSettings
-    {
-        public bool AutoUpdateAppEnabled { get; set; } = true;
-        public bool AutoUpdateAppInBackgroundEnabled { get; set; }
-    }
-
-    // Compat shims – Task Scheduler autostart removed (§18). Keep methods so old
-    // MainWindow call sites compile, but they no-op and log.
+    // Compat shims – Task Scheduler autostart removed.
     [Obsolete("Resident updater removed – no Task Scheduler registration needed.")]
     public static void EnsureAutostartRegistered() => KodoDiagnostics.LogDebug("EnsureAutostartRegistered no-op (resident updater removed)");
     [Obsolete("Resident updater removed")]
     public static void RemoveAutostartRegistration() => KodoDiagnostics.LogDebug("RemoveAutostartRegistration no-op");
 
-    // ----- Staging (atomic, validated) -----
 
     internal static string UpdateRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
     internal static string StagingRoot => Path.Combine(UpdateRoot, "staging");
@@ -187,7 +160,6 @@ internal static class UpdateService
     {
         try
         {
-            // Stale transactions >24h
             if (Directory.Exists(TransactionDir))
             {
                 foreach (var f in Directory.GetFiles(TransactionDir, "*.json"))
@@ -200,7 +172,6 @@ internal static class UpdateService
                     catch { }
                 }
             }
-            // Stale staging partials >48h
             if (Directory.Exists(StagingRoot))
             {
                 foreach (var f in Directory.GetFiles(StagingRoot, "*.partial", SearchOption.AllDirectories))
@@ -278,7 +249,6 @@ internal static class UpdateService
         await fileStream.FlushAsync(ct).ConfigureAwait(false);
         fileStream.Close();
 
-        // Validation: non-empty, size reasonable
         var partialInfo = new FileInfo(partialPath);
         if (!partialInfo.Exists || partialInfo.Length < 1024 * 1024)
             throw new InvalidDataException($"Download incomplete or too small ({partialInfo.Length} bytes): {partialPath}");
@@ -297,7 +267,6 @@ internal static class UpdateService
         return bytes >= mb ? $"{bytes / mb:0.#} MB" : $"{bytes / 1024.0:0} KB";
     }
 
-    // ----- One-shot transaction -----
 
     public static string CreateUpdateTransaction(string installerPath, string version, bool restartAfterUpdate = true)
     {
@@ -324,7 +293,6 @@ internal static class UpdateService
 
         var txPath = Path.Combine(TransactionDir, $"{transactionId}.json");
         var json = JsonSerializer.Serialize(tx, TransactionJsonOptions);
-        // Atomic write: .tmp then move
         var tmp = txPath + ".tmp";
         File.WriteAllText(tmp, json);
         File.Move(tmp, txPath);
@@ -344,8 +312,7 @@ internal static class UpdateService
                 throw new FileNotFoundException("KodoUpdater.exe not found", updaterPath);
         }
 
-        // Launch one-shot helper with transaction path. Use ArgumentList-safe invocation via ProcessStartInfo.ArgumentList where possible,
-        // but for maximal compat pass quoted path as single arg.
+        // Launch one-shot helper with transaction path.
         var psi = new ProcessStartInfo
         {
             FileName = updaterPath,
@@ -353,7 +320,7 @@ internal static class UpdateService
             CreateNoWindow = true,
             WorkingDirectory = exeDir,
         };
-        // .NET 8+ supports ArgumentList; use it to avoid quoting issues with spaces
+        // .NET 8+ supports ArgumentList; use it to avoid quoting issues
         psi.ArgumentList.Add(transactionPath);
 
         try
@@ -386,7 +353,6 @@ internal static class UpdateService
         LaunchUpdaterAndExit(txPath);
     }
 
-    // ----- UpdateDialog integration (new flow: Check -> Download -> Ready -> Restart) -----
 
     public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
         bool installInBackground,
@@ -421,7 +387,7 @@ internal static class UpdateService
 
 }
 
-// UpdateDialog: Download -> Ready -> Restart & Update (no BAT, no pre-downloaded via %TEMP%)
+// UpdateDialog: Download -> Ready -> Restart & Update (no BAT,
 internal sealed class UpdateDialog : Window
 {
     private readonly DialogThemePalette _palette;

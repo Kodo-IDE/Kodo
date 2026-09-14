@@ -4,6 +4,18 @@ using System.Text.Json.Serialization;
 
 namespace Kodo;
 
+internal sealed record UpdateTransaction(
+    string TransactionId,
+    string InstallerPath,
+    string KodoExePath,
+    int KodoPid,
+    bool RestartAfterUpdate,
+    DateTime CreatedAtUtc,
+    string Version,
+    string? Sha256 = null,
+    long ExpectedSize = 0,
+    string? AssetName = null);
+
 internal sealed record UpdateInfo(
     string Version,
     string ReleaseNotesUrl,
@@ -12,6 +24,12 @@ internal sealed record UpdateInfo(
     long AssetSizeBytes);
 
 internal sealed record UpdateDownloadProgress(double Fraction, string Label);
+
+internal sealed class AutoUpdateSettings
+{
+    public bool AutoUpdateAppEnabled { get; set; } = true;
+    public bool AutoUpdateAppInBackgroundEnabled { get; set; }
+}
 
 internal sealed class GitHubRelease
 {

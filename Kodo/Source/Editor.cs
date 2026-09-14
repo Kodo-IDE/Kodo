@@ -682,7 +682,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var text = EditorTextBox.Document.Text;
         var path = _currentFilePath;
 
-        // Try LSP first (generic, Phase 9)
         try
         {
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
@@ -712,7 +711,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength);
         var text = EditorTextBox.Document.Text;
         var path = _currentFilePath;
-        // Try LSP first (generic)
         try
         {
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
@@ -734,7 +732,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         if (EditorTextBox?.Document is null) return;
         var path = _currentFilePath;
         var text = EditorTextBox.Document.Text;
-        // Try LSP first (generic)
         try
         {
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
@@ -769,7 +766,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var caret = EditorTextBox.TextArea.Caret.Offset;
         var text = EditorTextBox.Document.Text;
         var path = _currentFilePath;
-        // Try LSP first (generic)
         try
         {
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
@@ -876,7 +872,7 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         List<InsightSuggestion> suggestions;
         if (isLspPrimaryForCompletion)
         {
-            // LSP is actually running – suppress Insight's regex/semantic variables, LSP will provide completions
+            // LSP is actually running – suppress Insight's regex/semantic
             suggestions = new List<InsightSuggestion>();
             KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
         }
@@ -889,7 +885,7 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
             });
         }
 
-        // LSP completions (generic, Phase 7) – always tried when LSP available, even if Insight was skipped
+        // LSP completions (generic, Phase 7) – always tried when LSP
         try
         {
             var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix);

@@ -1319,7 +1319,7 @@ public partial class MainWindow
                 }
             }
 
-            // Ensure LSP dependencies for this extension (handles multiple LSPs, shared providers, auto-install)
+            // Ensure LSP dependencies for this extension (handles multiple
             var installedExt = GetPreferredLoadedExtension(marketplaceExtension.Id);
             if (installedExt != null && installedExt.HasLsp)
             {
@@ -1366,7 +1366,7 @@ public partial class MainWindow
                     continue; // already available
                 }
 
-                // Incompatible also considered not ready – try managed install if allowed
+                // Incompatible also considered not ready – try managed install
                 if (res.Source == LspServerSource.Incompatible)
                 {
                     if (res.CanInstall && cfg.AllowAutoInstall)
@@ -1467,8 +1467,7 @@ public partial class MainWindow
                 ExtensionsStatusText = $"LSP check failed for {cfg.EffectiveProviderId}: {ex.Message}";
             }
         }
-        // Keep extension installed even if LSP failed – do NOT uninstall extension (separates failures)
-        // Refresh registry consumers
+        // Keep extension installed even if LSP failed – do NOT uninstall
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
     }
 
@@ -1636,7 +1635,7 @@ public partial class MainWindow
 
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
 
-            // Update provider registry: remove this extension as consumer, keep shared LSPs
+            // Update provider registry: remove this extension as consumer,
             foreach (var pid in providerIds)
             {
                 LspProviderRegistry.UnregisterConsumer(pid, extension.Id);
@@ -1646,9 +1645,9 @@ public partial class MainWindow
                 }
                 else
                 {
-                    // No other consumers – prefer keeping unused provider rather than deleting (per spec)
+                    // No other consumers – prefer keeping unused provider rather
                     KodoDiagnostics.LogDebug($"LSP provider '{pid}' now has no consumers but is kept (no auto-cleanup).");
-                    // Do NOT auto-delete managed installation; user can clean via settings if needed
+                    // Do NOT auto-delete managed installation; user can clean via
                 }
             }
             LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);

@@ -36,3 +36,11 @@ public sealed record LspResolution(
         _ => LspDependencyStatus.Missing
     };
 }
+
+public enum InstallResultKind { Success, AlreadyInstalled, Failed, Cancelled, Offline, RuntimeMissing, NotInstallable }
+
+public sealed record InstallResult(InstallResultKind Kind, string? Message, string? InstalledPath);
+
+public sealed record RuntimeInfo(bool Found, string? Version, string? RawOutput, string? Error);
+
+internal sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source);

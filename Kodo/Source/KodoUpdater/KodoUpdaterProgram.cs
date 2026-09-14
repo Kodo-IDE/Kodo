@@ -1,8 +1,5 @@
 // Licensed under GPL-v3.0
-// One-shot update orchestrator. Lifecycle: Kodo writes a transaction file, launches this exe with the
-// transaction path + Kodo PID, then exits. This process waits for that exact PID, runs the staged
-// Inno installer, restarts Kodo if requested, cleans up, and exits. No polling, no resident loop,
-// no Task Scheduler, no named pipes.
+// One-shot update orchestrator. transaction path + Kodo PID, then exits.
 
 using System.Diagnostics;
 using System.Text.Json;
@@ -24,8 +21,7 @@ internal static class Program
     {
         Log($"KodoUpdater start args=[{string.Join(" ", args)}] pid={Environment.ProcessId}");
 
-        // Self-relocation: if running from {app} (Program Files\Kodo), copy to temp
-        // so Inno can overwrite {app}\KodoUpdater.exe during install while we wait.
+        // Self-relocation: if running from {app} (Program Files\Kodo),
         try
         {
             var selfPath = Environment.ProcessPath;
@@ -33,7 +29,7 @@ internal static class Program
             {
                 var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
                 var selfDir = Path.GetDirectoryName(Path.GetFullPath(selfPath))?.TrimEnd(Path.DirectorySeparatorChar) ?? "";
-                // If self is inside appDir (or Program Files\Kodo) and not already in temp
+                // If self is inside appDir (or Program Files\Kodo) and not
                 var isInApp = selfDir.Equals(appDir, StringComparison.OrdinalIgnoreCase)
                     || selfDir.EndsWith("Kodo", StringComparison.OrdinalIgnoreCase);
                 var isInTemp = selfPath.Contains(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)
@@ -65,13 +61,12 @@ internal static class Program
             return 2;
         }
 
-        // Support both quoted and unquoted path (Kodo may pass via ArgumentList)
+        // Support both quoted and unquoted path (Kodo may pass via
         var transactionPath = args[0].Trim().Trim('"');
         // If Kodo passed extra args (legacy), join them
         if (args.Length > 1)
             transactionPath = string.Join(" ", args).Trim().Trim('"');
 
-        // Duplicate-instance guard per transaction
         var mutexName = $"Global\\Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}";
         using var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
         if (!createdNew)
@@ -98,7 +93,6 @@ internal static class Program
 
     private static async Task<int> RunTransactionAsync(string transactionPath)
     {
-        // 1. Validate transaction
         if (!File.Exists(transactionPath))
         {
             Log($"Transaction not found: {transactionPath}");
@@ -125,7 +119,6 @@ internal static class Program
             return 5;
         }
 
-        // Stale check
         if (tx.CreatedAtUtc < DateTime.UtcNow.AddHours(-StaleTransactionHours))
         {
             Log($"Stale transaction {tx.TransactionId} created {tx.CreatedAtUtc:o} – discarding.");
@@ -159,7 +152,7 @@ internal static class Program
             try
             {
                 var proc = Process.GetProcessById(tx.KodoPid);
-                // Extra guard: PID reuse – if exe path mismatches, original Kodo is gone so skip wait
+                // Extra guard: PID reuse – if exe path mismatches, original Kodo
                 bool pidReused = false;
                 try
                 {
@@ -184,7 +177,7 @@ internal static class Program
                 else if (!proc.HasExited)
                 {
                     Log($"Waiting for Kodo PID {tx.KodoPid} to exit (timeout {PidWaitTimeoutSeconds}s)...");
-                    // WaitForExit with timeout, polling HasExited to handle PID reuse races
+                    // WaitForExit with timeout, polling HasExited to handle PID
                     var sw = Stopwatch.StartNew();
                     while (!proc.HasExited && sw.Elapsed.TotalSeconds < PidWaitTimeoutSeconds)
                     {
@@ -219,10 +212,9 @@ internal static class Program
             Log("No Kodo PID supplied – not waiting");
         }
 
-        // Small settle delay – let OS release file locks, no arbitrary Thread.Sleep elsewhere
+        // Small settle delay – let OS release file locks, no arbitrary
         await Task.Delay(800).ConfigureAwait(false);
 
-        // 3. Verify staged installer
         if (!File.Exists(tx.InstallerPath))
         {
             Log($"Installer not found: {tx.InstallerPath}");
@@ -238,8 +230,7 @@ internal static class Program
             return 9;
         }
 
-        // Optional: if transaction carries Sha256, validate (future pipeline may provide it)
-        // For now, existence + size is the gate; full hash check would require release pipeline change.
+        // Optional: if transaction carries Sha256, validate (future
 
         // 4. Launch Inno installer
         Log($"Launching installer: {tx.InstallerPath}");
@@ -299,15 +290,13 @@ internal static class Program
 
         // 6. Cleanup transaction
         TryDelete(transactionPath);
-        // Optionally delete installer staging file if inside our staging dir and update succeeded
+        // Optionally delete installer staging file if inside our staging
         TryDeleteIfInStaging(tx.InstallerPath);
 
-        // 7. Restart Kodo if requested
         if (tx.RestartAfterUpdate)
         {
             if (!File.Exists(tx.KodoExePath))
             {
-                // Fallback to default install location
                 var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Kodo", "Kodo.exe");
                 if (File.Exists(fallback)) tx = tx with { KodoExePath = fallback };
             }
