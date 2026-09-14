@@ -436,8 +436,10 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="6,2" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Template">
@@ -476,6 +478,42 @@
         </Style>
         <Style Selector="Button.statusitem:pressed">
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.statusitem.accented">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.statusitem.accented:pointerover /template/ Border#PART_Border">
+            <Setter Property="Opacity" Value="0.88" />
+        </Style>
+        <Style Selector="Border.statusDivider">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Height" Value="14" />
+            <Setter Property="Background" Value="{Binding MutedTextBrush}" />
+            <Setter Property="Opacity" Value="0.14" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="5,0" />
+        </Style>
+        <Style Selector="Border.statusBarRoot">
+            <Setter Property="Background" Value="{Binding TopBarBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,0,0" />
+        </Style>
+        <Style Selector="TextBlock.statusDim">
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.statusPrimary">
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Ellipse.dirtyDot">
+            <Setter Property="Width" Value="7" />
+            <Setter Property="Height" Value="7" />
+            <Setter Property="Fill" Value="{Binding AccentBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style Selector="Border.searchpanel">
@@ -2872,200 +2910,254 @@
                     </Grid>
                 </Border>
 
+                <!-- Overhauled editor status bar -->
                 <Border Grid.Row="5"
-                        Background="{Binding TopBarBrush}"
-                        BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,1,0,0"
-                        Padding="16,10"
+                        Classes="statusBarRoot"
+                        Padding="8,0"
+                        Height="30"
                         PointerPressed="StatusBar_OnPointerPressed">
-                    <Grid ColumnDefinitions="*,Auto">
-                         
-                        <TextBlock Grid.Column="0"
-                                   IsVisible="{Binding HasDocumentOpen}"
-                                   Foreground="{Binding MutedTextBrush}"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis"
-                                   Text="{Binding FilePathText}" />
-                         
-                        <TextBlock Grid.Column="0"
-                                   Foreground="{Binding MutedTextBrush}"
-                                   VerticalAlignment="Center"
-                                   Text="Welcome to Kodo!">
-                            <TextBlock.IsVisible>
-                                <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                    <Binding Path="!HasDocumentOpen" />
-                                    <Binding Path="!IsKodoBirthday" />
-                                </MultiBinding>
-                            </TextBlock.IsVisible>
-                        </TextBlock>
-                        
-                        <TextBlock Grid.Column="0"
-                                   Foreground="{Binding AccentBrush}"
-                                   VerticalAlignment="Center"
-                                   FontWeight="SemiBold"
-                                   Text="{Binding StatusBarBirthdayText}">
-                            <TextBlock.IsVisible>
-                                <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                    <Binding Path="!HasDocumentOpen" />
-                                    <Binding Path="IsKodoBirthday" />
-                                </MultiBinding>
-                            </TextBlock.IsVisible>
-                        </TextBlock>
-
-                        <StackPanel Grid.Column="1"
+                    <Grid ColumnDefinitions="Auto,*,Auto">
+                        <!-- Left: file context -->
+                        <StackPanel Grid.Column="0"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
-                                    Spacing="0">
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                    Spacing="6">
+                            <Ellipse Classes="dirtyDot"
+                                     IsVisible="{Binding IsDocumentDirty}"
+                                     ToolTip.Tip="Unsaved changes" />
+                            <Border IsVisible="{Binding HasDocumentOpen}"
+                                    Background="{Binding ButtonBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Padding="5,2"
+                                    VerticalAlignment="Center">
+                                <TextBlock Text="{Binding StatusBarFileIconText}"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding AccentBrush}"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                            <Button Classes="statusitem"
+                                    Click="StatusBarFilePathButton_OnClick"
+                                    IsVisible="{Binding HasDocumentOpen}"
+                                    ToolTip.Tip="{Binding StatusBarFilePathTooltip}"
+                                    VerticalAlignment="Center"
+                                    MaxWidth="440">
+                                <TextBlock Text="{Binding FilePathText}"
+                                           FontSize="11.5"
+                                           TextTrimming="CharacterEllipsis" />
+                            </Button>
+                            <TextBlock Classes="statusDim"
+                                       Text="Welcome to Kodo!"
+                                       VerticalAlignment="Center">
+                                <TextBlock.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="!HasDocumentOpen" />
+                                        <Binding Path="!IsKodoBirthday" />
+                                    </MultiBinding>
+                                </TextBlock.IsVisible>
+                            </TextBlock>
+                            <TextBlock Foreground="{Binding AccentBrush}"
+                                       FontWeight="SemiBold"
+                                       FontSize="11.5"
                                        VerticalAlignment="Center"
-                                       IsVisible="{Binding IsDocumentViewVisible}"
-                                       Text="{Binding LanguageDisplayText}" />
+                                       Text="{Binding StatusBarBirthdayText}">
+                                <TextBlock.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="!HasDocumentOpen" />
+                                        <Binding Path="IsKodoBirthday" />
+                                    </MultiBinding>
+                                </TextBlock.IsVisible>
+                            </TextBlock>
+                            <!-- Diagnostics summary centred left -->
+                            <Border Classes="statusDivider"
+                                    IsVisible="{Binding IsDocumentViewVisible}"
+                                    Margin="8,0,6,0" />
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="4"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding IsDocumentViewVisible}">
+                                <Viewbox Width="12" Height="12"
+                                         VerticalAlignment="Center"
+                                         IsVisible="{Binding HasDiagnostics}">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Fill="#E5484D"
+                                              Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
+                                    </Canvas>
+                                </Viewbox>
+                                <Button Classes="statusitem"
+                                        Padding="4,2"
+                                        Click="StatusBarDiagnosticsButton_OnClick"
+                                        ToolTip.Tip="{Binding StatusBarDiagnosticsTooltip}"
+                                        IsVisible="{Binding HasDiagnostics}"
+                                        VerticalAlignment="Center">
+                                    <TextBlock FontSize="11"
+                                               Foreground="#E5484D"
+                                               Text="{Binding StatusBarDiagnosticsText}" />
+                                </Button>
+                                <TextBlock Classes="statusDim"
+                                           FontSize="11"
+                                           Opacity="0.6"
+                                           Text="No problems"
+                                           IsVisible="{Binding !HasDiagnostics}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
 
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
+                        <!-- Spacer: keep right group pinned -->
+                        <Border Grid.Column="1" Background="Transparent" />
+
+                        <!-- Right: editor vitals + actions -->
+                        <StackPanel Grid.Column="2"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Center"
+                                    Spacing="2">
+                            <TextBlock Classes="statusDim"
                                        IsVisible="{Binding IsDocumentViewVisible}"
-                                       Text="|" />
+                                       Text="{Binding LanguageDisplayText}"
+                                       Margin="0,0,2,0" />
+                            <Border Classes="statusDivider"
+                                    IsVisible="{Binding IsDocumentViewVisible}" />
 
                             <Button Classes="statusitem"
-                                    VerticalAlignment="Center"
-                                    VerticalContentAlignment="Center"
-                                    ToolTip.Tip="File encoding"
-                                    Click="EncodingStatusBarButton_OnClick">
+                                    ToolTip.Tip="File encoding - click to change"
+                                    Click="EncodingStatusBarButton_OnClick"
+                                    VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsDocumentViewVisible" />
                                     </MultiBinding>
                                 </Button.IsVisible>
-                                <TextBlock FontSize="12"
-                                           Text="{Binding EncodingDisplayText}" />
+                                <TextBlock Text="{Binding EncodingDisplayText}" />
                             </Button>
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       Text="|">
-                                <TextBlock.IsVisible>
+                            <Border Classes="statusDivider">
+                                <Border.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsDocumentViewVisible" />
                                     </MultiBinding>
-                                </TextBlock.IsVisible>
-                            </TextBlock>
+                                </Border.IsVisible>
+                            </Border>
 
                             <Button Classes="statusitem"
-                                    VerticalAlignment="Center"
-                                    VerticalContentAlignment="Center"
-                                    ToolTip.Tip="Line ending"
-                                    Click="LineEndingStatusBarButton_OnClick">
+                                    ToolTip.Tip="Line ending - click to change"
+                                    Click="LineEndingStatusBarButton_OnClick"
+                                    VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsTextEditorVisible" />
                                     </MultiBinding>
                                 </Button.IsVisible>
-                                <TextBlock FontSize="12"
-                                           Text="{Binding LineEndingDisplayText}" />
+                                <TextBlock Text="{Binding LineEndingDisplayText}" />
                             </Button>
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       Text="|">
-                                <TextBlock.IsVisible>
+                            <Border Classes="statusDivider">
+                                <Border.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsTextEditorVisible" />
                                     </MultiBinding>
-                                </TextBlock.IsVisible>
-                            </TextBlock>
+                                </Border.IsVisible>
+                            </Border>
 
                             <Button Classes="statusitem"
-                                    VerticalAlignment="Center"
-                                    VerticalContentAlignment="Center"
-                                    ToolTip.Tip="Indentation (click to change)"
-                                    Click="IndentationStatusBarButton_OnClick">
+                                    ToolTip.Tip="Indentation - click to change"
+                                    Click="IndentationStatusBarButton_OnClick"
+                                    VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsTextEditorVisible" />
                                     </MultiBinding>
                                 </Button.IsVisible>
-                                <TextBlock FontSize="12"
-                                           Text="{Binding IndentationDisplayText}" />
+                                <TextBlock Text="{Binding IndentationDisplayText}" />
                             </Button>
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       Text="|">
-                                <TextBlock.IsVisible>
+                            <Border Classes="statusDivider">
+                                <Border.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
                                         <Binding Path="HasFileOpen" />
                                         <Binding Path="IsTextEditorVisible" />
                                     </MultiBinding>
-                                </TextBlock.IsVisible>
-                            </TextBlock>
+                                </Border.IsVisible>
+                            </Border>
 
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
+                            <TextBlock Classes="statusDim"
                                        IsVisible="{Binding IsWordCountVisible}"
-                                       Text="{Binding WordCountText}" />
-
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
+                                       Text="{Binding WordCountText}"
                                        VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       IsVisible="{Binding IsWordCountVisible}"
-                                       Text="|" />
+                                       Margin="2,0" />
+                            <Border Classes="statusDivider"
+                                    IsVisible="{Binding IsWordCountVisible}" />
 
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       IsVisible="{Binding IsDocumentViewVisible}"
-                                       Text="{Binding EditorStatsText}" />
+                            <!-- Caret / selection / doc summary -->
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="4"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding IsDocumentViewVisible}">
+                                <TextBlock Classes="statusDim"
+                                           Text="{Binding StatusBarCaretText}"
+                                           ToolTip.Tip="Cursor position"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Classes="statusDim"
+                                           Opacity="0.45"
+                                           Text="•"
+                                           IsVisible="{Binding HasSelection}"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Classes="statusDim"
+                                           IsVisible="{Binding HasSelection}"
+                                           Text="{Binding StatusBarSelectionText}"
+                                           Foreground="{Binding AccentBrush}"
+                                           VerticalAlignment="Center" />
+                                <Border Classes="statusDivider"
+                                        IsVisible="{Binding HasSelection}"
+                                        Margin="4,0" />
+                                <TextBlock Classes="statusDim"
+                                           Opacity="0.7"
+                                           Text="{Binding StatusBarDocumentText}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <Border Classes="statusDivider"
+                                    IsVisible="{Binding IsDocumentViewVisible}" />
 
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       IsVisible="{Binding IsDocumentViewVisible}"
-                                       Text="|" />
-
-                            
                             <Button Classes="statusitem"
-                                    VerticalAlignment="Center"
                                     Click="ToggleTerminalButton_OnClick"
-                                    ToolTip.Tip="{Binding ToggleTerminalTooltip}">
-                                <TextBlock FontSize="12"
-                                           Text="{Binding TerminalStatusBarText}" />
+                                    ToolTip.Tip="{Binding ToggleTerminalTooltip}"
+                                    VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="5"
+                                            VerticalAlignment="Center">
+                                    <Ellipse Width="6" Height="6"
+                                             VerticalAlignment="Center"
+                                             Fill="{Binding AccentBrush}"
+                                             IsVisible="{Binding HasTerminalSessions}" />
+                                    <Viewbox Width="12" Height="12"
+                                             VerticalAlignment="Center"
+                                             Opacity="0.85">
+                                        <Canvas Width="24" Height="24">
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="M20 6a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V6ZM5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 5.5 3 2.5-3 2.5-.75-.9 2-1.6-2-1.6.75-.9Zm6 4.5h3v1h-3v-1Z" />
+                                        </Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="{Binding TerminalStatusBarText}" />
+                                </StackPanel>
                             </Button>
 
-                            <TextBlock Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
-                                       Opacity="0.4"
-                                       Margin="8,0"
-                                       IsVisible="{Binding CanShowFindInFile}"
-                                       Text="|" />
-
-                            <Button x:Name="SearchMenuButton"
-                                    Background="Transparent"
+                            <Border Classes="statusDivider"
+                                    IsVisible="{Binding CanShowFindInFile}" />
+                            <Button Background="Transparent"
                                     BorderThickness="0"
                                     Foreground="{Binding MutedTextBrush}"
-                                    Padding="4,0"
+                                    Padding="6,3"
+                                    CornerRadius="6"
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding CanShowFindInFile}"
                                     ToolTip.Tip="{Binding FindInFileTooltip}"
                                     Click="OpenSearchMenu_OnClick">
-                                <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                <Viewbox Width="13" Height="13" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
-                                        <Path Fill="{Binding AccentBrush}"
-                                              Opacity="0.9"
+                                        <Path Fill="{Binding $parent[Button].Foreground}"
                                               Data="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" />
                                     </Canvas>
                                 </Viewbox>

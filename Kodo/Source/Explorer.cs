@@ -178,6 +178,7 @@ public partial class MainWindow
         _currentFilePath = tab.IsUntitled ? null : tab.Path;
         _hasUntitledDocument = tab.IsUntitled;
         _isDirty = tab.IsDirty;
+        OnPropertyChanged(nameof(IsDocumentDirty));
         _currentLineEnding = tab.LineEnding;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
@@ -251,6 +252,7 @@ public partial class MainWindow
         _currentFilePath = null;
         _hasUntitledDocument = false;
         _isDirty = false;
+        OnPropertyChanged(nameof(IsDocumentDirty));
         CurrentLanguageExtension = null;
         CurrentImagePreview = null;
         SetFileCorrupted(false);

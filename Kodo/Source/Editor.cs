@@ -508,6 +508,7 @@ public partial class MainWindow
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
         _isDirty = true;
+        OnPropertyChanged(nameof(IsDocumentDirty));
         if (ActiveEditorTab is not null)
         {
             ActiveEditorTab.IsDirty = true;
@@ -981,6 +982,7 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         if (spans.Count != rawSpans.Count)
             HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.Redraw();
+        RefreshStatusBarDiagnostics();
     }
 
     private List<DeadCodeSpan> FilterDismissedDeadCodeSpans(List<DeadCodeSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)

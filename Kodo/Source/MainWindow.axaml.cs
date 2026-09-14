@@ -220,6 +220,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _requestedThemeName = "Dark";
     private string _editorStatsText = "0 lines";
     private string _wordCountText = string.Empty;
+    private string _statusBarCaretText = string.Empty;
+    private string _statusBarSelectionText = string.Empty;
+    private string _statusBarDocumentText = string.Empty;
+    private string _statusBarDiagnosticsText = "No problems";
+    private string _statusBarDiagnosticsTooltip = "No problems detected";
     private bool _pendingFullStateRefresh = true;
     private string _lastDiscordPresenceDetails = string.Empty;
     private string _lastDiscordPresenceState = string.Empty;
@@ -4081,6 +4086,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsWordCountVisible =>
         IsTextEditorVisible && IsPlainTextFile(_currentFilePath);
 
+    public bool IsDocumentDirty => _isDirty;
+
+    public string StatusBarFileIconText
+    {
+        get
+        {
+            if (!HasDocumentOpen || string.IsNullOrWhiteSpace(_currentFilePath))
+                return "..";
+            return Kodo.Models.FileTreeItem.GetFileIcon(Path.GetFileName(_currentFilePath) ?? string.Empty);
+        }
+    }
+
+    public string StatusBarFilePathTooltip => _currentFilePath ?? "No file open";
+
+    public string StatusBarCaretText
+    {
+        get => _statusBarCaretText;
+        private set { if (_statusBarCaretText == value) return; _statusBarCaretText = value; OnPropertyChanged(); }
+    }
+
+    public string StatusBarSelectionText
+    {
+        get => _statusBarSelectionText;
+        private set { if (_statusBarSelectionText == value) return; _statusBarSelectionText = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasSelection)); }
+    }
+
+    public string StatusBarDocumentText
+    {
+        get => _statusBarDocumentText;
+        private set { if (_statusBarDocumentText == value) return; _statusBarDocumentText = value; OnPropertyChanged(); }
+    }
+
+    public bool HasSelection => !string.IsNullOrWhiteSpace(_statusBarSelectionText);
+
+    public string StatusBarDiagnosticsText
+    {
+        get => _statusBarDiagnosticsText;
+        private set { if (_statusBarDiagnosticsText == value) return; _statusBarDiagnosticsText = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasDiagnostics)); }
+    }
+
+    public string StatusBarDiagnosticsTooltip
+    {
+        get => _statusBarDiagnosticsTooltip;
+        private set { if (_statusBarDiagnosticsTooltip == value) return; _statusBarDiagnosticsTooltip = value; OnPropertyChanged(); }
+    }
+
+    public bool HasDiagnostics => StatusBarDiagnosticsText != "No problems" && !string.IsNullOrWhiteSpace(StatusBarDiagnosticsText);
+
     public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
     public IBrush TopBarBrush { get; private set; } = Brush.Parse("#181818");
     public IBrush SidebarBrush { get; private set; } = Brush.Parse("#181818");
@@ -4222,6 +4275,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (CurrentImagePreview is not null)
             {
                 EditorStatsText = $"{CurrentImagePreview.PixelSize.Width} x {CurrentImagePreview.PixelSize.Height}px";
+                StatusBarCaretText = $"{CurrentImagePreview.PixelSize.Width}×{CurrentImagePreview.PixelSize.Height}";
+                StatusBarSelectionText = string.Empty;
+                StatusBarDocumentText = "Image";
             }
             else
             {
@@ -4261,6 +4317,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         selText = $"{selChars} {charWord} selected";
                     }
                     EditorStatsText = $"{selText}  |  {lines} lines  |  {characters} characters";
+                    var caret = EditorTextBox?.TextArea?.Caret;
+                    StatusBarCaretText = $"Ln {caret?.Line ?? 1}, Col {caret?.Column ?? 1}";
+                    StatusBarSelectionText = selText;
+                    StatusBarDocumentText = $"{lines} lines • {characters} chars";
                 }
                 else
                 {
@@ -4268,19 +4328,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var ln = caret?.Line ?? 1;
                     var col = caret?.Column ?? 1;
                     EditorStatsText = $"Ln {ln}, Col {col}  |  {lines} lines  |  {characters} characters";
+                    StatusBarCaretText = $"Ln {ln}, Col {col}";
+                    StatusBarSelectionText = string.Empty;
+                    StatusBarDocumentText = $"{lines} lines • {characters} chars";
                 }
             }
         }
         else
         {
             EditorStatsText = string.Empty;
+            StatusBarCaretText = string.Empty;
+            StatusBarSelectionText = string.Empty;
+            StatusBarDocumentText = string.Empty;
         }
+    }
+
+    private void RefreshStatusBarDiagnostics()
+    {
+        var errors = _errorHighlightRenderer.Spans.Count(s => string.Equals(s.Severity, "error", StringComparison.OrdinalIgnoreCase));
+        var warnings = _errorHighlightRenderer.Spans.Count(s => string.Equals(s.Severity, "warning", StringComparison.OrdinalIgnoreCase));
+        var infos = _errorHighlightRenderer.Spans.Count - errors - warnings;
+        var dead = _deadCodeHighlightRenderer.Spans.Count;
+
+        if (errors == 0 && warnings == 0 && infos == 0 && dead == 0)
+        {
+            StatusBarDiagnosticsText = "No problems";
+            StatusBarDiagnosticsTooltip = "No problems detected by Insight";
+            return;
+        }
+
+        var parts = new List<string>();
+        if (errors > 0) parts.Add($"{errors} error{(errors == 1 ? "" : "s")}");
+        if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")}");
+        if (infos > 0) parts.Add($"{infos} info");
+        if (dead > 0) parts.Add($"{dead} unused");
+
+        StatusBarDiagnosticsText = string.Join(" • ", parts);
+        StatusBarDiagnosticsTooltip = string.Join(Environment.NewLine, parts.Select(p => $"• {p}"));
     }
 
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty), nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection), nameof(StatusBarDiagnosticsText), nameof(StatusBarDiagnosticsTooltip), nameof(HasDiagnostics), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
         UpdateDiscordPresence();
     }
 
@@ -5205,6 +5295,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (ReferenceEquals(ActiveEditorTab, savingTab))
             {
                 _isDirty = false;
+                OnPropertyChanged(nameof(IsDocumentDirty));
                 RefreshCurrentFileSyntaxHighlighting();
             }
             AddRecentFile(savingPath);
@@ -5710,6 +5801,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void StatusBar_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         e.Handled = true;
+    }
+
+    private async void StatusBarFilePathButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        try
+        {
+            await TopLevel.GetTopLevel(this)?.Clipboard?.SetTextAsync(_currentFilePath)!;
+        }
+        catch { }
+    }
+
+    private void StatusBarDiagnosticsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var firstError = _errorHighlightRenderer.Spans.FirstOrDefault();
+        var firstDead = _deadCodeHighlightRenderer.Spans.FirstOrDefault();
+        var targetOffset = -1;
+        if (firstError is not null) targetOffset = firstError.StartOffset;
+        else if (firstDead is not null) targetOffset = firstDead.StartOffset;
+        if (targetOffset < 0) return;
+        try
+        {
+            EditorTextBox.TextArea.Caret.Offset = Math.Clamp(targetOffset, 0, EditorTextBox.Document.TextLength);
+            EditorTextBox.TextArea.Caret.BringCaretToView();
+            EditorTextBox.Focus();
+        }
+        catch { }
     }
 
     private void CloseAllTerminalSessionsButton_OnClick(object? sender, RoutedEventArgs e)
@@ -7471,6 +7590,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ActiveEditorTab.IsDirty = false;
             }
             _isDirty = false;
+            OnPropertyChanged(nameof(IsDocumentDirty));
             OnPropertyChanged(nameof(LineEndingDisplayText));
             OnPropertyChanged(nameof(IsLineEndingVisible));
         }
@@ -7853,6 +7973,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, emptyDead);
         EditorTextBox?.TextArea.TextView.Redraw();
+        RefreshStatusBarDiagnostics();
     }
 
     private async Task UpdateErrorHighlightingAsync()
@@ -8024,6 +8145,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 catch { }
             }, DispatcherPriority.Background);
         }
+        RefreshStatusBarDiagnostics();
     }
 
     private List<ErrorSpan> FilterDismissedErrorSpans(List<ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
@@ -8053,6 +8175,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorHighlightRenderer.SetDeadCodeSpans(emptyDead);
         _errorTextDarkener.SetSpans(emptyErr, emptyDead);
         EditorTextBox?.TextArea.TextView.Redraw();
+        RefreshStatusBarDiagnostics();
     }
 
     private const double InsightRowHeight = 32d;
