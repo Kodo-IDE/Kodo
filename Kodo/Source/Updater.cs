@@ -737,8 +737,7 @@ internal sealed class AppUpdateScheduler
     private async Task OnTickAsync()
     {
         if (!_isEnabled() || _isManualCheckInProgress()) return;
-        if (_installInBackground()) return;
-        try { await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false).ConfigureAwait(true); }
+        try { await UpdateService.CheckAndHandleUpdateAsync(installInBackground: _installInBackground()).ConfigureAwait(true); }
         catch (Exception ex) { KodoDiagnostics.LogDebug("Periodic app update check failed", ex); }
     }
 }
