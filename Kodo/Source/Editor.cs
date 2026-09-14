@@ -448,7 +448,7 @@ public partial class MainWindow
 
     private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
     {
-        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled)
+        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsErrorDeadCodeBlacklisted(_currentFilePath))
             return null;
 
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -472,7 +472,7 @@ public partial class MainWindow
 
     private string? GetDeadCodeReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
     {
-        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled)
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled || IsErrorDeadCodeBlacklisted(_currentFilePath))
             return null;
 
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -956,7 +956,8 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
             HasNoFileExtension(_currentFilePath) ||
-            IsInsightBlacklisted(_currentFilePath))
+            IsInsightBlacklisted(_currentFilePath) ||
+            IsErrorDeadCodeBlacklisted(_currentFilePath))
         {
             ClearDeadCodeHighlighting();
             HideDiagnosticPopup();

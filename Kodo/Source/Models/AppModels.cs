@@ -24,6 +24,7 @@ internal sealed class AppSettings
     public bool InsightDeadCodeEnabled { get; set; } = true;
     public bool InsightErrorDetectionEnabled { get; set; } = true;
     public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
+    public string InsightErrorDeadCodeBlacklistExtensions { get; set; } = string.Empty;
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool CodePredictEnabled

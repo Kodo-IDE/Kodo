@@ -198,6 +198,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isInsightErrorDetectionEnabled = true;
     private string _insightBlacklistExtensions = ".txt,.md";
     private HashSet<string> _insightBlacklistSet = new(StringComparer.OrdinalIgnoreCase) { ".txt", ".md" };
+    private string _insightErrorDeadCodeBlacklistExtensions = string.Empty;
+    private HashSet<string> _insightErrorDeadCodeBlacklistSet = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _dismissedDiagnostics = new(StringComparer.Ordinal);
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
@@ -827,6 +829,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isInsightErrorDetectionEnabled = settings.InsightErrorDetectionEnabled;
         _insightBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightBlacklistExtensions) ? ".txt,.md" : settings.InsightBlacklistExtensions;
         RebuildInsightBlacklist();
+        _insightErrorDeadCodeBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightErrorDeadCodeBlacklistExtensions) ? string.Empty : settings.InsightErrorDeadCodeBlacklistExtensions;
+        RebuildErrorDeadCodeBlacklist();
         _dismissedDiagnostics = new HashSet<string>(settings.DismissedDiagnostics ?? new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
@@ -2896,6 +2900,37 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return !string.IsNullOrEmpty(ext) && _insightBlacklistSet.Contains(ext);
     }
 
+    public string InsightErrorDeadCodeBlacklistExtensions
+    {
+        get => _insightErrorDeadCodeBlacklistExtensions;
+        set
+        {
+            if (_insightErrorDeadCodeBlacklistExtensions == value) return;
+            _insightErrorDeadCodeBlacklistExtensions = value;
+            RebuildErrorDeadCodeBlacklist();
+            OnPropertyChanged();
+            SaveSettings();
+            QueueInsightRefresh();
+        }
+    }
+
+    private void RebuildErrorDeadCodeBlacklist()
+    {
+        _insightErrorDeadCodeBlacklistSet.Clear();
+        foreach (var part in _insightErrorDeadCodeBlacklistExtensions.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var ext = part.StartsWith('.') ? part : "." + part;
+            _insightErrorDeadCodeBlacklistSet.Add(ext);
+        }
+    }
+
+    private bool IsErrorDeadCodeBlacklisted(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return false;
+        var ext = Path.GetExtension(filePath);
+        return !string.IsNullOrEmpty(ext) && _insightErrorDeadCodeBlacklistSet.Contains(ext);
+    }
+
     private string GetDiagnosticSignature(string? filePath, string lineText, string message) =>
         $"{filePath ?? string.Empty}|{lineText.Trim()}|{message}";
 
@@ -4820,7 +4855,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             InsightCodeSuggestionsEnabled = IsInsightCodeSuggestionsEnabled,
             InsightDeadCodeEnabled = IsInsightDeadCodeEnabled,
             InsightErrorDetectionEnabled = IsInsightErrorDetectionEnabled,
-            InsightBlacklistExtensions = InsightBlacklistExtensions,
+             InsightBlacklistExtensions = InsightBlacklistExtensions,
+             InsightErrorDeadCodeBlacklistExtensions = InsightErrorDeadCodeBlacklistExtensions,
             DismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
             TabSize = TabSize,
             InsertSpaces = InsertSpaces,
@@ -7984,7 +8020,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
             HasNoFileExtension(_currentFilePath) ||
-            IsInsightBlacklisted(_currentFilePath))
+            IsInsightBlacklisted(_currentFilePath) ||
+            IsErrorDeadCodeBlacklisted(_currentFilePath))
         {
             ClearErrorHighlighting();
             HideDiagnosticPopup();

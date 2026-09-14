@@ -5578,6 +5578,20 @@
                                              FontSize="13"
                                              PlaceholderText=".txt,.md" />
                                 </StackPanel>
+                                <StackPanel Spacing="6">
+                                    <TextBlock FontSize="12"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Text="Error &amp; Dead Code Blacklist (comma-separated extensions):" />
+                                    <TextBox Text="{Binding InsightErrorDeadCodeBlacklistExtensions, Mode=TwoWay}"
+                                             Foreground="{Binding PrimaryTextBrush}"
+                                             Background="{Binding ButtonBrush}"
+                                             BorderBrush="{Binding SurfaceBorderBrush}"
+                                             BorderThickness="1"
+                                             CornerRadius="6"
+                                             Padding="8,6"
+                                             FontSize="13"
+                                             PlaceholderText=".cs,.cpp" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
