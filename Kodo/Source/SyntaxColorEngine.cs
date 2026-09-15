@@ -1032,6 +1032,9 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
+        // Skip rainbow brackets on large files (>80k) to avoid immense lag.
+        if (document.TextLength > 80_000)
+            return;
 
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);

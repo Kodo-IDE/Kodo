@@ -5541,10 +5541,17 @@
                                                 Foreground="{Binding PrimaryTextBrush}"
                                                 ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code. Experimental, please always double-check if it is correct"
                                                 Content="Dead Code (Experimental)" />
-                                     <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
-                                                Foreground="{Binding PrimaryTextBrush}"
-                                                ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
-                                                Content="Error Detection (Experimental)" />
+                                     <StackPanel Spacing="2">
+                                          <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
+                                                    Foreground="{Binding PrimaryTextBrush}"
+                                                    ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
+                                                    Content="Error Detection (Experimental) — LSP still active" />
+                                          <TextBlock Margin="24,0,0,0"
+                                                     FontSize="11"
+                                                     Foreground="{Binding MutedTextBrush}"
+                                                     TextWrapping="Wrap"
+                                                     Text="Does not disable language server (LSP) diagnostics — LSP errors will still be shown." />
+                                      </StackPanel>
                                      <Border Background="{Binding CardBrush}"
                                               BorderBrush="{Binding AccentBrush}"
                                               BorderThickness="1"

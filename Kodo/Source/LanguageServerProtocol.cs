@@ -1038,6 +1038,20 @@ public partial class MainWindow
             _lspPendingOpens.Add(filePath);
         }
 
+        // Avoid lag spike on large files: yield to let editor render first, defer heavy MSBuild/LSP init.
+        var isLargeFileForLsp = content.Length > 120_000;
+        if (isLargeFileForLsp)
+        {
+            try { await Task.Delay(500).ConfigureAwait(false); } catch { }
+            // If user switched away, still continue but at background priority – don't block UI.
+            await Task.Yield();
+        }
+        else
+        {
+            // Small cooperative yield so file open isn't blocked by LSP resolve/start.
+            await Task.Yield();
+        }
+
         // Centralized resolution: managed -> system -> installable
         var settings = BuildLspResolverSettings();
         var resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);

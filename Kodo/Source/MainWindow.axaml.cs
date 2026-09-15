@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+﻿// Licensed under GPL-v3.0
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -2779,11 +2779,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isInsightEnabled == value) return;
             _isInsightEnabled = value;
             OnPropertyChanged();
+            lock (_insightAnalysisCacheLock)
+            {
+                _cachedInsightAnalysisVersion = -1;
+                _cachedInsightAnalysisText = null;
+            }
             if (!_isInsightEnabled)
             {
                 CloseCompletionWindow();
                 ClearDeadCodeHighlighting();
                 ClearErrorHighlighting();
+            }
+            else
+            {
+                QueueInsightRefresh();
             }
             SaveSettings();
         }
@@ -2831,9 +2840,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isInsightErrorDetectionEnabled == value) return;
             _isInsightErrorDetectionEnabled = value;
             OnPropertyChanged();
+            lock (_insightAnalysisCacheLock)
+            {
+                _cachedInsightAnalysisVersion = -1;
+                _cachedInsightAnalysisText = null;
+            }
             if (!_isInsightErrorDetectionEnabled)
             {
                 ClearErrorHighlighting();
+                // Force refresh so LSP-only diagnostics are shown immediately without stale cache.
+                QueueInsightRefresh();
             }
             else
             {
@@ -8063,11 +8079,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                if (isLspPrimary)
+                var insightDisabled = !IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsInsightBlacklisted(_currentFilePath) || IsErrorDeadCodeBlacklisted(_currentFilePath);
+                var isLargeFile = text.Length > 120_000;
+                if (isLspPrimary || insightDisabled || isLargeFile)
                 {
-                    // LSP is authoritative only when actually running – otherwise
+                    // LSP is authoritative only when actually running – otherwise respect user disabling Insight
+                    // For large files (>120k chars) skip heavy Insight & avoid UI jank; LSP will provide diagnostics async.
                     rawSpans = new List<ErrorSpan>();
-                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped (LSP primary for {lspForFile?.Id}, initialized={isLspPrimary})");
+                    var reason = isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : insightDisabled ? "Insight disabled by setting/blacklist" : $"large file len={text.Length}";
+                    KodoDiagnostics.LogDebug($"Insight diagnostics skipped ({reason}, initialized={isLspPrimary})");
                 }
                 else
                 {
@@ -8076,12 +8096,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         scanToken);
                     KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count} hasConfiguredLsp={hasConfiguredLsp}");
                 }
-                var externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
-                    languageExtension,
-                    _currentFilePath,
-                    text,
-                    scanToken);
-                KodoDiagnostics.LogDebug($"External diagnostics: extension={languageExtension?.Id ?? "<none>"}, tools={languageExtension?.ExternalTools.Count ?? 0}, results={externalDiagnostics.Count}");
+                IReadOnlyList<ExternalToolDiagnostic> externalDiagnostics;
+                if (isLargeFile || isLspPrimary || insightDisabled)
+                {
+                    externalDiagnostics = Array.Empty<ExternalToolDiagnostic>();
+                    var skipReason = isLargeFile ? $"large file len={text.Length}" : isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : "Insight disabled";
+                    KodoDiagnostics.LogDebug($"External diagnostics skipped ({skipReason})");
+                }
+                else
+                {
+                    externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
+                        languageExtension,
+                        _currentFilePath,
+                        text,
+                        scanToken);
+                    KodoDiagnostics.LogDebug($"External diagnostics: extension={languageExtension?.Id ?? "<none>"}, tools={languageExtension?.ExternalTools.Count ?? 0}, results={externalDiagnostics.Count}");
+                }
                 foreach (var diagnostic in externalDiagnostics)
                 {
                     if (diagnostic.Start < 0 || diagnostic.Start >= text.Length || string.IsNullOrWhiteSpace(diagnostic.Message))

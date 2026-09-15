@@ -823,6 +823,12 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         var doc = EditorTextBox.Document;
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
         var text = doc.Text;
+        // Avoid lag on large files – completion uses heavy ScanDocument.
+        if (text.Length > 80_000)
+        {
+            CloseCompletionWindow();
+            return;
+        }
 
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
@@ -949,7 +955,7 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         _completionWindow = null;
     }
 
-    private async Task UpdateDeadCodeHighlightingAsync()
+     private async Task UpdateDeadCodeHighlightingAsync()
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
             EditorTextBox?.Document is null ||
@@ -965,6 +971,13 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         }
 
         var text = EditorTextBox.Document.Text;
+        // Avoid immense lag on large files (>80k) – dead code scan is O(n) regex heavy.
+        if (text.Length > 80_000)
+        {
+            ClearDeadCodeHighlighting();
+            HideDiagnosticPopup();
+            return;
+        }
         var languageExtension = CurrentLanguageExtension;
         var folderPath = _currentFolderPath;
         var filePath = _currentFilePath;
@@ -1318,6 +1331,7 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
     {
         try
         {
+            doc.UndoStack.StartUndoGroup();
             if (selection is null || selection.IsEmpty)
             {
                 var line = doc.GetLineByOffset(caret.Offset);
@@ -1327,9 +1341,7 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                 if (removable <= 0)
                     return;
 
-                var outdentedText = lineText.TrimStart();
-                doc.Replace(line.Offset, line.Length, outdentedText);
-
+                doc.Remove(line.Offset, removable);
                 SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
                 return;
             }
@@ -1339,13 +1351,20 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                 return;
 
             var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-            var linesText = lines.OrderByDescending(l => l.Offset)
-                .Select(l => doc.GetText(l).TrimStart());
-            var replacedText = string.Join(Environment.NewLine, linesText);
+            // Remove exactly one indent level per line, from bottom to top to keep offsets stable
+            var totalRemoved = 0;
+            foreach (var line in lines.OrderByDescending(l => l.Offset))
+            {
+                var lineText = doc.GetText(line);
+                var removable = GetOutdentLength(lineText, lineText.Length);
+                if (removable <= 0)
+                    continue;
+                doc.Remove(line.Offset, removable);
+                totalRemoved += removable;
+            }
 
-            doc.Replace(segment, replacedText);
-
-            SetCaretOffsetSafely(caret, doc, Math.Max(segment.Offset, segment.EndOffset - lines.Count));
+            // Keep caret at start of original selection
+            SetCaretOffsetSafely(caret, doc, segment.Offset);
         }
         catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
@@ -1354,6 +1373,10 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
             {
                 try { HandleOutdent(doc, selection, caret); } catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+        finally
+        {
+            try { doc.UndoStack.EndUndoGroup(); } catch { }
         }
     }
 
