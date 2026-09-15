@@ -1032,9 +1032,21 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
-        // Skip rainbow brackets on large files (>80k) to avoid immense lag.
-        if (document.TextLength > 80_000)
-            return;
+        // Philosophy 1: only render what user can see. For large files, skip off-screen lines.
+        if (document.TextLength > 30_000)
+        {
+            var tv = CurrentContext.TextView;
+            if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
+            {
+                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                const int buffer = 80;
+                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                    return;
+            }
+            if (document.TextLength > 80_000)
+                return;
+        }
 
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
@@ -1477,6 +1489,18 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
+        if (document.TextLength > 30_000)
+        {
+            var tv = CurrentContext.TextView;
+            if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
+            {
+                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                const int buffer = 80;
+                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                    return;
+            }
+        }
 
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
         var lineState = snapshot.GetLineState(line.LineNumber);
@@ -2125,6 +2149,18 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null)
             return;
+        if (document.TextLength > 30_000)
+        {
+            var tv = CurrentContext.TextView;
+            if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
+            {
+                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                const int buffer = 80;
+                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                    return;
+            }
+        }
 
         var text = document.GetText(line.Offset, line.Length);
         var state = (_snapshot ??= BuildSnapshot(document.Text ?? string.Empty)).GetLineState(line.LineNumber);
@@ -2862,6 +2898,18 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
+        if (document.TextLength > 30_000)
+        {
+            var tv = CurrentContext.TextView;
+            if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
+            {
+                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                const int buffer = 80;
+                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                    return;
+            }
+        }
 
         var text = document.GetText(line.Offset, line.Length);
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);

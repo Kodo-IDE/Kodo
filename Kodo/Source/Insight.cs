@@ -134,10 +134,19 @@ public sealed class InsightEngine
         return new string(chars);
     }
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int hash, string masked)> _maskedCache = new(StringComparer.Ordinal);
     private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
     {
         if (string.IsNullOrEmpty(documentText))
             return documentText;
+
+        // Do Less: cache masked doc per extension+text hash to avoid triple build per tick
+        var extKey = extension?.Id ?? "plain";
+        var hash = documentText.Length ^ documentText.GetHashCode() ^ extKey.GetHashCode();
+        var cacheKey = extKey + "|" + documentText.Length;
+        // Quick check - use length+hash as key to avoid storing full text
+        if (_maskedCache.TryGetValue(cacheKey, out var cached) && cached.hash == hash)
+            return cached.masked;
 
         var commentLine = extension?.CommentLine is { Length: > 0 } cl ? cl : "//";
         var blockStart = extension?.CommentBlockStart is { Length: > 0 } bs ? bs : "/*";
@@ -375,7 +384,11 @@ public sealed class InsightEngine
             }
         }
 
-        return new string(masked);
+        var result = new string(masked);
+        _maskedCache[cacheKey] = (hash, result);
+        // Bounded cache
+        if (_maskedCache.Count > 32) { foreach (var k in new System.Collections.Generic.List<string>(_maskedCache.Keys)) { if (_maskedCache.Count <= 24) break; _maskedCache.TryRemove(k, out _); } }
+        return result;
     }
 
     private static readonly Dictionary<string, (DateTime mtime, string? masked)> _folderMaskCache = new(StringComparer.OrdinalIgnoreCase);
@@ -686,13 +699,15 @@ public sealed class InsightEngine
         if (!string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(currentFilePath) && System.IO.Directory.Exists(folderPath))
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
 
-        int CountWholeWord(string name)
-        {
-            var count = Regex.Matches(maskedDoc, $@"\b{Regex.Escape(name)}\b").Count;
-            if (folderMaskedText is not null)
-                count += Regex.Matches(folderMaskedText, $@"\b{Regex.Escape(name)}\b").Count;
-            return count;
-        }
+        // Do Less: single-pass word frequency instead of regex per variable (was O(vars * docLength))
+        var wordFreq = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (Match m in Regex.Matches(maskedDoc, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
+            wordFreq[m.Value] = wordFreq.TryGetValue(m.Value, out var c) ? c + 1 : 1;
+        if (folderMaskedText is not null)
+            foreach (Match m in Regex.Matches(folderMaskedText, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
+                wordFreq[m.Value] = wordFreq.TryGetValue(m.Value, out var c) ? c + 1 : 1;
+
+        int CountWholeWord(string name) => wordFreq.TryGetValue(name, out var cnt) ? cnt : 0;
 
         var depthAtLine = new int[lines.Length];
         var parenDepthAtLine = new int[lines.Length];
@@ -917,7 +932,7 @@ public sealed class InsightEngine
             }
         }
         return spans
-            .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant()))
+            .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), Message: span.Message.Trim().ToLowerInvariant(), span.Code))
             .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
             .ToList();
     }

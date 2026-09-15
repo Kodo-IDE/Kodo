@@ -33,6 +33,18 @@ public partial class MainWindow
 
     private void QueueInsightRefresh()
     {
+        var len = EditorTextBox?.Document?.TextLength ?? 0;
+        var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
+        // For large LSP files, throttle insight to avoid lag - LSP provides diagnostics
+        if (hasLsp && len > 80_000)
+        {
+            // Increase interval and skip dead-code/insight completion for huge files
+            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(len > 120_000 ? 2000 : 1200);
+        }
+        else
+        {
+            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(750);
+        }
         _InsightRefreshTimer.Stop();
         _InsightRefreshTimer.Start();
     }
@@ -188,7 +200,9 @@ public partial class MainWindow
         }
         else if (diagnosticMessage is not null)
         {
-            ToolTip.SetTip(textView, null);
+            // Ensure tooltip appears even if DiagnosticPopup is delayed/clipped - every underline must have hover feedback
+            ToolTip.SetTip(textView, diagnosticMessage);
+            ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             DiagnosticPopup.PlacementTarget = textView;
 
@@ -448,7 +462,10 @@ public partial class MainWindow
 
     private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
     {
-        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsErrorDeadCodeBlacklisted(_currentFilePath))
+        if (IsErrorDeadCodeBlacklisted(_currentFilePath))
+            return null;
+
+        if (_errorHighlightRenderer.Spans.Count == 0)
             return null;
 
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -462,7 +479,21 @@ public partial class MainWindow
             var line = doc.GetLineByNumber(ln);
             var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
             var offset = line.Offset + colOffset;
-            return _errorHighlightRenderer.GetMessageAt(offset);
+            var msg = _errorHighlightRenderer.GetMessageAt(offset);
+            if (msg is not null) return msg;
+            // Precise EOL fallback: missing semicolon at EndOffset underlines last 4 chars.
+            // Only fallback to line-level if hover is near EOL and line actually has EOL span.
+            bool hasEolSpanOnLine = false;
+            foreach (var span in _errorHighlightRenderer.Spans)
+            {
+                if (span.StartOffset >= line.EndOffset && span.StartOffset <= line.EndOffset + 1 && span.StartOffset + Math.Max(1, span.Length) > line.Offset)
+                { hasEolSpanOnLine = true; break; }
+                if (span.StartOffset <= line.EndOffset && span.StartOffset + Math.Max(1, span.Length) > line.Offset && span.StartOffset >= line.EndOffset - 4)
+                { /* span overlaps last few chars */ hasEolSpanOnLine = true; break; }
+            }
+            if (hasEolSpanOnLine && colOffset >= Math.Max(0, line.Length - 4))
+                return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+            return null;
         }
         catch
         {
@@ -500,6 +531,11 @@ public partial class MainWindow
         _insightAnalysisCancellation.Dispose();
         _insightAnalysisCancellation = new CancellationTokenSource();
         HideDiagnosticPopup();
+        // Adaptive debounce: huge LSP files get longer debounce to avoid UI churn
+        var curLen = EditorTextBox?.Document?.TextLength ?? 0;
+        if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
+        else if (curLen > 80_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
+        else _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(150);
         _syntaxHighlightDebounceTimer.Stop();
         _syntaxHighlightDebounceTimer.Start();
         if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
@@ -527,6 +563,28 @@ public partial class MainWindow
     private void SyntaxHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _syntaxHighlightDebounceTimer.Stop();
+        var len = EditorTextBox?.Document?.TextLength ?? 0;
+        // For very large LSP files, skip heavy colorizers and throttle redraws
+        if (len > 80_000)
+        {
+            // Rainbow brackets already no-ops for large files, but avoid churning layers
+            _rainbowBracketColorizer.InvalidateCache();
+            // Only redraw background (indent guides) if not LSP-dominated
+            var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
+            if (!hasLsp)
+            {
+                _markdownColorizer.InvalidateCache();
+                _htmlEmbeddedColorizer.InvalidateCache();
+                EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            }
+            else if (len > 120_000)
+            {
+                // Huge LSP file: defer background redraw
+                return;
+            }
+            EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+            return;
+        }
         _rainbowBracketColorizer.InvalidateCache();
         _markdownColorizer.InvalidateCache();
         _htmlEmbeddedColorizer.InvalidateCache();

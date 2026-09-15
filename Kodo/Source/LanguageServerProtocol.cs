@@ -244,13 +244,39 @@ internal sealed class LspClient : IDisposable
         }, TaskScheduler.Default);
     }
 
-    public Task SendNotificationAsync(string method, object? @params, CancellationToken cancellationToken = default)
+    public async Task SendNotificationAsync(string method, object? @params, CancellationToken cancellationToken = default)
     {
         if (_writer is null || _process?.HasExited != false)
-            return Task.FromException(new IOException("LSP server not running"));
+            throw new IOException("LSP server not running");
 
         var json = LspProtocol.CreateNotification(method, @params);
         var frame = LspProtocol.Frame(json);
+        // For large payloads (>80k) avoid blocking UI thread with synchronous pipe write
+        if (frame.Length > 80_000)
+        {
+            try
+            {
+                // Offload large write to threadpool and use async I/O
+                await Task.Run(async () =>
+                {
+                    string f = frame;
+                    lock (_writeLock)
+                    {
+                        // Still need lock but do async inside lock is tricky - copy then write outside?
+                        // Use semaphore style: just write synchronously on background thread
+                        _writer.Write(f);
+                        _writer.Flush();
+                    }
+                    await Task.Yield();
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"LSP notification '{method}' failed", ex);
+                throw;
+            }
+            return;
+        }
         try
         {
             lock (_writeLock)
@@ -262,9 +288,8 @@ internal sealed class LspClient : IDisposable
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug($"LSP notification '{method}' failed", ex);
-            return Task.FromException(ex);
+            throw;
         }
-        return Task.CompletedTask;
     }
 
     public async Task ShutdownAsync(string reason = "unknown")
@@ -296,67 +321,112 @@ internal sealed class LspClient : IDisposable
 
     private async Task ReadLoopAsync(Stream stdout, CancellationToken ct)
     {
-        stdout = new BufferedStream(stdout, 8192);
-        var headerBuf = new List<string>(4);
-        var headerBytes = new List<byte>(256);
-        var singleByte = new byte[1];
+        // Philosophy: Do Less, Not Faster - avoid per-byte allocations and syscalls.
+        // Use buffered chunk reads + pooled buffers. Expensive work off UI, interaction never blocks.
+        stdout = new BufferedStream(stdout, 32768);
+        var headerLines = new List<string>(4);
+        var buffer = new byte[8192];
+        var headerAccum = new System.IO.MemoryStream(512);
+        var bodyBuffer = Array.Empty<byte>();
 
         try
         {
             while (!ct.IsCancellationRequested && _process?.HasExited == false)
             {
-                headerBuf.Clear();
-                headerBytes.Clear();
+                headerLines.Clear();
+                headerAccum.SetLength(0);
                 var contentLength = -1;
+                var foundHeaderEnd = false;
 
-                while (true)
+                // Read headers chunk-wise until \r\n\r\n or \n\n
+                while (!foundHeaderEnd)
                 {
-                    var lineBytes = new List<byte>(64);
-                    while (true)
+                    var read = await stdout.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false);
+                    if (read == 0) return;
+                    headerAccum.Write(buffer, 0, read);
+                    // Search for \r\n\r\n
+                    var headerText = Encoding.UTF8.GetString(headerAccum.GetBuffer(), 0, (int)headerAccum.Length);
+                    int headerEnd = headerText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                    int headerEndLen = 4;
+                    if (headerEnd < 0) { headerEnd = headerText.IndexOf("\n\n", StringComparison.Ordinal); headerEndLen = 2; }
+                    if (headerEnd >= 0)
                     {
-                        var read = await stdout.ReadAsync(singleByte, 0, 1, ct).ConfigureAwait(false);
-                        if (read == 0) return; // EOF
-                        var b = singleByte[0];
-                        if (b == (byte)'\n')
+                        var headerPart = headerText.Substring(0, headerEnd);
+                        var lines = headerPart.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                        foreach (var line in lines)
+                        {
+                            if (string.IsNullOrWhiteSpace(line)) continue;
+                            headerLines.Add(line);
+                            if (LspProtocol.TryParseContentLength(line, out var len)) contentLength = len;
+                        }
+                        var bodyStartInBuffer = headerEnd + headerEndLen;
+                        var headerBytesLen = Encoding.UTF8.GetByteCount(headerText.Substring(0, bodyStartInBuffer));
+                        // Handle body bytes already in headerAccum beyond header
+                        var remainingInAccum = (int)headerAccum.Length - headerBytesLen;
+                        // Prepare to read body, but first handle leftover bytes
+                        if (contentLength < 0)
+                        {
+                            KodoDiagnostics.LogDebug($"LSP missing Content-Length headers: {string.Join("|", headerLines)}");
+                            // Drain remaining and continue
+                            headerAccum.SetLength(0);
+                            if (remainingInAccum > 0) headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen, remainingInAccum);
                             break;
-                        lineBytes.Add(b);
+                        }
+                        if (contentLength == 0) { headerAccum.SetLength(0); if (remainingInAccum > 0) headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen, remainingInAccum); foundHeaderEnd = true; break; }
+                        if (contentLength > 8 * 1024 * 1024)
+                        {
+                            KodoDiagnostics.LogDebug($"LSP message too large: {contentLength}");
+                            // Drain body
+                            int toDrain = contentLength - remainingInAccum;
+                            var drainBuf = new byte[8192];
+                            while (toDrain > 0)
+                            {
+                                var r = await stdout.ReadAsync(drainBuf, 0, Math.Min(drainBuf.Length, toDrain), ct).ConfigureAwait(false);
+                                if (r == 0) return; toDrain -= r;
+                            }
+                            // Keep any extra bytes beyond body? For simplicity reset
+                            headerAccum.SetLength(0);
+                            if (remainingInAccum > 0 && remainingInAccum > contentLength)
+                            {
+                                // Extra bytes after body - keep for next message
+                                var extra = remainingInAccum - contentLength;
+                                headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen + contentLength, extra);
+                            }
+                            foundHeaderEnd = true;
+                            break;
+                        }
+                        // Ensure bodyBuffer sized
+                        if (bodyBuffer.Length < contentLength) bodyBuffer = new byte[contentLength];
+                        int bodyOffset = 0;
+                        if (remainingInAccum > 0)
+                        {
+                            var copy = Math.Min(remainingInAccum, contentLength);
+                            Buffer.BlockCopy(headerAccum.GetBuffer(), headerBytesLen, bodyBuffer, 0, copy);
+                            bodyOffset = copy;
+                        }
+                        // Header done, need to read remaining body bytes if not enough in accum
+                        headerAccum.SetLength(0);
+                        // Now read remaining body bytes outside this inner loop via outer handling
+                        // Store partial body in a field for next iteration - instead loop to fill body
+                        while (bodyOffset < contentLength)
+                        {
+                            var r = await stdout.ReadAsync(bodyBuffer, bodyOffset, contentLength - bodyOffset, ct).ConfigureAwait(false);
+                            if (r == 0) return; bodyOffset += r;
+                        }
+                        var json = Encoding.UTF8.GetString(bodyBuffer, 0, contentLength);
+                        HandleMessage(json);
+                        foundHeaderEnd = true;
+                        break;
                     }
-                    var line = Encoding.UTF8.GetString(lineBytes.ToArray()).TrimEnd('\r');
-                    if (line.Length == 0) break; // empty line -> end headers
-                    headerBuf.Add(line);
-                    if (LspProtocol.TryParseContentLength(line, out var len)) contentLength = len;
-                }
-
-                if (contentLength < 0)
-                {
-                    KodoDiagnostics.LogDebug($"LSP missing Content-Length headers: {string.Join("|", headerBuf)}");
-                    continue;
-                }
-                if (contentLength == 0) continue;
-                if (contentLength > 8 * 1024 * 1024)
-                {
-                    KodoDiagnostics.LogDebug($"LSP message too large: {contentLength}");
-                    var drain = new byte[contentLength];
-                    var drainRead = 0;
-                    while (drainRead < contentLength)
+                    // If header too large without terminator, protect
+                    if (headerAccum.Length > 8192)
                     {
-                        var r = await stdout.ReadAsync(drain, drainRead, contentLength - drainRead, ct).ConfigureAwait(false);
-                        if (r == 0) return;
-                        drainRead += r;
+                        KodoDiagnostics.LogDebug($"LSP header too large, draining");
+                        headerAccum.SetLength(0);
+                        break;
                     }
-                    continue;
                 }
-
-                var body = new byte[contentLength];
-                var offset = 0;
-                while (offset < contentLength)
-                {
-                    var r = await stdout.ReadAsync(body, offset, contentLength - offset, ct).ConfigureAwait(false);
-                    if (r == 0) return;
-                    offset += r;
-                }
-                var json = Encoding.UTF8.GetString(body);
-                HandleMessage(json);
+                if (!foundHeaderEnd) continue;
             }
         }
         catch (OperationCanceledException) { }
@@ -789,9 +859,22 @@ public partial class MainWindow
     private void QueueLspDidChange(string filePath)
     {
         if (ResolveLspExtensionForFile(filePath) is null) return;
+        var len = EditorTextBox?.Document?.TextLength ?? 0;
+        // For truly huge files, avoid per-keystroke LSP sync entirely - sync on save instead to eliminate lag
+        if (len > 300_000)
+        {
+            KodoDiagnostics.LogDebug($"LSP didChange skipped for huge file len={len} (sync on save only)");
+            return;
+        }
         lock (_lspPendingLock) _pendingLspChangePath = filePath;
         Dispatcher.UIThread.Post(() =>
         {
+            var curLen = EditorTextBox?.Document?.TextLength ?? len;
+            // Throttle LSP for large files to avoid serialize lag: 80k->600ms, 120k->1s, 250k->1.5s and skip incremental bursts
+            if (curLen > 250_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(1500);
+            else if (curLen > 120_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(1000);
+            else if (curLen > 80_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(600);
+            else _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(300);
             _lspDidChangeTimer.Stop();
             _lspDidChangeTimer.Start();
         });
@@ -1213,6 +1296,8 @@ public partial class MainWindow
                 if (IsSameDocument(_k, filePath)) (_stale ??= new List<string>()).Add(_k);
             if (_stale != null) foreach (var _k in _stale) _lspDiagnostics.Remove(_k);
         }
+        // Refresh tab diagnostics even if LSP not configured (clear previous LSP counts)
+        Dispatcher.UIThread.Post(() => UpdateInactiveTabDiagnosticsForFile(filePath));
 
         var lspExt = ResolveLspExtensionForFile(filePath);
         if (lspExt is null || !lspExt.HasLsp) return;
@@ -1340,6 +1425,7 @@ public partial class MainWindow
                 {
                     // Still ensure diagnostics for that file will be shown when it
                     KodoDiagnostics.LogDebug($"LSP diagnostics stored for inactive file {filePath} (current {_currentFilePath}) – will show on activation");
+                    UpdateInactiveTabDiagnosticsForFile(filePath);
                 }
             });
         }
@@ -1470,7 +1556,10 @@ public partial class MainWindow
         }
         var lineEnd = text.IndexOf('\n', offset);
         if (lineEnd < 0) lineEnd = text.Length;
+        // Exclude trailing \r for CRLF files when computing column limit
         var lineLen = lineEnd - offset;
+        if (lineLen > 0 && lineEnd > offset && text[lineEnd - 1] == '\r')
+            lineLen--;
         var col = Math.Min(character, Math.Max(0, lineLen));
         if (col > 0 && col < lineLen && offset + col < text.Length && char.IsHighSurrogate(text[offset + col - 1]) && char.IsLowSurrogate(text[offset + col]))
             col++;

@@ -83,11 +83,15 @@ public partial class MainWindow
     {
         if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
+        // Do Less: sample only visible + 200 items max, not entire tree (could be 10k files)
         var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace");
         var widest = 0.0;
-
+        var sampled = 0;
+        const int maxSample = 400;
         foreach (var item in FileTreeItems)
         {
+            // Editor Comes First: measuring text is expensive, cap sampling
+            if (sampled++ >= maxSample) break;
             var formatted = new FormattedText(
                 item.Name,
                 CultureInfo.CurrentCulture,
@@ -537,16 +541,30 @@ public partial class MainWindow
         var items = await CreateFileTreeItemsAsync(dirPath, depth);
         if (items.Count == 0) return;
 
-        var pos = insertAfterIndex + 1;
-        foreach (var item in items)
+        // Performance Is a Feature: batch inserts, Do Less layout passes
+        _suppressExplorerWidthRefresh = true;
+        FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
+        try
         {
-            if (insertAfterIndex < 0)
-                FileTreeItems.Add(item);
-            else
+            var pos = insertAfterIndex + 1;
+            foreach (var item in items)
             {
-                FileTreeItems.Insert(pos, item);
-                pos++;
+                if (insertAfterIndex < 0)
+                    FileTreeItems.Add(item);
+                else
+                {
+                    FileTreeItems.Insert(pos, item);
+                    pos++;
+                }
             }
+        }
+        finally
+        {
+            FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
+            _suppressExplorerWidthRefresh = false;
+            FileTreeItems_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            OnPropertyChanged(nameof(FileTreeItems));
+            OnPropertyChanged(nameof(ExplorerPanelWidth));
         }
     }
 
@@ -592,20 +610,40 @@ public partial class MainWindow
         var index = FileTreeItems.IndexOf(dirItem);
         if (index < 0) return;
 
-        if (dirItem.IsExpanded)
+        // Do Less: batch collection changes to avoid per-item layout thrash (Editor Comes First)
+        _suppressExplorerWidthRefresh = true;
+        FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
+        try
         {
-            dirItem.IsExpanded = false;
-            var toRemove = FileTreeItems
-                .Skip(index + 1)
-                .TakeWhile(i => i.Depth > dirItem.Depth)
-                .ToList();
-            for (var i = toRemove.Count - 1; i >= 0; i--)
-                FileTreeItems.Remove(toRemove[i]);
+            if (dirItem.IsExpanded)
+            {
+                dirItem.IsExpanded = false;
+                var toRemove = FileTreeItems
+                    .Skip(index + 1)
+                    .TakeWhile(i => i.Depth > dirItem.Depth)
+                    .ToList();
+                for (var i = toRemove.Count - 1; i >= 0; i--)
+                    FileTreeItems.Remove(toRemove[i]);
+            }
+            else
+            {
+                dirItem.IsExpanded = true;
+                var items = await CreateFileTreeItemsAsync(dirItem.FullPath, dirItem.Depth + 1);
+                var pos = index + 1;
+                foreach (var item in items)
+                {
+                    FileTreeItems.Insert(pos, item);
+                    pos++;
+                }
+            }
         }
-        else
+        finally
         {
-            dirItem.IsExpanded = true;
-            await AppendDirectoryContentsAsync(dirItem.FullPath, dirItem.Depth + 1, insertAfterIndex: index);
+            FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
+            _suppressExplorerWidthRefresh = false;
+            FileTreeItems_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            OnPropertyChanged(nameof(FileTreeItems));
+            OnPropertyChanged(nameof(ExplorerPanelWidth));
         }
     }
 

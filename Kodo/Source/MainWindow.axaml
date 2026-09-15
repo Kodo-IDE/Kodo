@@ -1,4 +1,4 @@
-<!-- Licensed under GPL-v3.0 -->
+﻿<!-- Licensed under GPL-v3.0 -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -621,12 +621,27 @@
 
         <Style Selector="Border.tabwrap">
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="6,6,0,0" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.tabwrap:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
         <Style Selector="Border.tabwrap.active">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
+        </Style>
+
+        <Style Selector="Border.tabhighlight">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="Border.tabwrap.active Border.tabhighlight">
+            <Setter Property="Opacity" Value="0.4" />
         </Style>
 
         <Style Selector="Button.editortab:pointerover">
@@ -644,6 +659,12 @@
         </Style>
         <Style Selector="TextBlock.tablabel.active">
             <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+            <Setter Property="FontWeight" Value="Medium" />
+        </Style>
+
+        <Style Selector="Border.openeditorrow">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="CornerRadius" Value="6" />
         </Style>
 
         <Style Selector="Button.openeditor">
@@ -651,8 +672,8 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Padding" Value="8,6" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="7,5" />
+            <Setter Property="CornerRadius" Value="6" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
@@ -666,19 +687,28 @@
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
         </Style>
 
+        <Style Selector="Border.openeditorrow.active Button.openeditor">
+            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+        </Style>
+
         <Style Selector="Button.tabclose">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
-            <Setter Property="Width" Value="28" />
-            <Setter Property="Height" Value="28" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="CornerRadius" Value="11" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Opacity" Value="0" />
             <Setter Property="IsHitTestVisible" Value="False" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Button.tabclose:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
@@ -705,6 +735,11 @@
 
         <Style Selector="Border.tabunderline">
             <Setter Property="Opacity" Value="0" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.tabwrap:pointerover Border.tabunderline">
             <Setter Property="Opacity" Value="1" />
@@ -1037,15 +1072,9 @@
                             </ItemsControl.ItemContainerTheme>
                             <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="kodoModels:EditorTab" x:CompileBindings="True">
-                                    <Border Classes="tabwrap"
+                                    <Border Classes="openeditorrow"
                                             Classes.active="{Binding IsSelected}"
-                                            Margin="0,0,0,2"
-                                            BorderBrush="Transparent">
-                                        <Border.Styles>
-                                            <Style Selector="Border.tabwrap.active">
-                                                <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
-                                            </Style>
-                                        </Border.Styles>
+                                            Margin="0,0,0,2">
                                         <Border.ContextMenu>
                                             <ContextMenu Opening="EditorTabContextMenu_OnOpening">
                                                 <MenuItem Header="Save"
@@ -1084,23 +1113,35 @@
                                                           Click="CloseAllTabsButton_OnClick" />
                                             </ContextMenu>
                                         </Border.ContextMenu>
-                                        <Grid ColumnDefinitions="*,Auto">
-                                            <Button Classes="openeditor"
+                                        <Grid ColumnDefinitions="3,Auto,*,Auto">
+                                            <Border Grid.Column="0"
+                                                    Width="3"
+                                                    CornerRadius="1.5"
+                                                    Margin="0,3,6,3"
+                                                    IsVisible="{Binding IsSelected}"
+                                                    Background="{Binding #RootWindow.AccentBrush}" />
+                                            <Button Grid.Column="1"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="openeditor"
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
                                                     ToolTip.Tip="{Binding Path}"
                                                     HorizontalContentAlignment="Stretch">
-                                                <Grid ColumnDefinitions="Auto,*">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                                     <Viewbox Grid.Column="0"
-                                                             Width="8" Height="8"
-                                                             Margin="0,0,8,0"
+                                                             Width="30" Height="14"
+                                                             Margin="0,0,7,0"
                                                              VerticalAlignment="Center"
-                                                             IsVisible="{Binding IsDirty}">
-                                                        <Canvas Width="24" Height="24">
-                                                            <Path Fill="{Binding #RootWindow.AccentBrush}"
-                                                                  Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
-                                                        </Canvas>
+                                                             Stretch="Uniform">
+                                                        <TextBlock FontSize="12"
+                                                                   FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   Width="38"
+                                                                   Height="15"
+                                                                   TextAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Icon}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}" />
                                                     </Viewbox>
                                                     <TextBlock Grid.Column="1"
                                                                FontSize="12"
@@ -1108,9 +1149,28 @@
                                                                Text="{Binding DisplayName}"
                                                                TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center" />
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center" IsVisible="{Binding HasDiagnostics}" ToolTip.Tip="{Binding DiagnosticsTooltip}" Margin="6,0,0,0">
+                                                        <Viewbox Width="10" Height="10" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="#E5484D"
+                                                                      Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock FontSize="10" Foreground="#E5484D" VerticalAlignment="Center" Text="{Binding DiagnosticsText}" TextTrimming="CharacterEllipsis" MaxWidth="90" />
+                                                    </StackPanel>
+                                                    <Viewbox Grid.Column="3"
+                                                             Width="7" Height="7"
+                                                             Margin="6,0,0,0"
+                                                             VerticalAlignment="Center"
+                                                             IsVisible="{Binding IsDirty}">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding #RootWindow.AccentBrush}"
+                                                                  Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
                                                 </Grid>
                                             </Button>
-                                            <Button Grid.Column="1"
+                                            <Button Grid.Column="3"
                                                     Classes="tabclose"
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
@@ -1213,8 +1273,25 @@
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <Grid ColumnDefinitions="Auto,Auto,*">
-                                        
-                                        <Border Grid.Column="0" Width="{Binding IndentWidth}" />
+
+                                        <ItemsControl Grid.Column="0"
+                                                      ItemsSource="{Binding GuideLevels}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="x:Int32">
+                                                    <Border Width="14" VerticalAlignment="Stretch">
+                                                        <Border Width="1"
+                                                                HorizontalAlignment="Left"
+                                                                Opacity="0.45"
+                                                                Background="{Binding #RootWindow.SurfaceBorderBrush}" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
 
                                         <TextBlock Grid.Column="1"
                                                     FontSize="10"
@@ -1593,21 +1670,46 @@
                                                           Click="CloseAllTabsButton_OnClick" />
                                             </ContextMenu>
                                         </Border.ContextMenu>
-                                        <Grid RowDefinitions="Auto,2"
+                                        <Grid RowDefinitions="1,Auto,2.5"
                                               ColumnDefinitions="*,Auto">
-                                            <Button Grid.Row="0"
+                                            <Border Grid.Row="0"
+                                                    Grid.Column="0"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="tabhighlight"
+                                                    Background="{Binding #RootWindow.AccentBrush}" />
+                                            <Button Grid.Row="1"
                                                     Grid.Column="0"
                                                     Grid.ColumnSpan="2"
                                                     Classes="editortab"
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
-                                                    Padding="14,10,38,10">
-                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    Padding="12,10,38,10">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <Viewbox Width="26" Height="13" VerticalAlignment="Center" Stretch="Uniform">
+                                                        <TextBlock FontSize="11"
+                                                                   FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   Width="34"
+                                                                   Height="14"
+                                                                   TextAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Icon}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Opacity="0.85" />
+                                                    </Viewbox>
                                                     <TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
                                                                Text="{Binding DisplayName}" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding HasDiagnostics}" ToolTip.Tip="{Binding DiagnosticsTooltip}">
+                                                        <Viewbox Width="12" Height="12" VerticalAlignment="Center">
+                                                            <Canvas Width="24" Height="24">
+                                                                <Path Fill="#E5484D"
+                                                                      Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
+                                                            </Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock FontSize="11" Foreground="#E5484D" VerticalAlignment="Center" Text="{Binding DiagnosticsText}" TextTrimming="CharacterEllipsis" MaxWidth="140" />
+                                                    </StackPanel>
                                                      <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
                                                              IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">
@@ -1617,28 +1719,29 @@
                                                     </Viewbox>
                                                 </StackPanel>
                                             </Button>
-                                            <Button Grid.Row="0"
+                                            <Button Grid.Row="1"
                                                     Grid.Column="1"
                                                     Classes="tabclose"
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="CloseEditorTabButton_OnClick"
-                                                    Margin="0,0,6,0"
+                                                    Margin="0,0,7,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
                                                     ToolTip.Tip="Close this tab">
-                                                <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
                                                         <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
                                                               Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
                                                     </Canvas>
                                                 </Viewbox>
                                             </Button>
-                                            <Border Grid.Row="1"
+                                            <Border Grid.Row="2"
                                                     Grid.Column="0"
                                                     Grid.ColumnSpan="2"
                                                     Classes="tabunderline tabunderlinebase"
-                                                    Height="2"
+                                                    Height="2.5"
+                                                    CornerRadius="1.5,1.5,0,0"
                                                     Background="{Binding #RootWindow.AccentBrush}" />
                                         </Grid>
                                     </Border>
@@ -1707,7 +1810,7 @@
                             HorizontalOffset="0"
                             VerticalOffset="0"
                             IsLightDismissEnabled="False"
-                            WindowManagerAddShadowHint="True">
+                            WindowManagerAddShadowHint="False">
                         <Border x:Name="DiagnosticPopupHitBorder"
                                 Background="Transparent"
                                 Padding="12"
@@ -1720,8 +1823,7 @@
                                     CornerRadius="12"
                                     Padding="16"
                                     MaxWidth="460"
-                                    MaxHeight="260"
-                                    BoxShadow="0 12 28 0 #55000000, 0 2 8 0 #33000000">
+                                    MaxHeight="260">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <SelectableTextBlock x:Name="DiagnosticPopupText"
@@ -2831,9 +2933,14 @@
                                                                   Click="CloseTerminalSessionButton_OnClick" />
                                                     </ContextMenu>
                                                 </Border.ContextMenu>
-                                                <Grid RowDefinitions="Auto,2"
+                                                <Grid RowDefinitions="1,Auto,2.5"
                                                       ColumnDefinitions="*,Auto">
-                                                    <Button Grid.Row="0"
+                                                    <Border Grid.Row="0"
+                                                            Grid.Column="0"
+                                                            Grid.ColumnSpan="2"
+                                                            Classes="tabhighlight"
+                                                            Background="{Binding #RootWindow.AccentBrush}" />
+                                                    <Button Grid.Row="1"
                                                             Grid.Column="0"
                                                             Grid.ColumnSpan="2"
                                                             Classes="editortab"
@@ -2841,18 +2948,33 @@
                                                             Tag="{Binding}"
                                                             Click="OpenTerminalSessionButton_OnClick"
                                                             Background="Transparent"
-                                                            Padding="14,10,36,10">
-                                                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                            <Border Width="7"
-                                                                    Height="7"
-                                                                    CornerRadius="4"
-                                                                    VerticalAlignment="Center"
-                                                                    Background="{Binding StatusDotColor}"
-                                                                    ToolTip.Tip="{Binding StatusText}" />
+                                                            Padding="12,10,38,10">
+                                                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
+                                                            <Panel Width="7" Height="7" VerticalAlignment="Center">
+                                                                <Border Width="14"
+                                                                        Height="14"
+                                                                        CornerRadius="7"
+                                                                        Opacity="0.22"
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="{Binding StatusDotColor}" />
+                                                                <Border Width="7"
+                                                                        Height="7"
+                                                                        CornerRadius="4"
+                                                                        HorizontalAlignment="Center"
+                                                                        VerticalAlignment="Center"
+                                                                        Background="{Binding StatusDotColor}"
+                                                                        ToolTip.Tip="{Binding StatusText}" />
+                                                            </Panel>
                                                             <TextBlock FontSize="13"
                                                                        VerticalAlignment="Center"
                                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                        Text="{Binding Title}" />
+                                                            <TextBlock FontSize="11"
+                                                                       VerticalAlignment="Center"
+                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                       Opacity="0.7"
+                                                                       Text="·" />
                                                             <TextBlock FontSize="11"
                                                                        VerticalAlignment="Center"
                                                                        Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -2864,29 +2986,30 @@
                                                                        Text="{Binding StatusText}" />
                                                         </StackPanel>
                                                     </Button>
-                                                    <Button Grid.Row="0"
+                                                    <Button Grid.Row="1"
                                                             Grid.Column="1"
                                                             Classes="tabclose"
                                                             Classes.active="{Binding IsSelected}"
                                                             Focusable="False"
                                                             Tag="{Binding}"
                                                             Click="CloseTerminalSessionButton_OnClick"
-                                                            Margin="0,0,6,0"
+                                                            Margin="0,0,7,0"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center"
                                                             ToolTip.Tip="Close terminal">
-                                                        <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                             <Canvas Width="24" Height="24">
                                                                 <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
                                                                       Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
                                                             </Canvas>
                                                         </Viewbox>
                                                     </Button>
-                                                    <Border Grid.Row="1"
+                                                    <Border Grid.Row="2"
                                                             Grid.Column="0"
                                                             Grid.ColumnSpan="2"
                                                             Classes="tabunderline tabunderlinebase"
-                                                            Height="2"
+                                                            Height="2.5"
+                                                            CornerRadius="1.5,1.5,0,0"
                                                             Background="{Binding #RootWindow.AccentBrush}" />
                                                 </Grid>
                                             </Border>

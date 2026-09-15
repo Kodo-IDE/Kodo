@@ -4405,17 +4405,105 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             StatusBarDiagnosticsText = "No problems";
             StatusBarDiagnosticsTooltip = "No problems detected by Insight";
-            return;
+        }
+        else
+        {
+            var parts = new List<string>();
+            if (errors > 0) parts.Add($"{errors} error{(errors == 1 ? "" : "s")}");
+            if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")}");
+            if (infos > 0) parts.Add($"{infos} info");
+            if (dead > 0) parts.Add($"{dead} unused");
+
+            StatusBarDiagnosticsText = string.Join(" • ", parts);
+            StatusBarDiagnosticsTooltip = string.Join(Environment.NewLine, parts.Select(p => $"• {p}"));
+        }
+        UpdateActiveTabDiagnostics();
+    }
+
+    private void UpdateTabDiagnostics(Kodo.Models.EditorTab? tab, IReadOnlyList<ErrorSpan> errorSpans, IReadOnlyList<DeadCodeSpan> deadSpans)
+    {
+        if (tab is null) return;
+        var errors = errorSpans.Count(s => string.Equals(s.Severity, "error", StringComparison.OrdinalIgnoreCase));
+        var warnings = errorSpans.Count(s => string.Equals(s.Severity, "warning", StringComparison.OrdinalIgnoreCase));
+        var infos = errorSpans.Count - errors - warnings;
+        var dead = deadSpans.Count;
+        tab.UpdateDiagnostics(errors, warnings, infos, dead);
+    }
+
+    private void UpdateActiveTabDiagnostics()
+    {
+        UpdateTabDiagnostics(ActiveEditorTab, _errorHighlightRenderer.Spans, _deadCodeHighlightRenderer.Spans);
+    }
+
+    private void UpdateInactiveTabDiagnosticsForFile(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        var matchingTabs = OpenTabs.Where(t => !t.IsUntitled && IsSameDocument(t.Path, filePath)).ToList();
+        if (matchingTabs.Count == 0) return;
+
+        List<LspRawDiagnostic>? raw;
+        lock (_lspDiagnosticsLock)
+        {
+            var normPath = NormalizeFilePath(filePath);
+            if (!_lspDiagnostics.TryGetValue(normPath, out raw) && !_lspDiagnostics.TryGetValue(filePath, out raw))
+            {
+                var uri = FilePathToUri(filePath);
+                var normUri = NormalizeFilePath(uri);
+                if (!_lspDiagnostics.TryGetValue(uri, out raw) && !_lspDiagnostics.TryGetValue(normUri, out raw))
+                {
+                    foreach (var kv in _lspDiagnostics)
+                    {
+                        if (IsSameDocument(kv.Key, filePath)) { raw = kv.Value; break; }
+                    }
+                }
+            }
+            raw = raw is null ? new List<LspRawDiagnostic>() : new List<LspRawDiagnostic>(raw);
         }
 
-        var parts = new List<string>();
-        if (errors > 0) parts.Add($"{errors} error{(errors == 1 ? "" : "s")}");
-        if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")}");
-        if (infos > 0) parts.Add($"{infos} info");
-        if (dead > 0) parts.Add($"{dead} unused");
+        var errors = raw.Count(d => string.Equals(d.Severity, "error", StringComparison.OrdinalIgnoreCase));
+        var warnings = raw.Count(d => string.Equals(d.Severity, "warning", StringComparison.OrdinalIgnoreCase));
+        var infos = raw.Count - errors - warnings;
 
-        StatusBarDiagnosticsText = string.Join(" • ", parts);
-        StatusBarDiagnosticsTooltip = string.Join(Environment.NewLine, parts.Select(p => $"• {p}"));
+        foreach (var tab in matchingTabs)
+        {
+            // Preserve unused count previously computed for this tab (dead code only tracked for active file)
+            var unused = tab.UnusedCount;
+            // If LSP is primary, unused is irrelevant; if tab was active recently, keep its unused
+            // For simplicity recompute unused as 0 for inactive LSP updates, otherwise keep
+            tab.UpdateDiagnostics(errors, warnings, infos, unused);
+            // If LSP diagnostics empty and we have no Insight cache for this tab, clear unused as well
+            if (raw.Count == 0 && tab.HasDiagnostics && errors == 0 && warnings == 0 && infos == 0)
+            {
+                // Check if we should keep unused - attempt background Insight recompute for this tab
+                _ = RefreshInactiveTabInsightDiagnosticsAsync(tab);
+            }
+        }
+    }
+
+    private async Task RefreshInactiveTabInsightDiagnosticsAsync(Kodo.Models.EditorTab tab)
+    {
+        if (tab.IsUntitled || IsPlainTextFile(tab.Path) || HasNoFileExtension(tab.Path) || IsInsightBlacklisted(tab.Path) || IsErrorDeadCodeBlacklisted(tab.Path))
+            return;
+        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled) return;
+        var hasLsp = ResolveLspExtensionForFile(tab.Path) is not null;
+        if (hasLsp) return; // LSP is authoritative
+
+        var text = tab.Content;
+        if (text.Length > 80_000) return;
+        var ext = GetLanguageExtension(tab.Path);
+
+        try
+        {
+            var spans = await Task.Run(() => _InsightEngine.FindErrors(text, ext, ResolveFenceLanguageExtension, CancellationToken.None));
+            var deadSpans = await Task.Run(() => _InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path));
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                // Only update if tab still exists and not active (active already handled)
+                if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;
+                UpdateTabDiagnostics(tab, spans, deadSpans);
+            });
+        }
+        catch { }
     }
 
     private void RefreshNonCaretState()
@@ -5358,6 +5446,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _autoSaveStatusTimer.Stop();
                 _autoSaveStatusTimer.Start();
             }
+
+            // For huge LSP files where per-keystroke sync is skipped, sync on save
+            if (savingContent.Length > 80_000 && !string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
+                _ = LspNotifyDidChangeAsync(savingPath!, savingContent);
 
             RefreshState(fullRefresh: true);
             return true;
@@ -8080,8 +8172,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             try
             {
                 var insightDisabled = !IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsInsightBlacklisted(_currentFilePath) || IsErrorDeadCodeBlacklisted(_currentFilePath);
-                var isLargeFile = text.Length > 120_000;
-                if (isLspPrimary || insightDisabled || isLargeFile)
+                var isLargeFile = text.Length > 80_000;
+                var isHugeFile = text.Length > 120_000;
+                // For LSP-configured files, skip heavy Insight early to avoid lag even before LSP is initialized
+                var shouldSkipInsightForLsp = hasConfiguredLsp && text.Length > 50_000;
+                if (isLspPrimary || insightDisabled || isHugeFile || shouldSkipInsightForLsp)
                 {
                     // LSP is authoritative only when actually running – otherwise respect user disabling Insight
                     // For large files (>120k chars) skip heavy Insight & avoid UI jank; LSP will provide diagnostics async.
@@ -8124,9 +8219,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Code,
                         diagnostic.Source));
                 }
-                // Group Insight+External (keep LSP separate for cache)
+                // Group Insight+External (keep LSP separate for cache) - keep distinct messages/codes for conventions
                 rawSpans = rawSpans
-                    .GroupBy(span => (span.StartOffset, span.Severity.Trim().ToLowerInvariant()))
+                    .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), Message: span.Message.Trim().ToLowerInvariant(), span.Code))
                     .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
                     .ToList();
             }

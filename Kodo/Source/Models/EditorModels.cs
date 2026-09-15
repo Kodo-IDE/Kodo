@@ -39,6 +39,18 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
 
     private static readonly DashStyle GuideDashStyle = new([2, 2], 0);
+    private Pen? _cachedPen;
+    private IBrush? _cachedBrush;
+    private readonly Dictionary<int, int> _depthCache = new();
+    private int _cachedVersion = -1;
+    private int _cachedLineCount = -1;
+    private int _cachedTabSize = -1;
+
+    public void InvalidateCache()
+    {
+        _cachedVersion = -1;
+        _depthCache.Clear();
+    }
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
@@ -67,12 +79,34 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
             VisualYPosition.LineTop).X - scrollX;
 
-        var pen = new Pen(GuideBrush, 1, GuideDashStyle);
+        if (_cachedPen is null || !ReferenceEquals(_cachedBrush, GuideBrush) || _cachedTabSize != TabSize)
+        {
+            _cachedBrush = GuideBrush;
+            _cachedTabSize = TabSize;
+            _cachedPen = new Pen(GuideBrush, 1, GuideDashStyle);
+        }
+        var pen = _cachedPen;
+
+        // Use document hash + linecount + tabsize to invalidate cheap cache without per-char scan of whole doc
+        var docVersion = document.TextLength ^ document.LineCount ^ TabSize;
+        if (docVersion != _cachedVersion || document.LineCount != _cachedLineCount)
+        {
+            // Keep cache size bounded: only keep visible range + lookaround margin
+            if (_depthCache.Count > 400)
+                _depthCache.Clear();
+            _cachedVersion = docVersion;
+            _cachedLineCount = document.LineCount;
+        }
 
         foreach (var visualLine in textView.VisualLines)
         {
             var lineNumber = visualLine.FirstDocumentLine.LineNumber;
-            var depth = GetVisibleLineDepth(document, lineNumber);
+            int depth;
+            if (!_depthCache.TryGetValue(lineNumber, out depth))
+            {
+                depth = GetVisibleLineDepth(document, lineNumber);
+                _depthCache[lineNumber] = depth;
+            }
             if (depth <= 0) continue;
 
             var top = visualLine.VisualTop - scrollY;
@@ -300,7 +334,8 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         List<string>? messages = null;
         foreach (var span in _spans)
         {
-            if (span.StartOffset < lineEnd && span.StartOffset + span.Length > lineStart)
+            // Inclusive EOL: missing semicolon at EndOffset must still count as touching line - every error gets underline somewhere on line
+            if (span.StartOffset <= lineEnd && span.StartOffset + Math.Max(1, span.Length) > lineStart)
             {
                 var label = span.Severity.Equals("error", StringComparison.OrdinalIgnoreCase) ? "Error" :
                             span.Severity.Equals("warning", StringComparison.OrdinalIgnoreCase) ? "Warning" :
@@ -346,13 +381,13 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
-        if (textView?.Document is null || !textView.VisualLinesValid || _spans.Count == 0)
+        if (textView?.Document is null || _spans.Count == 0)
+            return;
+
+        if (!textView.VisualLinesValid || textView.VisualLines.Count == 0)
             return;
 
         var visualLines = textView.VisualLines;
-        if (visualLines.Count == 0)
-            return;
-
         var scrollY = textView.ScrollOffset.Y;
         var width = textView.Bounds.Width;
 
@@ -366,27 +401,60 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             var height = visualLine.Height;
             if (height <= 0) continue;
 
-            if (LineOverlapsDeadCode(docLine))
+            // Always draw error underlines first, then dead-code stripes behind - ensures underlines are never hidden
+            // Collect underlines to draw after stripes
+            var hasDeadOverlap = LineOverlapsDeadCode(docLine);
+            if (hasDeadOverlap)
                 DrawStripes(drawingContext, y1, height, width);
             foreach (var span in _spans)
             {
-                if (span.StartOffset >= docLine.EndOffset || span.StartOffset + span.Length <= docLine.Offset)
+                // Inclusive EOL: every error must have underline somewhere on affected line
+                bool isEol = span.StartOffset >= docLine.EndOffset && span.StartOffset <= docLine.EndOffset + 1 && docLine.Length > 0;
+                if (!isEol && (span.StartOffset > docLine.EndOffset || span.StartOffset + span.Length <= docLine.Offset))
                     continue;
-                var start = Math.Max(span.StartOffset, docLine.Offset);
-                var end = Math.Min(span.StartOffset + span.Length, docLine.EndOffset);
+                int start, end;
+                if (isEol)
+                {
+                    // Missing semicolon / insertion at EOL: underline last 3-4 chars of line
+                    var eolLen = Math.Min(4, Math.Max(1, docLine.Length));
+                    start = Math.Max(docLine.Offset, docLine.EndOffset - eolLen);
+                    end = docLine.EndOffset;
+                }
+                else
+                {
+                    start = Math.Max(span.StartOffset, docLine.Offset);
+                    end = Math.Min(span.StartOffset + span.Length, docLine.EndOffset);
+                    if (end <= start) end = Math.Min(docLine.EndOffset, start + 1);
+                }
                 try
                 {
                     var startColumn = Math.Clamp(start - docLine.Offset + 1, 1, docLine.Length + 1);
                     var endColumn = Math.Clamp(Math.Max(startColumn + 1, end - docLine.Offset + 1), startColumn + 1, docLine.Length + 1);
                     var left = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, startColumn), VisualYPosition.LineBottom).X;
                     var right = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, endColumn), VisualYPosition.LineBottom).X;
+                    if (double.IsNaN(left) || double.IsNaN(right) || double.IsInfinity(left) || double.IsInfinity(right))
+                    {
+                        // Fallback: draw across visible line width proportionally
+                        var fallbackWidth = Math.Max(6, Math.Min(width * 0.6, (end - start) * textView.WideSpaceWidth));
+                        left = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, 1), VisualYPosition.LineBottom).X;
+                        right = left + fallbackWidth;
+                    }
                     var brush = UnderlineBrushForSeverity(span.Severity);
                     var isHint = span.Severity.Equals("hint", StringComparison.OrdinalIgnoreCase);
                     var isInfo = span.Severity.Equals("info", StringComparison.OrdinalIgnoreCase);
-                    var thickness = isHint ? 1.5 : isInfo ? 2.0 : 2.5;
-                    var underlineY = y1 + height - 2;
-                    var underlineWidth = Math.Max(3, right - left);
+                    var thickness = isHint ? 2.0 : isInfo ? 2.5 : 3.0;
+                    var underlineY = y1 + height - 2.5;
+                    var underlineWidth = Math.Max(6, right - left);
+                    // Guarantee minimum visible underline for EOL errors even if right-left is tiny
+                    if (isEol) underlineWidth = Math.Max(underlineWidth, Math.Min(40, Math.Max(12, docLine.Length * textView.WideSpaceWidth * 0.25)));
+                    // Draw with higher opacity for visibility on dark/light themes
                     drawingContext.DrawRectangle(brush, null, new Rect(left, underlineY, underlineWidth, thickness));
+                    // Second thin highlight for extra contrast when overlapping dead-code stripes
+                    if (hasDeadOverlap)
+                    {
+                        var highlight = BrushForSeverity(span.Severity);
+                        drawingContext.DrawRectangle(highlight, null, new Rect(left, y1, underlineWidth, height) { });
+                    }
                 }
                 catch { }
             }
@@ -397,7 +465,8 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     {
         foreach (var span in _spans)
         {
-            if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
+            // Inclusive EOL ensures missing-semicolon at EndOffset still counts as touching line - every error gets line underline
+            if (span.StartOffset <= line.EndOffset && span.StartOffset + Math.Max(1, span.Length) > line.Offset)
                 return true;
         }
         return false;
@@ -424,12 +493,17 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         _ => LineHighlightBrush,
     };
 
+    private static readonly IBrush WarningUnderlineBrush = new SolidColorBrush(Color.Parse("#F2C94C"));
+    private static readonly IBrush InfoUnderlineBrush = new SolidColorBrush(Color.Parse("#5BA7FF"));
+    private static readonly IBrush HintUnderlineBrush = new SolidColorBrush(Color.Parse("#D4D8E0"));
+    private static readonly IBrush ErrorUnderlineBrush = new SolidColorBrush(Color.Parse("#FF5C67"));
+
     private static IBrush UnderlineBrushForSeverity(string severity) => severity switch
     {
-        "warning" => new SolidColorBrush(Color.Parse("#F2C94C")),
-        "info" => new SolidColorBrush(Color.Parse("#5BA7FF")),
-        "hint" => new SolidColorBrush(Color.Parse("#A0A7B4")),
-        _ => new SolidColorBrush(Color.Parse("#FF5C67")),
+        "warning" => WarningUnderlineBrush,
+        "info" => InfoUnderlineBrush,
+        "hint" => HintUnderlineBrush,
+        _ => ErrorUnderlineBrush,
     };
 
     private static int SeverityRank(string severity) => severity switch
@@ -578,6 +652,8 @@ public class EditorTab : INotifyPropertyChanged
 
     public string DisplayName { get; private set; }
 
+    public string Icon => FileTreeItem.GetFileIcon(DisplayName);
+
     public bool IsUntitled { get; set; }
 
     public LineEnding LineEnding { get; set; }
@@ -668,6 +744,74 @@ public class EditorTab : INotifyPropertyChanged
 
     public int CaretOffset { get; set; } = 0;
 
+    private int _errorCount;
+    private int _warningCount;
+    private int _infoCount;
+    private int _unusedCount;
+    private string _diagnosticsText = string.Empty;
+    private string _diagnosticsTooltip = string.Empty;
+
+    public int ErrorCount => _errorCount;
+    public int WarningCount => _warningCount;
+    public int InfoCount => _infoCount;
+    public int UnusedCount => _unusedCount;
+
+    public bool HasDiagnostics => _errorCount > 0 || _warningCount > 0 || _infoCount > 0 || _unusedCount > 0;
+    public bool HasErrorDiagnostics => _errorCount > 0;
+
+    public string DiagnosticsText => _diagnosticsText;
+    public string DiagnosticsTooltip => _diagnosticsTooltip;
+
+    /// <summary>Severity ranking for tab tint: 3=error, 2=warning, 1=info/unused, 0=none</summary>
+    public int DiagnosticsSeverity
+    {
+        get
+        {
+            if (_errorCount > 0) return 3;
+            if (_warningCount > 0) return 2;
+            if (_infoCount > 0 || _unusedCount > 0) return 1;
+            return 0;
+        }
+    }
+
+    public void UpdateDiagnostics(int errors, int warnings, int infos, int unused)
+    {
+        if (_errorCount == errors && _warningCount == warnings && _infoCount == infos && _unusedCount == unused)
+            return;
+        _errorCount = errors;
+        _warningCount = warnings;
+        _infoCount = infos;
+        _unusedCount = unused;
+
+        if (errors == 0 && warnings == 0 && infos == 0 && unused == 0)
+        {
+            _diagnosticsText = string.Empty;
+            _diagnosticsTooltip = "No problems";
+        }
+        else
+        {
+            var parts = new List<string>();
+            if (errors > 0) parts.Add($"{errors} error{(errors == 1 ? "" : "s")}");
+            if (warnings > 0) parts.Add($"{warnings} warning{(warnings == 1 ? "" : "s")}");
+            if (infos > 0) parts.Add($"{infos} info");
+            if (unused > 0) parts.Add($"{unused} unused");
+            _diagnosticsText = string.Join(" • ", parts);
+            _diagnosticsTooltip = string.Join(Environment.NewLine, parts.Select(p => $"• {p}"));
+        }
+
+        OnPropertyChanged(nameof(ErrorCount));
+        OnPropertyChanged(nameof(WarningCount));
+        OnPropertyChanged(nameof(InfoCount));
+        OnPropertyChanged(nameof(UnusedCount));
+        OnPropertyChanged(nameof(HasDiagnostics));
+        OnPropertyChanged(nameof(HasErrorDiagnostics));
+        OnPropertyChanged(nameof(DiagnosticsText));
+        OnPropertyChanged(nameof(DiagnosticsTooltip));
+        OnPropertyChanged(nameof(DiagnosticsSeverity));
+    }
+
+    public void ClearDiagnostics() => UpdateDiagnostics(0, 0, 0, 0);
+
     public void Rename(string path, string displayName)
     {
         Path = path;
@@ -676,6 +820,7 @@ public class EditorTab : INotifyPropertyChanged
         OnPropertyChanged(nameof(Path));
         OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(TabTitle));
+        OnPropertyChanged(nameof(Icon));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -744,6 +889,9 @@ public class FileTreeItem : INotifyPropertyChanged
     }
 
     public double IndentWidth => Depth * 14.0;
+
+    /// <summary>One entry per ancestor level, used to draw a vertical indent guide line for each.</summary>
+    public IEnumerable<int> GuideLevels => Enumerable.Range(0, Depth);
 
     public string ChevronText => IsDirectory ? (_isExpanded ? "↓" : "→") : string.Empty;
 

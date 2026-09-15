@@ -638,17 +638,16 @@ public partial class MainWindow
             })
             .ToList();
 
+        // Do Less: group once, avoid O(groups*results) nested Where
+        var groupedResults = _searchResults.GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         foreach (var group in grouped)
         {
             _fileGroups.Add(group);
             _searchDisplayItems.Add(new SearchDisplayItem { IsGroupHeader = true, Group = group });
-            if (group.IsExpanded)
+            if (group.IsExpanded && groupedResults.TryGetValue(group.FilePath, out var items))
             {
-                foreach (var item in _searchResults.Where(r =>
-                    string.Equals(r.Path, group.FilePath, StringComparison.OrdinalIgnoreCase)))
-                {
+                foreach (var item in items)
                     _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
-                }
             }
         }
 
@@ -924,6 +923,7 @@ public partial class MainWindow
     private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
     {
         const int maxResults = 2000;
+        const long maxFileBytes = 1_500_000; // Do Less: skip huge files - LSP handles them, search would lag
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         Regex? regex = null;
         if (useRegex)
@@ -941,10 +941,18 @@ public partial class MainWindow
 
         var results = new List<SearchResultItem>();
         var truncated = false;
+        // Performance Is a Feature: file I/O is expensive, allow it to be slow on background but never block interaction
         foreach (var file in files)
         {
             token.ThrowIfCancellationRequested();
             if (IsImagePreviewFile(file) || IsBinaryContent(file)) continue;
+            try
+            {
+                var fi = new FileInfo(file);
+                if (fi.Length > maxFileBytes) continue; // Do Less: skip huge files
+                if (fi.Length == 0) continue;
+            }
+            catch { continue; }
 
             try
             {
@@ -952,6 +960,7 @@ public partial class MainWindow
                 foreach (var line in File.ReadLines(file))
                 {
                     lineNumber++;
+                    if (line.Length > 5000) continue; // skip minified huge lines
 
                     bool matched;
                     List<int>? matchIndices = null;
