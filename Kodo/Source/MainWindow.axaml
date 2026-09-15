@@ -1,4 +1,4 @@
-﻿<!-- Licensed under GPL-v3.0 -->
+<!-- Licensed under GPL-v3.0 -->
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -1128,7 +1128,7 @@
                                                     Click="OpenEditorTabButton_OnClick"
                                                     ToolTip.Tip="{Binding Path}"
                                                     HorizontalContentAlignment="Stretch">
-                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                                <Grid ColumnDefinitions="Auto,*,Auto">
                                                     <Viewbox Grid.Column="0"
                                                              Width="30" Height="14"
                                                              Margin="0,0,7,0"
@@ -1149,16 +1149,7 @@
                                                                Text="{Binding DisplayName}"
                                                                TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center" />
-                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="3" VerticalAlignment="Center" IsVisible="{Binding HasDiagnostics}" ToolTip.Tip="{Binding DiagnosticsTooltip}" Margin="6,0,0,0">
-                                                        <Viewbox Width="10" Height="10" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="#E5484D"
-                                                                      Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock FontSize="10" Foreground="#E5484D" VerticalAlignment="Center" Text="{Binding DiagnosticsText}" TextTrimming="CharacterEllipsis" MaxWidth="90" />
-                                                    </StackPanel>
-                                                    <Viewbox Grid.Column="3"
+                                                    <Viewbox Grid.Column="2"
                                                              Width="7" Height="7"
                                                              Margin="6,0,0,0"
                                                              VerticalAlignment="Center"
@@ -1701,15 +1692,6 @@
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
                                                                Text="{Binding DisplayName}" />
-                                                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center" IsVisible="{Binding HasDiagnostics}" ToolTip.Tip="{Binding DiagnosticsTooltip}">
-                                                        <Viewbox Width="12" Height="12" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="#E5484D"
-                                                                      Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                        <TextBlock FontSize="11" Foreground="#E5484D" VerticalAlignment="Center" Text="{Binding DiagnosticsText}" TextTrimming="CharacterEllipsis" MaxWidth="140" />
-                                                    </StackPanel>
                                                      <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
                                                              IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">
@@ -1810,7 +1792,7 @@
                             HorizontalOffset="0"
                             VerticalOffset="0"
                             IsLightDismissEnabled="False"
-                            WindowManagerAddShadowHint="False">
+                            WindowManagerAddShadowHint="True">
                         <Border x:Name="DiagnosticPopupHitBorder"
                                 Background="Transparent"
                                 Padding="12"
@@ -1823,7 +1805,8 @@
                                     CornerRadius="12"
                                     Padding="16"
                                     MaxWidth="460"
-                                    MaxHeight="260">
+                                    MaxHeight="260"
+                                    BoxShadow="0 12 28 0 #55000000, 0 2 8 0 #33000000">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <SelectableTextBlock x:Name="DiagnosticPopupText"
@@ -5710,12 +5693,12 @@
                                           <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
                                                     Foreground="{Binding PrimaryTextBrush}"
                                                     ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
-                                                    Content="Error Detection (Experimental) — LSP still active" />
+                                                    Content="Error Detection (Experimental) - LSP still active" />
                                           <TextBlock Margin="24,0,0,0"
                                                      FontSize="11"
                                                      Foreground="{Binding MutedTextBrush}"
                                                      TextWrapping="Wrap"
-                                                     Text="Does not disable language server (LSP) diagnostics — LSP errors will still be shown." />
+                                                     Text="Does not disable language server (LSP) diagnostics - LSP errors will still be shown." />
                                       </StackPanel>
                                      <Border Background="{Binding CardBrush}"
                                               BorderBrush="{Binding AccentBrush}"

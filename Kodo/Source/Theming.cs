@@ -648,6 +648,10 @@ public partial class MainWindow
 
     private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
     {
+        // 01 Editor Comes First: don't poll when window not active - interaction must stay responsive
+        // 02 Do Less: skip entirely when not in windows accent mode
+        if (!IsActive) return;
+        if (_accentColorMode != "windows" && !IsSystemThemeActive) return;
         var current = GetWindowsAccentColor() ?? string.Empty;
         if (current == _lastSeenWindowsAccentHex) return;
         _lastSeenWindowsAccentHex = current;
@@ -661,6 +665,8 @@ public partial class MainWindow
 
     private void WindowsThemePollTimer_OnTick(object? sender, EventArgs e)
     {
+        if (!IsActive) return;
+        if (!IsSystemThemeActive && _accentColorMode != "windows") return;
         var current = ResolveSystemThemeName();
         if (current == _lastSeenWindowsThemeName) return;
         _lastSeenWindowsThemeName = current;

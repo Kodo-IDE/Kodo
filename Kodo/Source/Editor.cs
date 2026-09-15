@@ -28,6 +28,8 @@ public partial class MainWindow
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _editorStateRefreshTimer.Stop();
+        // 02 Do Less: coalesce refresh when window inactive, but still ensure caret stats eventually
+        if (!IsActive) { _pendingFullStateRefresh = true; return; }
         RefreshState(fullRefresh: _pendingFullStateRefresh);
     }
 
@@ -52,12 +54,18 @@ public partial class MainWindow
     private async void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
+        // 01 Editor Comes First: don't run heavy analysis when window not active - user not seeing results
+        if (!IsActive) return;
+        // 02 Do Less: skip insight entirely for huge files already handled by LSP throttling
+        var len = EditorTextBox?.Document?.TextLength ?? 0;
+        if (len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
         await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
+        if (!IsActive) return; // 02 Do Less: not visible when window inactive
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
             if (!IsWordCountVisible) WordCountText = string.Empty;
@@ -563,6 +571,7 @@ public partial class MainWindow
     private void SyntaxHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _syntaxHighlightDebounceTimer.Stop();
+        if (!IsActive) return; // 01 Editor Comes First: no need to recolor when not visible
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         // For very large LSP files, skip heavy colorizers and throttle redraws
         if (len > 80_000)
@@ -595,6 +604,7 @@ public partial class MainWindow
     private void FindHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _findHighlightDebounceTimer.Stop();
+        if (!IsActive) return;
         if (IsFindInFileSearchMode && IsSearchPanelVisible)
             UpdateFindHighlights();
     }

@@ -124,9 +124,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
-    private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _windowsAccentPollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsAccentHex = string.Empty;
-    private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(10) };
+    private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsThemeName = string.Empty;
     // LSP centralized management settings
     private bool _lspEnabled = true;
@@ -4731,6 +4731,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DiscordReconnectTimer_OnTick(object? sender, EventArgs e)
     {
         _discordReconnectTimer.Stop();
+        // 02 Do Less: don't reconnect when disabled or window inactive
+        if (!IsDiscordRichPresenceEnabled) return;
+        if (!IsActive) { _discordReconnectTimer.Interval = TimeSpan.FromSeconds(30); _discordReconnectTimer.Start(); return; }
+        _discordReconnectTimer.Interval = TimeSpan.FromSeconds(10);
         UpdateDiscordRichPresenceLifecycle();
     }
 

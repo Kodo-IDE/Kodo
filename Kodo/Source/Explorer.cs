@@ -497,6 +497,7 @@ public partial class MainWindow
     private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _fileTreeRefreshTimer.Stop();
+        if (!IsActive) { _fileTreeRefreshTimer.Start(); return; } // 01 Editor First: defer tree rebuild when not visible
         _searchFileCache = null;
         if (_newFileInlineRenameItem?.IsRenaming == true)
         {

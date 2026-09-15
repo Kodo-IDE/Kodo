@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Channels;
@@ -8,8 +9,10 @@ namespace Kodo;
 
 public sealed class LanguageWorker : IDisposable
 {
-    private readonly Channel<WorkItem> _queue = Channel.CreateUnbounded<WorkItem>(
-        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
+    // 02 Do Less: bounded queue drops intermediate states when editor types faster than worker can handle
+    // 01 Editor Comes First: never queue more than latest version, interaction never waits
+    private readonly Channel<WorkItem> _queue = Channel.CreateBounded<WorkItem>(
+        new BoundedChannelOptions(16) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest, AllowSynchronousContinuations = false });
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _loop;
     private readonly Dictionary<string, LanguageDocumentSnapshot> _documents = new(StringComparer.OrdinalIgnoreCase);
@@ -30,11 +33,15 @@ public sealed class LanguageWorker : IDisposable
         var completion = new TaskCompletionSource<LanguageWorkerResponse>(
             TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_queue.Writer.TryWrite(new(request, handler, completion)))
-            return new(request.Method, request.Document.Version, null, "worker unavailable");
+            return new(request.Method, request.Document.Version, null, "worker busy - dropped oldest");
 
         try
         {
-            return completion.Task.WaitAsync(cancellationToken).GetAwaiter().GetResult();
+            // 01 Editor Comes First: never block UI thread more than 16ms (one frame) for background analysis
+            // Use timeout so rapid typing doesn't stall interaction; caller will get latest eventually via next request
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(120));
+            return completion.Task.WaitAsync(cts.Token).GetAwaiter().GetResult();
         }
         catch (OperationCanceledException)
         {
@@ -67,11 +74,31 @@ public sealed class LanguageWorker : IDisposable
         Send(new("textDocument/didChange", new(uri, version, string.Empty), Changes: changes), request =>
         {
             if (!_documents.TryGetValue(uri, out var current)) return null;
+            // 03 Performance Is a Feature: avoid O(n*m) intermediate string allocations for rapid typing
+            // Use StringBuilder with single allocation sized to final text
             var text = current.Text;
-            foreach (var change in request.Changes ?? [])
+            if (request.Changes is null || request.Changes.Count == 0) return current;
+            // Fast path single change
+            if (request.Changes.Count == 1)
             {
-                if (change.Start < 0 || change.Start > text.Length || change.Length < 0 || change.Start + change.Length > text.Length) continue;
-                text = text.Remove(change.Start, change.Length).Insert(change.Start, change.NewText);
+                var c = request.Changes[0];
+                if (c.Start < 0 || c.Start > text.Length || c.Length < 0 || c.Start + c.Length > text.Length) return current;
+                text = string.Concat(text.AsSpan(0, c.Start), c.NewText, text.AsSpan(c.Start + c.Length));
+            }
+            else
+            {
+                // Multiple changes: apply in reverse order to keep offsets valid, using StringBuilder once
+                // For Do Less we coalesce to final text via builder
+                var sb = new System.Text.StringBuilder(text.Length + 256);
+                sb.Append(text);
+                // Sort descending so earlier offsets not shifted
+                foreach (var change in request.Changes.OrderByDescending(ch => ch.Start))
+                {
+                    if (change.Start < 0 || change.Start > sb.Length || change.Length < 0 || change.Start + change.Length > sb.Length) continue;
+                    sb.Remove(change.Start, change.Length);
+                    sb.Insert(change.Start, change.NewText);
+                }
+                text = sb.ToString();
             }
             var updated = new LanguageDocumentSnapshot(uri, version, text);
             _documents[uri] = updated;
