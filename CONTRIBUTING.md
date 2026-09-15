@@ -24,13 +24,13 @@ To run Kodo locally, you'll need:
 
 1. [.NET](https://dotnet.microsoft.com/en-us/download) minimum version 10
 2. Run `dotnet new install Avalonia.Templates`
-3. Change your directory to Kodo's source folder: `cd Kodo\Source` (from the repository root — e.g. `cd path\to\Kodo\Kodo\Source` if you cloned to `path\to\Kodo`)
+3. Change your directory to Kodo's source folder: `cd Kodo\Source` (from the repository root - e.g. `cd path\to\Kodo\Kodo\Source` if you cloned to `path\to\Kodo`)
 4. For best results, run `dotnet build Kodo.csproj` to catch any errors. This is optional.
 5. Run `dotnet run` - it'll take a few seconds then open up
 
 That's it. No complicated build pipeline, no extra tools.
 
-> **Plugin authors:** build `Kodo.csproj` once first so `Kodo-Extension-Template/TemplatePlugin` can find `Kodo\Source\bin\Debug\net10.0\Kodo.dll` (`Source\bin\Debug\net10.0\Kodo.dll` from the repo root; `..\..\Kodo\Kodo\Source\bin\Debug\net10.0\Kodo.dll` from `TemplatePlugin` — `HintPath` with `Private=false`).
+> **Plugin authors:** build `Kodo.csproj` once first so `Kodo-Extension-Template/TemplatePlugin` can find `Kodo\Source\bin\Debug\net10.0\Kodo.dll` (`Source\bin\Debug\net10.0\Kodo.dll` from the repo root; `..\..\Kodo\Kodo\Source\bin\Debug\net10.0\Kodo.dll` from `TemplatePlugin` - `HintPath` with `Private=false`).
 
 ---
 

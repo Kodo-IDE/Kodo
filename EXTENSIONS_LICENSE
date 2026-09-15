@@ -1,4 +1,4 @@
-Kodo Extensions License — Apache-2.0 for Extension Interfaces
+Kodo Extensions License - Apache-2.0 for Extension Interfaces
 =============================================================
 Copyright (c) 2026 KerbalMissile and SS-YYC
 
@@ -7,8 +7,8 @@ it does not replace it.
 
 1. Kodo Core Remains GPL-3.0
 -----------------------------
-All of Kodo itself — the editor, its source code, binaries, and assets
-— is licensed under GNU General Public License v3.0 (see [LICENSE](LICENSE)).
+All of Kodo itself - the editor, its source code, binaries, and assets
+- is licensed under GNU General Public License v3.0 (see [LICENSE](LICENSE)).
 Any modification to Kodo itself (outside the interfaces listed in
 Section 2) remains under GPL-3.0.
 
@@ -36,7 +36,7 @@ Extension (.kox language/theme/plugin package), or Compiler/toolchain
 (CompilerIndex entry in %LocalAppData%\Kodo\Compilers) that interacts
 with Kodo solely through the interfaces in Section 2:
 
-  - May be licensed under ANY terms you choose — proprietary,
+  - May be licensed under ANY terms you choose - proprietary,
     closed-source, commercial, permissive, or copyleft.
   - Does NOT have to be GPL-compatible. No obligation to use GPL-3.0,
     LGPL, AGPL, MIT, Apache-2.0, or any other specific license and no
