@@ -776,6 +776,45 @@
         <Style Selector="CheckBox:indeterminate /template/ Path#CheckGlyph">
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
+
+        <!-- Polished scrolling: overlay thin auto-hide scrollbars, prevent panel resize on scroll -->
+        <Style Selector="ScrollViewer">
+            <Setter Property="AllowAutoHide" Value="True" />
+            <Setter Property="IsScrollChainingEnabled" Value="True" />
+        </Style>
+        <Style Selector="ScrollBar:vertical">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Margin" Value="1,0,1,0" />
+            <Setter Property="MinWidth" Value="8" />
+        </Style>
+        <Style Selector="ScrollBar:horizontal">
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Margin" Value="0,1,0,1" />
+            <Setter Property="MinHeight" Value="8" />
+        </Style>
+        <Style Selector="ScrollBar Thumb">
+            <Setter Property="Background" Value="#3A3A3A" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.15" />
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="ScrollBar Thumb:pointerover">
+            <Setter Property="Background" Value="#4A4A4A" />
+        </Style>
+        <Style Selector="ScrollBar Thumb:pressed">
+            <Setter Property="Background" Value="#5A5A5A" />
+        </Style>
+        <Style Selector="ScrollBar:disabled">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <!-- Menus and popups: constrain height and ensure smooth scroll -->
+        <Style Selector="Menu ScrollViewer, ContextMenu ScrollViewer, ComboBox ScrollViewer">
+            <Setter Property="MaxHeight" Value="420" />
+            <Setter Property="AllowAutoHide" Value="True" />
+        </Style>
     </Window.Styles>
 
     
@@ -1096,7 +1135,8 @@
                 <ScrollViewer Grid.Row="2"
                               IsVisible="{Binding IsFolderOpen}"
                               ClipToBounds="True"
-                              HorizontalScrollBarVisibility="Auto"
+                              AllowAutoHide="True"
+                              HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
                         <ItemsControl.ItemTemplate>
@@ -1502,6 +1542,7 @@
                         BorderThickness="0,0,0,1"
                         IsVisible="{Binding IsEditorTabsVisible}">
                     <ScrollViewer x:Name="EditorTabScrollViewer"
+                                   AllowAutoHide="True"
                                    HorizontalScrollBarVisibility="Auto"
                                    VerticalScrollBarVisibility="Disabled">
                         <ItemsControl ItemsSource="{Binding OpenTabs}">
@@ -2751,7 +2792,8 @@
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="0,0,0,1">
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                            <ScrollViewer AllowAutoHide="True"
+                                          HorizontalScrollBarVisibility="Auto"
                                           VerticalScrollBarVisibility="Disabled">
                                 <ItemsControl ItemsSource="{Binding TerminalSessions}">
                                     <ItemsControl.ItemsPanel>
