@@ -25,6 +25,13 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private const int LspPresentationLimit = 80_000;
+    private const int LspNavigationHighlightLimit = 120_000;
+
+    private bool IsLargeLspDocument(int limit = LspPresentationLimit) =>
+        EditorTextBox?.Document?.TextLength > limit &&
+        !string.IsNullOrWhiteSpace(_currentFilePath) &&
+        ResolveLspExtensionForFile(_currentFilePath) is not null;
 
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
@@ -545,15 +552,27 @@ public partial class MainWindow
         if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
         else if (curLen > 80_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
         else _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(150);
-        _syntaxHighlightDebounceTimer.Stop();
-        _syntaxHighlightDebounceTimer.Start();
+        var largeLspDocument = curLen > LspPresentationLimit &&
+            !string.IsNullOrWhiteSpace(_currentFilePath) &&
+            ResolveLspExtensionForFile(_currentFilePath) is not null;
+        if (largeLspDocument)
+        {
+            // AvaloniaEdit already updates the changed viewport. Avoid asking
+            // every document colorizer to invalidate the entire large file.
+            _syntaxHighlightDebounceTimer.Stop();
+        }
+        else
+        {
+            _syntaxHighlightDebounceTimer.Stop();
+            _syntaxHighlightDebounceTimer.Start();
+        }
         if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
             QueueLspDidChange(_currentFilePath);
-        _ = UpdateLspSignatureHelpAsync();
-        _ = UpdateLspFoldingAsync();
         _lspHighlightRenderer.Clear();
-        _ = UpdateLspInlayHintsAsync();
-        _ = UpdateLspSemanticTokensAsync();
+        // These requests are expensive and were previously sent for every
+        // keystroke. Coalesce them with the shared editor debounce timer.
+        _lspRefreshDebounceTimer.Stop();
+        _lspRefreshDebounceTimer.Start();
 
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
@@ -563,8 +582,8 @@ public partial class MainWindow
         {
             ActiveEditorTab.IsDirty = true;
         }
-        QueueRefreshState(fullRefresh: true);
-        QueueWordCountRefresh();
+        QueueRefreshState(fullRefresh: !largeLspDocument);
+        if (!largeLspDocument) QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
         QueueInsightRefresh();
         if (IsFindInFileSearchMode && IsSearchPanelVisible)
@@ -576,6 +595,7 @@ public partial class MainWindow
 
     private async Task UpdateLspSignatureHelpAsync()
     {
+        if (IsLargeLspDocument(200_000)) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
@@ -593,8 +613,19 @@ public partial class MainWindow
         });
     }
 
+    private void LspRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
+    {
+        _lspRefreshDebounceTimer.Stop();
+        if (!IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        _ = UpdateLspSignatureHelpAsync();
+        _ = UpdateLspFoldingAsync();
+        _ = UpdateLspInlayHintsAsync();
+        _ = UpdateLspSemanticTokensAsync();
+    }
+
     private async Task UpdateLspFoldingAsync()
     {
+        if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         if (_lspFoldingManager is null || string.IsNullOrWhiteSpace(_currentFilePath) || EditorTextBox?.Document is null) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
@@ -621,6 +652,7 @@ public partial class MainWindow
 
     private async Task UpdateLspDocumentHighlightsAsync()
     {
+        if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
@@ -646,6 +678,7 @@ public partial class MainWindow
 
     private async Task UpdateLspInlayHintsAsync()
     {
+        if (IsLargeLspDocument()) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
@@ -668,6 +701,7 @@ public partial class MainWindow
 
     private async Task UpdateLspSemanticTokensAsync()
     {
+        if (IsLargeLspDocument()) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;

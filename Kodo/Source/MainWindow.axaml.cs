@@ -117,6 +117,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly DispatcherTimer _InsightRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(750) };
     private readonly DispatcherTimer _syntaxHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private readonly DispatcherTimer _lspRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager;
@@ -730,14 +731,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
-        var dottedLineMargin = DottedLineMargin.Create();
-        dottedLineMargin.VerticalAlignment = VerticalAlignment.Top;
-        EditorTextBox.TextArea.LeftMargins.Add(dottedLineMargin);
-        EditorTextBox.TextArea.TextView.VisualLinesChanged += (_, _) =>
-        {
-            var textView = EditorTextBox.TextArea.TextView;
-            dottedLineMargin.Height = Math.Min(textView.DocumentHeight, textView.Bounds.Height);
-        };
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_errorHighlightRenderer);
@@ -776,9 +769,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
         {
             HideDiagnosticPopup();
-            _ = UpdateLspDocumentHighlightsAsync();
-            _ = UpdateLspInlayHintsAsync();
-            _ = UpdateLspSignatureHelpAsync();
+            _lspRefreshDebounceTimer.Stop();
+            _lspRefreshDebounceTimer.Start();
             QueueRefreshState();
             try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
             Dispatcher.UIThread.Post(() =>
@@ -913,6 +905,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _diagnosticPopupHideTimer.Tick += DiagnosticPopupHideTimer_OnTick;
         _diagnosticPopupShowTimer.Tick += DiagnosticPopupShowTimer_OnTick;
         _syntaxHighlightDebounceTimer.Tick += SyntaxHighlightDebounceTimer_OnTick;
+        _lspRefreshDebounceTimer.Tick += LspRefreshDebounceTimer_OnTick;
         _findHighlightDebounceTimer.Tick += FindHighlightDebounceTimer_OnTick;
         _settingsSaveDebounceTimer.Tick += SettingsSaveDebounceTimer_OnTick;
         _extensionsRefreshDebounceTimer.Tick += ExtensionsRefreshDebounceTimer_OnTick;
@@ -960,6 +953,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Closed += (_, _) =>
         {
             _syntaxHighlightDebounceTimer.Stop();
+            _lspRefreshDebounceTimer.Stop();
             _findHighlightDebounceTimer.Stop();
         };
 

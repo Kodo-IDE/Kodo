@@ -897,9 +897,9 @@ public partial class MainWindow
         if (ResolveLspExtensionForFile(filePath) is null) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         // For truly huge files, avoid per-keystroke LSP sync entirely - sync on save instead to eliminate lag
-        if (len > 300_000)
+        if (len > 120_000)
         {
-            KodoDiagnostics.LogDebug($"LSP didChange skipped for huge file len={len} (sync on save only)");
+            KodoDiagnostics.LogDebug($"LSP didChange skipped for large file len={len} (sync on save only)");
             return;
         }
         lock (_lspPendingLock) _pendingLspChangePath = filePath;

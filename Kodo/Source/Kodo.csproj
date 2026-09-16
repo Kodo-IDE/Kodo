@@ -12,9 +12,6 @@
     <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>
-    <!-- Vulnerability auditing requires network access to nuget.org. Keep
-         restores deterministic in offline/restricted environments; run an
-         explicit audit in CI or during release validation. -->
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
