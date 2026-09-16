@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -548,6 +549,11 @@ public partial class MainWindow
         _syntaxHighlightDebounceTimer.Start();
         if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
             QueueLspDidChange(_currentFilePath);
+        _ = UpdateLspSignatureHelpAsync();
+        _ = UpdateLspFoldingAsync();
+        _lspHighlightRenderer.Clear();
+        _ = UpdateLspInlayHintsAsync();
+        _ = UpdateLspSemanticTokensAsync();
 
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
@@ -566,6 +572,141 @@ public partial class MainWindow
             _findHighlightDebounceTimer.Stop();
             _findHighlightDebounceTimer.Start();
         }
+    }
+
+    private async Task UpdateLspSignatureHelpAsync()
+    {
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        var filePath = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspSignatureHelpAsync(filePath, EditorTextBox.TextArea.Caret.Offset, text).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("signatures", out var signatures) || signatures.ValueKind != JsonValueKind.Array || signatures.GetArrayLength() == 0) return;
+        var signature = signatures[0];
+        var label = signature.TryGetProperty("label", out var labelEl) ? labelEl.GetString() : null;
+        if (string.IsNullOrWhiteSpace(label)) return;
+        var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            ToolTip.SetTip(EditorTextBox.TextArea.TextView, string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}");
+            ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
+        });
+    }
+
+    private async Task UpdateLspFoldingAsync()
+    {
+        if (_lspFoldingManager is null || string.IsNullOrWhiteSpace(_currentFilePath) || EditorTextBox?.Document is null) return;
+        var filePath = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspFoldingRangesAsync(filePath).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Array) return;
+        var foldings = new List<AvaloniaEdit.Folding.NewFolding>();
+        foreach (var item in result.Value.EnumerateArray())
+        {
+            if (!item.TryGetProperty("startLine", out var sl) || !item.TryGetProperty("endLine", out var el)) continue;
+            var startLine = sl.GetInt32() + 1;
+            var endLine = el.GetInt32() + 1;
+            if (startLine < 1 || endLine <= startLine || startLine > EditorTextBox.Document.LineCount) continue;
+            endLine = Math.Min(endLine, EditorTextBox.Document.LineCount);
+            var start = EditorTextBox.Document.GetLineByNumber(startLine).Offset;
+            var end = EditorTextBox.Document.GetLineByNumber(endLine).EndOffset;
+            if (end > start) foldings.Add(new AvaloniaEdit.Folding.NewFolding(start, end));
+        }
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            _lspFoldingManager.UpdateFoldings(foldings.OrderBy(f => f.StartOffset), 0);
+        });
+    }
+
+    private async Task UpdateLspDocumentHighlightsAsync()
+    {
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        var filePath = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspDocumentHighlightsAsync(filePath, EditorTextBox.TextArea.Caret.Offset, text).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Array) return;
+        var matches = new List<(int Offset, int Length)>();
+        foreach (var item in result.Value.EnumerateArray())
+        {
+            if (!item.TryGetProperty("range", out var range)) continue;
+            if (!range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end)) continue;
+            var s = OffsetFromLspPosition(text, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32());
+            var e = OffsetFromLspPosition(text, end.GetProperty("line").GetInt32(), end.GetProperty("character").GetInt32());
+            if (e > s) matches.Add((s, e - s));
+        }
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            _lspHighlightRenderer.Clear();
+            foreach (var match in matches) _lspHighlightRenderer.AddMatch(match.Offset, match.Length);
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        });
+    }
+
+    private async Task UpdateLspInlayHintsAsync()
+    {
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        var filePath = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspInlayHintsAsync(filePath, text).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Array) return;
+        var hints = new List<(int Offset, string Label)>();
+        foreach (var item in result.Value.EnumerateArray())
+        {
+            if (!item.TryGetProperty("position", out var position) || !position.TryGetProperty("line", out var line) || !position.TryGetProperty("character", out var character)) continue;
+            var label = item.TryGetProperty("label", out var labelEl) ? labelEl.ValueKind == JsonValueKind.String ? labelEl.GetString() : labelEl.ToString() : null;
+            if (!string.IsNullOrWhiteSpace(label)) hints.Add((OffsetFromLspPosition(text, line.GetInt32(), character.GetInt32()), label!));
+        }
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            _lspInlayHintRenderer.SetHints(hints);
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+        });
+    }
+
+    private async Task UpdateLspSemanticTokensAsync()
+    {
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        var filePath = _currentFilePath;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspSemanticTokensAsync(filePath).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return;
+        var values = data.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Select(v => v.GetInt32()).ToArray();
+        var tokens = new List<(int Offset, int Length, IBrush Brush)>();
+        var line = 0; var character = 0;
+        var palette = new[] { "#569CD6", "#4EC9B0", "#DCDCAA", "#C586C0", "#CE9178", "#9CDCFE", "#B5CEA8", "#D7BA7D" };
+        for (var i = 0; i + 4 < values.Length; i += 5)
+        {
+            line += values[i];
+            character = values[i] == 0 ? character + values[i + 1] : values[i + 1];
+            var length = values[i + 2];
+            var offset = OffsetFromLspPosition(text, line, character);
+            if (length > 0 && offset < text.Length)
+            {
+                var tokenTypeName = GetLspSemanticTokenTypeName(filePath, values[i + 3]);
+                var paletteIndex = tokenTypeName?.ToLowerInvariant() switch
+                {
+                    "keyword" or "modifier" => 0,
+                    "type" or "class" or "interface" or "struct" or "enum" or "typeparameter" => 1,
+                    "function" or "method" or "macro" => 2,
+                    "property" or "field" => 3,
+                    "variable" or "parameter" => 4,
+                    "string" or "regexp" => 5,
+                    "number" => 6,
+                    "comment" => 7,
+                    _ => Math.Abs(values[i + 3]) % palette.Length
+                };
+                tokens.Add((offset, Math.Min(length, text.Length - offset), new SolidColorBrush(Color.Parse(palette[paletteIndex]), 0.18)));
+            }
+        }
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            _lspSemanticTokenRenderer.SetTokens(tokens);
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        });
     }
 
     private void SyntaxHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
@@ -860,6 +1001,108 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         try { EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText); } catch { }
     }, Avalonia.Threading.DispatcherPriority.Background);
 }
+    }
+
+    private async void EditorRenameSymbolMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var oldName = GetLanguageWordAtCaret();
+        if (string.IsNullOrWhiteSpace(oldName)) return;
+        var newName = await ShowTextInputDialogAsync("Rename Symbol", $"Rename '{oldName}' to:", oldName).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, oldName, StringComparison.Ordinal)) return;
+        if (!await TryLspRenameAsync(_currentFilePath, EditorTextBox.TextArea.Caret.Offset, EditorTextBox.Document.Text, newName).ConfigureAwait(false))
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "The language server could not rename this symbol.");
+    }
+
+    private async void EditorTypeDefinitionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var ok = await TryLspNavigateFeatureAsync(_currentFilePath, EditorTextBox.TextArea.Caret.Offset, EditorTextBox.Document.Text, "textDocument/typeDefinition").ConfigureAwait(false);
+        if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No type definition was found by the language server.");
+    }
+
+    private async void EditorImplementationMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var ok = await TryLspNavigateFeatureAsync(_currentFilePath, EditorTextBox.TextArea.Caret.Offset, EditorTextBox.Document.Text, "textDocument/implementation").ConfigureAwait(false);
+        if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No implementation was found by the language server.");
+    }
+
+    private async void EditorDocumentSymbolsMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var result = await GetLspDocumentSymbolsAsync(_currentFilePath).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind != JsonValueKind.Array || result.Value.GetArrayLength() == 0)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "The language server returned no document symbols.");
+            return;
+        }
+        var symbols = new List<(string Label, int Line, int Character)>();
+        void AddSymbols(JsonElement items, string indent)
+        {
+            foreach (var symbol in items.EnumerateArray())
+            {
+                if (!symbol.TryGetProperty("name", out var name)) continue;
+                var range = symbol.TryGetProperty("selectionRange", out var selection) ? selection : symbol.TryGetProperty("range", out var fallback) ? fallback : default;
+                if (range.ValueKind != JsonValueKind.Object || !range.TryGetProperty("start", out var start)) continue;
+                var kind = symbol.TryGetProperty("kind", out var kindEl) ? kindEl.GetInt32().ToString() : "";
+                symbols.Add(($"{indent}{name.GetString()}  ({kind})", start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32()));
+                if (symbol.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array) AddSymbols(children, indent + "  ");
+            }
+        }
+        AddSymbols(result.Value, "");
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var list = new ListBox { ItemsSource = symbols.Select(s => s.Label).ToArray(), MinHeight = 300, MinWidth = 420 };
+            var window = new Window { Title = "Document Symbols", Width = 560, Height = 420, Content = list, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            list.DoubleTapped += async (_, _) =>
+            {
+                if (list.SelectedIndex < 0 || list.SelectedIndex >= symbols.Count) return;
+                var selected = symbols[list.SelectedIndex];
+                window.Close();
+                if (EditorTextBox?.Document is null) return;
+                EditorTextBox.TextArea.Caret.Offset = OffsetFromLspPosition(EditorTextBox.Document.Text, selected.Line, selected.Character);
+                EditorTextBox.TextArea.Caret.BringCaretToView();
+                EditorTextBox.Focus();
+            };
+            await window.ShowDialog(this);
+        });
+    }
+
+    private async void EditorSignatureHelpMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is null) return;
+        var text = EditorTextBox.Document.Text;
+        var result = await GetLspSignatureHelpAsync(_currentFilePath, EditorTextBox.TextArea.Caret.Offset, text).ConfigureAwait(false);
+        var label = result is { } value && value.ValueKind == JsonValueKind.Object && value.TryGetProperty("signatures", out var signatures) && signatures.ValueKind == JsonValueKind.Array && signatures.GetArrayLength() > 0 && signatures[0].TryGetProperty("label", out var labelElement) ? labelElement.GetString() : null;
+        await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = string.IsNullOrWhiteSpace(label) ? "No signature help was returned by the language server." : $"Signature: {label}");
+    }
+
+    private async void EditorQuickFixMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        await ApplyCodeActionsAtCaretAsync().ConfigureAwait(false);
+    }
+
+    private async Task ApplyCodeActionsAtCaretAsync()
+    {
+        if (EditorTextBox?.Document is null) return;
+        var caret = EditorTextBox.TextArea.Caret.Offset;
+        var text = EditorTextBox.Document.Text;
+        var path = _currentFilePath;
+        if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null &&
+            await TryLspCodeActionsAsync(path, caret, text).ConfigureAwait(false)) return;
+        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules) return;
+        var action = rules.GetCodeActions(text).FirstOrDefault(candidate =>
+            caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
+        if (action is null) return;
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => EditorTextBox.Document.Replace(
+                action.Start,
+                Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start),
+                action.NewText));
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LangRules quick fix failed", ex); }
     }
 
     private async Task UpdateInsightAsync()

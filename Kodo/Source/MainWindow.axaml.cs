@@ -119,6 +119,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _syntaxHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager;
     private readonly DispatcherTimer _diagnosticPopupShowTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
@@ -377,6 +378,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _searchFilterDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
     private readonly FindHighlightRenderer _findHighlightRenderer = new();
+    private readonly FindHighlightRenderer _lspHighlightRenderer = new();
+    private readonly LspInlayHintRenderer _lspInlayHintRenderer = new();
+    private readonly LspSemanticTokenRenderer _lspSemanticTokenRenderer = new();
     private List<int> _findMatchOffsets = new();
     private int _currentFindMatchIndex = -1;
     private readonly List<string> _findInFileHistory = new();
@@ -721,6 +725,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? trimmedStartupPath
             : null;
         InitializeComponent();
+        _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
         NotifySettingsSearchChanged();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
@@ -737,6 +742,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_errorHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspHighlightRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspInlayHintRenderer);
+        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspSemanticTokenRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_htmlEmbeddedColorizer);
@@ -768,6 +776,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
         {
             HideDiagnosticPopup();
+            _ = UpdateLspDocumentHighlightsAsync();
+            _ = UpdateLspInlayHintsAsync();
+            _ = UpdateLspSignatureHelpAsync();
             QueueRefreshState();
             try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
             Dispatcher.UIThread.Post(() =>
@@ -7947,8 +7958,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (item.Name == "EditorFindReferencesMenuItem")
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true && GetLanguageWordAtCaret() is not null;
+            if (item.Name == "EditorRenameSymbolMenuItem")
+                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
+            if (item.Name is "EditorTypeDefinitionMenuItem" or "EditorImplementationMenuItem")
+                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
+            if (item.Name == "EditorDocumentSymbolsMenuItem")
+                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+            if (item.Name == "EditorSignatureHelpMenuItem")
+                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
             if (item.Name == "EditorFormatDocumentMenuItem")
-                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true;
+                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true ||
+                                 (ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true });
+            if (item.Name == "EditorQuickFixMenuItem")
+            {
+                var hasDiagnostic = GetDiagnosticAtCaret() is not null;
+                var hasProvider = CurrentLanguageExtension?.LangRules?.HasCodeActionProvider == true ||
+                                  ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+                item.IsEnabled = hasDiagnostic || hasProvider;
+                item.Header = hasDiagnostic ? "Quick Fix for Diagnostic…" : "Quick Fix…";
+            }
         }
     }
 

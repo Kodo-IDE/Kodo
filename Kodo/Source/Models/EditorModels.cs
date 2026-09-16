@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+﻿// Licensed under GPL-v3.0
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
@@ -14,6 +15,51 @@ using AvaloniaEdit.Rendering;
 using AvaloniaEdit;
 
 namespace Kodo.Models;
+
+public sealed class LspInlayHintRenderer : IBackgroundRenderer
+{
+    private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
+    public KnownLayer Layer => KnownLayer.Text;
+    public void SetHints(IReadOnlyList<(int Offset, string Label)> hints) => _hints = hints;
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (_hints.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;
+        foreach (var hint in _hints)
+        {
+            var line = textView.Document.GetLineByOffset(Math.Clamp(hint.Offset, 0, textView.Document.TextLength));
+            var column = Math.Max(1, hint.Offset - line.Offset + 1);
+            var pos = textView.GetVisualPosition(new TextViewPosition(line.LineNumber, column), VisualYPosition.LineBottom);
+            var formatted = new FormattedText($"  {hint.Label}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, new SolidColorBrush(Color.Parse("#8A8A8A")));
+            drawingContext.DrawText(formatted, new Point(pos.X + 3, pos.Y));
+        }
+    }
+}
+
+public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
+{
+    private IReadOnlyList<(int Offset, int Length, IBrush Brush)> _tokens = Array.Empty<(int, int, IBrush)>();
+    public KnownLayer Layer => KnownLayer.Background;
+    public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens) => _tokens = tokens;
+    public void Draw(TextView textView, DrawingContext drawingContext)
+    {
+        if (_tokens.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;
+        foreach (var token in _tokens)
+        {
+            if (token.Offset + token.Length < 0 || token.Offset > textView.Document.TextLength) continue;
+            var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
+            geometry.AddSegment(textView, new Segment(token.Offset, token.Length));
+            var shape = geometry.CreateGeometry();
+            if (shape is not null) drawingContext.DrawGeometry(token.Brush, null, shape);
+        }
+    }
+    private sealed class Segment : ISegment
+    {
+        public Segment(int offset, int length) { Offset = offset; Length = length; }
+        public int Offset { get; }
+        public int Length { get; }
+        public int EndOffset => Offset + Length;
+    }
+}
 
 public enum LineEnding
 {

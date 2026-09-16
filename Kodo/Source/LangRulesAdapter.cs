@@ -32,11 +32,13 @@ public sealed class LangRulesAdapter
     private readonly MethodInfo? _positionReferences;
     private readonly MethodInfo? _positionHover;
     private readonly MethodInfo? _positionCompletions;
+    private readonly ILangRulesProvider? _typedProvider;
 
-    private LangRulesAdapter(Type rules, AssemblyLoadContext loadContext)
+    private LangRulesAdapter(Type rules, AssemblyLoadContext loadContext, ILangRulesProvider? typedProvider = null)
     {
         _rules = rules;
         _loadContext = loadContext;
+        _typedProvider = typedProvider;
         _tokenize = rules.GetMethod("Tokenize", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _symbols = rules.GetMethod("AnalyzeSymbols", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
         _completions = rules.GetMethod("GetCompletionsForPrefix", BindingFlags.Public | BindingFlags.Static, [typeof(string)]);
@@ -68,7 +70,10 @@ public sealed class LangRulesAdapter
             var loadContext = new AssemblyLoadContext($"Kodo.LangRules.{Guid.NewGuid():N}", isCollectible: false);
             var assembly = loadContext.LoadFromAssemblyPath(Path.GetFullPath(path));
             var rules = assembly.GetTypes().FirstOrDefault(t => t.IsAbstract && t.IsSealed && t.Name == "LangRules");
-            return rules is null ? null : new LangRulesAdapter(rules, loadContext);
+            if (rules is not null) return new LangRulesAdapter(rules, loadContext);
+            var providerType = assembly.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(ILangRulesProvider).IsAssignableFrom(t));
+            if (providerType is null || Activator.CreateInstance(providerType) is not ILangRulesProvider provider) return null;
+            return new LangRulesAdapter(providerType, loadContext, provider);
         }
         catch (Exception ex)
         {
@@ -90,6 +95,49 @@ public sealed class LangRulesAdapter
     public bool HasEmbeddedRegions => _embeddedRegions is not null;
     public bool HasPositionNavigation => _positionDefinition is not null;
     public bool HasPositionCompletions => _positionCompletions is not null;
+    public IReadOnlyList<string> ValidationWarnings => DiscoverValidationWarnings();
+
+    /// <summary>Typed capability summary for extension discovery and diagnostics.</summary>
+    public LangRulesProviderInfo ProviderInfo => _typedProvider?.Info ?? new(
+        _rules.Assembly.GetName().Name ?? _rules.Name,
+        _rules.Assembly.GetName().Version?.ToString() ?? "0.0.0",
+        (HasTokenizer ? LangRulesCapability.Tokens : LangRulesCapability.None) |
+        (HasSymbolAnalyzer ? LangRulesCapability.Symbols : LangRulesCapability.None) |
+        (HasDiagnostics ? LangRulesCapability.Diagnostics : LangRulesCapability.None) |
+        (HasSemanticAnalyzer ? LangRulesCapability.SemanticAnalysis : LangRulesCapability.None) |
+        (HasPositionCompletions || _completions is not null ? LangRulesCapability.Completions : LangRulesCapability.None) |
+        (HasPositionNavigation || _definition is not null ? LangRulesCapability.Definition : LangRulesCapability.None) |
+        (_positionReferences is not null || _references is not null ? LangRulesCapability.References : LangRulesCapability.None) |
+        (HasHoverProvider ? LangRulesCapability.Hover : LangRulesCapability.None) |
+        (HasSignatureHelpProvider ? LangRulesCapability.SignatureHelp : LangRulesCapability.None) |
+        (HasCodeActionProvider ? LangRulesCapability.CodeActions : LangRulesCapability.None) |
+        (HasFormatter ? LangRulesCapability.Formatting : LangRulesCapability.None) |
+        (HasEmbeddedRegions ? LangRulesCapability.EmbeddedRegions : LangRulesCapability.None), ValidationWarnings);
+
+    private IReadOnlyList<string> DiscoverValidationWarnings()
+    {
+        var warnings = new List<string>();
+        var signatures = _rules.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .GroupBy(m => m.Name, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
+        var supported = new Dictionary<string, bool>(StringComparer.Ordinal)
+        {
+            ["Tokenize"] = _tokenize is not null, ["AnalyzeSymbols"] = _symbols is not null,
+            ["GetCompletionsForPrefix"] = _completions is not null || _contextCompletions is not null,
+            ["GetAllRegexes"] = _regexes is not null, ["GetColorMap"] = _colors is not null,
+            ["AnalyzeSyntax"] = _diagnostics is not null, ["AnalyzeSemantics"] = _semantics is not null,
+            ["FindDefinition"] = _definition is not null, ["FindReferences"] = _references is not null,
+            ["GetHoverInfo"] = _hover is not null, ["GetSignatureHelp"] = _signature is not null,
+            ["GetCodeActions"] = _codeActions is not null, ["FormatDocument"] = _formatter is not null,
+            ["GetEmbeddedRegions"] = _embeddedRegions is not null, ["FindDefinitionAt"] = _positionDefinition is not null,
+            ["FindReferencesAt"] = _positionReferences is not null, ["GetHoverInfoAt"] = _positionHover is not null,
+            ["GetCompletionsAt"] = _positionCompletions is not null
+        };
+        foreach (var pair in supported)
+            if (!pair.Value && signatures.ContainsKey(pair.Key))
+                warnings.Add($"{pair.Key} was found but its signature is not supported by this Kodo version.");
+        return warnings;
+    }
 
     public void OpenDocument(string uri, long version, string text) =>
         _worker.Open(new LanguageDocumentSnapshot(uri, version, text));
@@ -101,6 +149,7 @@ public sealed class LangRulesAdapter
 
     public LangRuleLocation? FindDefinitionAt(string code, int offset)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.FindDefinition(code, offset));
         if (_positionDefinition is null) return null;
         var response = Dispatch("textDocument/definition", code, request => _positionDefinition.Invoke(null, [request.Document.Text, request.Offset]), offset);
         return response.Result is null ? null : ConvertLocation(response.Result);
@@ -108,6 +157,7 @@ public sealed class LangRulesAdapter
 
     public LangRuleHover? GetHoverInfoAt(string code, int offset)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.GetHover(code, offset));
         if (_positionHover is null) return null;
         var response = Dispatch("textDocument/hover", code, request => _positionHover.Invoke(null, [request.Document.Text, request.Offset]), offset);
         if (response.Result is null) return null;
@@ -116,6 +166,7 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSyntax(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSyntax(code));
         if (_diagnostics is null) return [];
         var response = Dispatch("textDocument/diagnostics", code, request => _diagnostics.Invoke(null, [request.Document.Text]));
         return response.Result is null ? [] : ConvertDiagnostics(response.Result);
@@ -123,6 +174,7 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSemantics(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSemantics(code));
         if (_semantics is null) return [];
         var response = Dispatch("textDocument/semanticDiagnostics", code, request => _semantics.Invoke(null, [request.Document.Text]));
         return response.Result is null ? [] : ConvertDiagnostics(response.Result);
@@ -130,6 +182,7 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<LangRuleToken> Tokenize(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.Tokenize(code));
         if (_tokenize is null) return [];
         try { return ConvertTokens(_tokenize.Invoke(null, [code])); }
         catch { return []; }
@@ -137,9 +190,16 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<LangRuleSymbol> AnalyzeSymbols(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSymbols(code));
         if (_symbols is null) return [];
         var response = Dispatch("textDocument/documentSymbols", code, request => _symbols.Invoke(null, [request.Document.Text]));
         return response.Result is null ? [] : ConvertSymbols(response.Result);
+    }
+
+    private static IReadOnlyList<T> SafeTyped<T>(Func<IReadOnlyList<T>> operation)
+    {
+        try { return operation() ?? Array.Empty<T>(); }
+        catch { return Array.Empty<T>(); }
     }
 
     private LanguageWorkerResponse Dispatch(string method, string code, Func<LanguageWorkerRequest, object?> handler, int offset = 0)
@@ -172,20 +232,39 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<string> GetCompletions(string prefix, string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetCompletions(code, code.Length, prefix));
         if (_contextCompletions is null) return GetCompletions(prefix);
         try { return ConvertStrings(_contextCompletions.Invoke(null, [prefix, code])); }
         catch { return GetCompletions(prefix); }
     }
 
+    public IReadOnlyList<string> GetCompletionsAt(string code, int offset, string prefix)
+    {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetCompletions(code, offset, prefix));
+        if (_positionCompletions is null) return GetCompletions(prefix, code);
+        try { return ConvertStrings(_positionCompletions.Invoke(null, [code, offset])); }
+        catch { return GetCompletions(prefix, code); }
+    }
+
     public LangRuleLocation? FindDefinition(string code, string name)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.FindDefinition(code, Math.Max(0, code.IndexOf(name, StringComparison.Ordinal))));
         if (_definition is null) return null;
         try { return ConvertLocation(_definition.Invoke(null, [code, name])); }
         catch { return null; }
     }
 
+    public IReadOnlyList<LangRuleLocation> FindReferencesAt(string code, int offset)
+    {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.FindReferences(code, offset));
+        if (_positionReferences is null) return [];
+        var response = Dispatch("textDocument/references", code, request => _positionReferences.Invoke(null, [request.Document.Text, request.Offset]), offset);
+        return response.Result is null ? [] : ConvertRecords<LangRuleLocation>(response.Result, (x, t) => new(t("Name"), t("Kind"), i(x, "Start"), i(x, "Length"), b(x, "IsDeclaration")));
+    }
+
     public IReadOnlyList<LangRuleLocation> FindReferences(string code, string name)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.FindReferences(code, Math.Max(0, code.IndexOf(name, StringComparison.Ordinal))));
         if (_references is null) return [];
         try { return ConvertRecords<LangRuleLocation>(_references.Invoke(null, [code, name]), (x, t) => new(t("Name"), t("Kind"), i(x, "Start"), i(x, "Length"), b(x, "IsDeclaration"))); }
         catch { return []; }
@@ -193,6 +272,7 @@ public sealed class LangRulesAdapter
 
     public LangRuleHover? GetHoverInfo(string code, string name)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.GetHover(code, Math.Max(0, code.IndexOf(name, StringComparison.Ordinal))));
         if (_hover is null) return null;
         try
         {
@@ -205,6 +285,7 @@ public sealed class LangRulesAdapter
 
     public LangRuleSignatureHelp? GetSignatureHelp(string code, string name)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.GetSignatureHelp(code, Math.Max(0, code.IndexOf(name, StringComparison.Ordinal))));
         if (_signature is null) return null;
         try
         {
@@ -215,8 +296,15 @@ public sealed class LangRulesAdapter
         catch { return null; }
     }
 
+    public LangRuleSignatureHelp? GetSignatureHelpAt(string code, int offset)
+    {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.GetSignatureHelp(code, offset));
+        return null;
+    }
+
     public IReadOnlyList<LangRuleCodeAction> GetCodeActions(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetCodeActions(code, 0));
         if (_codeActions is null) return [];
         try { return ConvertRecords<LangRuleCodeAction>(_codeActions.Invoke(null, [code]), (x, t) => new(t("Title"), t("Kind"), i(x, "Start"), i(x, "Length"), t("NewText"), t("DiagnosticCode"))); }
         catch { return []; }
@@ -224,6 +312,7 @@ public sealed class LangRulesAdapter
 
     public string? FormatDocument(string code)
     {
+        if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.FormatDocument(code));
         if (_formatter is null) return null;
         try { return _formatter.Invoke(null, [code])?.ToString(); }
         catch { return null; }
@@ -231,9 +320,15 @@ public sealed class LangRulesAdapter
 
     public IReadOnlyList<LangRuleEmbeddedRegion> GetEmbeddedRegions(string code)
     {
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetEmbeddedRegions(code));
         if (_embeddedRegions is null) return [];
         try { return ConvertRecords<LangRuleEmbeddedRegion>(_embeddedRegions.Invoke(null, [code]), (x, t) => new(t("LanguageId"), i(x, "Start"), i(x, "Length"))); }
         catch { return []; }
+    }
+
+    private static T? SafeTypedValue<T>(Func<T?> operation) where T : class
+    {
+        try { return operation(); } catch { return null; }
     }
 
     public IReadOnlyDictionary<string, Regex> GetRegexes()

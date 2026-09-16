@@ -1,6 +1,8 @@
 // Licensed under GPL-v3.0
 #pragma warning disable CA1416 // Validate platform compatibility - guarded with IsOSPlatform checks
 using Avalonia.Threading;
+using Avalonia.Controls;
+using Avalonia.Layout;
 using Kodo.Models;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -38,6 +40,27 @@ internal sealed class LspClient : IDisposable
     public bool IsStarted => _process is not null && !_process.HasExited;
     public bool IsInitialized { get; private set; }
     public string Id => _config.Command;
+    public IReadOnlyList<string> SemanticTokenTypes { get; private set; } = Array.Empty<string>();
+
+    public bool Supports(string method)
+    {
+        if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return true;
+        var property = method switch
+        {
+            "textDocument/signatureHelp" => "signatureHelpProvider",
+            "textDocument/documentSymbol" => "documentSymbolProvider",
+            "textDocument/foldingRange" => "foldingRangeProvider",
+            "textDocument/semanticTokens/full" => "semanticTokensProvider",
+            "textDocument/inlayHint" => "inlayHintProvider",
+            "textDocument/documentHighlight" => "documentHighlightProvider",
+            "textDocument/typeDefinition" => "typeDefinitionProvider",
+            "textDocument/implementation" => "implementationProvider",
+            "textDocument/definition" => "definitionProvider",
+            _ => null
+        };
+        if (property is null || !caps.TryGetProperty(property, out var value)) return true;
+        return value.ValueKind != JsonValueKind.False;
+    }
 
     public event Action<string, JsonElement?>? OnNotification;
     public event Action<JsonElement>? OnResponse;
@@ -158,9 +181,17 @@ internal sealed class LspClient : IDisposable
                     ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
                         ["synchronization"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["didOpen"] = true, ["didChange"] = true, ["didClose"] = true, ["willSave"] = false },
-                        ["completion"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["completionItem"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["snippetSupport"] = false, ["documentationFormat"] = new[] { "markdown", "plaintext" } } },
+                        ["completion"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["completionItem"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["snippetSupport"] = true, ["documentationFormat"] = new[] { "markdown", "plaintext" }, ["resolveSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["properties"] = new[] { "documentation", "detail", "additionalTextEdits" } } } },
                         ["hover"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["contentFormat"] = new[] { "markdown", "plaintext" } },
+                        ["signatureHelp"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["signatureInformation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["documentationFormat"] = new[] { "markdown", "plaintext" }, ["parameterInformation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["labelOffsetSupport"] = true } } },
                         ["definition"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["linkSupport"] = false },
+                        ["typeDefinition"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["linkSupport"] = false },
+                        ["implementation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["linkSupport"] = false },
+                        ["documentSymbol"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["hierarchicalDocumentSymbolSupport"] = true, ["symbolKind"] = new Dictionary<string, object?>(StringComparer.Ordinal) },
+                        ["documentHighlight"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+                        ["foldingRange"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["lineFoldingOnly"] = false },
+                        ["semanticTokens"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["requests"] = new Dictionary<string, object?> { ["range"] = true, ["full"] = new Dictionary<string, object?> { ["delta"] = true } }, ["tokenTypes"] = Array.Empty<string>(), ["tokenModifiers"] = Array.Empty<string>(), ["formats"] = new[] { "relative" } },
+                        ["inlayHint"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["resolveSupport"] = new Dictionary<string, object?> { ["properties"] = new[] { "tooltip", "textEdits" } } },
                         ["publishDiagnostics"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["relatedInformation"] = true }
                     }
                 },
@@ -182,7 +213,12 @@ internal sealed class LspClient : IDisposable
                 throw new TimeoutException($"Language server '{_config.Command}' did not respond to initialize within 10s");
             }
             if (result.HasValue && result.Value.ValueKind == JsonValueKind.Object && result.Value.TryGetProperty("capabilities", out var caps))
+            {
                 ServerCapabilities = caps.Clone();
+                if (caps.TryGetProperty("semanticTokensProvider", out var semanticProvider) && semanticProvider.ValueKind == JsonValueKind.Object &&
+                    semanticProvider.TryGetProperty("legend", out var legend) && legend.TryGetProperty("tokenTypes", out var tokenTypes) && tokenTypes.ValueKind == JsonValueKind.Array)
+                    SemanticTokenTypes = tokenTypes.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString() ?? string.Empty).ToArray();
+            }
 
             await SendNotificationAsync("initialized", new Dictionary<string, object?>(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
             IsInitialized = true;
@@ -1645,18 +1681,15 @@ public partial class MainWindow
         if (items.Count == 0) return Array.Empty<InsightSuggestion>();
 
         var suggestions = new List<InsightSuggestion>(Math.Min(items.Count, 25));
+        var seenSuggestionTexts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in items)
         {
             if (!item.TryGetProperty("label", out var labelEl)) continue;
             var label = labelEl.GetString();
             if (string.IsNullOrWhiteSpace(label)) continue;
             // Filter by prefix (LSP should already filter, but ensure)
-            if (!label.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
-                !(item.TryGetProperty("insertText", out var it) && (it.GetString() ?? "").StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-            {
-                // Still include if prefix is substring? Keep strict prefix for now
-                if (!label.Contains(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-            }
+            var filterText = item.TryGetProperty("filterText", out var filterEl) ? filterEl.GetString() ?? label : label;
+            if (!filterText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
 
             string insertText = label;
             if (item.TryGetProperty("insertText", out var ins) && !string.IsNullOrWhiteSpace(ins.GetString()))
@@ -1678,7 +1711,7 @@ public partial class MainWindow
                 _ => InsightKind.Variable
             };
 
-            // Avoid duplicates later via HashSet, but add now
+            if (!seenSuggestionTexts.Add(insertText)) continue;
             suggestions.Add(new InsightSuggestion(insertText, kind));
             if (suggestions.Count >= 25) break;
         }
@@ -1992,7 +2025,7 @@ public partial class MainWindow
             },
             ["context"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["diagnostics"] = Array.Empty<object>()
+                ["diagnostics"] = GetDiagnosticContextForLsp(text, offset)
             }
         };
         KodoDiagnostics.LogDebug($"LSP codeAction request file={filePath} offset={offset}");
@@ -2012,8 +2045,8 @@ public partial class MainWindow
         var actions = result.Value.EnumerateArray().ToList();
         KodoDiagnostics.LogDebug($"LSP codeAction response count={actions.Count} for {filePath}");
         if (actions.Count == 0) return false;
-        // For now, apply first action if it has edit
-        var first = actions[0];
+        var first = actions.Count == 1 ? actions[0] : await ChooseLspCodeActionAsync(actions).ConfigureAwait(false);
+        if (first.ValueKind == JsonValueKind.Undefined || first.ValueKind == JsonValueKind.Null) return false;
         if (first.TryGetProperty("edit", out var edit) && edit.ValueKind == JsonValueKind.Object)
         {
             return await ApplyLspWorkspaceEditAsync(edit, filePath, text);
@@ -2021,26 +2054,267 @@ public partial class MainWindow
         if (first.TryGetProperty("command", out var cmd))
         {
             KodoDiagnostics.LogDebug($"LSP codeAction is command: {cmd.GetRawText()}");
-            return false; // Commands need workspace/executeCommand
+            // LSP permits either a command object or a command string. Execute
+            // command objects through the server and only report success when
+            // the server acknowledges the request.
+            string? commandText = null;
+            JsonElement? commandArgs = null;
+            if (cmd.ValueKind == JsonValueKind.String)
+                commandText = cmd.GetString();
+            else if (cmd.ValueKind == JsonValueKind.Object && cmd.TryGetProperty("command", out var commandName))
+            {
+                commandText = commandName.GetString();
+                if (cmd.TryGetProperty("arguments", out var args)) commandArgs = args;
+            }
+            if (string.IsNullOrWhiteSpace(commandText)) return false;
+            var executeParams = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["command"] = commandText,
+                ["arguments"] = commandArgs.HasValue ? JsonSerializer.Deserialize<object>(commandArgs.Value.GetRawText()) : null
+            };
+            try
+            {
+                using var executeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                executeCts.CancelAfter(TimeSpan.FromSeconds(5));
+                await client.SendRequestAsync("workspace/executeCommand", executeParams, executeCts.Token).ConfigureAwait(false);
+                return true;
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("LSP executeCommand failed", ex); return false; }
         }
         return false;
+    }
+
+    private async Task<JsonElement> ChooseLspCodeActionAsync(IReadOnlyList<JsonElement> actions)
+    {
+        var selected = -1;
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var labels = actions.Select(action => action.TryGetProperty("title", out var title) ? title.GetString() ?? "Untitled code action" : "Untitled code action").ToArray();
+            var list = new ListBox { ItemsSource = labels, MinHeight = 220, MinWidth = 520 };
+            var apply = new Button { Content = "Apply", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Avalonia.Thickness(0, 8, 0, 0) };
+            var cancel = new Button { Content = "Cancel", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Avalonia.Thickness(8, 8, 0, 0) };
+            var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { cancel, apply } };
+            var panel = new StackPanel { Margin = new Avalonia.Thickness(12), Children = { new TextBlock { Text = "Select a code action", FontWeight = Avalonia.Media.FontWeight.Bold }, list, buttons } };
+            var window = new Window { Title = "LSP Code Actions", Width = 620, Height = 380, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            apply.Click += (_, _) => { selected = list.SelectedIndex; window.Close(); };
+            cancel.Click += (_, _) => window.Close();
+            list.DoubleTapped += (_, _) => { selected = list.SelectedIndex; window.Close(); };
+            list.SelectedIndex = 0;
+            await window.ShowDialog(this);
+        });
+        return selected >= 0 && selected < actions.Count ? actions[selected] : default;
+    }
+
+    private async Task<bool> TryLspRenameAsync(string? filePath, int offset, string text, string newName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(newName)) return false;
+        var ext = ResolveLspExtensionForFile(filePath);
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
+        if (ext is null || cfg is null) return false;
+        var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg);
+        if (client is null || !client.IsInitialized) return false;
+        var (line, character) = OffsetToLspPosition(text, offset);
+        var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath) },
+            ["position"] = new Dictionary<string, object?> { ["line"] = line, ["character"] = character },
+            ["newName"] = newName
+        };
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            var result = await client.SendRequestAsync("textDocument/rename", parameters, timeout.Token).ConfigureAwait(false);
+            if (result is null || result.Value.ValueKind != JsonValueKind.Object) return false;
+            return await ApplyLspWorkspaceEditAsync(result.Value, filePath, text).ConfigureAwait(false);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP rename failed for {filePath}", ex); return false; }
+    }
+
+    private async Task<JsonElement?> RequestLspFeatureAsync(string? filePath, string method, object parameters, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return null;
+        var ext = ResolveLspExtensionForFile(filePath);
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
+        if (ext is null || cfg is null) return null;
+        var workspace = GetWorkspaceRootForFile(filePath);
+        var client = _lspManager.TryGetClient(workspace, cfg);
+        if (client is null || !client.IsInitialized) return null;
+        if (!client.Supports(method)) return null;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            return await client.SendRequestAsync(method, parameters, timeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP {method} failed for {filePath}", ex);
+            return null;
+        }
+    }
+
+    private string? GetLspSemanticTokenTypeName(string? filePath, int tokenType)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return null;
+        var ext = ResolveLspExtensionForFile(filePath);
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
+        if (ext is null || cfg is null) return null;
+        var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg);
+        return client is { IsInitialized: true } && tokenType >= 0 && tokenType < client.SemanticTokenTypes.Count
+            ? client.SemanticTokenTypes[tokenType]
+            : null;
+    }
+
+    private object CreateLspPositionParams(string filePath, string text, int offset)
+    {
+        var (line, character) = OffsetToLspPosition(text, offset);
+        return new Dictionary<string, object?>
+        {
+            ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath) },
+            ["position"] = new Dictionary<string, object?> { ["line"] = line, ["character"] = character }
+        };
+    }
+
+    private Task<JsonElement?> GetLspSignatureHelpAsync(string? filePath, int offset, string text, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/signatureHelp", CreateLspPositionParams(filePath!, text, offset), ct);
+
+    private Task<JsonElement?> GetLspDocumentSymbolsAsync(string? filePath, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/documentSymbol", new Dictionary<string, object?> { ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath!) } }, ct);
+
+    private Task<JsonElement?> GetLspFoldingRangesAsync(string? filePath, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/foldingRange", new Dictionary<string, object?> { ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath!) } }, ct);
+
+    private Task<JsonElement?> GetLspSemanticTokensAsync(string? filePath, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/semanticTokens/full", new Dictionary<string, object?> { ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath!) } }, ct);
+
+    private Task<JsonElement?> GetLspInlayHintsAsync(string? filePath, string text, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/inlayHint", new Dictionary<string, object?>
+        {
+            ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath!) },
+            ["range"] = new Dictionary<string, object?>
+            {
+                ["start"] = new Dictionary<string, object?> { ["line"] = 0, ["character"] = 0 },
+                ["end"] = new Dictionary<string, object?> { ["line"] = text.Count(c => c == '\n'), ["character"] = 0 }
+            }
+        }, ct);
+
+    private Task<JsonElement?> GetLspDocumentHighlightsAsync(string? filePath, int offset, string text, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/documentHighlight", CreateLspPositionParams(filePath!, text, offset), ct);
+
+    private Task<JsonElement?> GetLspTypeDefinitionAsync(string? filePath, int offset, string text, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/typeDefinition", CreateLspPositionParams(filePath!, text, offset), ct);
+
+    private Task<JsonElement?> GetLspImplementationAsync(string? filePath, int offset, string text, CancellationToken ct = default) =>
+        RequestLspFeatureAsync(filePath, "textDocument/implementation", CreateLspPositionParams(filePath!, text, offset), ct);
+
+    private async Task<bool> TryLspNavigateFeatureAsync(string? filePath, int offset, string text, string method, CancellationToken ct = default)
+    {
+        var result = await (method == "textDocument/typeDefinition"
+            ? GetLspTypeDefinitionAsync(filePath, offset, text, ct)
+            : GetLspImplementationAsync(filePath, offset, text, ct)).ConfigureAwait(false);
+        if (result is null || result.Value.ValueKind == JsonValueKind.Null) return false;
+        var item = result.Value.ValueKind == JsonValueKind.Array ? result.Value.EnumerateArray().FirstOrDefault() : result.Value;
+        if (item.ValueKind != JsonValueKind.Object) return false;
+        var uri = item.TryGetProperty("uri", out var u) ? u.GetString() : item.TryGetProperty("targetUri", out var tu) ? tu.GetString() : null;
+        var range = item.TryGetProperty("range", out var r) ? r : item.TryGetProperty("targetSelectionRange", out var tsr) ? tsr : item.TryGetProperty("targetRange", out var tr) ? tr : default;
+        if (string.IsNullOrWhiteSpace(uri) || range.ValueKind != JsonValueKind.Object) return false;
+        var start = range.GetProperty("start");
+        var path = FileUriToPath(uri);
+        if (!File.Exists(path)) return false;
+        var targetText = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
+        var targetOffset = OffsetFromLspPosition(targetText, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32());
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            await OpenFileFromPathAsync(path).ConfigureAwait(false);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (EditorTextBox?.Document is null) return;
+                EditorTextBox.TextArea.Caret.Offset = Math.Clamp(targetOffset, 0, EditorTextBox.Document.TextLength);
+                EditorTextBox.TextArea.Caret.BringCaretToView();
+                EditorTextBox.Focus();
+            }, DispatcherPriority.Background);
+        });
+        return true;
+    }
+
+    private object[] GetDiagnosticContextForLsp(string text, int offset)
+    {
+        var diagnostic = GetDiagnosticAtCaret();
+        if (diagnostic is not { } d) return Array.Empty<object>();
+        var (line, character) = OffsetToLspPosition(text, d.offset);
+        var (endLine, endCharacter) = OffsetToLspPosition(text, d.offset + Math.Max(1, d.length));
+        return new object[] { new Dictionary<string, object?>
+        {
+            ["range"] = new Dictionary<string, object?>
+            {
+                ["start"] = new Dictionary<string, object?> { ["line"] = line, ["character"] = character },
+                ["end"] = new Dictionary<string, object?> { ["line"] = endLine, ["character"] = endCharacter }
+            },
+            ["message"] = d.message,
+            ["severity"] = 1
+        }};
     }
 
     private async Task<bool> ApplyLspWorkspaceEditAsync(JsonElement edit, string filePath, string text)
     {
         try
         {
+            var applied = false;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (EditorTextBox?.Document is null) return;
                 var doc = EditorTextBox.Document;
+                // Workspace edits are calculated against the request snapshot.
+                // Never apply a delayed edit to newer editor contents.
+                if (!string.Equals(doc.Text, text, StringComparison.Ordinal))
+                {
+                    KodoDiagnostics.LogDebug($"LSP workspace edit rejected as stale for {filePath}");
+                    return;
+                }
                 // edit can be {changes: {uri: [edits]}} or {documentChanges: [...]}
 if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var prop in changes.EnumerateObject())
                     {
                         var uri = prop.Name;
-                        if (!IsSameDocument(uri, filePath)) continue;
+                        if (!IsSameDocument(uri, filePath))
+                        {
+                            var targetPath = FileUriToPath(uri);
+                            var targetTab = OpenTabs.FirstOrDefault(t => IsSameDocument(t.Path, targetPath));
+                            if (targetTab is null)
+                            {
+                                if (!File.Exists(targetPath)) continue;
+                                var updatedFile = File.ReadAllText(targetPath);
+                                var originalFile = updatedFile;
+                                foreach (var e in prop.Value.EnumerateArray().OrderByDescending(e => e.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32()))
+                                {
+                                    if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
+                                    var s = range.GetProperty("start"); var ee = range.GetProperty("end");
+                                    var so = OffsetFromLspPosition(updatedFile, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                                    var eo = OffsetFromLspPosition(updatedFile, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                                    if (so < 0 || eo < so || eo > updatedFile.Length) continue;
+                                    updatedFile = updatedFile.Remove(so, eo - so).Insert(so, nt.GetString() ?? string.Empty);
+                                }
+                                if (!string.Equals(originalFile, updatedFile, StringComparison.Ordinal)) { File.WriteAllText(targetPath, updatedFile); applied = true; }
+                                continue;
+                            }
+                            var updated = targetTab.Content;
+                            foreach (var e in prop.Value.EnumerateArray().OrderByDescending(e => e.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32()))
+                            {
+                                if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
+                                var s = range.GetProperty("start"); var ee = range.GetProperty("end");
+                                var so = OffsetFromLspPosition(updated, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                                var eo = OffsetFromLspPosition(updated, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                                if (so < 0 || eo < so || eo > updated.Length) continue;
+                                updated = updated.Remove(so, eo - so).Insert(so, nt.GetString() ?? string.Empty);
+                            }
+                            var changed = !string.Equals(updated, targetTab.Content, StringComparison.Ordinal);
+                            targetTab.Content = updated;
+                            targetTab.IsDirty = true;
+                            applied |= changed;
+                            continue;
+                        }
                         foreach (var e in prop.Value.EnumerateArray())
                         {
                             if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
@@ -2052,6 +2326,7 @@ if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == Json
                             try
                             {
                                 doc.Replace(sOff, len, nt.GetString() ?? "");
+                                applied = true;
                             }
                             catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
                             {
@@ -2068,9 +2343,61 @@ if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == Json
                 {
                     foreach (var dc in docChanges.EnumerateArray())
                     {
+                        if (dc.TryGetProperty("kind", out var operationKind) && operationKind.ValueKind == JsonValueKind.String)
+                        {
+                            var kind = operationKind.GetString();
+                            var operationUri = dc.TryGetProperty("uri", out var opUri) ? opUri.GetString() : null;
+                            var operationPath = string.IsNullOrWhiteSpace(operationUri) ? null : FileUriToPath(operationUri);
+                            try
+                            {
+                                if (kind == "create" && !string.IsNullOrWhiteSpace(operationPath))
+                                {
+                                    var overwrite = dc.TryGetProperty("options", out var options) && options.TryGetProperty("overwrite", out var ow) && ow.GetBoolean();
+                                    if (File.Exists(operationPath) && !overwrite) continue;
+                                    Directory.CreateDirectory(Path.GetDirectoryName(operationPath)!);
+                                    if (!File.Exists(operationPath) || overwrite) File.WriteAllText(operationPath, string.Empty);
+                                    applied = true;
+                                }
+                                else if (kind == "delete" && !string.IsNullOrWhiteSpace(operationPath) && File.Exists(operationPath))
+                                {
+                                    var ignoreIfNotExists = dc.TryGetProperty("options", out var options) && options.TryGetProperty("ignoreIfNotExists", out var ign) && ign.GetBoolean();
+                                    if (!ignoreIfNotExists || File.Exists(operationPath)) File.Delete(operationPath);
+                                    applied = true;
+                                }
+                                else if (kind == "rename" && dc.TryGetProperty("oldUri", out var oldUriEl) && !string.IsNullOrWhiteSpace(operationUri))
+                                {
+                                    var oldPath = FileUriToPath(oldUriEl.GetString() ?? string.Empty);
+                                    if (!File.Exists(oldPath)) continue;
+                                    Directory.CreateDirectory(Path.GetDirectoryName(operationPath!)!);
+                                    File.Move(oldPath, operationPath!, overwrite: dc.TryGetProperty("options", out var options) && options.TryGetProperty("overwrite", out var ow) && ow.GetBoolean());
+                                    applied = true;
+                                }
+                            }
+                            catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP resource operation {kind} failed", ex); }
+                            continue;
+                        }
                         if (!dc.TryGetProperty("edits", out var edits)) continue;
                         var uri = dc.TryGetProperty("textDocument", out var td) && td.TryGetProperty("uri", out var u) ? u.GetString() : filePath;
-                        if (!IsSameDocument(uri, filePath)) continue;
+                        if (!IsSameDocument(uri, filePath))
+                        {
+                            var targetPath = FileUriToPath(uri ?? string.Empty);
+                            var targetTab = OpenTabs.FirstOrDefault(t => IsSameDocument(t.Path, targetPath));
+                            var updated = targetTab?.Content ?? (File.Exists(targetPath) ? File.ReadAllText(targetPath) : null);
+                            if (updated is null) continue;
+                            foreach (var e in edits.EnumerateArray().OrderByDescending(e => e.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32()))
+                            {
+                                if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
+                                var s = range.GetProperty("start"); var ee = range.GetProperty("end");
+                                var so = OffsetFromLspPosition(updated, s.GetProperty("line").GetInt32(), s.GetProperty("character").GetInt32());
+                                var eo = OffsetFromLspPosition(updated, ee.GetProperty("line").GetInt32(), ee.GetProperty("character").GetInt32());
+                                if (so < 0 || eo < so || eo > updated.Length) continue;
+                                updated = updated.Remove(so, eo - so).Insert(so, nt.GetString() ?? string.Empty);
+                            }
+                            if (targetTab is not null) { targetTab.Content = updated; targetTab.IsDirty = true; }
+                            else if (!string.IsNullOrWhiteSpace(targetPath)) File.WriteAllText(targetPath, updated);
+                            applied = true;
+                            continue;
+                        }
                         foreach (var e in edits.EnumerateArray().OrderByDescending(e => e.GetProperty("range").GetProperty("start").GetProperty("line").GetInt32() * 10000))
                         {
                             if (!e.TryGetProperty("newText", out var nt) || !e.TryGetProperty("range", out var range)) continue;
@@ -2081,6 +2408,7 @@ var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.G
                 try
                 {
                     doc.Replace(sOff, Math.Max(0, eOff - sOff), nt.GetString() ?? "");
+                    applied = true;
                 }
                 catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2094,7 +2422,7 @@ var sOff = OffsetFromLspPosition(doc.Text, s.GetProperty("line").GetInt32(), s.G
                     }
                 }
             });
-            return true;
+            return applied;
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"ApplyLspWorkspaceEdit failed: {ex.Message}", ex); return false; }
     }
