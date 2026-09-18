@@ -2013,7 +2013,7 @@ public partial class MainWindow
     }
 
     // Phase 8 – Hover (generic) with coalescing and dedup
-    private async Task<string?> GetLspHoverAsync(string? filePath, int offset, string text, CancellationToken ct = default)
+    private async Task<string?> GetLspHoverAsync(string? filePath, int offset, int line, int character, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
         var hoverKey = $"{NormalizeFilePath(filePath)}:{offset}";
@@ -2036,7 +2036,7 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug($"LSP hover coalesced duplicate for {hoverKey}");
             return await coalesced.ConfigureAwait(false);
         }
-        var hoverTask = GetLspHoverInnerAsync(filePath, offset, text, ct);
+        var hoverTask = GetLspHoverInnerAsync(filePath, offset, line, character, ct);
         lock (_lspHoverCacheLock)
         {
             _lspPendingHovers[hoverKey] = hoverTask;
@@ -2047,7 +2047,7 @@ public partial class MainWindow
         finally { lock (_lspHoverCacheLock) _lspPendingHovers.Remove(hoverKey); }
     }
 
-    private async Task<string?> GetLspHoverInnerAsync(string? filePath, int offset, string text, CancellationToken ct)
+    private async Task<string?> GetLspHoverInnerAsync(string? filePath, int offset, int line, int character, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
         var lspExt = ResolveLspExtensionForFile(filePath);
@@ -2068,13 +2068,12 @@ public partial class MainWindow
         KodoDiagnostics.LogDebug($"LSP hover request file={filePath} offset={offset}");
 
         var uri = FilePathToUri(filePath);
-        var (line, character) = OffsetToLspPosition(text, offset);
         var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
             ["position"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = line, ["character"] = character }
         };
-        KodoDiagnostics.LogDebug($"LSP hover request id=? file={filePath} uri={uri} offset={offset} -> line={line} char={character} textAtOffset='{text.Substring(Math.Max(0, offset-10), Math.Min(20, text.Length - Math.Max(0, offset-10))).Replace("\n","\\n").Replace("\r","\\r")}'");
+        KodoDiagnostics.LogDebug($"LSP hover request id=? file={filePath} uri={uri} offset={offset} -> line={line} char={character}");
 
         JsonElement? result;
         try

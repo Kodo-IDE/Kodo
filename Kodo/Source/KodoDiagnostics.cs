@@ -347,12 +347,25 @@ internal static class KodoDiagnostics
         return path;
     }
 
+    private static readonly object _logWriteLock = new();
+    private static readonly Dictionary<string, FileStream> _logStreams = new(StringComparer.OrdinalIgnoreCase);
+
     private static void WritePayloadToDisk(string payload, string primaryPath)
     {
         try
         {
-            Directory.CreateDirectory(LogDirectoryPath);
-            File.AppendAllText(primaryPath, payload + Environment.NewLine);
+            var bytes = Encoding.UTF8.GetBytes(payload + Environment.NewLine);
+            lock (_logWriteLock)
+            {
+                if (!_logStreams.TryGetValue(primaryPath, out var stream))
+                {
+                    Directory.CreateDirectory(LogDirectoryPath);
+                    stream = new FileStream(primaryPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                    _logStreams[primaryPath] = stream;
+                }
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush();
+            }
             return;
         }
         catch { }

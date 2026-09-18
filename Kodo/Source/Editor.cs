@@ -270,33 +270,36 @@ public partial class MainWindow
                     await Task.Delay(250, hoverCts.Token);
                     var hoverState = await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (hoverCts.IsCancellationRequested) return (-1, (string?)null, -1, -1, ' ', "");
+                        if (hoverCts.IsCancellationRequested) return (-1, -1, -1, -1, -1, ' ', "");
                         try
                         {
                             var f = hoverView.GetPositionFloor(hoverPos + hoverView.ScrollOffset);
-                            if (f is null || EditorTextBox?.Document is null) return (-1, (string?)null, -1, -1, ' ', "");
-                            var l = EditorTextBox.Document.GetLineByNumber(f.Value.Line);
-                            var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, EditorTextBox.Document.TextLength);
-                            var txt = EditorTextBox.Document.Text;
-                            var ch = off >= 0 && off < txt.Length ? txt[off] : ' ';
-                            var lineText = l.Length > 0 ? txt.Substring(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
-                            var snippet = off >= 0 && txt.Length > 0 ? txt.Substring(Math.Max(0, off-10), Math.Min(20, txt.Length - Math.Max(0, off-10))).Replace("\n","\\n").Replace("\r","\\r") : "";
+                            if (f is null || EditorTextBox?.Document is null) return (-1, -1, -1, -1, -1, ' ', "");
+                            var doc = EditorTextBox.Document;
+                            var l = doc.GetLineByNumber(f.Value.Line);
+                            var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, doc.TextLength);
+                            var ch = off >= 0 && off < doc.TextLength ? doc.GetCharAt(off) : ' ';
+                            var lineText = l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
+                            var snippetFrom = Math.Max(0, off - 10);
+                            var snippet = doc.TextLength > 0 ? doc.GetText(snippetFrom, Math.Min(20, doc.TextLength - snippetFrom)).Replace("\n","\\n").Replace("\r","\\r") : "";
+                            var lspLine = f.Value.Line - 1;
+                            var lspChar = Math.Max(0, off - l.Offset);
                             KodoDiagnostics.LogDebug($"LSP hover mapping: mouse=({hoverPos.X:F1},{hoverPos.Y:F1}) TextView line={f.Value.Line} col={f.Value.Column} docOffset={off} char='{ch}' lineText='{lineText}' snippet='{snippet}'");
-                            return (off, txt, f.Value.Line, f.Value.Column, ch, snippet);
+                            return (off, lspLine, lspChar, f.Value.Line, f.Value.Column, ch, snippet);
                         }
-                        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover mapping failed: {ex.Message}"); return (-1, (string?)null, -1, -1, ' ', ""); }
+                        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover mapping failed: {ex.Message}"); return (-1, -1, -1, -1, -1, ' ', ""); }
                     });
                     if (hoverCts.IsCancellationRequested) return;
                     var hoverOffset = hoverState.Item1;
-                    var hoverText = hoverState.Item2;
-                    var hoverLine = hoverState.Item3;
-                    var hoverCol = hoverState.Item4;
-                    var hoverChar = hoverState.Item5;
-                    var hoverSnippet = hoverState.Item6;
-                    if (hoverOffset < 0 || hoverText is null) return;
-                    var (lspLine, lspChar) = OffsetToLspPosition(hoverText, hoverOffset);
+                    var lspLine = hoverState.Item2;
+                    var lspChar = hoverState.Item3;
+                    var hoverLine = hoverState.Item4;
+                    var hoverCol = hoverState.Item5;
+                    var hoverChar = hoverState.Item6;
+                    var hoverSnippet = hoverState.Item7;
+                    if (hoverOffset < 0 || lspLine < 0) return;
                     KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset} char='{hoverChar}' line={hoverLine} col={hoverCol} -> LSP line={lspLine} char={lspChar} snippet='{hoverSnippet}'");
-                    var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, hoverText, hoverCts.Token).ConfigureAwait(false);
+                    var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, lspLine, lspChar, hoverCts.Token).ConfigureAwait(false);
                     if (hoverCts.IsCancellationRequested) return;
                     if (string.IsNullOrWhiteSpace(hoverInfo))
                     {
@@ -1177,14 +1180,14 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         }
 
         var doc = EditorTextBox.Document;
-        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
-        var text = doc.Text;
         // Avoid lag on large files – completion uses heavy ScanDocument.
-        if (text.Length > 80_000)
+        if (doc.TextLength > 80_000)
         {
             CloseCompletionWindow();
             return;
         }
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
+        var text = doc.Text;
 
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
@@ -1326,14 +1329,14 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
             return;
         }
 
-        var text = EditorTextBox.Document.Text;
         // Avoid immense lag on large files (>80k) – dead code scan is O(n) regex heavy.
-        if (text.Length > 80_000)
+        if (EditorTextBox.Document.TextLength > 80_000)
         {
             ClearDeadCodeHighlighting();
             HideDiagnosticPopup();
             return;
         }
+        var text = EditorTextBox.Document.Text;
         var languageExtension = CurrentLanguageExtension;
         var folderPath = _currentFolderPath;
         var filePath = _currentFilePath;
