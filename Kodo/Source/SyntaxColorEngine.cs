@@ -259,6 +259,18 @@ public sealed class CompiledSyntaxProfile
 
 public static class EmbeddedTagContent
 {
+    private static readonly Regex ScriptCloseRegex = new(@"</\s*script\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex StyleCloseRegex = new(@"</\s*style\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static readonly Regex CodeCloseRegex = new(@"</\s*x:code\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    internal static Regex GetCloseTagRegex(string tagName) => tagName.ToLowerInvariant() switch
+    {
+        "script" => ScriptCloseRegex,
+        "style" => StyleCloseRegex,
+        "x:code" => CodeCloseRegex,
+        _ => new Regex($@"</\s*{Regex.Escape(tagName)}\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase)
+    };
+
     private const string CDataStart = "<![CDATA[";
     private const string CDataEnd = "]]>";
     public static bool TryExtract(
@@ -1500,9 +1512,14 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
                     return;
             }
+            if (document.TextLength > 80_000)
+                return;
         }
 
+        var snapshotWatch = System.Diagnostics.Stopwatch.StartNew();
         var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
+        snapshotWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("interpolation snapshot", snapshotWatch.ElapsedMilliseconds, 500, $"len={document.TextLength}");
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
         ScanLine(text, line.Offset, lineState.ActiveInterpolation);
@@ -2706,8 +2723,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return match.Success ? match.Groups["value"].Value : null;
     }
 
-    private static Regex BuildHtmlCloseTagRegex(string tagName) =>
-        new($@"</\s*{Regex.Escape(tagName)}\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static Regex BuildHtmlCloseTagRegex(string tagName) => EmbeddedTagContent.GetCloseTagRegex(tagName);
 
     private static bool SupportsMarkdownNestedHtml(EmbeddedSyntaxProfile? profile) =>
         profile?.Extension.Extensions.Any(ext =>
@@ -3122,8 +3138,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         return match.Success ? match.Groups["value"].Value : null;
     }
 
-    private static Regex BuildCloseTagRegex(string tagName) =>
-        new($@"</\s*{Regex.Escape(tagName)}\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    private static Regex BuildCloseTagRegex(string tagName) => EmbeddedTagContent.GetCloseTagRegex(tagName);
 
     private static IBrush GetRainbowBrush(int depth) => RainbowBrushes[Math.Abs(depth) % RainbowBrushes.Length];
 

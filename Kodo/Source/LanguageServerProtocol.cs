@@ -31,16 +31,45 @@ internal sealed class LspClient : IDisposable
     private Task? _readLoop;
     private Task? _stderrLoop;
     private int _nextId = 1;
-    private readonly object _writeLock = new();
+    private readonly object _writeGate = new();
+    private readonly HashSet<PendingWrite> _writes = new();
+    private Task _writeTail = Task.CompletedTask;
+    private Exception? _transportError;
+
+    private sealed class PendingWrite
+    {
+        public required Func<string> Serialize { get; init; }
+        public CancellationToken CancellationToken { get; init; }
+        public TaskCompletionSource<bool> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Writing { get; set; }
+    }
+
     private readonly StringBuilder _stderrBuffer = new();
     private bool _disposed;
     private bool _shutdownRequested;
     private string _shutdownReason = "";
 
-    public bool IsStarted => _process is not null && !_process.HasExited;
+    public bool IsStarted
+    {
+        get
+        {
+            lock (_writeGate)
+                return _transportError is null && _process is not null && !_process.HasExited;
+        }
+    }
     public bool IsInitialized { get; private set; }
     public string Id => _config.Command;
     public IReadOnlyList<string> SemanticTokenTypes { get; private set; } = Array.Empty<string>();
+
+    public bool SupportsIncrementalSync()
+    {
+        if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
+        if (!caps.TryGetProperty("textDocumentSync", out var sync)) return false;
+        if (sync.ValueKind == JsonValueKind.Number) return sync.GetInt32() == 2;
+        if (sync.ValueKind == JsonValueKind.Object && sync.TryGetProperty("change", out var change) && change.ValueKind == JsonValueKind.Number)
+            return change.GetInt32() == 2;
+        return false;
+    }
 
     public bool Supports(string method)
     {
@@ -75,6 +104,10 @@ internal sealed class LspClient : IDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        lock (_writeGate)
+        {
+            if (_transportError is not null) throw _transportError;
+        }
         if (IsStarted) return;
 
         var (fileName, useCmdWrapper, cmdArgs) = ResolveProcessStartInfo();
@@ -115,10 +148,8 @@ internal sealed class LspClient : IDisposable
             try { code = _process?.HasExited == true ? _process.ExitCode : -1; } catch { }
             var wasShutdown = _shutdownRequested;
             KodoDiagnostics.LogDebug($"LSP '{_config.Command}' exited with {code}. wasShutdownRequested={wasShutdown} reason={_shutdownReason} Stderr: {_stderrBuffer}");
+            TerminateTransport(new IOException($"LSP server exited ({code})"));
             OnExit?.Invoke(code);
-            foreach (var kv in _pending)
-                kv.Value.TrySetException(new IOException($"LSP server exited ({code})"));
-            _pending.Clear();
         };
 
         try
@@ -133,7 +164,8 @@ internal sealed class LspClient : IDisposable
             throw new FileNotFoundException($"Language server '{_config.Command}' could not be started. Check that it is installed and available on PATH.", ex);
         }
 
-        _writer = new StreamWriter(_process.StandardInput.BaseStream, new UTF8Encoding(false), leaveOpen: false) { AutoFlush = true };
+        try { _process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
+        _writer = new StreamWriter(_process.StandardInput.BaseStream, new UTF8Encoding(false), leaveOpen: false) { AutoFlush = false };
         _readLoop = Task.Run(() => ReadLoopAsync(_process.StandardOutput.BaseStream, _cts.Token), _cts.Token);
         _stderrLoop = Task.Run(() => StderrLoopAsync(_process.StandardError, _cts.Token), _cts.Token);
 
@@ -237,94 +269,164 @@ internal sealed class LspClient : IDisposable
         }
     }
 
-    public Task<JsonElement?> SendRequestAsync(string method, object? @params, CancellationToken cancellationToken = default)
+    public async Task<JsonElement?> SendRequestAsync(string method, object? @params, CancellationToken cancellationToken = default)
     {
-        if (_writer is null || _process?.HasExited != false)
-            return Task.FromException<JsonElement?>(new IOException("LSP server not running"));
-
         var id = Interlocked.Increment(ref _nextId);
-        var json = LspProtocol.CreateRequest(id, method, @params);
-        var frame = LspProtocol.Frame(json);
-        try
-        {
-            var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
-            KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
-        }
-        catch { }
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pending[id] = tcs;
+        Task write;
+        lock (_writeGate)
+        {
+            if (_transportError is not null) throw _transportError;
+            _pending[id] = tcs;
+            write = EnqueueWriteAsync(() =>
+            {
+                var json = LspProtocol.CreateRequest(id, method, @params);
+                try
+                {
+                    var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
+                    KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
+                }
+                catch { }
+                return json;
+            }, cancellationToken);
+        }
 
+        using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
         try
         {
-            lock (_writeLock)
-            {
-                _writer.Write(frame);
-                _writer.Flush();
-            }
+            await write.ConfigureAwait(false);
+            return await tcs.Task.ConfigureAwait(false);
         }
-        catch (Exception ex)
+        finally
         {
             _pending.TryRemove(id, out _);
-            tcs.TrySetException(ex);
+            tcs.TrySetCanceled();
+            if (tcs.Task.IsFaulted) _ = tcs.Task.Exception;
         }
-
-        if (cancellationToken.CanBeCanceled)
-            cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
-
-        return tcs.Task.ContinueWith(t =>
-        {
-            _pending.TryRemove(id, out _);
-            if (t.IsFaulted) throw t.Exception!.InnerException!;
-            if (t.IsCanceled) throw new OperationCanceledException(cancellationToken);
-            return (JsonElement?)t.Result;
-        }, TaskScheduler.Default);
     }
 
-    public async Task SendNotificationAsync(string method, object? @params, CancellationToken cancellationToken = default)
+    public Task SendNotificationAsync(string method, object? @params, CancellationToken cancellationToken = default)
     {
-        if (_writer is null || _process?.HasExited != false)
-            throw new IOException("LSP server not running");
+        return EnqueueWriteAsync(() => LspProtocol.CreateNotification(method, @params), cancellationToken);
+    }
 
-        var json = LspProtocol.CreateNotification(method, @params);
-        var frame = LspProtocol.Frame(json);
-        // For large payloads (>80k) avoid blocking UI thread with synchronous pipe write
-        if (frame.Length > 80_000)
-        {
-            try
-            {
-                // Offload large write to threadpool and use async I/O
-                await Task.Run(async () =>
-                {
-                    string f = frame;
-                    lock (_writeLock)
-                    {
-                        // Still need lock but do async inside lock is tricky - copy then write outside?
-                        // Use semaphore style: just write synchronously on background thread
-                        _writer.Write(f);
-                        _writer.Flush();
-                    }
-                    await Task.Yield();
-                }).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug($"LSP notification '{method}' failed", ex);
-                throw;
-            }
-            return;
-        }
+    private async Task SendResponseAsync(int id, object? result)
+    {
         try
         {
-            lock (_writeLock)
+            await EnqueueWriteAsync(() => LspProtocol.CreateResponse(id, result), CancellationToken.None).ConfigureAwait(false);
+        }
+        catch { }
+    }
+
+    private Task EnqueueWriteAsync(Func<string> serialize, CancellationToken cancellationToken)
+    {
+        lock (_writeGate)
+        {
+            if (_transportError is not null) return Task.FromException(_transportError);
+            if (_writer is null)
+                return Task.FromException(new IOException("LSP server not running"));
+            if (cancellationToken.IsCancellationRequested) return Task.FromCanceled(cancellationToken);
+            var item = new PendingWrite { Serialize = serialize, CancellationToken = cancellationToken };
+            _writes.Add(item);
+            _writeTail = _writeTail.ContinueWith(_ => WriteFrameAsync(item), CancellationToken.None,
+                TaskContinuationOptions.None, TaskScheduler.Default).Unwrap();
+            return AwaitWriteAsync(item);
+        }
+    }
+
+    private async Task AwaitWriteAsync(PendingWrite item)
+    {
+        using var registration = item.CancellationToken.Register(() =>
+        {
+            lock (_writeGate)
             {
-                _writer.Write(frame);
-                _writer.Flush();
+                if (item.Completion.Task.IsCompleted) return;
+                item.Completion.TrySetCanceled(item.CancellationToken);
+                _writes.Remove(item);
+                if (item.Writing)
+                    TerminateTransport(new IOException("LSP frame write canceled; transport closed"));
+            }
+        });
+        await item.Completion.Task.ConfigureAwait(false);
+    }
+
+    private async Task WriteFrameAsync(PendingWrite item)
+    {
+        try
+        {
+            lock (_writeGate)
+            {
+                if (item.Completion.Task.IsCompleted) return;
+            }
+            var frame = LspProtocol.Frame(item.Serialize());
+            StreamWriter writer;
+            lock (_writeGate)
+            {
+                if (item.Completion.Task.IsCompleted) return;
+                item.CancellationToken.ThrowIfCancellationRequested();
+                writer = _writer!;
+                item.Writing = true;
+            }
+            await writer.WriteAsync(frame.AsMemory(), item.CancellationToken).ConfigureAwait(false);
+            await writer.FlushAsync(item.CancellationToken).ConfigureAwait(false);
+            lock (_writeGate)
+            {
+                item.Writing = false;
+                item.Completion.TrySetResult(true);
+            }
+        }
+        catch (OperationCanceledException) when (item.CancellationToken.IsCancellationRequested)
+        {
+            lock (_writeGate)
+            {
+                item.Completion.TrySetCanceled(item.CancellationToken);
+                if (item.Writing)
+                    TerminateTransport(new IOException("LSP frame write canceled; transport closed"));
             }
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.LogDebug($"LSP notification '{method}' failed", ex);
-            throw;
+            lock (_writeGate)
+            {
+                item.Completion.TrySetException(ex);
+                if (item.Writing) TerminateTransport(ex);
+            }
+        }
+        finally
+        {
+            lock (_writeGate) _writes.Remove(item);
+        }
+    }
+
+    private void TerminateTransport(Exception error)
+    {
+        lock (_writeGate)
+        {
+            if (_transportError is not null) return;
+            _transportError = error;
+            foreach (var item in _writes) item.Completion.TrySetException(error);
+            _writes.Clear();
+            foreach (var kv in _pending)
+                if (_pending.TryRemove(kv.Key, out var pending)) pending.TrySetException(error);
+            var writer = _writer;
+            var process = _process;
+            var tail = _writeTail;
+            _writer = null;
+            _ = Task.Run(async () =>
+            {
+                try { _cts.Cancel(); } catch { }
+                try
+                {
+                    if (process is not null && !process.HasExited) process.Kill(entireProcessTree: true);
+                }
+                catch { }
+                try { writer?.BaseStream.Dispose(); } catch { }
+                try { await tail.ConfigureAwait(false); } catch { }
+                try { writer?.Dispose(); } catch { }
+                try { process?.Dispose(); } catch { }
+                _cts.Dispose();
+            });
         }
     }
 
@@ -531,8 +633,7 @@ internal sealed class LspClient : IDisposable
                     if (root.Value.TryGetProperty("params", out var p2))
                         KodoDiagnostics.LogDebug($"LSP {method}: {p2.GetRawText()}");
                 }
-                var resp = LspProtocol.Frame(LspProtocol.CreateResponse(id.Value, result));
-                try { lock (_writeLock) { _writer?.Write(resp); _writer?.Flush(); } } catch { }
+                _ = SendResponseAsync(id.Value, result);
             }
 
             JsonElement? @params = null;
@@ -720,22 +821,12 @@ internal sealed class LspClient : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _cts.Cancel();
-        try { _writer?.Dispose(); } catch { }
-        try
+        lock (_writeGate)
         {
-            if (_process is not null && !_process.HasExited)
-            {
-                try { _process.Kill(entireProcessTree: true); } catch { }
-            }
-            _process?.Dispose();
+            if (_disposed) return;
+            _disposed = true;
+            TerminateTransport(new ObjectDisposedException(nameof(LspClient)));
         }
-        catch { }
-        _cts.Dispose();
-        foreach (var kv in _pending) kv.Value.TrySetCanceled();
-        _pending.Clear();
     }
 }
 
@@ -748,9 +839,17 @@ public partial class MainWindow
     private readonly DispatcherTimer _lspDidChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private string? _pendingLspChangePath;
     private readonly object _lspPendingLock = new();
+    private sealed record LspPendingEdit(int StartLine, int StartChar, int EndLine, int EndChar, string Text);
+    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _lspForceFullSync = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan LspHugeFileSyncInterval = TimeSpan.FromSeconds(8);
+    private const int LspIncrementalMaxEdits = 500;
+    private const int LspIncrementalMaxChars = 100_000;
     private readonly Dictionary<string, List<LspRawDiagnostic>> _lspDiagnostics = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<LspClient> _lspSubscribedClients = new();
     private readonly object _lspDiagnosticsLock = new();
+    private readonly HashSet<string> _lspDiagnosticRefreshPending = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _lspPendingOpens = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _lspOpenLock = new();
     private CancellationTokenSource? _lspHoverCts;
@@ -887,28 +986,84 @@ public partial class MainWindow
         string? path;
         lock (_lspPendingLock) { path = _pendingLspChangePath; _pendingLspChangePath = null; }
         if (string.IsNullOrWhiteSpace(path) || EditorTextBox?.Document is null) return;
-        if (!string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase)) return;
+        if (!string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            lock (_lspOpenLock) _lspPendingEdits.Remove(NormalizeFilePath(path));
+            return;
+        }
+        var remaining = LspSyncThrottleRemaining(path, EditorTextBox.Document.TextLength);
+        if (remaining > TimeSpan.Zero)
+        {
+            lock (_lspPendingLock) _pendingLspChangePath = path;
+            _lspDidChangeTimer.Interval = remaining;
+            _lspDidChangeTimer.Start();
+            KodoDiagnostics.LogDebug($"LSP sync throttled for {path} ({remaining.TotalSeconds:F1}s remaining)");
+            return;
+        }
         var text = EditorTextBox.Document.Text;
-        await LspNotifyDidChangeAsync(path, text).ConfigureAwait(false);
+        List<LspPendingEdit>? edits = null;
+        lock (_lspOpenLock)
+        {
+            var key = NormalizeFilePath(path);
+            if (_lspForceFullSync.Remove(key))
+            {
+                _lspPendingEdits.Remove(key);
+            }
+            else if (_lspPendingEdits.TryGetValue(key, out var list) && list.Count > 0)
+            {
+                edits = new(list);
+                _lspPendingEdits.Remove(key);
+            }
+        }
+        await LspSyncDocumentAsync(path, text, edits).ConfigureAwait(false);
+    }
+
+    private void LspDocument_Changing(object? sender, AvaloniaEdit.Document.DocumentChangeEventArgs e)
+    {
+        try
+        {
+            var path = _currentFilePath;
+            if (string.IsNullOrWhiteSpace(path)) return;
+            if (ResolveLspExtensionForFile(path) is null) return;
+            var doc = EditorTextBox?.Document;
+            if (doc is null || !ReferenceEquals(sender, doc)) return;
+            var key = NormalizeFilePath(path);
+            var startOffset = Math.Clamp(e.Offset, 0, doc.TextLength);
+            var endOffset = Math.Clamp(e.Offset + e.RemovalLength, 0, doc.TextLength);
+            var startLine = doc.GetLineByOffset(startOffset);
+            var endLine = doc.GetLineByOffset(endOffset);
+            lock (_lspOpenLock)
+            {
+                if (_lspPendingEdits.Count > 16) _lspPendingEdits.Clear();
+                if (startOffset < startLine.Offset || startOffset > startLine.Offset + startLine.Length ||
+                    endOffset < endLine.Offset || endOffset > endLine.Offset + endLine.Length)
+                {
+                    _lspForceFullSync.Add(key);
+                    return;
+                }
+                if (!_lspPendingEdits.TryGetValue(key, out var list))
+                    _lspPendingEdits[key] = list = new();
+                var start = doc.GetLocation(startOffset);
+                var end = doc.GetLocation(endOffset);
+                list.Add(new LspPendingEdit(start.Line - 1, start.Column - 1, end.Line - 1, end.Column - 1, e.InsertedText?.Text ?? string.Empty));
+            }
+        }
+        catch { }
     }
 
     private void QueueLspDidChange(string filePath)
     {
         if (ResolveLspExtensionForFile(filePath) is null) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
-        // For truly huge files, avoid per-keystroke LSP sync entirely - sync on save instead to eliminate lag
-        if (len > 120_000)
-        {
-            KodoDiagnostics.LogDebug($"LSP didChange skipped for large file len={len} (sync on save only)");
-            return;
-        }
         lock (_lspPendingLock) _pendingLspChangePath = filePath;
         Dispatcher.UIThread.Post(() =>
         {
             var curLen = EditorTextBox?.Document?.TextLength ?? len;
-            // Throttle LSP for large files to avoid serialize lag: 80k->600ms, 120k->1s, 250k->1.5s and skip incremental bursts
-            if (curLen > 250_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(1500);
-            else if (curLen > 120_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(1000);
+            // Debounce before sending: huge files wait longer so each pause
+            // produces at most one sync; actual send rate is further limited
+            // by LspHugeFileSyncInterval to avoid re-triggering server analysis.
+            if (curLen > 250_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(3000);
+            else if (curLen > 120_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(2000);
             else if (curLen > 80_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(600);
             else _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(300);
             _lspDidChangeTimer.Stop();
@@ -1243,6 +1398,8 @@ public partial class MainWindow
             version = _lspDocumentVersions.TryGetValue(filePath, out var v) ? v + 1 : 1;
             _lspDocumentVersions[filePath] = version;
             _lspOpenDocuments.Add(filePath);
+            _lspPendingEdits.Remove(filePath);
+            _lspForceFullSync.Remove(filePath);
         }
         var languageId = GetLanguageId(resolvedConfig, filePath);
 
@@ -1265,6 +1422,44 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP didOpen failed for {uri}", ex); }
     }
 
+    private TimeSpan LspSyncThrottleRemaining(string filePath, int length)
+    {
+        if (length <= 120_000) return TimeSpan.Zero;
+        lock (_lspOpenLock)
+        {
+            if (!_lspLastSyncUtc.TryGetValue(NormalizeFilePath(filePath), out var last)) return TimeSpan.Zero;
+            var wait = LspHugeFileSyncInterval - (DateTime.UtcNow - last);
+            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
+        }
+    }
+
+    private async Task<(string uri, int version, LspClient client)?> PrepareLspChangeAsync(string filePath)
+    {
+        var lspExt = ResolveLspExtensionForFile(filePath);
+        if (lspExt is null || !lspExt.HasLsp) return null;
+        var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (targetCfg is null) return null;
+        var workspace = GetWorkspaceRootForFile(filePath);
+        // Resolve using centralized resolver to match didOpen's resolved
+        var resolveWatch = System.Diagnostics.Stopwatch.StartNew();
+        var settings2 = BuildLspResolverSettings();
+        var res2 = await LspServerResolver.ResolveAsync(targetCfg, settings2, lspExt.Id).ConfigureAwait(false);
+        resolveWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("LSP didChange resolve", resolveWatch.ElapsedMilliseconds, 2000);
+        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : targetCfg;
+        var client = _lspManager.TryGetClient(workspace, effectiveConfig);
+        if (client is null || !client.IsInitialized) return null;
+
+        var uri = FilePathToUri(filePath);
+        int version;
+        lock (_lspOpenLock)
+        {
+            version = _lspDocumentVersions.TryGetValue(filePath, out var v) ? v + 1 : 1;
+            _lspDocumentVersions[filePath] = version;
+        }
+        return (uri, version, client);
+    }
+
     private async Task LspNotifyDidChangeAsync(string filePath, string newContent)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -1276,25 +1471,9 @@ public partial class MainWindow
             await LspNotifyDidOpenAsync(filePath, newContent).ConfigureAwait(false);
             return;
         }
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return;
-        var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (targetCfg is null) return;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        // Resolve using centralized resolver to match didOpen's resolved
-        var settings2 = BuildLspResolverSettings();
-        var res2 = await LspServerResolver.ResolveAsync(targetCfg, settings2, lspExt.Id).ConfigureAwait(false);
-        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : targetCfg;
-        var client = _lspManager.TryGetClient(workspace, effectiveConfig);
-        if (client is null || !client.IsInitialized) return;
-
-        var uri = FilePathToUri(filePath);
-        int version;
-        lock (_lspOpenLock)
-        {
-            version = _lspDocumentVersions.TryGetValue(filePath, out var v) ? v + 1 : 1;
-            _lspDocumentVersions[filePath] = version;
-        }
+        var prepared = await PrepareLspChangeAsync(filePath).ConfigureAwait(false);
+        if (prepared is null) return;
+        var (uri, version, client) = prepared.Value;
 
         var didChangeParams = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -1302,11 +1481,85 @@ public partial class MainWindow
             ["contentChanges"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["text"] = newContent } }
         };
 
+        var sendWatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             await client.SendNotificationAsync("textDocument/didChange", didChangeParams).ConfigureAwait(false);
+            lock (_lspOpenLock) { _lspPendingEdits.Remove(filePath); _lspForceFullSync.Remove(filePath); _lspLastSyncUtc[filePath] = DateTime.UtcNow; }
         }
-        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP didChange failed for {uri}", ex); }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP didChange failed for {uri}", ex);
+            lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
+        }
+        sendWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={newContent.Length}");
+    }
+
+    private async Task LspSyncDocumentAsync(string filePath, string text, List<LspPendingEdit>? edits)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        filePath = NormalizeFilePath(filePath);
+        bool isOpen;
+        lock (_lspOpenLock) isOpen = _lspOpenDocuments.Contains(filePath);
+        if (!isOpen)
+        {
+            await LspNotifyDidOpenAsync(filePath, text).ConfigureAwait(false);
+            return;
+        }
+        var prepared = await PrepareLspChangeAsync(filePath).ConfigureAwait(false);
+        if (prepared is null) return;
+        var (uri, version, client) = prepared.Value;
+
+        if (edits is { Count: > 0 } && text.Length > 120_000 && client.SupportsIncrementalSync() &&
+            edits.Count <= LspIncrementalMaxEdits && edits.Sum(e => (long)(e.Text?.Length ?? 0)) <= LspIncrementalMaxChars)
+        {
+            var changes = edits.Select(e => new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["range"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["start"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = e.StartLine, ["character"] = e.StartChar },
+                    ["end"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = e.EndLine, ["character"] = e.EndChar }
+                },
+                ["text"] = e.Text
+            }).ToArray();
+            var incrementalParams = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
+                ["contentChanges"] = changes
+            };
+            try
+            {
+                await client.SendNotificationAsync("textDocument/didChange", incrementalParams).ConfigureAwait(false);
+                lock (_lspOpenLock) _lspLastSyncUtc[filePath] = DateTime.UtcNow;
+                KodoDiagnostics.LogDebug($"LSP incremental didChange {uri} edits={edits.Count} ver={version}");
+                return;
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"LSP incremental didChange failed for {uri}, falling back to full text", ex);
+                lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
+            }
+        }
+
+        var didChangeParams = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
+            ["contentChanges"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["text"] = text } }
+        };
+        var sendWatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            await client.SendNotificationAsync("textDocument/didChange", didChangeParams).ConfigureAwait(false);
+            lock (_lspOpenLock) { _lspPendingEdits.Remove(filePath); _lspForceFullSync.Remove(filePath); _lspLastSyncUtc[filePath] = DateTime.UtcNow; }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP didChange failed for {uri}", ex);
+            lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
+        }
+        sendWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={text.Length}");
     }
 
     private async Task LspNotifyDidCloseAsync(string filePath)
@@ -1319,6 +1572,8 @@ public partial class MainWindow
             _lspOpenDocuments.Remove(filePath);
             _lspDocumentVersions.Remove(filePath);
             _lspPendingOpens.Remove(filePath);
+            _lspPendingEdits.Remove(filePath);
+            _lspForceFullSync.Remove(filePath);
         }
         lock (_lspDiagnosticsLock)
         {
@@ -1432,12 +1687,15 @@ public partial class MainWindow
                 }
             }
 
+            string refreshKey;
             lock (_lspDiagnosticsLock)
             {
                 // Normalize so lookups use consistent key; filePath came from
                 var normPath = NormalizeFilePath(filePath);
                 if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
                 _lspDiagnostics[normPath] = diagnostics;
+                refreshKey = normPath;
+                if (!_lspDiagnosticRefreshPending.Add(refreshKey)) return;
             }
             KodoDiagnostics.LogDebug($"LSP publishDiagnostics {filePath} count={diagnostics.Count} uri={uri}");
             for (var i = 0; i < Math.Min(diagnostics.Count, 3); i++)
@@ -1451,6 +1709,7 @@ public partial class MainWindow
             // Trigger UI refresh if current file (normalize both sides to
             Dispatcher.UIThread.Post(() =>
             {
+                lock (_lspDiagnosticsLock) _lspDiagnosticRefreshPending.Remove(refreshKey);
                 var isActive = IsSameDocument(_currentFilePath, filePath) || IsSameDocument(_currentFilePath, uri);
                 KodoDiagnostics.LogDebug($"LSP publishDiagnostics UI refresh isActive={isActive} current={_currentFilePath} diagFile={filePath} uri={uri} normCurrent={NormalizeFilePath(_currentFilePath ?? "")} normDiag={NormalizeFilePath(filePath)}");
                 if (isActive)
@@ -1577,21 +1836,54 @@ public partial class MainWindow
         return spans;
     }
 
+    private const int LspLineIndexCacheCapacity = 8;
+    private static readonly object LspLineIndexCacheLock = new();
+    private static readonly (string Text, Lazy<int[]> Starts)[] LspLineIndexCache = new (string, Lazy<int[]>)[LspLineIndexCacheCapacity];
+    private static int _nextLspLineIndexSlot;
+
+    private static int[] GetLspLineStarts(string text)
+    {
+        Lazy<int[]>? starts = null;
+        lock (LspLineIndexCacheLock)
+        {
+            foreach (var entry in LspLineIndexCache)
+            {
+                if (ReferenceEquals(entry.Text, text))
+                {
+                    starts = entry.Starts;
+                    break;
+                }
+            }
+            if (starts is null)
+            {
+                starts = new Lazy<int[]>(() =>
+                {
+                    var offsets = new List<int> { 0 };
+                    var offset = 0;
+                    while (offset < text.Length)
+                    {
+                        var newline = text.IndexOf('\n', offset);
+                        if (newline < 0) break;
+                        offset = newline + 1;
+                        offsets.Add(offset);
+                    }
+                    return offsets.ToArray();
+                }, LazyThreadSafetyMode.ExecutionAndPublication);
+                LspLineIndexCache[_nextLspLineIndexSlot] = (text, starts);
+                _nextLspLineIndexSlot = (_nextLspLineIndexSlot + 1) % LspLineIndexCacheCapacity;
+            }
+        }
+        return starts.Value;
+    }
+
     private static int OffsetFromLspPosition(string text, int line, int character)
     {
         if (line < 0) line = 0;
         if (character < 0) character = 0;
-        var offset = 0;
-        var currentLine = 0;
-        while (currentLine < line && offset < text.Length)
-        {
-            var nl = text.IndexOf('\n', offset);
-            if (nl < 0) return text.Length;
-            offset = nl + 1;
-            currentLine++;
-        }
-        var lineEnd = text.IndexOf('\n', offset);
-        if (lineEnd < 0) lineEnd = text.Length;
+        var starts = GetLspLineStarts(text);
+        if (line >= starts.Length) return text.Length;
+        var offset = starts[line];
+        var lineEnd = line + 1 < starts.Length ? starts[line + 1] - 1 : text.Length;
         // Exclude trailing \r for CRLF files when computing column limit
         var lineLen = lineEnd - offset;
         if (lineLen > 0 && lineEnd > offset && text[lineEnd - 1] == '\r')
@@ -2658,10 +2950,14 @@ internal static class LspInstallationManager
         catch { return null; }
     }
 
+    private static readonly ConcurrentDictionary<string, (bool ok, string? version, string? error)> VersionProbeCache = new(StringComparer.OrdinalIgnoreCase);
+
     public static async Task<(bool ok, string? version, string? error)> TryGetVersionAsync(string exePath, string[] versionArgs, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return (false, null, "Executable not found");
         var args = versionArgs != null && versionArgs.Length > 0 ? string.Join(" ", versionArgs) : "--version";
+        var cacheKey = exePath + "\0" + args;
+        if (VersionProbeCache.TryGetValue(cacheKey, out var cached)) return cached;
         try
         {
             bool isCmdScript = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
@@ -2690,7 +2986,9 @@ internal static class LspInstallationManager
             var outText = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
             if (proc.ExitCode != 0 && string.IsNullOrWhiteSpace(outText))
                 return (false, null, $"Exit code {proc.ExitCode}: {stderr.Trim()}");
-            return (true, outText?.Trim(), null);
+            var result = (true, outText?.Trim(), (string?)null);
+            VersionProbeCache[cacheKey] = result;
+            return result;
         }
         catch (Exception ex) { return (false, null, ex.Message); }
     }

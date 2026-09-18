@@ -5,6 +5,7 @@
 // 03 Performance Is a Feature: budgets and viewport awareness from day one
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -70,6 +71,30 @@ public sealed class DebouncedWork : IDisposable
     }
 
     public void Dispose() { _timer.Stop(); _cts.Cancel(); _cts.Dispose(); }
+}
+
+/// <summary>UI-thread stall watchdog. Ticks every 500ms; gaps mean the UI thread was blocked.</summary>
+public sealed class UiStallWatchdog : IDisposable
+{
+    private readonly DispatcherTimer _timer;
+    private long _lastTickMs;
+
+    public UiStallWatchdog()
+    {
+        _lastTickMs = Environment.TickCount64;
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+        _timer.Tick += (_, _) =>
+        {
+            var now = Environment.TickCount64;
+            var gap = now - _lastTickMs;
+            _lastTickMs = now;
+            if (gap >= 2500)
+                KodoDiagnostics.ReportSlowStage("UI-thread stall (no dispatch)", gap, 2500);
+        };
+        _timer.Start();
+    }
+
+    public void Dispose() => _timer.Stop();
 }
 
 /// <summary>Viewport tracker - philosophy 01: only render what user can see.</summary>

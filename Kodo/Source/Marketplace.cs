@@ -718,7 +718,7 @@ public partial class MainWindow
 
         if (TryReadIconFromDiskCache(iconUrl, out var cachedDiskBytes))
         {
-            var diskIcon = DecodeCachedIconBytes(cachedDiskBytes);
+            var diskIcon = await Task.Run(() => DecodeCachedIconBytes(cachedDiskBytes)).ConfigureAwait(false);
             if (diskIcon.HasValue)
             {
                 _marketplaceIconBytesCache[iconUrl] = cachedDiskBytes;
@@ -730,11 +730,11 @@ public partial class MainWindow
         if (ShouldDeferDueToRateLimit())
         {
             if (_marketplaceIconBytesCache.TryGetValue(iconUrl, out var memBytes))
-                return DecodeCachedIconBytes(memBytes);
+                return await Task.Run(() => DecodeCachedIconBytes(memBytes)).ConfigureAwait(false);
             if (TryReadIconFromDiskCache(iconUrl, out var diskBytes))
             {
                 _marketplaceIconBytesCache[iconUrl] = diskBytes;
-                return DecodeCachedIconBytes(diskBytes);
+                return await Task.Run(() => DecodeCachedIconBytes(diskBytes)).ConfigureAwait(false);
             }
             throw new HttpRequestException("GitHub rate limit backoff active - deferring icon fetch", null, System.Net.HttpStatusCode.TooManyRequests);
         }

@@ -195,6 +195,19 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
+    public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, string? detail = null)
+    {
+        if (elapsedMs < thresholdMs) return;
+        try
+        {
+            var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detail) ? "" : " " + detail)}";
+            EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
+            PushBreadcrumb(line);
+            WritePayloadToDisk(line, MainLogFilePath);
+        }
+        catch { }
+    }
+
     public static void LogDebug(string message, Exception? exception = null)
     {
         try

@@ -76,8 +76,7 @@ public partial class MainWindow
         if (!IsActive) return; // 02 Do Less: not visible when window inactive
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
-            if (!IsWordCountVisible) WordCountText = string.Empty;
-            else RefreshWordCountSync();
+            WordCountText = string.Empty;
             OnPropertyChanged(nameof(IsWordCountVisible));
             return;
         }
@@ -116,29 +115,14 @@ public partial class MainWindow
         }
     }
 
-    private void RefreshWordCountSync()
+    private void RefreshWordCount()
     {
-        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null)
+        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
             WordCountText = string.Empty;
             return;
         }
-        var text = EditorTextBox.Document.Text;
-        if (string.IsNullOrWhiteSpace(text)) { WordCountText = "0 words"; return; }
-        var chars = text.AsSpan();
-        int wordCount = 0;
-        bool inWord = false;
-        for (var i = 0; i < chars.Length; i++)
-        {
-            if (char.IsWhiteSpace(chars[i])) inWord = false;
-            else if (!inWord) { inWord = true; wordCount++; }
-        }
-        WordCountText = $"{wordCount} words";
-    }
-
-    private void RefreshWordCount()
-    {
-        RefreshWordCountSync();
+        QueueWordCountRefresh();
     }
 
     private string? GetDocumentStatusText()
@@ -194,7 +178,8 @@ public partial class MainWindow
 
         if (nowOverLink == _isPointerOverEditorLink &&
             (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason) &&
-            languageHover == _hoveredLanguageInfo)
+            languageHover == _hoveredLanguageInfo &&
+            (diagnosticMessage is null || DiagnosticPopup.IsOpen || _pendingDiagnosticMessage == diagnosticMessage))
             return;
 
         _isPointerOverEditorLink = nowOverLink;
@@ -499,14 +484,7 @@ public partial class MainWindow
             if (msg is not null) return msg;
             // Precise EOL fallback: missing semicolon at EndOffset underlines last 4 chars.
             // Only fallback to line-level if hover is near EOL and line actually has EOL span.
-            bool hasEolSpanOnLine = false;
-            foreach (var span in _errorHighlightRenderer.Spans)
-            {
-                if (span.StartOffset >= line.EndOffset && span.StartOffset <= line.EndOffset + 1 && span.StartOffset + Math.Max(1, span.Length) > line.Offset)
-                { hasEolSpanOnLine = true; break; }
-                if (span.StartOffset <= line.EndOffset && span.StartOffset + Math.Max(1, span.Length) > line.Offset && span.StartOffset >= line.EndOffset - 4)
-                { /* span overlaps last few chars */ hasEolSpanOnLine = true; break; }
-            }
+            bool hasEolSpanOnLine = _errorHighlightRenderer.HasEolSpanOnLine(line.Offset, line.EndOffset);
             if (hasEolSpanOnLine && colOffset >= Math.Max(0, line.Length - 4))
                 return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
             return null;
@@ -543,6 +521,7 @@ public partial class MainWindow
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _insightDocVersion++;
+        _lspDocumentRefreshPending = true;
         _insightAnalysisCancellation.Cancel();
         _insightAnalysisCancellation.Dispose();
         _insightAnalysisCancellation = new CancellationTokenSource();
@@ -613,14 +592,46 @@ public partial class MainWindow
         });
     }
 
-    private void LspRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
+    private bool _lspDocumentRefreshPending = true;
+    private bool _lspRefreshRunning;
+    private LspClient? _lastPresentationClient;
+
+    private async void LspRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _lspRefreshDebounceTimer.Stop();
-        if (!IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
-        _ = UpdateLspSignatureHelpAsync();
-        _ = UpdateLspFoldingAsync();
-        _ = UpdateLspInlayHintsAsync();
-        _ = UpdateLspSemanticTokensAsync();
+        if (!IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath) || _lspRefreshRunning) return;
+        var configuration = ResolveLspConfigurationForFile(_currentFilePath);
+        if (configuration is null) return;
+        var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), configuration);
+        if (client is not { IsInitialized: true, IsStarted: true }) return;
+        var revision = _insightDocVersion;
+        var caret = EditorTextBox.TextArea.Caret.Offset;
+        var path = _currentFilePath;
+        var refreshDocument = _lspDocumentRefreshPending || !ReferenceEquals(client, _lastPresentationClient);
+        _lspRefreshRunning = true;
+        try
+        {
+            var requests = new List<Task> { UpdateLspSignatureHelpAsync() };
+            if (refreshDocument)
+            {
+                requests.Add(UpdateLspFoldingAsync());
+                requests.Add(UpdateLspInlayHintsAsync());
+                requests.Add(UpdateLspSemanticTokensAsync());
+            }
+            await Task.WhenAll(requests);
+            if (revision == _insightDocVersion && string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _lspDocumentRefreshPending = false;
+                _lastPresentationClient = client;
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP presentation refresh failed", ex); }
+        finally
+        {
+            _lspRefreshRunning = false;
+            if (IsActive && (revision != _insightDocVersion || caret != EditorTextBox.TextArea.Caret.Offset))
+                _lspRefreshDebounceTimer.Start();
+        }
     }
 
     private async Task UpdateLspFoldingAsync()

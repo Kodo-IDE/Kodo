@@ -16,20 +16,129 @@ using AvaloniaEdit;
 
 namespace Kodo.Models;
 
+internal sealed class SpanOverlapIndex
+{
+    public static readonly SpanOverlapIndex Empty = new([], [], [], []);
+
+    private readonly int[] _starts;
+    private readonly long[] _ends;
+    private readonly int[] _order;
+    private readonly long[] _subtreeMaxEnd;
+
+    private SpanOverlapIndex(int[] starts, long[] ends, int[] order, long[] subtreeMaxEnd)
+    {
+        _starts = starts;
+        _ends = ends;
+        _order = order;
+        _subtreeMaxEnd = subtreeMaxEnd;
+    }
+
+    public static SpanOverlapIndex Build<T>(IReadOnlyList<T> spans, Func<T, int> startSelector, Func<T, long> endSelector)
+    {
+        var count = spans.Count;
+        var order = Enumerable.Range(0, count).OrderBy(i => startSelector(spans[i])).ToArray();
+        var starts = new int[count];
+        var ends = new long[count];
+        for (var i = 0; i < count; i++)
+        {
+            starts[i] = startSelector(spans[order[i]]);
+            ends[i] = endSelector(spans[order[i]]);
+        }
+        var subtreeMaxEnd = new long[count * 4];
+        var index = new SpanOverlapIndex(starts, ends, order, subtreeMaxEnd);
+        if (count > 0) index.Build(1, 0, count);
+        return index;
+    }
+
+    public bool Overlaps(long start, int endInclusive)
+    {
+        var limit = UpperBound(endInclusive);
+        return limit > 0 && Overlaps(1, 0, _starts.Length, limit, start);
+    }
+
+    public void Collect(long start, int endInclusive, List<int> result)
+    {
+        result.Clear();
+        var limit = UpperBound(endInclusive);
+        if (limit > 0) Collect(1, 0, _starts.Length, limit, start, result);
+        if (result.Count > 1) result.Sort();
+    }
+
+    private long Build(int node, int left, int right)
+    {
+        if (right - left == 1) return _subtreeMaxEnd[node] = _ends[left];
+        var middle = left + (right - left) / 2;
+        return _subtreeMaxEnd[node] = Math.Max(Build(node * 2, left, middle), Build(node * 2 + 1, middle, right));
+    }
+
+    private int UpperBound(int endInclusive)
+    {
+        var low = 0;
+        var high = _starts.Length;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (_starts[middle] <= endInclusive) low = middle + 1;
+            else high = middle;
+        }
+        return low;
+    }
+
+    private bool Overlaps(int node, int left, int right, int limit, long start)
+    {
+        if (left >= limit || _subtreeMaxEnd[node] <= start) return false;
+        if (right - left == 1) return true;
+        var middle = left + (right - left) / 2;
+        return Overlaps(node * 2, left, middle, limit, start) || Overlaps(node * 2 + 1, middle, right, limit, start);
+    }
+
+    private void Collect(int node, int left, int right, int limit, long start, List<int> result)
+    {
+        if (left >= limit || _subtreeMaxEnd[node] <= start) return;
+        if (right - left == 1)
+        {
+            result.Add(_order[left]);
+            return;
+        }
+        var middle = left + (right - left) / 2;
+        Collect(node * 2, left, middle, limit, start, result);
+        Collect(node * 2 + 1, middle, right, limit, start, result);
+    }
+}
+
 public sealed class LspInlayHintRenderer : IBackgroundRenderer
 {
+    private const int FormattedTextCacheLimit = 256;
+    private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
+    private readonly Dictionary<string, FormattedText> _formattedTextCache = new();
     private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
     public KnownLayer Layer => KnownLayer.Text;
-    public void SetHints(IReadOnlyList<(int Offset, string Label)> hints) => _hints = hints;
+    public void SetHints(IReadOnlyList<(int Offset, string Label)> hints)
+    {
+        _hints = hints;
+        _formattedTextCache.Clear();
+    }
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
         if (_hints.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;
+        var visualLines = textView.VisualLines;
+        if (visualLines.Count == 0) return;
+        var viewStart = visualLines[0].FirstDocumentLine.Offset;
+        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
+        var textLength = textView.Document.TextLength;
         foreach (var hint in _hints)
         {
-            var line = textView.Document.GetLineByOffset(Math.Clamp(hint.Offset, 0, textView.Document.TextLength));
-            var column = Math.Max(1, hint.Offset - line.Offset + 1);
+            var offset = Math.Clamp(hint.Offset, 0, textLength);
+            if (offset < viewStart || offset > viewEnd) continue;
+            var line = textView.Document.GetLineByOffset(offset);
+            var column = Math.Clamp(offset - line.Offset + 1, 1, line.Length + 1);
             var pos = textView.GetVisualPosition(new TextViewPosition(line.LineNumber, column), VisualYPosition.LineBottom);
-            var formatted = new FormattedText($"  {hint.Label}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, new SolidColorBrush(Color.Parse("#8A8A8A")));
+            if (!_formattedTextCache.TryGetValue(hint.Label, out var formatted))
+            {
+                if (_formattedTextCache.Count >= FormattedTextCacheLimit) _formattedTextCache.Clear();
+                formatted = new FormattedText($"  {hint.Label}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, HintBrush);
+                _formattedTextCache[hint.Label] = formatted;
+            }
             drawingContext.DrawText(formatted, new Point(pos.X + 3, pos.Y));
         }
     }
@@ -43,11 +152,20 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
         if (_tokens.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;
+        var visualLines = textView.VisualLines;
+        if (visualLines.Count == 0) return;
+        var viewStart = visualLines[0].FirstDocumentLine.Offset;
+        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
+        var textLength = textView.Document.TextLength;
         foreach (var token in _tokens)
         {
-            if (token.Offset + token.Length < 0 || token.Offset > textView.Document.TextLength) continue;
+            if (token.Offset >= textLength) continue;
+            var start = Math.Max(0, token.Offset);
+            var end = Math.Min(token.Offset + token.Length, textLength);
+            if (end <= start) continue;
+            if (end <= viewStart || start > viewEnd) continue;
             var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
-            geometry.AddSegment(textView, new Segment(token.Offset, token.Length));
+            geometry.AddSegment(textView, new Segment(start, end - start));
             var shape = geometry.CreateGeometry();
             if (shape is not null) drawingContext.DrawGeometry(token.Brush, null, shape);
         }
@@ -252,17 +370,26 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 {
     public IBrush HighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#FFFFFF"), 0.16);
     private IReadOnlyList<DeadCodeSpan> _spans = Array.Empty<DeadCodeSpan>();
+    private SpanOverlapIndex _spanIndex = SpanOverlapIndex.Empty;
+    private readonly List<int> _candidates = new();
 
     public IReadOnlyList<DeadCodeSpan> Spans => _spans;
 
     public KnownLayer Layer => KnownLayer.Background;
 
-    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans)
+    {
+        _spans = spans;
+        _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _candidates.Clear();
+    }
 
     public string? GetReasonAt(int offset)
     {
-        foreach (var span in _spans)
+        _spanIndex.Collect(offset, offset, _candidates);
+        foreach (var index in _candidates)
         {
+            var span = _spans[index];
             if (offset >= span.StartOffset && offset <= span.StartOffset + span.Length)
                 return span.Reason;
         }
@@ -296,8 +423,10 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 
     private bool SpanCoversLine(DocumentLine line)
     {
-        foreach (var span in _spans)
+        _spanIndex.Collect(line.Offset, line.EndOffset, _candidates);
+        foreach (var index in _candidates)
         {
+            var span = _spans[index];
             if (span.StartOffset < line.EndOffset && span.StartOffset + span.Length > line.Offset)
                 return true;
         }
@@ -316,6 +445,9 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
 
     private IReadOnlyList<ErrorSpan> _errorSpans = Array.Empty<ErrorSpan>();
     private IReadOnlyList<DeadCodeSpan> _deadCodeSpans = Array.Empty<DeadCodeSpan>();
+    private SpanOverlapIndex _errorIndex = SpanOverlapIndex.Empty;
+    private SpanOverlapIndex _deadCodeIndex = SpanOverlapIndex.Empty;
+    private readonly List<int> _candidates = new();
 
     public void SetSpans(
         IReadOnlyList<ErrorSpan> errorSpans,
@@ -323,6 +455,9 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
     {
         _errorSpans = errorSpans;
         _deadCodeSpans = deadCodeSpans;
+        _errorIndex = SpanOverlapIndex.Build(errorSpans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length));
+        _deadCodeIndex = SpanOverlapIndex.Build(deadCodeSpans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _candidates.Clear();
     }
 
     protected override void ColorizeLine(DocumentLine line)
@@ -330,14 +465,18 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
         if (!IsLightTheme) return;
         if (_errorSpans.Count == 0) return;
 
-        foreach (var deadSpan in _deadCodeSpans)
+        _deadCodeIndex.Collect(line.Offset, line.EndOffset, _candidates);
+        foreach (var index in _candidates)
         {
+            var deadSpan = _deadCodeSpans[index];
             if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
                 return;
         }
 
-        foreach (var errorSpan in _errorSpans)
+        _errorIndex.Collect(line.Offset, line.EndOffset, _candidates);
+        foreach (var index in _candidates)
         {
+            var errorSpan = _errorSpans[index];
             if (errorSpan.StartOffset < line.EndOffset && errorSpan.StartOffset + errorSpan.Length > line.Offset)
             {
                 ChangeLinePart(line.Offset, line.EndOffset, element =>
@@ -365,21 +504,35 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     private IReadOnlyList<ErrorSpan> _spans = Array.Empty<ErrorSpan>();
     private IReadOnlyList<DeadCodeSpan> _deadCodeSpans = Array.Empty<DeadCodeSpan>();
+    private SpanOverlapIndex _spanIndex = SpanOverlapIndex.Empty;
+    private SpanOverlapIndex _deadCodeIndex = SpanOverlapIndex.Empty;
+    private readonly List<int> _candidates = new();
 
     public IReadOnlyList<ErrorSpan> Spans => _spans;
 
     // Keep diagnostics on the background layer so multiple extension
     public KnownLayer Layer => KnownLayer.Background;
 
-    public void SetSpans(IReadOnlyList<ErrorSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<ErrorSpan> spans)
+    {
+        _spans = spans;
+        _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length));
+        _candidates.Clear();
+    }
 
-    public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans) => _deadCodeSpans = spans;
+    public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans)
+    {
+        _deadCodeSpans = spans;
+        _deadCodeIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+    }
 
     public string? GetMessageForLine(int lineStart, int lineEnd)
     {
         List<string>? messages = null;
-        foreach (var span in _spans)
+        _spanIndex.Collect(lineStart, lineEnd, _candidates);
+        foreach (var index in _candidates)
         {
+            var span = _spans[index];
             // Inclusive EOL: missing semicolon at EndOffset must still count as touching line - every error gets underline somewhere on line
             if (span.StartOffset <= lineEnd && span.StartOffset + Math.Max(1, span.Length) > lineStart)
             {
@@ -399,8 +552,10 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     public string? GetMessageAt(int offset)
     {
         List<string>? messages = null;
-        foreach (var span in _spans)
+        _spanIndex.Collect(offset, offset, _candidates);
+        foreach (var index in _candidates)
         {
+            var span = _spans[index];
             if (offset >= span.StartOffset && offset < span.StartOffset + span.Length)
             {
                 var label = span.Severity.Equals("error", StringComparison.OrdinalIgnoreCase) ? "Error" :
@@ -417,9 +572,25 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     private bool LineOverlapsDeadCode(DocumentLine line)
     {
-        foreach (var deadSpan in _deadCodeSpans)
+        _deadCodeIndex.Collect(line.Offset, line.EndOffset, _candidates);
+        foreach (var index in _candidates)
         {
+            var deadSpan = _deadCodeSpans[index];
             if (deadSpan.StartOffset < line.EndOffset && deadSpan.StartOffset + deadSpan.Length > line.Offset)
+                return true;
+        }
+        return false;
+    }
+
+    public bool HasEolSpanOnLine(int lineStart, int lineEnd)
+    {
+        _spanIndex.Collect(lineStart, lineEnd + 1, _candidates);
+        foreach (var index in _candidates)
+        {
+            var span = _spans[index];
+            if (span.StartOffset >= lineEnd && span.StartOffset <= lineEnd + 1 && span.StartOffset + Math.Max(1, span.Length) > lineStart)
+                return true;
+            if (span.StartOffset <= lineEnd && span.StartOffset + Math.Max(1, span.Length) > lineStart && span.StartOffset >= lineEnd - 4)
                 return true;
         }
         return false;
@@ -452,8 +623,10 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             var hasDeadOverlap = LineOverlapsDeadCode(docLine);
             if (hasDeadOverlap)
                 DrawStripes(drawingContext, y1, height, width);
-            foreach (var span in _spans)
+            _spanIndex.Collect(docLine.Offset, docLine.EndOffset + 1, _candidates);
+            foreach (var index in _candidates)
             {
+                var span = _spans[index];
                 // Inclusive EOL: every error must have underline somewhere on affected line
                 bool isEol = span.StartOffset >= docLine.EndOffset && span.StartOffset <= docLine.EndOffset + 1 && docLine.Length > 0;
                 if (!isEol && (span.StartOffset > docLine.EndOffset || span.StartOffset + span.Length <= docLine.Offset))
@@ -509,13 +682,7 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     private bool SpanTouchesLine(DocumentLine line)
     {
-        foreach (var span in _spans)
-        {
-            // Inclusive EOL ensures missing-semicolon at EndOffset still counts as touching line - every error gets line underline
-            if (span.StartOffset <= line.EndOffset && span.StartOffset + Math.Max(1, span.Length) > line.Offset)
-                return true;
-        }
-        return false;
+        return _spanIndex.Overlaps(line.Offset, line.EndOffset);
     }
 
     private string GetHighestSeverityForLine(DocumentLine line)

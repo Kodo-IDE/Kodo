@@ -341,6 +341,13 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
     private void ApplyLoadedExtensionsResult(ExtensionScanResult result)
     {
+        var fingerprint = string.Join('\u001F', result.Extensions
+            .OrderBy(e => e.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(e => e.Id + "@" + (e.Version ?? string.Empty)));
+        if (fingerprint.Equals(_lastAppliedExtensionFingerprint, StringComparison.Ordinal))
+            return;
+        _lastAppliedExtensionFingerprint = fingerprint;
+        var applyWatch = System.Diagnostics.Stopwatch.StartNew();
         _highlightingCache.Clear();
         _compiledSyntaxProfileCache.Clear();
         _contentSniffCache.Clear();
@@ -433,6 +440,8 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         SyncMarketplaceInstallStates();
         SyncActivePlugins();
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
+        applyWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
     }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
@@ -1432,12 +1441,15 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     private void ApplySyntaxHighlighting(LoadedExtension ext)
     {
         if (EditorTextBox is null) return;
+        var syntaxWatch = System.Diagnostics.Stopwatch.StartNew();
         var syntaxProfile = ResolveCompiledSyntaxProfile(ext);
         if (!_highlightingCache.TryGetValue(ext, out var definition))
         {
             definition = new KodoHighlightingDefinition(ext, syntaxProfile);
             _highlightingCache[ext] = definition;
         }
+        syntaxWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("syntax profile compile", syntaxWatch.ElapsedMilliseconds, 500, $"ext={ext.Id}");
         EditorTextBox.SyntaxHighlighting = definition;
         ConfigureRainbowBrackets(ext);
         ConfigureInterpolatedStrings(syntaxProfile);

@@ -147,6 +147,7 @@ public partial class MainWindow
 
     private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true)
     {
+        var activateWatch = System.Diagnostics.Stopwatch.StartNew();
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
             _isHomePageVisible = false;
@@ -221,8 +222,10 @@ public partial class MainWindow
 
         if (focusEditor)
             FocusEditor();
+        activateWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("tab activation", activateWatch.ElapsedMilliseconds, 1000, $"path={tab.Path} len={tab.Content?.Length ?? 0}");
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
-            _ = LspNotifyDidOpenAsync(tab.Path, tab.Content);
+            _ = LspNotifyDidOpenAsync(tab.Path, tab.Content ?? string.Empty);
     }
 
     private void CloseTab(EditorTab tab)
@@ -394,7 +397,6 @@ public partial class MainWindow
         if (!IsImagePreviewFile(path) && !isCorrupted && !string.IsNullOrEmpty(content))
         {
             _currentLineEnding = DetectLineEnding(content);
-            ApplyIndentationForContent(content);
         }
         else if (!IsImagePreviewFile(path) && !isCorrupted && string.IsNullOrEmpty(content))
         {
