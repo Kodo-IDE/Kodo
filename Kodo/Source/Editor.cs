@@ -702,7 +702,7 @@ public partial class MainWindow
         foreach (var item in result.Value.EnumerateArray())
         {
             if (!item.TryGetProperty("position", out var position) || !position.TryGetProperty("line", out var line) || !position.TryGetProperty("character", out var character)) continue;
-            var label = item.TryGetProperty("label", out var labelEl) ? labelEl.ValueKind == JsonValueKind.String ? labelEl.GetString() : labelEl.ToString() : null;
+            var label = item.TryGetProperty("label", out var labelEl) ? ReadInlayHintLabel(labelEl) : null;
             if (!string.IsNullOrWhiteSpace(label)) hints.Add((OffsetFromLspPosition(text, line.GetInt32(), character.GetInt32()), label!));
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -711,6 +711,21 @@ public partial class MainWindow
             _lspInlayHintRenderer.SetHints(hints);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
         });
+    }
+
+    private static string? ReadInlayHintLabel(System.Text.Json.JsonElement labelEl)
+    {
+        if (labelEl.ValueKind == System.Text.Json.JsonValueKind.String) return labelEl.GetString();
+        if (labelEl.ValueKind != System.Text.Json.JsonValueKind.Array) return null;
+        var builder = new System.Text.StringBuilder();
+        foreach (var part in labelEl.EnumerateArray())
+        {
+            if (part.ValueKind == System.Text.Json.JsonValueKind.String) builder.Append(part.GetString());
+            else if (part.ValueKind == System.Text.Json.JsonValueKind.Object && part.TryGetProperty("value", out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String)
+                builder.Append(value.GetString());
+        }
+        var label = builder.ToString();
+        return string.IsNullOrWhiteSpace(label) ? null : label;
     }
 
     private async Task UpdateLspSemanticTokensAsync()
@@ -724,6 +739,7 @@ public partial class MainWindow
         var values = data.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Select(v => v.GetInt32()).ToArray();
         var tokens = new List<(int Offset, int Length, IBrush Brush)>();
         var line = 0; var character = 0;
+        var legend = GetLspSemanticTokenTypes(filePath);
         var palette = new[] { "#569CD6", "#4EC9B0", "#DCDCAA", "#C586C0", "#CE9178", "#9CDCFE", "#B5CEA8", "#D7BA7D" };
         for (var i = 0; i + 4 < values.Length; i += 5)
         {
@@ -733,7 +749,8 @@ public partial class MainWindow
             var offset = OffsetFromLspPosition(text, line, character);
             if (length > 0 && offset < text.Length)
             {
-                var tokenTypeName = GetLspSemanticTokenTypeName(filePath, values[i + 3]);
+                var tokenType = values[i + 3];
+                var tokenTypeName = tokenType >= 0 && tokenType < legend.Count ? legend[tokenType] : null;
                 var paletteIndex = tokenTypeName?.ToLowerInvariant() switch
                 {
                     "keyword" or "modifier" => 0,
@@ -1033,22 +1050,38 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP code actions failed, falling back", ex); }
-        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules) return;
-        var action = rules.GetCodeActions(text)
-            .FirstOrDefault(candidate => caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
-        if (action is null) return;
+        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules)
+        {
+            SetLspFeatureStatus("No quick fixes available at the caret.");
+            return;
+        }
+        LangRuleCodeAction? action = null;
         try
-{
-    EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
-}
-catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
-{
-    KodoDiagnostics.LogDebug("EditorApplyCodeAction: Visual line race suppressed", ex);
-    Dispatcher.UIThread.Post(() =>
-    {
-        try { EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText); } catch { }
-    }, Avalonia.Threading.DispatcherPriority.Background);
-}
+        {
+            action = rules.GetCodeActions(text)
+                .FirstOrDefault(candidate => caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
+            if (action is null)
+            {
+                SetLspFeatureStatus("No quick fixes available at the caret.");
+                return;
+            }
+            EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
+            SetLspFeatureStatus("Applied local fix.");
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("EditorApplyCodeAction: Visual line race suppressed", ex);
+            if (action is null) return;
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { EditorTextBox.Document.Replace(action.Start, Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("EditorApplyCodeAction failed", ex);
+            SetLspFeatureStatus("No quick fixes available at the caret.");
+        }
     }
 
     private async void EditorRenameSymbolMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1139,16 +1172,25 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
         var path = _currentFilePath;
         if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null &&
             await TryLspCodeActionsAsync(path, caret, text).ConfigureAwait(false)) return;
-        if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules) return;
-        var action = rules.GetCodeActions(text).FirstOrDefault(candidate =>
-            caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
-        if (action is null) return;
         try
         {
+            if (CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules)
+            {
+                SetLspFeatureStatus("No quick fixes available at the caret.");
+                return;
+            }
+            var action = rules.GetCodeActions(text).FirstOrDefault(candidate =>
+                caret >= candidate.Start && caret <= candidate.Start + Math.Max(1, candidate.Length));
+            if (action is null)
+            {
+                SetLspFeatureStatus("No quick fixes available at the caret.");
+                return;
+            }
             await Dispatcher.UIThread.InvokeAsync(() => EditorTextBox.Document.Replace(
                 action.Start,
                 Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start),
                 action.NewText));
+            SetLspFeatureStatus("Applied local fix.");
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LangRules quick fix failed", ex); }
     }
@@ -1274,6 +1316,7 @@ catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComp
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.TextArea is null) return;
+        if (fileKey != "untitled" && !string.Equals(_currentFilePath, fileKey, StringComparison.OrdinalIgnoreCase)) return;
 
         InsightSuggestion.PanelForeground = PrimaryTextBrush;
         InsightSuggestion.MutedForeground = MutedTextBrush;

@@ -6,20 +6,21 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
-using System.Net.Http;
+using System.Runtime.InteropServices;
+
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -37,10 +38,10 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
-using DiscordAssetsModel = DiscordRPC.Assets;
-using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
-using DiscordRichPresenceModel = DiscordRPC.RichPresence;
 using Kodo.Models;
+using DiscordAssetsModel = DiscordRPC.Assets;
+using DiscordRichPresenceModel = DiscordRPC.RichPresence;
+using DiscordRpcClient = DiscordRPC.DiscordRpcClient;
 
 namespace Kodo;
 
@@ -5477,15 +5478,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _autoSaveStatusTimer.Start();
             }
 
-            // For huge LSP files, sync on save unless one just went out -
-            // each full sync re-triggers minutes of server analysis, so the
-            // debounced incremental syncs already cover live edits.
+            // Sync on save only when the server is actually behind: flush
+            // unsent edits (usually incremental) so a save always triggers a
+            // fresh error scan. Successful sends update the sync clock, so the
+            // debounced tick backs off instead of double-syncing per pause.
             if (savingContent.Length > 80_000 && !string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
             {
-                if (LspSyncThrottleRemaining(savingPath, savingContent.Length) > TimeSpan.Zero)
-                    KodoDiagnostics.LogDebug($"LSP save sync throttled for {savingPath} len={savingContent.Length}");
-                else
+                List<LspPendingEdit>? savePending = null;
+                var saveForceFull = false;
+                lock (_lspOpenLock)
+                {
+                    var saveKey = NormalizeFilePath(savingPath);
+                    saveForceFull = _lspForceFullSync.Remove(saveKey);
+                    if (_lspPendingEdits.TryGetValue(saveKey, out var saveList) && saveList.Count > 0)
+                    {
+                        savePending = new(saveList);
+                        _lspPendingEdits.Remove(saveKey);
+                    }
+                }
+                if (saveForceFull)
                     _ = LspNotifyDidChangeAsync(savingPath!, savingContent);
+                else if (savePending is { Count: > 0 })
+                    _ = LspSyncDocumentAsync(savingPath!, savingContent, savePending);
             }
 
             RefreshState(fullRefresh: true);
@@ -8009,14 +8023,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return null;
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
-        var docText = EditorTextBox.Document.Text;
-        var lines = docText.Split('\n');
+        var doc = EditorTextBox.Document;
         foreach (var err in _errorHighlightRenderer.Spans)
         {
             if (caretOffset >= err.StartOffset && caretOffset < err.StartOffset + err.Length)
             {
-                var lineIdx = docText.Substring(0, err.StartOffset).Count(c => c == '\n');
-                var lineText = lineIdx < lines.Length ? lines[lineIdx] : string.Empty;
+                var line = doc.GetLineByOffset(Math.Clamp(err.StartOffset, 0, doc.TextLength));
+                var lineText = doc.GetText(line.Offset, line.Length);
                 return (_currentFilePath, lineText, err.Message, err.StartOffset, err.Length);
             }
         }
@@ -8024,25 +8037,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (caretOffset >= dead.StartOffset && caretOffset < dead.StartOffset + dead.Length)
             {
-                var lineIdx = docText.Substring(0, dead.StartOffset).Count(c => c == '\n');
-                var lineText = lineIdx < lines.Length ? lines[lineIdx] : string.Empty;
+                var line = doc.GetLineByOffset(Math.Clamp(dead.StartOffset, 0, doc.TextLength));
+                var lineText = doc.GetText(line.Offset, line.Length);
                 return (_currentFilePath, lineText, dead.Reason, dead.StartOffset, dead.Length);
             }
         }
         var caretLine = EditorTextBox.Document.GetLineByOffset(caretOffset);
         var caretLineText = EditorTextBox.Document.GetText(caretLine.Offset, caretLine.Length);
+        var caretLineNumber = caretLine.LineNumber;
         foreach (var err in _errorHighlightRenderer.Spans)
         {
-            var errLine = docText.Substring(0, err.StartOffset).Count(c => c == '\n');
-            if (errLine == docText.Substring(0, caretOffset).Count(c => c == '\n'))
+            var errLine = doc.GetLineByOffset(Math.Clamp(err.StartOffset, 0, doc.TextLength)).LineNumber;
+            if (errLine == caretLineNumber)
             {
                 return (_currentFilePath, caretLineText, err.Message, err.StartOffset, err.Length);
             }
         }
         foreach (var dead in _deadCodeHighlightRenderer.Spans)
         {
-            var deadLine = docText.Substring(0, dead.StartOffset).Count(c => c == '\n');
-            if (deadLine == docText.Substring(0, caretOffset).Count(c => c == '\n'))
+            var deadLine = doc.GetLineByOffset(Math.Clamp(dead.StartOffset, 0, doc.TextLength)).LineNumber;
+            if (deadLine == caretLineNumber)
             {
                 return (_currentFilePath, caretLineText, dead.Reason, dead.StartOffset, dead.Length);
             }

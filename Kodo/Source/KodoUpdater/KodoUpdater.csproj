@@ -17,6 +17,8 @@
 
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>full</TrimMode>
 
     <Optimize>true</Optimize>
     <DebugType>None</DebugType>

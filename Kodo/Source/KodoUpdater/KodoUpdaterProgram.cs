@@ -32,8 +32,9 @@ internal static class Program
                 // If self is inside appDir (or Program Files\Kodo) and not
                 var isInApp = selfDir.Equals(appDir, StringComparison.OrdinalIgnoreCase)
                     || selfDir.EndsWith("Kodo", StringComparison.OrdinalIgnoreCase);
-                var isInTemp = selfPath.Contains(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)
-                    || selfPath.Contains(Path.Combine("LocalAppData", "Kodo", "update"), StringComparison.OrdinalIgnoreCase);
+                var updateTempDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
+                var isInTemp = selfPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)
+                    || selfDir.StartsWith(updateTempDir, StringComparison.OrdinalIgnoreCase);
                 if (isInApp && !isInTemp && args.Length > 0)
                 {
                     var tempCopy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "KodoUpdater-temp.exe");
@@ -367,7 +368,12 @@ internal static class Program
         try { Debug.WriteLine(line); } catch { }
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = false };
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = false, TypeInfoResolver = UpdateTransactionJsonContext.Default };
+}
+
+[JsonSerializable(typeof(UpdateTransaction))]
+internal sealed partial class UpdateTransactionJsonContext : JsonSerializerContext
+{
 }
 
 internal sealed record UpdateTransaction(
