@@ -13,6 +13,16 @@ internal static class Program
     private const int InstallerTimeoutMinutes = 15;
     private const int StaleTransactionHours = 24;
 
+    private static StringComparison PathComparison =>
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+    // Phase 0 Linux: updater temp binary keeps .exe on Windows, extensionless elsewhere.
+    private static string UpdaterTempFileName =>
+        OperatingSystem.IsWindows() ? "KodoUpdater-temp.exe" : "KodoUpdater-temp";
+
+    private static string UpdaterUsageName =>
+        OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
+
     private static string LogFilePath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Kodo", "update", "updater.log");
@@ -29,15 +39,15 @@ internal static class Program
             {
                 var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
                 var selfDir = Path.GetDirectoryName(Path.GetFullPath(selfPath))?.TrimEnd(Path.DirectorySeparatorChar) ?? "";
-                // If self is inside appDir (or Program Files\Kodo) and not
-                var isInApp = selfDir.Equals(appDir, StringComparison.OrdinalIgnoreCase)
-                    || selfDir.EndsWith("Kodo", StringComparison.OrdinalIgnoreCase);
+                // If self is inside appDir (or Program Files\Kodo on Windows) and not
+                var isInApp = selfDir.Equals(appDir, PathComparison)
+                    || selfDir.EndsWith("Kodo", PathComparison);
                 var updateTempDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
-                var isInTemp = selfPath.StartsWith(Path.GetTempPath(), StringComparison.OrdinalIgnoreCase)
-                    || selfDir.StartsWith(updateTempDir, StringComparison.OrdinalIgnoreCase);
+                var isInTemp = selfPath.StartsWith(Path.GetTempPath(), PathComparison)
+                    || selfDir.StartsWith(updateTempDir, PathComparison);
                 if (isInApp && !isInTemp && args.Length > 0)
                 {
-                    var tempCopy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "KodoUpdater-temp.exe");
+                    var tempCopy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", UpdaterTempFileName);
                     try
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(tempCopy)!);
@@ -58,7 +68,7 @@ internal static class Program
 
         if (args.Length == 0)
         {
-            Log("No transaction path supplied. Usage: KodoUpdater.exe <transaction.json>");
+            Log($"No transaction path supplied. Usage: {UpdaterUsageName} <transaction.json>");
             return 2;
         }
 
@@ -68,7 +78,9 @@ internal static class Program
         if (args.Length > 1)
             transactionPath = string.Join(" ", args).Trim().Trim('"');
 
-        var mutexName = $"Global\\Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}";
+        var mutexName = OperatingSystem.IsWindows()
+            ? $"Global\\Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}"
+            : $"Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}";
         using var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
         if (!createdNew)
         {
@@ -133,7 +145,7 @@ internal static class Program
         {
             var fullTx = Path.GetFullPath(transactionPath);
             var fullExpected = Path.GetFullPath(expectedDir);
-            if (!fullTx.StartsWith(fullExpected, StringComparison.OrdinalIgnoreCase))
+            if (!fullTx.StartsWith(fullExpected, PathComparison))
             {
                 Log($"Transaction outside expected dir: {fullTx} !startsWith {fullExpected}");
                 return 7;
@@ -162,7 +174,7 @@ internal static class Program
                     {
                         var normProc = Path.GetFullPath(procPath).TrimEnd(Path.DirectorySeparatorChar);
                         var normTx = Path.GetFullPath(tx.KodoExePath).TrimEnd(Path.DirectorySeparatorChar);
-                        if (!string.Equals(normProc, normTx, StringComparison.OrdinalIgnoreCase))
+                        if (!string.Equals(normProc, normTx, PathComparison))
                         {
                             Log($"PID {tx.KodoPid} path mismatch: proc={normProc} tx={normTx} – PID reused, treating Kodo as already exited");
                             pidReused = true;
@@ -296,7 +308,7 @@ internal static class Program
 
         if (tx.RestartAfterUpdate)
         {
-            if (!File.Exists(tx.KodoExePath))
+            if (!File.Exists(tx.KodoExePath) && OperatingSystem.IsWindows())
             {
                 var fallback = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Kodo", "Kodo.exe");
                 if (File.Exists(fallback)) tx = tx with { KodoExePath = fallback };
@@ -340,7 +352,7 @@ internal static class Program
             var stagingRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "staging");
             var fullInst = Path.GetFullPath(installerPath);
             var fullStaging = Path.GetFullPath(stagingRoot);
-            if (fullInst.StartsWith(fullStaging, StringComparison.OrdinalIgnoreCase))
+            if (fullInst.StartsWith(fullStaging, PathComparison))
                 TryDelete(fullInst);
         }
         catch { }

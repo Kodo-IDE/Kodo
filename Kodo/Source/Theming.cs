@@ -648,7 +648,6 @@ public partial class MainWindow
 
     private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
     {
-        // 01 Editor Comes First: don't poll when window not active - interaction must stay responsive
         // 02 Do Less: skip entirely when not in windows accent mode
         if (!IsActive) return;
         if (_accentColorMode != "windows" && !IsSystemThemeActive) return;

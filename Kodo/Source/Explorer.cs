@@ -84,7 +84,7 @@ public partial class MainWindow
         if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
         // Do Less: sample only visible + 200 items max, not entire tree (could be 10k files)
-        var typeface = new Typeface("Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace");
+        var typeface = new Typeface("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace");
         var widest = 0.0;
         var sampled = 0;
         const int maxSample = 400;

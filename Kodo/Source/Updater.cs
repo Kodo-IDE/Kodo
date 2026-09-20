@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
+using Kodo.Models;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -86,10 +87,27 @@ internal static class UpdateService
         catch { return null; }
     }
 
-    // Prefer Kodo-*-Installer.exe; fallback to any .exe
     private static GitHubAsset? PickInstallerAsset(GitHubAsset[]? assets)
     {
         if (assets is null || assets.Length == 0) return null;
+        if (OperatingSystem.IsLinux())
+        {
+            var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
+            var archTokens = arch == "arm64"
+                ? new[] { "arm64", "aarch64" }
+                : new[] { "x64", "x86_64", "amd64" };
+            GitHubAsset? Match(Func<GitHubAsset, bool> pred) =>
+                assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase)) && pred(a))
+                ?? assets.FirstOrDefault(pred);
+            var tarball = Match(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && (a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)));
+            if (tarball is not null) return tarball;
+            var appImage = Match(a => a.Name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase));
+            if (appImage is not null) return appImage;
+            var deb = Match(a => a.Name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase));
+            if (deb is not null) return deb;
+            // Notify-only fallback: no usable Linux asset.
+            return null;
+        }
         var preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo-", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith("-Installer.exe", StringComparison.OrdinalIgnoreCase));
         if (preferred is not null) return preferred;
         preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
@@ -156,6 +174,40 @@ internal static class UpdateService
     internal static string StagingRoot => Path.Combine(UpdateRoot, "staging");
     internal static string TransactionDir => Path.Combine(UpdateRoot, "transactions");
 
+    internal static bool IsLinuxNotifyOnly => OperatingSystem.IsLinux();
+
+    internal static void OpenFolderInFileManager(string path)
+    {
+        var directory = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = directory, UseShellExecute = true });
+            return;
+        }
+        catch { }
+        if (OperatingSystem.IsLinux())
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "xdg-open",
+                    Arguments = $"\"{directory}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("OpenFolderInFileManager xdg-open failed", ex); }
+        }
+    }
+
+    internal static string LinuxReadyBlurb(string stagedPath) =>
+        stagedPath.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
+            ? "Download complete. Install it with e.g. sudo dpkg -i <file> (or your software center), then restart Kodo."
+            : stagedPath.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)
+                ? "Download complete. Make it executable (chmod +x), move it where you keep apps, then restart Kodo from it."
+                : "Download complete. Extract the archive over your install folder (keeping the Kodo binary executable with chmod +x), then restart Kodo.";
+
     internal static void CleanupStaleArtifacts()
     {
         try
@@ -212,7 +264,7 @@ internal static class UpdateService
         Directory.CreateDirectory(versionDir);
 
         var safeName = SanitizeFileName(update.AssetName);
-        if (!safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) safeName += ".exe";
+        if (OperatingSystem.IsWindows() && !safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) safeName += ".exe";
         var finalPath = Path.Combine(versionDir, safeName);
         var partialPath = finalPath + ".partial";
 
@@ -276,10 +328,12 @@ internal static class UpdateService
 
         Directory.CreateDirectory(TransactionDir);
         var transactionId = Guid.NewGuid().ToString("N");
-        var kodoExePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Kodo.exe");
-        // Prefer actual Kodo.exe alongside Kodo.dll; fallback to ProcessPath
+        // Phase 1 Linux: binary is "Kodo", not "Kodo.exe".
+        var kodoExeName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
+        var kodoExePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, kodoExeName);
+        // Prefer actual Kodo binary alongside Kodo.dll; fallback to ProcessPath
         var baseDir = AppContext.BaseDirectory;
-        var candidateKodo = Path.Combine(baseDir, "Kodo.exe");
+        var candidateKodo = Path.Combine(baseDir, kodoExeName);
         if (File.Exists(candidateKodo)) kodoExePath = Path.GetFullPath(candidateKodo);
 
         var tx = new UpdateTransaction(
@@ -303,13 +357,15 @@ internal static class UpdateService
     public static void LaunchUpdaterAndExit(string transactionPath)
     {
         var exeDir = AppContext.BaseDirectory;
-        var updaterPath = Path.Combine(exeDir, "KodoUpdater.exe");
+        // Phase 1 Linux: updater binary is extensionless on Unix.
+        var updaterFileName = OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
+        var updaterPath = Path.Combine(exeDir, updaterFileName);
         if (!File.Exists(updaterPath))
         {
             // Fallback to published location
-            updaterPath = Path.Combine(exeDir, "KodoUpdater", "KodoUpdater.exe");
+            updaterPath = Path.Combine(exeDir, "KodoUpdater", updaterFileName);
             if (!File.Exists(updaterPath))
-                throw new FileNotFoundException("KodoUpdater.exe not found", updaterPath);
+                throw new FileNotFoundException($"{updaterFileName} not found", updaterPath);
         }
 
         // Launch one-shot helper with transaction path.
@@ -435,7 +491,9 @@ internal sealed class UpdateDialog : Window
         _statusText = new TextBlock
         {
             Text = stagedInstallerPath is not null && File.Exists(stagedInstallerPath)
-                ? "Update downloaded and ready to install. Choose Restart & Update when you're ready."
+                ? (UpdateService.IsLinuxNotifyOnly
+                    ? UpdateService.LinuxReadyBlurb(stagedInstallerPath)
+                    : "Update downloaded and ready to install. Choose Restart & Update when you're ready.")
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
             FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
         };
@@ -449,7 +507,9 @@ internal sealed class UpdateDialog : Window
 
         _primaryButton = new Button
         {
-            Content = stagedInstallerPath is not null ? "Restart & Update" : "Download Update",
+            Content = stagedInstallerPath is not null
+                ? (UpdateService.IsLinuxNotifyOnly ? "Show in Folder" : "Restart & Update")
+                : "Download Update",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
@@ -493,6 +553,12 @@ internal sealed class UpdateDialog : Window
     {
         if (_isReady && _stagedInstallerPath is not null && File.Exists(_stagedInstallerPath))
         {
+            if (UpdateService.IsLinuxNotifyOnly)
+            {
+                UpdateService.OpenFolderInFileManager(_stagedInstallerPath);
+                _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
+                return;
+            }
             // Restart & Update
             _canClose = false;
             _primaryButton.IsEnabled = false;
@@ -539,8 +605,16 @@ internal sealed class UpdateDialog : Window
             _isDownloading = false;
             _isReady = true;
             _progressBar.IsVisible = false;
-            _statusText.Text = "Download complete. Ready to install – choose Restart & Update when you're ready.";
-            _primaryButton.Content = "Restart & Update";
+            if (UpdateService.IsLinuxNotifyOnly)
+            {
+                _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
+                _primaryButton.Content = "Show in Folder";
+            }
+            else
+            {
+                _statusText.Text = "Download complete. Ready to install – choose Restart & Update when you're ready.";
+                _primaryButton.Content = "Restart & Update";
+            }
             _primaryButton.IsEnabled = true;
             _laterButton.IsEnabled = true;
             _laterButton.Content = "Later";
@@ -635,15 +709,7 @@ internal static class AccentResolver
         var blackContrast = (luminance + 0.05) / 0.05;
         return whiteContrast >= blackContrast ? Colors.White : Colors.Black;
     }
-    private sealed class AccentSettings
-    {
-        public string AccentColorMode { get; set; } = "kodo";
-        public string CustomAccentHex { get; set; } = DefaultAccentHex;
-        public string? CachedThemeAccentHex { get; set; }
-    }
 }
-
-internal sealed record DialogThemePalette(Color Background, Color SurfaceDeep, Color Border, Color BadgeBg, Color Text, Color TextMuted, Color TextDim);
 
 internal static class ThemeResolver
 {
@@ -688,7 +754,7 @@ internal static class ThemeResolver
         }
         catch { return new ThemeSettings(); }
     }
-    private sealed class ThemeSettings { public string ThemeName { get; set; } = "Dark"; public string? CachedThemeWindowBackgroundHex { get; set; } }
+
 }
 
 internal sealed class AppUpdateScheduler

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
@@ -107,6 +108,22 @@ internal static class AptabaseClient
         {
             if (ver.Build >= 22000) return $"Windows 11 (Build {ver.Build})";
             if (ver.Build >= 10240) return $"Windows 10 (Build {ver.Build})";
+        }
+        // Phase 2 Linux: prefer distro PRETTY_NAME over generic uname.
+        if (OperatingSystem.IsLinux())
+        {
+            try
+            {
+                if (File.Exists("/etc/os-release"))
+                {
+                    foreach (var line in File.ReadLines("/etc/os-release"))
+                    {
+                        if (line.StartsWith("PRETTY_NAME=", StringComparison.Ordinal))
+                            return line["PRETTY_NAME=".Length..].Trim().Trim('"');
+                    }
+                }
+            }
+            catch { }
         }
         return System.Runtime.InteropServices.RuntimeInformation.OSDescription;
     }

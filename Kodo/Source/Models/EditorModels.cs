@@ -251,7 +251,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         }
         var pen = _cachedPen;
 
-        // Use document hash + linecount + tabsize to invalidate cheap cache without per-char scan of whole doc
         var docVersion = document.TextLength ^ document.LineCount ^ TabSize;
         if (docVersion != _cachedVersion || document.LineCount != _cachedLineCount)
         {
@@ -533,7 +532,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         foreach (var index in _candidates)
         {
             var span = _spans[index];
-            // Inclusive EOL: missing semicolon at EndOffset must still count as touching line - every error gets underline somewhere on line
             if (span.StartOffset <= lineEnd && span.StartOffset + Math.Max(1, span.Length) > lineStart)
             {
                 var label = span.Severity.Equals("error", StringComparison.OrdinalIgnoreCase) ? "Error" :
@@ -618,8 +616,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             var height = visualLine.Height;
             if (height <= 0) continue;
 
-            // Always draw error underlines first, then dead-code stripes behind - ensures underlines are never hidden
-            // Collect underlines to draw after stripes
             var hasDeadOverlap = LineOverlapsDeadCode(docLine);
             if (hasDeadOverlap)
                 DrawStripes(drawingContext, y1, height, width);
@@ -975,7 +971,6 @@ public class EditorTab : INotifyPropertyChanged
     public string DiagnosticsText => _diagnosticsText;
     public string DiagnosticsTooltip => _diagnosticsTooltip;
 
-    /// <summary>Severity ranking for tab tint: 3=error, 2=warning, 1=info/unused, 0=none</summary>
     public int DiagnosticsSeverity
     {
         get
@@ -1103,7 +1098,6 @@ public class FileTreeItem : INotifyPropertyChanged
 
     public double IndentWidth => Depth * 14.0;
 
-    /// <summary>One entry per ancestor level, used to draw a vertical indent guide line for each.</summary>
     public IEnumerable<int> GuideLevels => Enumerable.Range(0, Depth);
 
     public string ChevronText => IsDirectory ? (_isExpanded ? "↓" : "→") : string.Empty;

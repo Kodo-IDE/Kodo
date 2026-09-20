@@ -1137,6 +1137,28 @@ public partial class MainWindow
             ? leEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
             : [];
 
+        var os = item.TryGetProperty("os", out var osEl) && osEl.ValueKind == JsonValueKind.Array
+            ? osEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+            : [];
+        if (os.Length == 0 && item.TryGetProperty("platforms", out var platEl) && platEl.ValueKind == JsonValueKind.Array)
+            os = platEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+        var arch = item.TryGetProperty("arch", out var archEl) && archEl.ValueKind == JsonValueKind.Array
+            ? archEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
+            : [];
+        if (arch.Length == 0 && item.TryGetProperty("architectures", out var archsEl) && archsEl.ValueKind == JsonValueKind.Array)
+            arch = archsEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+
+        // Phase 2: optional payload checksum ("sha256", "checksum", "sha256Checksum").
+        string? sha256 = null;
+        foreach (var key in new[] { "sha256", "checksum", "sha256Checksum" })
+        {
+            if (item.TryGetProperty(key, out var shaEl) && shaEl.ValueKind == JsonValueKind.String)
+            {
+                var raw = shaEl.GetString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(raw)) { sha256 = raw; break; }
+            }
+        }
+
         return new MarketplaceExtension
         {
             Id = id,
@@ -1150,8 +1172,46 @@ public partial class MainWindow
             IconUrl = iconUrl,
             FileExtensions = fileExtensions,
             LanguageExtensionIds = languageExtensionIds,
-            Dependencies = dependencies
+            Dependencies = dependencies,
+            Os = os,
+            Arch = arch,
+            Sha256 = sha256
         };
+    }
+
+    internal static bool IsCompatibleWithCurrentOS(MarketplaceExtension ext)
+    {
+        if (ext.Os.Length > 0)
+        {
+            var current = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsLinux() ? "linux" : OperatingSystem.IsMacOS() ? "macos" : "unknown";
+            var match = false;
+            var hasKnown = false;
+            foreach (var token in ext.Os)
+            {
+                var t = token.Trim().ToLowerInvariant();
+                if (t is "windows" or "win" or "win32" or "win64") { hasKnown = true; if (current == "windows") match = true; }
+                else if (t is "linux") { hasKnown = true; if (current == "linux") match = true; }
+                else if (t is "macos" or "mac" or "osx" or "darwin") { hasKnown = true; if (current == "macos") match = true; }
+                else if (t is "any" or "all" or "cross-platform" or "crossplatform") { hasKnown = true; match = true; }
+            }
+            if (hasKnown && !match) return false;
+        }
+        if (ext.Arch.Length > 0)
+        {
+            var currentArch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant(); // x64, arm64, ...
+            var match = false;
+            var hasKnown = false;
+            foreach (var token in ext.Arch)
+            {
+                var t = token.Trim().ToLowerInvariant();
+                if (t is "x64" or "x86_64" or "amd64") { hasKnown = true; if (currentArch == "x64") match = true; }
+                else if (t is "arm64" or "aarch64") { hasKnown = true; if (currentArch == "arm64") match = true; }
+                else if (t is "x86" or "i386" or "i686") { hasKnown = true; if (currentArch == "x86") match = true; }
+                else if (t is "any" or "all") { hasKnown = true; match = true; }
+            }
+            if (hasKnown && !match) return false;
+        }
+        return true;
     }
 
     private static string NormalizeMarketplaceIconUrl(JsonElement item)
@@ -1229,6 +1289,7 @@ public partial class MainWindow
             var localExt = GetPreferredLoadedExtension(entry.Id);
             var isUpdateAvailable = localExt is not null && CompareExtensionVersions(entry.Version, localExt.Version) > 0;
 
+            entry.SetOsBlocked(!IsCompatibleWithCurrentOS(entry));
             entry.SetInstalledState(localExt, isUpdateAvailable);
             if (localExt is not null)
                 localExt.IsUpdateAvailable = isUpdateAvailable;
@@ -1256,10 +1317,25 @@ public partial class MainWindow
             if (existing.SvgData is not null && incoming.SvgData is null) incoming.SvgData = existing.SvgData;
         });
 
-    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension)
+    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension, HashSet<string>? installChain = null)
     {
         if (marketplaceExtension.IsInstalling || (marketplaceExtension.IsInstalled && !marketplaceExtension.IsUpdateAvailable))
             return;
+
+        installChain ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!installChain.Add(marketplaceExtension.Id))
+        {
+            ExtensionsStatusText = $"Skipping {marketplaceExtension.Name}: dependency cycle detected ({string.Join(" -> ", installChain)} -> {marketplaceExtension.Id}).";
+            return;
+        }
+
+        // Phase 1 Linux: respect optional os/arch gating from the index.
+        if (!IsCompatibleWithCurrentOS(marketplaceExtension))
+        {
+            ExtensionsStatusText = $"{marketplaceExtension.Name} is not available for this OS/arch and was skipped.";
+            installChain.Remove(marketplaceExtension.Id);
+            return;
+        }
 
         RefreshMarketplaceConnectivityState();
         marketplaceExtension.IsInstalling = true;
@@ -1315,7 +1391,7 @@ public partial class MainWindow
                     if (dep is null) continue;
                     if (dep.IsInstalled) continue;
                     ExtensionsStatusText = $"Installing dependency {dep.Name} for {marketplaceExtension.Name}...";
-                    await InstallMarketplaceExtensionAsync(dep);
+                    await InstallMarketplaceExtensionAsync(dep, installChain);
                 }
             }
 
@@ -1337,6 +1413,7 @@ public partial class MainWindow
         }
         finally
         {
+            installChain.Remove(marketplaceExtension.Id);
             marketplaceExtension.IsInstalling = false;
             NotifyExtensionActionStateChanged();
             SyncMarketplaceInstallStates();
@@ -1473,9 +1550,19 @@ public partial class MainWindow
 
     private static void ValidateDownloadedExtensionPackage(MarketplaceExtension marketplaceExtension, byte[] packageBytes)
     {
+        if (!string.IsNullOrWhiteSpace(marketplaceExtension.Sha256))
+        {
+            var expected = marketplaceExtension.Sha256!.Trim().ToLowerInvariant().Replace(" ", "").Replace("0x", "");
+            var actual = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(packageBytes)).ToLowerInvariant();
+            if (!actual.Equals(expected, StringComparison.Ordinal))
+                throw new InvalidDataException(
+                    $"Checksum mismatch for {marketplaceExtension.Name}. Expected {expected}, got {actual}.");
+        }
         using var ms = new MemoryStream(packageBytes, writable: false);
         using var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
+        // Phase 1 Linux: match the loader's case-insensitive manifest lookup.
         var manifestEntry = archive.GetEntry("manifest.json")
+            ?? archive.Entries.FirstOrDefault(e => string.Equals(e.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidDataException($"Downloaded package for {marketplaceExtension.Name} is missing manifest.json.");
 
         using var manifestStream = manifestEntry.Open();

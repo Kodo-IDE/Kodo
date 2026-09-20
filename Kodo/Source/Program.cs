@@ -19,7 +19,10 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        AttachConsole(0xFFFFFFFF);
+        if (OperatingSystem.IsWindows())
+        {
+            try { AttachConsole(0xFFFFFFFF); } catch { }
+        }
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
         if (!SingleInstance.TryAcquire())
@@ -53,7 +56,9 @@ class Program
 
 internal static class SingleInstance
 {
-    private static readonly string MutexName = $@"Local\Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}";
+    private static readonly string MutexName = OperatingSystem.IsWindows()
+        ? $@"Local\Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}"
+        : $"Kodo_SingleInstance_Mutex_9F3E2C1A_{VersionSuffix()}";
     private static readonly string PipeName = $"Kodo_SingleInstance_Pipe_9F3E2C1A_{VersionSuffix()}";
 
     private static Mutex? _mutex;

@@ -78,7 +78,7 @@ public partial class App : Application
             DeferFileAssociationsRegistration();
         }
 #endif
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             DeferUpdateChecks();
         }
@@ -399,7 +399,7 @@ public partial class App : Application
             {
                 Text = source,
                 FontSize = 12,
-                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground = new SolidColorBrush(KodoTokenBlue),
             },
         };
@@ -408,7 +408,7 @@ public partial class App : Application
         {
             Text = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
             FontSize = 11,
-            FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -417,7 +417,7 @@ public partial class App : Application
         {
             Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
             FontSize = 12,
-            FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
             Foreground = new SolidColorBrush(KodoTokenOrange),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -442,7 +442,7 @@ public partial class App : Application
 
         var logPathText = new TextBlock
         {
-            Text = "Full details in: %AppData%\\Kodo\\kodo.log",
+            Text = $"Full details in: {KodoDiagnostics.DisplayLogPath}",
             FontSize = 11,
             Foreground = new SolidColorBrush(KodoTextDim),
             TextWrapping = TextWrapping.Wrap,

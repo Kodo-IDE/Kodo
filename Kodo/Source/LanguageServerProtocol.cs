@@ -462,8 +462,6 @@ internal sealed class LspClient : IDisposable
 
     private async Task ReadLoopAsync(Stream stdout, CancellationToken ct)
     {
-        // Philosophy: Do Less, Not Faster - avoid per-byte allocations and syscalls.
-        // Use buffered chunk reads + pooled buffers. Expensive work off UI, interaction never blocks.
         stdout = new BufferedStream(stdout, 32768);
         var headerLines = new List<string>(4);
         var buffer = new byte[8192];
@@ -555,8 +553,6 @@ internal sealed class LspClient : IDisposable
                             headerAccum.Position = leftover;
                         }
                         else headerAccum.SetLength(0);
-                        // Now read remaining body bytes outside this inner loop via outer handling
-                        // Store partial body in a field for next iteration - instead loop to fill body
                         while (bodyOffset < contentLength)
                         {
                             var r = await stdout.ReadAsync(bodyBuffer, bodyOffset, contentLength - bodyOffset, ct).ConfigureAwait(false);
@@ -846,16 +842,17 @@ internal sealed class LspClient : IDisposable
 public partial class MainWindow
 {
     private readonly LspManager _lspManager = new();
-    private readonly Dictionary<string, int> _lspDocumentVersions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _lspOpenDocuments = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _lspMissingNotified = new(StringComparer.OrdinalIgnoreCase);
+    // Phase 2 Linux: document paths are case-sensitive on ext4; use OS-sensitive comparer.
+    private static StringComparer LspPathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    private readonly Dictionary<string, int> _lspDocumentVersions = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private readonly HashSet<string> _lspOpenDocuments = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private readonly HashSet<string> _lspMissingNotified = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private readonly DispatcherTimer _lspDidChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private string? _pendingLspChangePath;
     private readonly object _lspPendingLock = new();
-    private sealed record LspPendingEdit(int StartLine, int StartChar, int EndLine, int EndChar, string Text);
-    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _lspForceFullSync = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private readonly HashSet<string> _lspForceFullSync = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private static readonly TimeSpan LspHugeFileSyncInterval = TimeSpan.FromSeconds(8);
     private const int LspIncrementalMaxEdits = 500;
     private const int LspIncrementalMaxChars = 100_000;
@@ -1073,9 +1070,6 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(() =>
         {
             var curLen = EditorTextBox?.Document?.TextLength ?? len;
-            // Debounce before sending: huge files wait longer so each pause
-            // produces at most one sync; actual send rate is further limited
-            // by LspHugeFileSyncInterval to avoid re-triggering server analysis.
             if (curLen > 250_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(3000);
             else if (curLen > 120_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(2000);
             else if (curLen > 80_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(600);
@@ -1326,7 +1320,6 @@ public partial class MainWindow
             _lspPendingOpens.Add(filePath);
         }
 
-        // Avoid lag spike on large files: yield to let editor render first, defer heavy MSBuild/LSP init.
         var isLargeFileForLsp = content.Length > 120_000;
         if (isLargeFileForLsp)
         {
@@ -2565,9 +2558,6 @@ public partial class MainWindow
         if (first.TryGetProperty("command", out var cmd))
         {
             KodoDiagnostics.LogDebug($"LSP codeAction is command: {cmd.GetRawText()}");
-            // LSP permits either a command object or a command string. Execute
-            // command objects through the server and only report success when
-            // the server acknowledges the request.
             string? commandText = null;
             JsonElement? commandArgs = null;
             if (cmd.ValueKind == JsonValueKind.String)
@@ -2817,8 +2807,6 @@ public partial class MainWindow
             {
                 if (EditorTextBox?.Document is null) return;
                 var doc = EditorTextBox.Document;
-                // Workspace edits are calculated against the request snapshot.
-                // Never apply a delayed edit to newer editor contents.
                 if (!string.Equals(doc.Text, text, StringComparison.Ordinal))
                 {
                     KodoDiagnostics.LogDebug($"LSP workspace edit rejected as stale for {filePath}");
@@ -3588,6 +3576,8 @@ internal static class LspInstallationManager
                 var fileName = Path.GetFileName(GetManagedExecutablePath(cfg, settings));
                 var dest = Path.Combine(stagingDir, fileName);
                 File.Copy(tempFile, dest, true);
+                // Phase 1 Linux: single-file downloads lose the exec bit on copy.
+                MakeExecutable(dest);
             }
             // Validate staging contains at least one file
             if (!Directory.EnumerateFileSystemEntries(stagingDir).Any())
@@ -3685,13 +3675,16 @@ internal static class LspInstallationManager
             if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith("/")) continue; // directory
             var destPath = Path.GetFullPath(Path.Combine(destDir, entry.FullName));
             var fullDestDir = Path.GetFullPath(destDir);
-            if (!destPath.StartsWith(fullDestDir, StringComparison.OrdinalIgnoreCase))
+            // Phase 1 Linux: ZipSlip check must be case-sensitive on case-sensitive filesystems.
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!destPath.StartsWith(fullDestDir, pathComparison))
                 throw new InvalidDataException($"Zip entry escapes destination: {entry.FullName}");
             var dir = Path.GetDirectoryName(destPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             if (entry.FullName.EndsWith("/")) continue;
             await Task.Run(() => entry.ExtractToFile(destPath, overwrite: true), ct).ConfigureAwait(false);
         }
+        RestoreUnixExecBit(destDir);
     }
 
     private static async Task ExtractTarGzSecureAsync(string tgzPath, string destDir, CancellationToken ct)
@@ -3717,7 +3710,8 @@ internal static class LspInstallationManager
                         if (string.IsNullOrWhiteSpace(entryName)) continue;
                         var destPath = Path.GetFullPath(Path.Combine(destDir, entryName));
                         var fullDestDir = Path.GetFullPath(destDir);
-                        if (!destPath.StartsWith(fullDestDir, StringComparison.OrdinalIgnoreCase))
+                        var tarPathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+                        if (!destPath.StartsWith(fullDestDir, tarPathComparison))
                             throw new InvalidDataException($"Tar entry escapes destination: {entryName}");
                         if (entry.EntryType.ToString() == "Directory")
                         {
@@ -3737,6 +3731,42 @@ internal static class LspInstallationManager
             }
             throw new InvalidOperationException("TAR extraction not supported on this runtime – archive is .tar.gz but System.Formats.Tar not available. Please install manually.");
         }, ct).ConfigureAwait(false);
+        RestoreUnixExecBit(destDir);
+    }
+
+    private static void RestoreUnixExecBit(string dir)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var name = Path.GetFileName(file);
+                    var ext = Path.GetExtension(name).ToLowerInvariant();
+                    if (ext is ".md" or ".txt" or ".json" or ".png" or ".svg" or ".xml" or ".pdb" or ".dll")
+                        continue;
+                    var mode = File.GetUnixFileMode(file);
+                    mode |= System.IO.UnixFileMode.UserExecute | System.IO.UnixFileMode.GroupExecute | System.IO.UnixFileMode.OtherExecute;
+                    File.SetUnixFileMode(file, mode);
+                }
+                catch { }
+            }
+        }
+        catch { }
+    }
+
+    internal static void MakeExecutable(string path)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            var mode = File.GetUnixFileMode(path);
+            mode |= System.IO.UnixFileMode.UserExecute | System.IO.UnixFileMode.GroupExecute | System.IO.UnixFileMode.OtherExecute;
+            File.SetUnixFileMode(path, mode);
+        }
+        catch { }
     }
 
     private static bool HasInternetConnection()
@@ -4195,40 +4225,81 @@ internal static class LspRuntimeDetector
         {
             var lower = command.Trim().ToLowerInvariant();
             if (lower != "node" && lower != "npm" && lower != "npx") return null;
-            var candidates = new List<string>();
-            var nvmHome = Environment.GetEnvironmentVariable("NVM_HOME");
-            if (!string.IsNullOrWhiteSpace(nvmHome)) { candidates.Add(Path.Combine(nvmHome, "node.exe")); candidates.Add(Path.Combine(nvmHome, "npm.cmd")); }
-            var nvmSymlink = Environment.GetEnvironmentVariable("NVM_SYMLINK");
-            if (!string.IsNullOrWhiteSpace(nvmSymlink)) { candidates.Add(Path.Combine(nvmSymlink, "node.exe")); candidates.Add(Path.Combine(nvmSymlink, "npm.cmd")); }
-            // Volta
-            try { var voltaBin = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Volta", "bin"); candidates.Add(Path.Combine(voltaBin, "node.exe")); candidates.Add(Path.Combine(voltaBin, "npm.cmd")); } catch { }
-            var fnmDir = Environment.GetEnvironmentVariable("FNM_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "fnm");
-            if (!string.IsNullOrWhiteSpace(fnmDir) && Directory.Exists(fnmDir))
-                try { var fnmNode = Directory.EnumerateFiles(fnmDir, "node.exe", SearchOption.AllDirectories).FirstOrDefault(); if (fnmNode != null) candidates.Add(fnmNode); } catch { }
-            // Standard Program Files
-            try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "npm.cmd")); } catch { }
-            try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "npm.cmd")); } catch { }
-            // AppData local nodejs (npm global prefix sometimes)
-            foreach (var hive in new[] { Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryHive.CurrentUser })
+            var isWindows = OperatingSystem.IsWindows();
+            var target = lower switch
             {
-                try
+                "node" => isWindows ? "node.exe" : "node",
+                "npm" => isWindows ? "npm.cmd" : "npm",
+                "npx" => isWindows ? "npx.cmd" : "npx",
+                _ => lower
+            };
+            var candidates = new List<string>();
+            if (isWindows)
+            {
+                var nvmHome = Environment.GetEnvironmentVariable("NVM_HOME");
+                if (!string.IsNullOrWhiteSpace(nvmHome)) { candidates.Add(Path.Combine(nvmHome, "node.exe")); candidates.Add(Path.Combine(nvmHome, "npm.cmd")); }
+                var nvmSymlink = Environment.GetEnvironmentVariable("NVM_SYMLINK");
+                if (!string.IsNullOrWhiteSpace(nvmSymlink)) { candidates.Add(Path.Combine(nvmSymlink, "node.exe")); candidates.Add(Path.Combine(nvmSymlink, "npm.cmd")); }
+                try { var voltaBin = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Volta", "bin"); candidates.Add(Path.Combine(voltaBin, "node.exe")); candidates.Add(Path.Combine(voltaBin, "npm.cmd")); } catch { }
+                var fnmDir = Environment.GetEnvironmentVariable("FNM_DIR") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "fnm");
+                if (!string.IsNullOrWhiteSpace(fnmDir) && Directory.Exists(fnmDir))
+                    try { var fnmNode = Directory.EnumerateFiles(fnmDir, "node.exe", SearchOption.AllDirectories).FirstOrDefault(); if (fnmNode != null) candidates.Add(fnmNode); } catch { }
+                try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "nodejs", "npm.cmd")); } catch { }
+                try { candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "node.exe")); candidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "nodejs", "npm.cmd")); } catch { }
+                foreach (var hive in new[] { Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryHive.CurrentUser })
                 {
-                    using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry64);
-                    using var appPaths = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
-                    var pathVal = appPaths?.GetValue(null) as string ?? appPaths?.GetValue("Path") as string;
-                    if (!string.IsNullOrWhiteSpace(pathVal) && File.Exists(pathVal)) candidates.Add(pathVal);
+                    try
+                    {
+                        using var baseKey = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry64);
+                        using var appPaths = baseKey.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
+                        var pathVal = appPaths?.GetValue(null) as string ?? appPaths?.GetValue("Path") as string;
+                        if (!string.IsNullOrWhiteSpace(pathVal) && File.Exists(pathVal)) candidates.Add(pathVal);
+                    }
+                    catch { }
+                    try
+                    {
+                        using var baseKey32 = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry32);
+                        using var appPaths32 = baseKey32.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
+                        var pathVal32 = appPaths32?.GetValue(null) as string ?? appPaths32?.GetValue("Path") as string;
+                        if (!string.IsNullOrWhiteSpace(pathVal32) && File.Exists(pathVal32)) candidates.Add(pathVal32);
+                    }
+                    catch { }
                 }
-                catch { }
-                try
-                {
-                    using var baseKey32 = Microsoft.Win32.RegistryKey.OpenBaseKey(hive, Microsoft.Win32.RegistryView.Registry32);
-                    using var appPaths32 = baseKey32.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\" + (lower == "node" ? "node.exe" : "npm.cmd"));
-                    var pathVal32 = appPaths32?.GetValue(null) as string ?? appPaths32?.GetValue("Path") as string;
-                    if (!string.IsNullOrWhiteSpace(pathVal32) && File.Exists(pathVal32)) candidates.Add(pathVal32);
-                }
-                catch { }
             }
-            var target = lower == "node" ? "node.exe" : "npm.cmd";
+            else
+            {
+                // Unix: nvm (NVM_DIR), fnm, volta, standard paths.
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var nvmDir = Environment.GetEnvironmentVariable("NVM_DIR");
+                if (string.IsNullOrWhiteSpace(nvmDir)) nvmDir = Path.Combine(home, ".nvm");
+                if (!string.IsNullOrWhiteSpace(nvmDir) && Directory.Exists(nvmDir))
+                {
+                    try
+                    {
+                        var nvmNode = Directory.EnumerateFiles(nvmDir, "node", SearchOption.AllDirectories)
+                            .FirstOrDefault(p => p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}node", StringComparison.Ordinal));
+                        if (nvmNode != null) candidates.Add(nvmNode);
+                    }
+                    catch { }
+                }
+                var voltaHome = Environment.GetEnvironmentVariable("VOLTA_HOME");
+                var voltaBinCandidates = new List<string>();
+                if (!string.IsNullOrWhiteSpace(voltaHome)) voltaBinCandidates.Add(Path.Combine(voltaHome, "bin"));
+                voltaBinCandidates.Add(Path.Combine(home, ".volta", "bin"));
+                try { voltaBinCandidates.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Volta", "bin")); } catch { }
+                foreach (var vb in voltaBinCandidates.Distinct(StringComparer.Ordinal))
+                    candidates.Add(Path.Combine(vb, target));
+                var fnmDir = Environment.GetEnvironmentVariable("FNM_DIR");
+                if (string.IsNullOrWhiteSpace(fnmDir))
+                    fnmDir = Path.Combine(home, ".local", "share", "fnm");
+                if (!string.IsNullOrWhiteSpace(fnmDir) && Directory.Exists(fnmDir))
+                {
+                    try { var fnmNode = Directory.EnumerateFiles(fnmDir, "node", SearchOption.AllDirectories).FirstOrDefault(); if (fnmNode != null) candidates.Add(fnmNode); } catch { }
+                    try { var fnmMultis = Directory.GetDirectories(fnmDir, "*", SearchOption.TopDirectoryOnly); foreach (var d in fnmMultis) candidates.Add(Path.Combine(d, "installation", "bin", target)); } catch { }
+                }
+                foreach (var p in new[] { "/usr/local/bin", "/usr/bin", "/opt/nodejs/bin", "/snap/bin", Path.Combine(home, ".local", "bin"), Path.Combine(home, ".fnm", "current", "bin") })
+                    candidates.Add(Path.Combine(p, target));
+            }
             foreach (var c in candidates)
             {
                 if (string.IsNullOrWhiteSpace(c)) continue;
@@ -4245,10 +4316,12 @@ internal static class LspRuntimeDetector
     {
         try
         {
-            if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows)) return null;
-            var whereExe = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe");
-            if (!File.Exists(whereExe)) whereExe = "where";
-            var psi = new ProcessStartInfo { FileName = whereExe, Arguments = command, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
+            var isWindows = OperatingSystem.IsWindows();
+            var bin = isWindows
+                ? (File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe"))
+                    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "where.exe") : "where")
+                : "which";
+            var psi = new ProcessStartInfo { FileName = bin, Arguments = command, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
             using var proc = Process.Start(psi);
             if (proc == null) return null;
             var output = proc.StandardOutput.ReadToEnd();
@@ -4268,26 +4341,46 @@ internal static class LspRuntimeDetector
             var fileName = command.Trim().Trim('"').Trim();
             if (string.IsNullOrWhiteSpace(fileName)) return null;
             if (Path.IsPathRooted(fileName) && File.Exists(fileName)) return Path.GetFullPath(fileName);
-            var pathext = Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
-            var pathexts = pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var isWindows = OperatingSystem.IsWindows();
             var rawPath = Environment.GetEnvironmentVariable("PATH") ?? "";
+            string[] pathexts = [];
+            if (isWindows)
+            {
+                var pathext = Environment.GetEnvironmentVariable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
+                pathexts = pathext.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
             foreach (var rawDir in rawPath.Split(Path.PathSeparator))
             {
                 if (string.IsNullOrWhiteSpace(rawDir)) continue;
                 var expanded = Environment.ExpandEnvironmentVariables(rawDir.Trim().Trim('"').Trim());
                 if (string.IsNullOrWhiteSpace(expanded)) continue;
-                // Normalize trailing slash
                 string dir;
                 try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
                 if (!Directory.Exists(dir)) continue;
                 var candidate = Path.Combine(dir, fileName);
                 if (File.Exists(candidate)) return Path.GetFullPath(candidate);
-                // try with pathext only if no extension supplied
+                if (!isWindows) continue;
                 if (Path.HasExtension(fileName)) continue;
                 foreach (var ext in pathexts)
                 {
                     var withExt = candidate + (ext.StartsWith(".") ? ext : "." + ext);
                     if (File.Exists(withExt)) return Path.GetFullPath(withExt);
+                }
+            }
+            // Unix fallback: if command had a Windows extension, retry without it.
+            if (!isWindows && (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
+            {
+                var stripped = fileName[..^4];
+                foreach (var rawDir in rawPath.Split(Path.PathSeparator))
+                {
+                    if (string.IsNullOrWhiteSpace(rawDir)) continue;
+                    var expanded = Environment.ExpandEnvironmentVariables(rawDir.Trim().Trim('"').Trim());
+                    if (string.IsNullOrWhiteSpace(expanded)) continue;
+                    string dir;
+                    try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
+                    if (!Directory.Exists(dir)) continue;
+                    var candidate = Path.Combine(dir, stripped);
+                    if (File.Exists(candidate)) return Path.GetFullPath(candidate);
                 }
             }
             return null;

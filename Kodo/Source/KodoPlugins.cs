@@ -18,9 +18,7 @@ public partial class MainWindow
     private readonly Dictionary<string, LoadedKodoPlugin> _activeLanguagePlugins =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private string PluginCacheFolderPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Kodo", "PluginCache");
+    private string PluginCacheFolderPath => KodoPaths.PluginCacheDir;
 
     private string ExtractKoxPluginFiles(ZipArchive archive, string id, string version)
     {
@@ -30,15 +28,30 @@ public partial class MainWindow
 
         var pluginFolder = Path.Combine(PluginCacheFolderPath, $"{prefix}{Guid.NewGuid():N}");
         Directory.CreateDirectory(pluginFolder);
+        var fullPluginFolder = Path.GetFullPath(pluginFolder);
 
         foreach (var entry in archive.Entries)
         {
-            if (!entry.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)) continue;
+            var isManaged = entry.Name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase);
+            var isUnixNative = !OperatingSystem.IsWindows() &&
+                (entry.Name.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ||
+                 entry.Name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase));
+            if (!isManaged && !isUnixNative) continue;
+            // Skip directory entries (Name empty, FullName ends with /).
+            if (string.IsNullOrEmpty(entry.Name)) continue;
 
-            var destPath = Path.Combine(pluginFolder, entry.Name);
+            var destPath = Path.GetFullPath(Path.Combine(pluginFolder, entry.FullName));
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+            if (!destPath.StartsWith(fullPluginFolder + Path.DirectorySeparatorChar, pathComparison) &&
+                !string.Equals(destPath, fullPluginFolder, pathComparison))
+                continue; // ZipSlip attempt – skip entry
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
             using var entryStream = entry.Open();
             using var destStream = File.Create(destPath);
             entryStream.CopyTo(destStream);
+            if (isUnixNative)
+                LspInstallationManager.MakeExecutable(destPath);
         }
 
         return pluginFolder;
@@ -97,6 +110,12 @@ public partial class MainWindow
     private void LoadPlugin(LoadedExtension ext)
     {
         var assemblyPath = Path.Combine(ext.PluginFolderPath!, ext.PluginAssemblyFileName!);
+        if (!File.Exists(assemblyPath))
+        {
+            var fallback = Directory.EnumerateFiles(ext.PluginFolderPath!, Path.GetFileName(ext.PluginAssemblyFileName!), SearchOption.AllDirectories).FirstOrDefault();
+            if (fallback is null) return;
+            assemblyPath = fallback;
+        }
         if (!File.Exists(assemblyPath)) return;
 
         var loadContext = new KodoPluginLoadContext(ext.Id, ext.PluginFolderPath!);
@@ -154,6 +173,12 @@ public partial class MainWindow
     private void LoadLanguagePlugin(LoadedExtension ext)
     {
         var assemblyPath = Path.Combine(ext.LanguagePluginFolderPath!, ext.LanguagePluginAssemblyFileName!);
+        if (!File.Exists(assemblyPath))
+        {
+            var fallback = Directory.EnumerateFiles(ext.LanguagePluginFolderPath!, Path.GetFileName(ext.LanguagePluginAssemblyFileName!), SearchOption.AllDirectories).FirstOrDefault();
+            if (fallback is null) return;
+            assemblyPath = fallback;
+        }
         if (!File.Exists(assemblyPath)) return;
 
         var loadContext = new KodoPluginLoadContext(ext.Id + "_lp", ext.LanguagePluginFolderPath!);

@@ -542,7 +542,8 @@ public partial class MainWindow
     private static List<string> FindAllOnPath(string exeName)
     {
         var results = new List<string>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Phase 1 Linux: path lookup must be case-sensitive; Windows stays insensitive.
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         try
         {
             var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
@@ -550,16 +551,36 @@ public partial class MainWindow
             {
                 try
                 {
-                    var candidate = Path.Combine(dir.Trim(), exeName);
-                    if (!File.Exists(candidate)) continue;
-                    var full = Path.GetFullPath(candidate);
-                    if (seen.Add(full)) results.Add(full);
+                    foreach (var probe in CandidateProbes(exeName))
+                    {
+                        var candidate = Path.Combine(dir.Trim(), probe);
+                        if (!File.Exists(candidate)) continue;
+                        var full = Path.GetFullPath(candidate);
+                        if (seen.Add(full)) results.Add(full);
+                    }
                 }
                 catch { }
             }
         }
         catch { }
         return results;
+    }
+
+    private static IEnumerable<string> CandidateProbes(string exeName)
+    {
+        yield return exeName;
+        if (OperatingSystem.IsWindows())
+        {
+            if (!exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                yield return exeName + ".exe";
+        }
+        else
+        {
+            if (exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+                yield return exeName[..^4];
+            if (exeName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) || exeName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+                yield return exeName[..^4];
+        }
     }
 
     private static string? TryFindOnPath(string exeName) => FindAllOnPath(exeName).FirstOrDefault();
@@ -1221,7 +1242,7 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug($"pacman g++ install exit {pacmanProc.ExitCode}\n{output}\n{error}");
                 if (pacmanProc.ExitCode != 0)
                 {
-                    ExtensionsStatusText = $"pacman finished with code {pacmanProc.ExitCode}. Check %AppData%\\Kodo\\kodo.log.";
+                    ExtensionsStatusText = $"pacman finished with code {pacmanProc.ExitCode}. Check {KodoDiagnostics.DisplayLogPath}.";
                     await ShowWarningDialogAsync("MSYS2 pacman",
                         new InvalidOperationException($"pacman exit {pacmanProc.ExitCode}. Output:\n{output}\n{error}\n\nTry in MSYS2 shell: {pacmanCmd}"));
                 }
@@ -2416,11 +2437,20 @@ public partial class MainWindow
         if (ext is ".bat" or ".cmd")
             return ("cmd.exe", $"/c {quotedPath}{extra}{fileArg}");
         if (ext is ".ps1")
+        {
+            if (!OperatingSystem.IsWindows())
+                return ("pwsh", $"-NoProfile -ExecutionPolicy Bypass -File {quotedPath}{extra}{fileArg}");
             return ("powershell.exe", $"-ExecutionPolicy Bypass -File {quotedPath}{extra}{fileArg}");
+        }
         if (ext is ".sh")
             return ("bash", $"{quotedPath}{extra}{fileArg}");
         if (ext is ".py" or ".pyw")
+        {
+            // Phase 1 Linux: "python" is often unmapped; prefer python3 on Unix.
+            if (!OperatingSystem.IsWindows())
+                return (TryFindOnPath("python3") ?? "python3", $"{quotedPath}{extra}{fileArg}");
             return ("python", $"{quotedPath}{extra}{fileArg}");
+        }
         var args = fileArg.Length > 0 ? $"{expandedExtra.Trim()} {quotedFile}".Trim() : expandedExtra.Trim();
         if (string.IsNullOrWhiteSpace(args) && !alreadyHasFileArg)
             args = quotedFile;
@@ -2537,6 +2567,12 @@ public partial class MainWindow
 
     private string ExpandCommandTemplate(string template, string? extraArgs)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            template = template.Replace("{name}.exe", "{name}", StringComparison.Ordinal);
+            template = template.Replace("-f win64", "-f elf64", StringComparison.OrdinalIgnoreCase);
+            template = System.Text.RegularExpressions.Regex.Replace(template, @"\bpython(\.exe)?\b", "python3");
+        }
         var filePath = _currentFilePath ?? string.Empty;
         var fileName = Path.GetFileName(filePath);
         var name = Path.GetFileNameWithoutExtension(filePath);
@@ -2580,14 +2616,20 @@ public partial class MainWindow
                 return sibling;
         }
 
-        if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase))
+        if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase) || exeName.Equals("go", StringComparison.Ordinal))
         {
-            var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", "go.exe");
+            var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
             if (File.Exists(goPath)) return goPath;
-            goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Go", "bin", "go.exe");
+            goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
             if (File.Exists(goPath)) return goPath;
-            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", "go.exe");
+            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
             if (File.Exists(localGo)) return localGo;
+            // Phase 1 Linux: standard Unix Go locations.
+            if (!OperatingSystem.IsWindows())
+            {
+                foreach (var unixGo in new[] { "/usr/local/go/bin/go", "/usr/local/bin/go", "/usr/bin/go" })
+                    if (File.Exists(unixGo)) return unixGo;
+            }
         }
 
         return TryFindOnPath(exeName) ?? TryFindOnPath(toolName);
@@ -2596,7 +2638,13 @@ public partial class MainWindow
     private static string NormalizeExeName(string toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName)) return toolName;
-        return toolName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? toolName : toolName + ".exe";
+        if (OperatingSystem.IsWindows())
+            return toolName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? toolName : toolName + ".exe";
+        if (toolName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+            toolName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
+            toolName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
+            return toolName[..^4];
+        return toolName;
     }
 
     private static (string Exe, string Arguments) SplitCommandLine(string commandLine)

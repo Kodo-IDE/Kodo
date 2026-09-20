@@ -4,7 +4,6 @@ using System.Collections.Generic;
 
 namespace Kodo;
 
-/// <summary>Features a local language provider can expose to Kodo.</summary>
 [Flags]
 public enum LangRulesCapability
 {
@@ -23,14 +22,12 @@ public enum LangRulesCapability
     EmbeddedRegions = 1 << 11
 }
 
-/// <summary>A simple, typed description of a local language provider.</summary>
 public sealed record LangRulesProviderInfo(string Name, string Version, LangRulesCapability Capabilities, IReadOnlyList<string>? ValidationWarnings = null)
 {
     public IReadOnlyList<string> Warnings { get; init; } = ValidationWarnings ?? Array.Empty<string>();
     public bool Provides(LangRulesCapability capability) => (Capabilities & capability) == capability;
 }
 
-/// <summary>Optional typed contract for new local language providers.</summary>
 public interface ILangRulesProvider
 {
     LangRulesProviderInfo Info { get; }

@@ -423,7 +423,7 @@
         </Style>
 
         <Style Selector="Button.activity TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Symbol,Segoe UI Emoji,Noto Sans Symbols,Apple Symbols,sans-serif" />
+            <Setter Property="FontFamily" Value="Noto Sans Symbols,Noto Color Emoji,Segoe UI Symbol,Segoe UI Emoji,Apple Symbols,sans-serif" />
         </Style>
 
         <Style Selector="Button.activity">
@@ -769,7 +769,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Padding" Value="20,18" />
             <Setter Property="FontSize" Value="15" />
-            <Setter Property="FontFamily" Value="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace" />
+            <Setter Property="FontFamily" Value="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace" />
             <Setter Property="TextWrapping" Value="NoWrap" />
             <Setter Property="AcceptsReturn" Value="True" />
             <Setter Property="AcceptsTab" Value="True" />
@@ -1135,7 +1135,7 @@
                                                              VerticalAlignment="Center"
                                                              Stretch="Uniform">
                                                         <TextBlock FontSize="12"
-                                                                   FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"
                                                                    Width="38"
                                                                    Height="15"
                                                                    TextAlignment="Center"
@@ -1330,7 +1330,7 @@
                                                      VerticalAlignment="Center"
                                                      Stretch="Uniform">
                                                 <TextBlock FontSize="13"
-                                                           FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                           FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"
                                                            Width="40"
                                                            Height="16"
                                                            TextAlignment="Center"
@@ -1679,7 +1679,7 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                                     <Viewbox Width="26" Height="13" VerticalAlignment="Center" Stretch="Uniform">
                                                         <TextBlock FontSize="11"
-                                                                   FontFamily="Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"
                                                                    Width="34"
                                                                    Height="14"
                                                                    TextAlignment="Center"
@@ -1739,7 +1739,7 @@
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
-                                             FontFamily="Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace"
+                                             FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace"
                                              FontSize="14"
                                              Padding="0,12,18,36"
                                              KeyboardNavigation.TabNavigation="None"
@@ -3471,11 +3471,11 @@
                                                                   Click="RevealSearchResultInExplorerMenuItem_OnClick" />
                                                     </ContextMenu>
                                                 </Grid.ContextMenu>
-                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding Result.Icon}" FontSize="12" FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
                                                 <TextBlock Grid.Row="0" Grid.Column="1" FontSize="12" FontWeight="SemiBold" Foreground="{Binding #RootWindow.PrimaryTextBrush}" VerticalAlignment="Center" TextWrapping="NoWrap"
                                                            Text="{Binding Result.DisplayName}" />
                                                 <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding Result.RelativePath}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0"
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" IsVisible="{Binding Result.HasPreview}" FontSize="11" FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace" Foreground="{Binding #RootWindow.MutedTextBrush}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Margin="0,2,0,0"
                                                            Text="{Binding Result.PreviewText}" />
                                             </Grid>
                                             </Panel>

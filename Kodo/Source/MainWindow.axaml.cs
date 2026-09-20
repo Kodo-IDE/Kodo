@@ -403,7 +403,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private EventHandler<IntPtr>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
-    private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+    private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
     private bool _isPSReadLinePredictionEnabled;
     private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
@@ -421,8 +421,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LoadedExtension, CompiledSyntaxProfile> _compiledSyntaxProfileCache =
         new(ReferenceEqualityComparer.Instance);
+    // Phase 2 Linux: path-keyed caches must be case-sensitive on ext4 (File.c != file.c).
+    private static StringComparer PathKeyComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
-        new(StringComparer.OrdinalIgnoreCase);
+        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
     private string? _lastAppliedExtensionFingerprint;
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
 
@@ -521,9 +523,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return client;
     }
 
-    private string ExtensionsFolderPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "Kodo", "Extensions");
+    private string ExtensionsFolderPath => KodoPaths.ExtensionsDir;
     private string ProjectExtensionsFolderPath =>
         Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Extensions"));
 
@@ -1395,8 +1395,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var normalizedDirectory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        return normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalizedPath, normalizedDirectory, StringComparison.OrdinalIgnoreCase);
+        // Phase 1 Linux: containment checks must be case-sensitive on ext4.
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, comparison)
+            || string.Equals(normalizedPath, normalizedDirectory, comparison);
     }
 
     private static string TryGetFileNameFromUrl(string url)
@@ -3795,7 +3797,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
     public bool HasTerminalSessions => TerminalSessions.Count > 0;
     public int TerminalSessionCount => TerminalSessions.Count;
-    public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows only");
+    public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows and Linux only");
     public string ActiveTerminalWorkingDirectory
     {
         get
@@ -3809,7 +3811,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string ActiveTerminalShellDisplayName => ActiveTerminalSession?.ShellDisplayName ?? SelectedTerminalShell?.DisplayName ?? "Terminal";
     public string ActiveTerminalFooterText => HasActiveTerminal
         ? $"{ActiveTerminalWorkingDirectory}  |  {ActiveTerminalStatusText}"
-        : IsTerminalSupported ? "Choose a shell and open a terminal session." : "Embedded terminal is currently supported on Windows only.";
+        : IsTerminalSupported ? "Choose a shell and open a terminal session." : "Embedded terminal is currently supported on Windows and Linux.";
     public string TerminalStatusBarText => IsTerminalVisible
         ? $"Terminal ({TerminalSessionCount})"
         : TerminalSessionCount > 0 ? $"Show terminal ({TerminalSessionCount})" : "Terminal";
@@ -3832,7 +3834,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private const double ExplorerHeaderFixedChrome = 12 + 12 + 3 + 6 + 4 * 28;
 
-    private static readonly Typeface ExplorerHeaderTypeface = new("Segoe UI", weight: FontWeight.SemiBold);
+    private static readonly Typeface ExplorerHeaderTypeface = new("Inter,Segoe UI,sans-serif", weight: FontWeight.SemiBold);
 
     public double ExplorerPanelMinWidth
     {
@@ -4478,15 +4480,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         foreach (var tab in matchingTabs)
         {
-            // Preserve unused count previously computed for this tab (dead code only tracked for active file)
             var unused = tab.UnusedCount;
-            // If LSP is primary, unused is irrelevant; if tab was active recently, keep its unused
-            // For simplicity recompute unused as 0 for inactive LSP updates, otherwise keep
             tab.UpdateDiagnostics(errors, warnings, infos, unused);
-            // If LSP diagnostics empty and we have no Insight cache for this tab, clear unused as well
             if (raw.Count == 0 && tab.HasDiagnostics && errors == 0 && warnings == 0 && infos == 0)
             {
-                // Check if we should keep unused - attempt background Insight recompute for this tab
                 _ = RefreshInactiveTabInsightDiagnosticsAsync(tab);
             }
         }
@@ -5478,10 +5475,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _autoSaveStatusTimer.Start();
             }
 
-            // Sync on save only when the server is actually behind: flush
-            // unsent edits (usually incremental) so a save always triggers a
-            // fresh error scan. Successful sends update the sync clock, so the
-            // debounced tick backs off instead of double-syncing per pause.
             if (savingContent.Length > 80_000 && !string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
             {
                 List<LspPendingEdit>? savePending = null;
@@ -6418,7 +6411,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     Text = gesture,
                     FontSize = 12,
-                    FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                    FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
                     Foreground = PrimaryTextBrush,
                 },
             };
@@ -6519,7 +6512,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 Text = FormatGesture(_keybinds[def.Id]),
                 FontSize = 12,
-                FontFamily = new FontFamily("Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
                 Foreground = PrimaryTextBrush,
             };
             gestureBorder.Child = gestureText;
@@ -8247,12 +8240,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var insightDisabled = !IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsInsightBlacklisted(_currentFilePath) || IsErrorDeadCodeBlacklisted(_currentFilePath);
                 var isLargeFile = text.Length > 80_000;
                 var isHugeFile = text.Length > 120_000;
-                // For LSP-configured files, skip heavy Insight early to avoid lag even before LSP is initialized
                 var shouldSkipInsightForLsp = hasConfiguredLsp && text.Length > 50_000;
                 if (isLspPrimary || insightDisabled || isHugeFile || shouldSkipInsightForLsp)
                 {
-                    // LSP is authoritative only when actually running – otherwise respect user disabling Insight
-                    // For large files (>120k chars) skip heavy Insight & avoid UI jank; LSP will provide diagnostics async.
                     rawSpans = new List<ErrorSpan>();
                     var reason = isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : insightDisabled ? "Insight disabled by setting/blacklist" : $"large file len={text.Length}";
                     KodoDiagnostics.LogDebug($"Insight diagnostics skipped ({reason}, initialized={isLspPrimary})");

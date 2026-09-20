@@ -97,7 +97,6 @@ public sealed class LangRulesAdapter
     public bool HasPositionCompletions => _positionCompletions is not null;
     public IReadOnlyList<string> ValidationWarnings => DiscoverValidationWarnings();
 
-    /// <summary>Typed capability summary for extension discovery and diagnostics.</summary>
     public LangRulesProviderInfo ProviderInfo => _typedProvider?.Info ?? new(
         _rules.Assembly.GetName().Name ?? _rules.Name,
         _rules.Assembly.GetName().Version?.ToString() ?? "0.0.0",

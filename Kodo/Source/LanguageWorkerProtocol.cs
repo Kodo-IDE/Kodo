@@ -9,8 +9,6 @@ namespace Kodo;
 
 public sealed class LanguageWorker : IDisposable
 {
-    // 02 Do Less: bounded queue drops intermediate states when editor types faster than worker can handle
-    // 01 Editor Comes First: never queue more than latest version, interaction never waits
     private readonly Channel<WorkItem> _queue = Channel.CreateBounded<WorkItem>(
         new BoundedChannelOptions(16) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest, AllowSynchronousContinuations = false });
     private readonly CancellationTokenSource _shutdown = new();
@@ -37,8 +35,6 @@ public sealed class LanguageWorker : IDisposable
 
         try
         {
-            // 01 Editor Comes First: never block UI thread more than 16ms (one frame) for background analysis
-            // Use timeout so rapid typing doesn't stall interaction; caller will get latest eventually via next request
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(TimeSpan.FromMilliseconds(120));
             return completion.Task.WaitAsync(cts.Token).GetAwaiter().GetResult();
@@ -74,8 +70,6 @@ public sealed class LanguageWorker : IDisposable
         Send(new("textDocument/didChange", new(uri, version, string.Empty), Changes: changes), request =>
         {
             if (!_documents.TryGetValue(uri, out var current)) return null;
-            // 03 Performance Is a Feature: avoid O(n*m) intermediate string allocations for rapid typing
-            // Use StringBuilder with single allocation sized to final text
             var text = current.Text;
             if (request.Changes is null || request.Changes.Count == 0) return current;
             // Fast path single change
@@ -87,8 +81,6 @@ public sealed class LanguageWorker : IDisposable
             }
             else
             {
-                // Multiple changes: apply in reverse order to keep offsets valid, using StringBuilder once
-                // For Do Less we coalesce to final text via builder
                 var sb = new System.Text.StringBuilder(text.Length + 256);
                 sb.Append(text);
                 // Sort descending so earlier offsets not shifted

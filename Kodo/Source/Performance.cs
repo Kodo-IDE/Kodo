@@ -1,8 +1,4 @@
 // Licensed under GPL-v3.0
-// Performance Is a Feature - central scheduling for intensive processes
-// 01 Editor Comes First: interaction never waits for background work
-// 02 Do Less, Not Faster: skip work that won't be seen or is redundant
-// 03 Performance Is a Feature: budgets and viewport awareness from day one
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -14,9 +10,6 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 
 namespace Kodo;
-
-/// <summary>Priority for background work. Interaction > VisibleRender > BackgroundAnalysis > Idle.</summary>
-public enum WorkPriority { Interaction = 0, VisibleRender = 1, BackgroundAnalysis = 2, Idle = 3 }
 
 public static class PerformanceBudget
 {
@@ -38,7 +31,6 @@ public static class PerformanceBudget
     }
 }
 
-/// <summary>Debounces and coalesces rapid triggers. Ensures only last invocation runs after delay, with cancellation.</summary>
 public sealed class DebouncedWork : IDisposable
 {
     private readonly DispatcherTimer _timer;
@@ -73,7 +65,6 @@ public sealed class DebouncedWork : IDisposable
     public void Dispose() { _timer.Stop(); _cts.Cancel(); _cts.Dispose(); }
 }
 
-/// <summary>UI-thread stall watchdog. Ticks every 500ms; gaps mean the UI thread was blocked.</summary>
 public sealed class UiStallWatchdog : IDisposable
 {
     private readonly DispatcherTimer _timer;
@@ -97,7 +88,6 @@ public sealed class UiStallWatchdog : IDisposable
     public void Dispose() => _timer.Stop();
 }
 
-/// <summary>Viewport tracker - philosophy 01: only render what user can see.</summary>
 public sealed class ViewportTracker
 {
     private int _firstVisible = 1;

@@ -1,6 +1,7 @@
 // Licensed under GPL-v3.0
 using System.Collections.Generic;
 using System.ComponentModel;
+using Avalonia.Media;
 
 namespace Kodo.Models;
 
@@ -55,4 +56,19 @@ public class ThemeExtensionGroup : INotifyPropertyChanged
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+}
+
+internal sealed class AccentSettings
+{
+    public string AccentColorMode { get; set; } = "kodo";
+    public string CustomAccentHex { get; set; } = "#8C00FF";
+    public string? CachedThemeAccentHex { get; set; }
+}
+
+internal sealed record DialogThemePalette(Color Background, Color SurfaceDeep, Color Border, Color BadgeBg, Color Text, Color TextMuted, Color TextDim);
+
+internal sealed class ThemeSettings
+{
+    public string ThemeName { get; set; } = "Dark";
+    public string? CachedThemeWindowBackgroundHex { get; set; }
 }

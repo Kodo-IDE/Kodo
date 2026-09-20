@@ -699,7 +699,6 @@ public sealed class InsightEngine
         if (!string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(currentFilePath) && System.IO.Directory.Exists(folderPath))
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
 
-        // Do Less: single-pass word frequency instead of regex per variable (was O(vars * docLength))
         var wordFreq = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
         foreach (Match m in Regex.Matches(maskedDoc, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
             wordFreq[m.Value] = wordFreq.TryGetValue(m.Value, out var c) ? c + 1 : 1;

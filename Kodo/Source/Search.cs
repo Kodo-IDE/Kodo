@@ -941,7 +941,6 @@ public partial class MainWindow
 
         var results = new List<SearchResultItem>();
         var truncated = false;
-        // Performance Is a Feature: file I/O is expensive, allow it to be slow on background but never block interaction
         foreach (var file in files)
         {
             token.ThrowIfCancellationRequested();

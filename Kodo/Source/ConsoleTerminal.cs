@@ -54,7 +54,7 @@ public sealed class ConsoleTerminal : Control
 
     private const double CellW = 8.4;
     private const double CellH = 17.0;
-    private const string FontFamily = "Cascadia Mono,Consolas,Courier New,monospace";
+    private const string FontFamily = "JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Mono,Consolas,Courier New,monospace";
     private const double FontSize = 13.0;
 
     private readonly object _lock = new();
@@ -91,6 +91,7 @@ public sealed class ConsoleTerminal : Control
     private IntPtr _hPcon = IntPtr.Zero;
     private IntPtr _hProcess = IntPtr.Zero;
     private IntPtr _hThread = IntPtr.Zero;
+    private System.Diagnostics.Process? _unixProcess;
     private Stream? _writeStream;
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
@@ -137,6 +138,17 @@ public sealed class ConsoleTerminal : Control
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
+        // Phase 1 Linux: ConPTY is Windows-only; use pipe-backed process on Linux.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
+                return;
+            }
+            Console.WriteLine("[ConPTY] Embedded terminal is supported on Windows and Linux only. Start ignored.");
+            return;
+        }
         Stop();
         _cts = new CancellationTokenSource();
 
@@ -196,8 +208,109 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
+    private void StartUnixShell(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)
+    {
+        Stop();
+        _cts = new CancellationTokenSource();
+
+        try
+        {
+            var (cols, rows) = CalcSize();
+            _cols = cols; _rows = rows;
+            if (!suppressOutputUntilRestored)
+            {
+                ResizeCells(rows, cols);
+                _scrollback.Clear();
+                _scrollOffset = 0;
+            }
+
+            if (!File.Exists(shellPath))
+            {
+                Console.WriteLine($"[ConPTY] Shell not found: {shellPath}");
+                return;
+            }
+            if (!Directory.Exists(workingDirectory))
+                workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = shellPath,
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            // Ensure a sane TERM for ANSI colors when no PTY sets one.
+            psi.Environment["TERM"] = psi.Environment.TryGetValue("TERM", out var term) && !string.IsNullOrWhiteSpace(term) ? term : "xterm-256color";
+
+            var proc = new System.Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
+            proc.Start();
+            _unixProcess = proc;
+            _writeStream = proc.StandardInput.BaseStream;
+            _readStream = proc.StandardOutput.BaseStream;
+
+            _suppressOutputUntilTick = suppressOutputUntilRestored
+                ? Environment.TickCount64 + 500
+                : 0;
+
+            _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
+            _ = Task.Run(() => DrainUnixStderrLoop(proc, _cts.Token), _cts.Token);
+
+            proc.Exited += (_, _) =>
+            {
+                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
+            };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ConPTY] Unix shell start failed: {ex}");
+        }
+    }
+
+    private async Task DrainUnixStderrLoop(System.Diagnostics.Process proc, CancellationToken ct)
+    {
+        var buf = new char[4096];
+        try
+        {
+            while (!ct.IsCancellationRequested && !proc.HasExited)
+            {
+                var n = await proc.StandardError.ReadAsync(buf, 0, buf.Length).WaitAsync(ct);
+                if (n <= 0) break;
+                var text = new string(buf, 0, n);
+                lock (_lock)
+                {
+                    if (Environment.TickCount64 >= _suppressOutputUntilTick)
+                        foreach (var ch in text) ProcessChar(ch);
+                }
+                Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { Console.WriteLine($"[ConPTY] Stderr drain: {ex.Message}"); }
+    }
+
     public void Stop()
     {
+        // Phase 0 Linux: ConPTY handles are Windows-only; no-op off-Windows.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            _cts?.Cancel();
+            _cts = null;
+            try { _writeStream?.Dispose(); } catch { }
+            try { _readStream?.Dispose(); } catch { }
+            _writeStream = null;
+            _readStream = null;
+            try { _unixProcess?.Kill(entireProcessTree: true); } catch { }
+            try { _unixProcess?.Dispose(); } catch { }
+            _unixProcess = null;
+            _hPcon = IntPtr.Zero;
+            _hProcess = IntPtr.Zero;
+            _hThread = IntPtr.Zero;
+            return;
+        }
         _suppressOutputUntilTick = 0;
         _cts?.Cancel();
         _cts = null;
@@ -225,6 +338,10 @@ public sealed class ConsoleTerminal : Control
         ResizeCells(rows, cols);
         _scrollOffset = 0;
 
+        // Phase 1 Linux: no native resize for pipe-backed shell; grid tracks only.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
         if (_hPcon != IntPtr.Zero)
             NativeConPty.ResizePseudoConsole(_hPcon,
                 new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
@@ -245,9 +362,16 @@ public sealed class ConsoleTerminal : Control
         if (seq is not null) SendInput(seq);
     }
 
-    public bool HasLiveProcess => _hPcon != IntPtr.Zero;
+    public bool HasLiveProcess => _hPcon != IntPtr.Zero || (_unixProcess is not null && !_unixProcess.HasExited);
 
-    public IntPtr CurrentProcessHandle => _hProcess;
+    public IntPtr CurrentProcessHandle
+    {
+        get
+        {
+            if (_hProcess != IntPtr.Zero) return _hProcess;
+            try { return _unixProcess?.Handle ?? IntPtr.Zero; } catch { return IntPtr.Zero; }
+        }
+    }
 
     public TerminalSnapshot SaveSnapshot()
     {
@@ -1369,7 +1493,7 @@ public static class TerminalShellSupport
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
 
         void AddShell(string id, string displayName, string? resolvedPath, string arguments)
         {

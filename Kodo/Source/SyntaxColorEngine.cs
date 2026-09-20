@@ -1379,7 +1379,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
 public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
 {
-    private static readonly Typeface EmojiTypeface = new(new FontFamily("Segoe UI Emoji"));
+    private static readonly Typeface EmojiTypeface = new(new FontFamily("Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji"));
     private static readonly MethodInfo? SetTextRunPropertiesMethod =
         typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 

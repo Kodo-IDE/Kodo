@@ -337,6 +337,9 @@ public class MarketplaceExtension : INotifyPropertyChanged
     public string[] FileExtensions { get; init; } = [];
     public string[] LanguageExtensionIds { get; init; } = [];
     public string[] Dependencies { get; init; } = [];
+    public string[] Os { get; init; } = [];
+    public string[] Arch { get; init; } = [];
+    public string? Sha256 { get; init; }
     public string? RunCommandTemplate { get; init; }
     public string? BuildCommandTemplate { get; init; }
     public IReadOnlyDictionary<string, (string? Run, string? Build)>? FileCommands { get; init; }
@@ -384,6 +387,26 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool IsInstalled { get; private set; }
 
+    public bool IsOsBlocked { get; private set; }
+
+    public void SetOsBlocked(bool blocked)
+    {
+        if (IsOsBlocked == blocked) return;
+        IsOsBlocked = blocked;
+        if (blocked)
+        {
+            InstallButtonText = "Not available";
+        }
+        else if (!IsInstalling)
+        {
+            InstallButtonText = IsInstalled
+                ? (IsUpdateAvailable ? "Update" : "Installed")
+                : "Install";
+        }
+        OnPropertyChanged(nameof(IsOsBlocked));
+        OnPropertyChanged(nameof(IsInstallEnabled));
+    }
+
     public bool IsUpdateAvailable
     {
         get => _isUpdateAvailable;
@@ -418,7 +441,7 @@ public class MarketplaceExtension : INotifyPropertyChanged
         }
     }
 
-    public bool IsInstallEnabled => !IsInstalling && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
+    public bool IsInstallEnabled => !IsInstalling && !IsOsBlocked && (!IsInstalled || IsUpdateAvailable) && !string.IsNullOrWhiteSpace(DownloadUrl);
 
     public bool ShowInstalledBadge => IsInstalled && !IsUpdateAvailable;
 
@@ -457,9 +480,11 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
         if (!IsInstalling)
         {
-            InstallButtonText = isInstalled
-                ? (isUpdateAvailable ? "Update" : "Installed")
-                : "Install";
+            InstallButtonText = IsOsBlocked
+                ? "Not available"
+                : isInstalled
+                    ? (isUpdateAvailable ? "Update" : "Installed")
+                    : "Install";
         }
 
         OnPropertyChanged(nameof(IsInstallEnabled));

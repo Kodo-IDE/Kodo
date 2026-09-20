@@ -12,6 +12,51 @@ using Microsoft.Win32;
 
 namespace Kodo;
 
+internal static class KodoPaths
+{
+    public static string DataRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo");
+
+    public static string LegacyDataRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
+
+    public static string ExtensionsDir => ResolveMigratedDir(
+        Path.Combine(DataRoot, "Extensions"),
+        Path.Combine(LegacyDataRoot, "Extensions"));
+
+    public static string PluginCacheDir => ResolveMigratedDir(
+        Path.Combine(DataRoot, "PluginCache"),
+        Path.Combine(LegacyDataRoot, "PluginCache"));
+
+    private static string ResolveMigratedDir(string preferred, string legacy)
+    {
+        // Windows/macOS: keep historical locations (no migration churn).
+        if (!OperatingSystem.IsLinux())
+            return Directory.Exists(preferred) || !Directory.Exists(legacy) ? preferred : legacy;
+        try
+        {
+            if (Directory.Exists(preferred)) return preferred;
+            if (!Directory.Exists(legacy))
+            {
+                Directory.CreateDirectory(preferred);
+                return preferred;
+            }
+            CopyDirectoryRecursive(legacy, preferred);
+            return Directory.Exists(preferred) ? preferred : legacy;
+        }
+        catch { return Directory.Exists(legacy) ? legacy : preferred; }
+    }
+
+    private static void CopyDirectoryRecursive(string source, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (var file in Directory.EnumerateFiles(source))
+            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), overwrite: false);
+        foreach (var dir in Directory.EnumerateDirectories(source))
+            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
+    }
+}
+
 internal static class KodoDiagnostics
 {
     public static string AppVersion { get; } = ResolveAppVersion();
@@ -80,10 +125,34 @@ internal static class KodoDiagnostics
 
     private static string ResolveOSDescription()
     {
+        if (OperatingSystem.IsLinux())
+            return TryGetLinuxDistroDescription() ?? RuntimeInformation.OSDescription;
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             return RuntimeInformation.OSDescription;
 
         return TryGetWindowsProductName() ?? RuntimeInformation.OSDescription;
+    }
+
+    private static string? TryGetLinuxDistroDescription()
+    {
+        try
+        {
+            if (!File.Exists("/etc/os-release")) return null;
+            string? name = null, version = null;
+            foreach (var line in File.ReadLines("/etc/os-release"))
+            {
+                if (line.StartsWith("PRETTY_NAME=", StringComparison.Ordinal))
+                    return line["PRETTY_NAME=".Length..].Trim().Trim('"');
+                if (line.StartsWith("NAME=", StringComparison.Ordinal))
+                    name = line["NAME=".Length..].Trim().Trim('"');
+                if (line.StartsWith("VERSION=", StringComparison.Ordinal))
+                    version = line["VERSION=".Length..].Trim().Trim('"');
+            }
+            if (!string.IsNullOrWhiteSpace(name))
+                return string.IsNullOrWhiteSpace(version) ? name : $"{name} {version}";
+            return null;
+        }
+        catch { return null; }
     }
 
     [SupportedOSPlatform("windows")]
@@ -120,7 +189,9 @@ internal static class KodoDiagnostics
     }
 
     public static string LogDirectoryPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
+        OperatingSystem.IsLinux()
+            ? KodoPaths.DataRoot
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
 
     public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
 
@@ -299,6 +370,9 @@ internal static class KodoDiagnostics
 
     private static readonly string CachedAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
     private static readonly string CachedLocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    public static string DisplayLogPath =>
+        OperatingSystem.IsLinux() ? Path.Combine(KodoPaths.DataRoot, "kodo.log") : Path.Combine(KodoPaths.LegacyDataRoot, "kodo.log");
+
     private static readonly string CachedRepoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
 
     private static string RedactExceptionText(string text)
@@ -317,6 +391,12 @@ internal static class KodoDiagnostics
             result = result.Replace(localAppData, @"%LocalAppData%", StringComparison.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(repoRoot))
             result = result.Replace(repoRoot, @"<repo>", StringComparison.OrdinalIgnoreCase);
+
+        result = Regex.Replace(
+            result,
+            @"(/(?:home|Users)/)[^/\s""']+",
+            "$1<redacted>",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         return Regex.Replace(
             result,
@@ -343,6 +423,13 @@ internal static class KodoDiagnostics
         if (!string.IsNullOrWhiteSpace(localAppData) &&
             path.StartsWith(localAppData, StringComparison.OrdinalIgnoreCase))
             return path.Replace(localAppData, "%LocalAppData%", StringComparison.OrdinalIgnoreCase);
+
+        // Phase 2 Linux: generalize Unix home dir in single paths too.
+        var home = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrWhiteSpace(home) &&
+            path.StartsWith(home, StringComparison.Ordinal) &&
+            path.Length > home.Length)
+            return "/home/<redacted>" + path[home.Length..];
 
         return path;
     }

@@ -36,7 +36,6 @@ public partial class MainWindow
     private void EditorStateRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _editorStateRefreshTimer.Stop();
-        // 02 Do Less: coalesce refresh when window inactive, but still ensure caret stats eventually
         if (!IsActive) { _pendingFullStateRefresh = true; return; }
         RefreshState(fullRefresh: _pendingFullStateRefresh);
     }
@@ -62,7 +61,6 @@ public partial class MainWindow
     private async void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
-        // 01 Editor Comes First: don't run heavy analysis when window not active - user not seeing results
         if (!IsActive) return;
         // 02 Do Less: skip insight entirely for huge files already handled by LSP throttling
         var len = EditorTextBox?.Document?.TextLength ?? 0;
@@ -201,7 +199,6 @@ public partial class MainWindow
         }
         else if (diagnosticMessage is not null)
         {
-            // Ensure tooltip appears even if DiagnosticPopup is delayed/clipped - every underline must have hover feedback
             ToolTip.SetTip(textView, diagnosticMessage);
             ToolTip.SetShowDelay(textView, 400);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
@@ -485,8 +482,6 @@ public partial class MainWindow
             var offset = line.Offset + colOffset;
             var msg = _errorHighlightRenderer.GetMessageAt(offset);
             if (msg is not null) return msg;
-            // Precise EOL fallback: missing semicolon at EndOffset underlines last 4 chars.
-            // Only fallback to line-level if hover is near EOL and line actually has EOL span.
             bool hasEolSpanOnLine = _errorHighlightRenderer.HasEolSpanOnLine(line.Offset, line.EndOffset);
             if (hasEolSpanOnLine && colOffset >= Math.Max(0, line.Length - 4))
                 return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
@@ -539,8 +534,6 @@ public partial class MainWindow
             ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (largeLspDocument)
         {
-            // AvaloniaEdit already updates the changed viewport. Avoid asking
-            // every document colorizer to invalidate the entire large file.
             _syntaxHighlightDebounceTimer.Stop();
         }
         else
@@ -551,8 +544,6 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
             QueueLspDidChange(_currentFilePath);
         _lspHighlightRenderer.Clear();
-        // These requests are expensive and were previously sent for every
-        // keystroke. Coalesce them with the shared editor debounce timer.
         _lspRefreshDebounceTimer.Stop();
         _lspRefreshDebounceTimer.Start();
 

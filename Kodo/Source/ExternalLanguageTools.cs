@@ -82,7 +82,7 @@ public static class ExternalLanguageToolRunner
             .Replace("{projectName}", Path.GetFileName(projectFile ?? string.Empty), StringComparison.OrdinalIgnoreCase);
         var startInfo = new ProcessStartInfo
         {
-            FileName = tool.Command,
+            FileName = ResolveToolCommand(tool.Command),
             Arguments = arguments,
             WorkingDirectory = Directory.Exists(Path.GetDirectoryName(projectFile ?? originalFile))
                 ? Path.GetDirectoryName(projectFile ?? originalFile)!
@@ -272,7 +272,30 @@ public static class ExternalLanguageToolRunner
     private static string QuoteArgument(string argument)
     {
         if (argument.Length == 0) return "\"\"";
-        if (!argument.Any(char.IsWhiteSpace) && !argument.Contains('"')) return argument;
-        return $"\"{argument.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+        if (OperatingSystem.IsWindows())
+        {
+            if (!argument.Any(char.IsWhiteSpace) && !argument.Contains('"')) return argument;
+            return $"\"{argument.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+        }
+        if (!argument.Any(char.IsWhiteSpace) && !argument.Contains('\'') && !argument.Contains('"') && !argument.Contains('$') && !argument.Contains('`') && !argument.Contains('\\'))
+            return argument;
+        return $"'{argument.Replace("'", "'\\''", StringComparison.Ordinal)}'";
+    }
+
+    private static string ResolveToolCommand(string command)
+    {
+        if (OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(command))
+            return command;
+        var trimmed = command.Trim().Trim('"');
+        if (trimmed.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            trimmed = trimmed[..^4];
+        var file = Path.GetFileName(trimmed);
+        if (file.Equals("python.exe", StringComparison.OrdinalIgnoreCase) || file.Equals("python", StringComparison.OrdinalIgnoreCase))
+            return "python3";
+        if (file.Equals("powershell.exe", StringComparison.OrdinalIgnoreCase) || file.Equals("powershell", StringComparison.OrdinalIgnoreCase))
+            return "pwsh";
+        return trimmed;
     }
 }

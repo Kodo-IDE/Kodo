@@ -1,15 +1,23 @@
 ﻿<!-- Licensed under GPL-v3.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <!-- Phase 0 Linux: Exe by default; WinExe only on Windows (hides console).
+         WinExe is a Windows concept and breaks Linux apphost expectations. -->
+    <OutputType>Exe</OutputType>
+    <OutputType Condition="'$(OS)' == 'Windows_NT'">WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Phase 0 Linux: app.manifest is Windows-only (assemblyIdentity/supportedOS/dpiAwareness). -->
+    <ApplicationManifest Condition="'$(OS)' == 'Windows_NT'">app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Disable Avalonia's build-time telemetry task. It can fail builds when
          the per-user BuildServices log is locked or not writable. -->
     <UsedAvaloniaProducts></UsedAvaloniaProducts>
-    <ApplicationIcon>..\Assets\kodo_logo.ico</ApplicationIcon>
+    <!-- Phase 0 Linux: .ico is Windows-only. Linux packaging uses kodo-logo.png + .desktop file. -->
+    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">..\Assets\kodo_logo.ico</ApplicationIcon>
+    <!-- Phase 0 Linux: publish-time RIDs, e.g. dotnet publish with linux-x64 self contained true -->
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
+    <UseAppHost>true</UseAppHost>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>
     <NuGetAudit>false</NuGetAudit>
@@ -30,7 +38,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <AvaloniaResource Include="..\Assets\**" Link="Assets\%(RecursiveDir)%(Filename)%(Extension)" />
+    <AvaloniaResource Include="../Assets/**" Link="Assets/%(RecursiveDir)%(Filename)%(Extension)" Exclude="../Assets/kodo.desktop" />
+    <None Include="../Assets/kodo.desktop" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,7 +55,7 @@
           AfterTargets="Publish"
           Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
-      <PdbFiles Include="$(PublishDir)**\*.pdb" />
+      <PdbFiles Include="$(PublishDir)**/*.pdb" />
     </ItemGroup>
 
     <Delete Files="@(PdbFiles)" />

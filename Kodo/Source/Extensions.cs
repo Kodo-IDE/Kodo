@@ -225,7 +225,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             if (!Directory.Exists(searchPath)) continue;
             anyFolderFound = true;
 
-            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
+            foreach (var koxFile in EnumerateKoxFiles(searchPath))
             {
                 try
                 {
@@ -277,7 +277,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         {
             if (!Directory.Exists(searchPath)) continue;
 
-            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
+            foreach (var koxFile in EnumerateKoxFiles(searchPath))
             {
                 try
                 {
@@ -315,15 +315,34 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         try
         {
             using var archive = ZipFile.OpenRead(koxPath);
-            var manifestEntry = archive.GetEntry("manifest.json");
+            var manifestEntry = GetKoxEntry(archive, "manifest.json");
             if (manifestEntry is null) return false;
             using var stream = manifestEntry.Open();
             using var doc = JsonDocument.Parse(stream);
-            if (doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "theme")
+            if (doc.RootElement.TryGetProperty("type", out var type) && string.Equals(type.GetString(), "theme", StringComparison.OrdinalIgnoreCase))
                 return true;
-            return archive.GetEntry("theme.json") != null;
+            return GetKoxEntry(archive, "theme.json") != null;
         }
         catch { return false; }
+    }
+
+    private static ZipArchiveEntry? GetKoxEntry(ZipArchive archive, string name)
+    {
+        var exact = archive.GetEntry(name);
+        if (exact is not null) return exact;
+        return archive.Entries.FirstOrDefault(e =>
+            string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e.FullName, name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<string> EnumerateKoxFiles(string searchPath)
+    {
+        // Phase 1 Linux: "*.kox" glob is case-sensitive on ext4; accept *.KOX too.
+        foreach (var file in Directory.EnumerateFiles(searchPath))
+        {
+            if (file.EndsWith(".kox", StringComparison.OrdinalIgnoreCase))
+                yield return file;
+        }
     }
 
     private static bool IsThemeExtensionFolder(string folderPath)
@@ -332,7 +351,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         {
             var manifestPath = Path.Combine(folderPath, "manifest.json");
             using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
-            if (doc.RootElement.TryGetProperty("type", out var type) && type.GetString() == "theme")
+            if (doc.RootElement.TryGetProperty("type", out var type) && string.Equals(type.GetString(), "theme", StringComparison.OrdinalIgnoreCase))
                 return true;
             return File.Exists(Path.Combine(folderPath, "theme.json"));
         }
@@ -526,7 +545,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     private IEnumerable<LoadedExtension> LoadExtensionsFromKox(string koxPath)
     {
         using var archive = ZipFile.OpenRead(koxPath);
-        var manifestEntry = archive.GetEntry("manifest.json");
+        var manifestEntry = GetKoxEntry(archive, "manifest.json");
         if (manifestEntry is null) yield break;
 
         using var manifestStream = manifestEntry.Open();
@@ -537,20 +556,22 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         baseExt.IsDirectorySource = false;
         baseExt.InstalledOnUtc = GetExtensionSourceActivityUtc(koxPath, isDirectory: false);
         if (baseExt.PluginAssemblyFileName is not null &&
-            archive.GetEntry(baseExt.PluginAssemblyFileName) is not null)
+            GetKoxEntry(archive, baseExt.PluginAssemblyFileName) is not null)
         {
             baseExt.PluginFolderPath = ExtractKoxPluginFiles(archive, baseExt.Id, baseExt.Version);
             baseExt.LangRules = LangRulesAdapter.TryLoad(baseExt.PluginFolderPath, baseExt.PluginAssemblyFileName);
         }
         if (baseExt.LanguagePluginAssemblyFileName is not null &&
-            archive.GetEntry(baseExt.LanguagePluginAssemblyFileName) is not null)
+            GetKoxEntry(archive, baseExt.LanguagePluginAssemblyFileName) is not null)
         {
             if (baseExt.PluginFolderPath is not null)
             {
                 var destPath = Path.Combine(baseExt.PluginFolderPath, baseExt.LanguagePluginAssemblyFileName);
                 if (!File.Exists(destPath))
                 {
-                    var entry = archive.GetEntry(baseExt.LanguagePluginAssemblyFileName)!;
+                    // Phase 2: manifest may declare a subdirectory path; ensure it exists.
+                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                    var entry = GetKoxEntry(archive, baseExt.LanguagePluginAssemblyFileName)!;
                     using var entryStream = entry.Open();
                     using var destStream = File.Create(destPath);
                     entryStream.CopyTo(destStream);
@@ -565,7 +586,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
         foreach (var languageFileName in EnumerateLanguageProfileNames())
         {
-            var langEntry = archive.GetEntry(languageFileName);
+            var langEntry = GetKoxEntry(archive, languageFileName);
             if (langEntry is null) continue;
 
             using var langStream = langEntry.Open();
@@ -573,14 +594,14 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             ParseLanguage(langDoc.RootElement, baseExt);
         }
 
-        var iconEntry = archive.GetEntry("icon.png") ?? archive.GetEntry("icon.svg");
+        var iconEntry = GetKoxEntry(archive, "icon.png") ?? GetKoxEntry(archive, "icon.svg");
         if (iconEntry is not null)
         {
             using var iconStream = iconEntry.Open();
             baseExt.IconBytes = ReadIconBytesFromStream(iconStream);
         }
 
-        var themeEntry = archive.GetEntry("theme.json");
+        var themeEntry = GetKoxEntry(archive, "theme.json");
         if (themeEntry is null)
         {
             yield return baseExt;
@@ -1284,6 +1305,13 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     {
         yield return ExtensionsFolderPath;
 
+        if (OperatingSystem.IsLinux())
+        {
+            var legacy = Path.Combine(KodoPaths.LegacyDataRoot, "Extensions");
+            if (!string.Equals(legacy, ExtensionsFolderPath, StringComparison.Ordinal) && Directory.Exists(legacy))
+                yield return legacy;
+        }
+
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
         var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
         if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
@@ -1297,7 +1325,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             if (!Directory.Exists(searchPath))
                 continue;
 
-            foreach (var koxFile in Directory.GetFiles(searchPath, "*.kox"))
+            foreach (var koxFile in Directory.EnumerateFiles(searchPath).Where(f => f.EndsWith(".kox", StringComparison.OrdinalIgnoreCase)))
             {
                 if (ExtensionSourceMatchesId(koxFile, extensionId, isDirectory: false))
                     yield return (koxFile, false);

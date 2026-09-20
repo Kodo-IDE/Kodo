@@ -44,3 +44,5 @@ public sealed record InstallResult(InstallResultKind Kind, string? Message, stri
 public sealed record RuntimeInfo(bool Found, string? Version, string? RawOutput, string? Error);
 
 internal sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source);
+
+internal sealed record LspPendingEdit(int StartLine, int StartChar, int EndLine, int EndChar, string Text);
