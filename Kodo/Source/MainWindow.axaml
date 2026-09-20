@@ -6433,7 +6433,7 @@
                                             <TextBlock FontSize="16"
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding PrimaryTextBrush}"
-                                                       Text="Kodo" />
+                                                       Text="{Binding AboutTitle}" />
                                             <TextBlock FontSize="12"
                                                        xml:space="preserve"><Run Foreground="{Binding MutedTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
                                         </StackPanel>
