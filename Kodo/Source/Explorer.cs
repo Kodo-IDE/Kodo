@@ -517,7 +517,7 @@ public partial class MainWindow
         var expandedPaths = FileTreeItems
             .Where(i => i.IsDirectory && i.IsExpanded)
             .Select(i => i.FullPath)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
 
         var items = await BuildFileTreeItemsAsync(_currentFolderPath, depth: 0, expandedPaths);
         ReplaceFileTreeItems(items);

@@ -3097,13 +3097,18 @@
                             <Ellipse Classes="dirtyDot"
                                      IsVisible="{Binding IsDocumentDirty}"
                                      ToolTip.Tip="Unsaved changes" />
-                            <Border IsVisible="{Binding HasDocumentOpen}"
-                                    Background="{Binding ButtonBrush}"
+                            <Border Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
                                     CornerRadius="5"
                                     Padding="5,2"
                                     VerticalAlignment="Center">
+                                <Border.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasDocumentOpen" />
+                                        <Binding Path="IsDocumentViewVisible" />
+                                    </MultiBinding>
+                                </Border.IsVisible>
                                 <TextBlock Text="{Binding StatusBarFileIconText}"
                                            FontSize="10"
                                            FontWeight="SemiBold"
@@ -3112,10 +3117,15 @@
                             </Border>
                             <Button Classes="statusitem"
                                     Click="StatusBarFilePathButton_OnClick"
-                                    IsVisible="{Binding HasDocumentOpen}"
                                     ToolTip.Tip="{Binding StatusBarFilePathTooltip}"
                                     VerticalAlignment="Center"
                                     MaxWidth="440">
+                                <Button.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasDocumentOpen" />
+                                        <Binding Path="IsDocumentViewVisible" />
+                                    </MultiBinding>
+                                </Button.IsVisible>
                                 <TextBlock Text="{Binding FilePathText}"
                                            FontSize="11.5"
                                            TextTrimming="CharacterEllipsis" />
@@ -3125,7 +3135,7 @@
                                        VerticalAlignment="Center">
                                 <TextBlock.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                        <Binding Path="!HasDocumentOpen" />
+                                        <Binding Path="IsEmptyStateVisible" />
                                         <Binding Path="!IsKodoBirthday" />
                                     </MultiBinding>
                                 </TextBlock.IsVisible>
@@ -3137,7 +3147,7 @@
                                        Text="{Binding StatusBarBirthdayText}">
                                 <TextBlock.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
-                                        <Binding Path="!HasDocumentOpen" />
+                                        <Binding Path="IsEmptyStateVisible" />
                                         <Binding Path="IsKodoBirthday" />
                                     </MultiBinding>
                                 </TextBlock.IsVisible>
@@ -3165,7 +3175,7 @@
                                         IsVisible="{Binding HasDiagnostics}"
                                         VerticalAlignment="Center">
                                     <TextBlock FontSize="11"
-                                               Foreground="#E5484D"
+                                               Foreground="{Binding AccentBrush}"
                                                Text="{Binding StatusBarDiagnosticsText}" />
                                 </Button>
                                 <TextBlock Classes="statusDim"
@@ -3186,11 +3196,23 @@
                                     VerticalAlignment="Center"
                                     Spacing="2">
                             <TextBlock Classes="statusDim"
-                                       IsVisible="{Binding IsDocumentViewVisible}"
                                        Text="{Binding LanguageDisplayText}"
-                                       Margin="0,0,2,0" />
-                            <Border Classes="statusDivider"
-                                    IsVisible="{Binding IsDocumentViewVisible}" />
+                                       Margin="0,0,2,0">
+                                <TextBlock.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasFileOpen" />
+                                        <Binding Path="IsDocumentViewVisible" />
+                                    </MultiBinding>
+                                </TextBlock.IsVisible>
+                            </TextBlock>
+                            <Border Classes="statusDivider">
+                                <Border.IsVisible>
+                                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                        <Binding Path="HasFileOpen" />
+                                        <Binding Path="IsDocumentViewVisible" />
+                                    </MultiBinding>
+                                </Border.IsVisible>
+                            </Border>
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="File encoding - click to change"

@@ -70,7 +70,7 @@ public partial class MainWindow
 
     private void SyncActivePlugins()
     {
-        var currentIds = LoadedExtensions.Where(e => e.HasPlugin).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentIds = LoadedExtensions.Where(e => e.HasPlugin).Select(e => e.Id).ToHashSet(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
 
         foreach (var staleId in _activePlugins.Keys.Where(id => !currentIds.Contains(id)).ToList())
             UnloadPlugin(staleId);
@@ -90,7 +90,7 @@ public partial class MainWindow
 
     private void SyncActiveLanguagePlugins()
     {
-        var currentIds = LoadedExtensions.Where(e => e.HasLanguagePlugin).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var currentIds = LoadedExtensions.Where(e => e.HasLanguagePlugin).Select(e => e.Id).ToHashSet(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
 
         foreach (var staleId in _activeLanguagePlugins.Keys.Where(id => !currentIds.Contains(id)).ToList())
             UnloadLanguagePlugin(staleId);

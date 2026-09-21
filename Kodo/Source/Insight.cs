@@ -19,7 +19,7 @@ namespace Kodo;
 
 public sealed class InsightEngine
 {
-    private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
 
     private const string NotCompoundOrArrow = @"(?<![=!<>+\-*/%&|^~])=(?![=>])";
 
@@ -57,7 +57,7 @@ public sealed class InsightEngine
         LoopOrHandlerBinding,
     };
 
-    private static readonly HashSet<string> KnownColonTypes = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> KnownColonTypes = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase)
     {
         "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
         "float", "double", "decimal", "bool", "char", "string", "object", "dynamic",
@@ -71,7 +71,7 @@ public sealed class InsightEngine
         @"^\s*set\s+(?:/a\s+|/p\s+)?""?([A-Za-z_][A-Za-z0-9_]*)\s*=",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly HashSet<string> ReservedWords = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ReservedWords = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase)
     {
         "if", "elif", "elseif", "else", "for", "foreach", "while", "switch", "match", "case",
         "return", "try", "catch", "finally", "throw", "raise", "new", "class", "struct",

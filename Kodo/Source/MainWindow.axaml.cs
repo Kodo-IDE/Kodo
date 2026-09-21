@@ -4028,6 +4028,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         get
         {
+            if (IsHomePageVisible) return string.Empty;
             if (HasImagePreview) return "Image Preview";
             if (!HasDocumentOpen) return string.Empty;
             if (!string.IsNullOrWhiteSpace(_currentFilePath))

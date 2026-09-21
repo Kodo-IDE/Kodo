@@ -100,7 +100,7 @@ public partial class MainWindow
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 if (capturedVersion != _insightDocVersion) return;
-                if (!string.Equals(capturedPath, _currentFilePath, StringComparison.OrdinalIgnoreCase)) return;
+                if (!string.Equals(capturedPath, _currentFilePath, OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase)) return;
                 if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
                 WordCountText = wc == 0 && string.IsNullOrWhiteSpace(snapshot) ? "0 words" : $"{wc} words";
                 OnPropertyChanged(nameof(IsWordCountVisible));
@@ -1702,13 +1702,12 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             }
 
             var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-            var indentedLines = lines.OrderByDescending(l => l.Offset)
-                .Select(l => GetIndentUnit() + doc.GetText(l));
+            var indentedLines = lines.Select(l => GetIndentUnit() + doc.GetText(l));
             var newText = string.Join(Environment.NewLine, indentedLines);
 
             doc.Replace(segment, newText);
 
-            SetCaretOffsetSafely(caret, doc, segment.EndOffset + (GetIndentUnit().Length * lines.Count));
+            SetCaretOffsetSafely(caret, doc, segment.Offset + (GetIndentUnit().Length * lines.Count));
         }
         catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
@@ -1756,8 +1755,9 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                 totalRemoved += removable;
             }
 
-            // Keep caret at start of original selection
-            SetCaretOffsetSafely(caret, doc, segment.Offset);
+            // Keep caret at start of original selection, but ensure it stays within doc bounds
+            var newCaretOffset = Math.Clamp(segment.Offset, 0, doc.TextLength);
+            SetCaretOffsetSafely(caret, doc, newCaretOffset);
         }
         catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
