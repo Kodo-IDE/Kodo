@@ -1053,7 +1053,7 @@ public partial class MainWindow
         using var doc = JsonDocument.Parse(json, jsonOptions);
 
         JsonElement? extensionsElement = null;
-        var triedProperties = new HashSet<string>(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+        var triedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         do
         {

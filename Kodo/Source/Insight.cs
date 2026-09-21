@@ -19,7 +19,7 @@ namespace Kodo;
 
 public sealed class InsightEngine
 {
-    private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(FileSystemPaths.Comparer);
 
     private const string NotCompoundOrArrow = @"(?<![=!<>+\-*/%&|^~])=(?![=>])";
 
@@ -57,7 +57,7 @@ public sealed class InsightEngine
         LoopOrHandlerBinding,
     };
 
-    private static readonly HashSet<string> KnownColonTypes = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> KnownColonTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
         "float", "double", "decimal", "bool", "char", "string", "object", "dynamic",
@@ -71,7 +71,7 @@ public sealed class InsightEngine
         @"^\s*set\s+(?:/a\s+|/p\s+)?""?([A-Za-z_][A-Za-z0-9_]*)\s*=",
         RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private static readonly HashSet<string> ReservedWords = new(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> ReservedWords = new(StringComparer.OrdinalIgnoreCase)
     {
         "if", "elif", "elseif", "else", "for", "foreach", "while", "switch", "match", "case",
         "return", "try", "catch", "finally", "throw", "raise", "new", "class", "struct",
@@ -391,7 +391,7 @@ public sealed class InsightEngine
         return result;
     }
 
-    private static readonly Dictionary<string, (DateTime mtime, string? masked)> _folderMaskCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, (DateTime mtime, string? masked)> _folderMaskCache = new(FileSystemPaths.Comparer);
     private static string? BuildFolderMaskedText(string folderPath, string currentFilePath, LoadedExtension? ext)
     {
         try
@@ -420,7 +420,7 @@ public sealed class InsightEngine
         {
             var currentExt = global::System.IO.Path.GetExtension(currentFilePath);
             var files = global::System.IO.Directory.EnumerateFiles(folderPath, "*", new global::System.IO.EnumerationOptions { IgnoreInaccessible = true, RecurseSubdirectories = true, AttributesToSkip = global::System.IO.FileAttributes.Hidden | global::System.IO.FileAttributes.System })
-                .Where(f => !f.Equals(currentFilePath, StringComparison.OrdinalIgnoreCase))
+                .Where(f => !FileSystemPaths.Equals(f, currentFilePath))
                 .Where(f => string.IsNullOrWhiteSpace(currentExt) || System.IO.Path.GetExtension(f).Equals(currentExt, StringComparison.OrdinalIgnoreCase))
                 .Where(f =>
                 {

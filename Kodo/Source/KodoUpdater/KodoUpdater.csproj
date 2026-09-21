@@ -10,7 +10,9 @@
     <AssemblyName>KodoUpdater</AssemblyName>
     <RootNamespace>KodoUpdater</RootNamespace>
 
-    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">..\..\Assets\kodo_logo.ico</ApplicationIcon>
+    <!-- Windows-target-only icon: $(OS) is the build host, not the target RID. -->
+    <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
+    <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
 
     <!-- Phase 0 Linux: no hardcoded RID. Pass at publish time:
          dotnet publish -r win-x64 / -r linux-x64 / -r linux-arm64.

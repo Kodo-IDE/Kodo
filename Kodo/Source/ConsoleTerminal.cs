@@ -92,6 +92,8 @@ public sealed class ConsoleTerminal : Control
     private IntPtr _hProcess = IntPtr.Zero;
     private IntPtr _hThread = IntPtr.Zero;
     private System.Diagnostics.Process? _unixProcess;
+    private int _unixMasterFd = -1;
+    private int _unixChildPid = -1;
     private Stream? _writeStream;
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
@@ -138,71 +140,20 @@ public sealed class ConsoleTerminal : Control
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
-        // Phase 1: Try ConPTY on Windows; on Linux attempt ConPTY first, fall back to unix shell.
+        // Windows uses ConPTY below; Linux uses a real Unix PTY with pipe fallback.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // Windows: use ConPTY (setup continues below)
         }
         else if (OperatingSystem.IsLinux())
         {
-            // Linux: attempt ConPTY first; if it fails, fall through to unix shell below.
-            try
-            {
-                var (cols, rows) = CalcSize();
-                _cols = cols; _rows = rows;
-                if (!suppressOutputUntilRestored)
-                {
-                    ResizeCells(rows, cols);
-                    _scrollback.Clear();
-                    _scrollOffset = 0;
-                }
-
-                NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
-                NativeConPty.CreatePipe(out var hReadPtyInput, out var hWritePtyInput, IntPtr.Zero, 0);
-
-                var result = NativeConPty.CreatePseudoConsole(
-                    new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
-                    hReadPtyInput, hWritePtyOutput,
-                    0, out _hPcon);
-
-                if (result != 0)
-                {
-                    throw new InvalidOperationException($"CreatePseudoConsole failed: 0x{result:X}");
-                }
-
-                NativeConPty.CloseHandle(hReadPtyInput);
-                NativeConPty.CloseHandle(hWritePtyOutput);
-
-                _writeStream = new FileStream(
-                    new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput, true), FileAccess.Write);
-                _readStream = new FileStream(
-                    new Microsoft.Win32.SafeHandles.SafeFileHandle(hReadPtyOutput, true), FileAccess.Read);
-
-                var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
-                NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
-                    out _hProcess, out _hThread);
-
-                _suppressOutputUntilTick = suppressOutputUntilRestored
-                    ? Environment.TickCount64 + 500
-                    : 0;
-
-                _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
-
-                var watchedHandle = _hProcess;
-                _ = Task.Run(() =>
-                {
-                    NativeConPty.WaitForSingleObject(watchedHandle, 0xFFFFFFFF);
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        SessionExited?.Invoke(this, watchedHandle);
-                    });
-                }, _cts.Token);
+            // Linux: real PTY first (vim/nano/top/job control/stty), pipe fallback if PTY unavailable.
+            Stop();
+            _cts = new CancellationTokenSource();
+            if (StartUnixPty(shellPath, arguments, workingDirectory, suppressOutputUntilRestored))
                 return;
-            }
-            catch
-            {
-                // ConPTY failed on Linux - fall through to unix shell below
-            }
+            StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
+            return;
         }
         else
         {
@@ -265,6 +216,84 @@ public sealed class ConsoleTerminal : Control
         catch (Exception ex)
         {
             Console.WriteLine($"[ConPTY] Start failed: {ex}");
+        }
+    }
+
+    private bool StartUnixPty(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)
+    {
+        try
+        {
+            var (cols, rows) = CalcSize();
+            _cols = cols; _rows = rows;
+            if (!suppressOutputUntilRestored)
+            {
+                ResizeCells(rows, cols);
+                _scrollback.Clear();
+                _scrollOffset = 0;
+            }
+
+            if (!System.IO.File.Exists(shellPath))
+            {
+                Console.WriteLine($"[PTY] Shell not found: {shellPath}");
+                return false;
+            }
+            if (!System.IO.Directory.Exists(workingDirectory))
+                workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            if (!UnixPty.TrySpawn(shellPath, arguments, workingDirectory, cols, rows, out var masterFd, out var childPid))
+            {
+                Console.WriteLine("[PTY] Unix PTY spawn failed, falling back to pipes.");
+                return false;
+            }
+
+            _unixMasterFd = masterFd;
+            _unixChildPid = childPid;
+            _unixProcess = null;
+
+            var handle = new Microsoft.Win32.SafeHandles.SafeFileHandle(new IntPtr(masterFd), ownsHandle: true);
+            var stream = new FileStream(handle, FileAccess.ReadWrite, bufferSize: 4096, isAsync: true);
+            _readStream = stream;
+            _writeStream = stream;
+
+            _suppressOutputUntilTick = suppressOutputUntilRestored
+                ? Environment.TickCount64 + 500
+                : 0;
+
+            var cts = _cts!;
+            _ = Task.Run(() => ReadOutputLoop(cts.Token), cts.Token);
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    while (!cts.Token.IsCancellationRequested)
+                    {
+                        await Task.Delay(1000, cts.Token).ConfigureAwait(false);
+                        if (UnixPty.TryReap(childPid))
+                            break;
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch { }
+                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
+            }, cts.Token);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[PTY] Unix PTY start failed: {ex.Message}");
+            try { StopUnixPty(); } catch { }
+            return false;
+        }
+    }
+
+    private void StopUnixPty()
+    {
+        var pid = _unixChildPid;
+        _unixChildPid = -1;
+        _unixMasterFd = -1;
+        if (pid > 0)
+        {
+            try { UnixPty.Kill(pid); } catch { }
         }
     }
 
@@ -354,39 +383,50 @@ public sealed class ConsoleTerminal : Control
 
     public void Stop()
     {
-        // Phase 0 Linux: ConPTY handles are Windows-only; no-op off-Windows.
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            _cts?.Cancel();
-            _cts = null;
-            try { _writeStream?.Dispose(); } catch { }
-            try { _readStream?.Dispose(); } catch { }
-            _writeStream = null;
-            _readStream = null;
-            try { _unixProcess?.Kill(entireProcessTree: true); } catch { }
-            try { _unixProcess?.Dispose(); } catch { }
-            _unixProcess = null;
-            _hPcon = IntPtr.Zero;
-            _hProcess = IntPtr.Zero;
-            _hThread = IntPtr.Zero;
-            return;
-        }
         _suppressOutputUntilTick = 0;
         _cts?.Cancel();
         _cts = null;
 
-        try { _writeStream?.Dispose(); } catch { }
-        try { _readStream?.Dispose(); } catch { }
+        // PTY and pipe streams share disposal safety: dispose once if same instance.
+        var writeStream = _writeStream;
+        var readStream = _readStream;
         _writeStream = null;
         _readStream = null;
-
-        if (_hPcon != IntPtr.Zero)
+        try { writeStream?.Dispose(); } catch { }
+        if (!ReferenceEquals(readStream, writeStream))
         {
-            NativeConPty.ClosePseudoConsole(_hPcon);
-            _hPcon = IntPtr.Zero;
+            try { readStream?.Dispose(); } catch { }
         }
-        if (_hProcess != IntPtr.Zero) { NativeConPty.CloseHandle(_hProcess); _hProcess = IntPtr.Zero; }
-        if (_hThread != IntPtr.Zero) { NativeConPty.CloseHandle(_hThread); _hThread = IntPtr.Zero; }
+
+        // Unix PTY child cleanup.
+        var ptyPid = _unixChildPid;
+        _unixChildPid = -1;
+        _unixMasterFd = -1;
+        if (ptyPid > 0)
+        {
+            try { UnixPty.Kill(ptyPid); } catch { }
+        }
+
+        try { _unixProcess?.Kill(entireProcessTree: true); } catch { }
+        try { _unixProcess?.Dispose(); } catch { }
+        _unixProcess = null;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (_hPcon != IntPtr.Zero)
+            {
+                NativeConPty.ClosePseudoConsole(_hPcon);
+                _hPcon = IntPtr.Zero;
+            }
+            if (_hProcess != IntPtr.Zero) { NativeConPty.CloseHandle(_hProcess); _hProcess = IntPtr.Zero; }
+            if (_hThread != IntPtr.Zero) { NativeConPty.CloseHandle(_hThread); _hThread = IntPtr.Zero; }
+        }
+        else
+        {
+            _hPcon = IntPtr.Zero;
+            _hProcess = IntPtr.Zero;
+            _hThread = IntPtr.Zero;
+        }
     }
 
     public void Resize(int cols, int rows)
@@ -398,7 +438,8 @@ public sealed class ConsoleTerminal : Control
         ResizeCells(rows, cols);
         _scrollOffset = 0;
 
-        // Phase 1: forward resize to the underlying process.
+        // Forward resize to the underlying process: ConPTY on Windows,
+        // TIOCSWINSZ + SIGWINCH on Unix PTY. Pipe fallback tracks the grid only.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // Windows: ConPTY handles the resize natively.
@@ -406,18 +447,10 @@ public sealed class ConsoleTerminal : Control
                 NativeConPty.ResizePseudoConsole(_hPcon,
                     new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
         }
-        else if (OperatingSystem.IsLinux() && _unixProcess is { } unixProc)
+        else if (_unixMasterFd >= 0 && _unixChildPid > 0)
         {
-            // Linux: send SIGWINCH so the shell re-evaluates its terminal size.
-            try
-            {
-                // Fallback: try ConPTY resize if active; otherwise the shell may pick up
-                // the new grid dimensions on its next I/O operation.
-                if (_hPcon != IntPtr.Zero)
-                    NativeConPty.ResizePseudoConsole(_hPcon,
-                        new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
-            }
-            catch { }
+            // Real Unix PTY: update kernel winsize and notify the foreground process group.
+            try { UnixPty.Resize(_unixMasterFd, _unixChildPid, cols, rows); } catch { }
         }
     }
 
@@ -436,7 +469,9 @@ public sealed class ConsoleTerminal : Control
         if (seq is not null) SendInput(seq);
     }
 
-    public bool HasLiveProcess => _hPcon != IntPtr.Zero || (_unixProcess is not null && !_unixProcess.HasExited);
+    public bool HasLiveProcess => _hPcon != IntPtr.Zero
+        || (_unixChildPid > 0 && UnixPty.IsAlive(_unixChildPid))
+        || (_unixProcess is not null && !_unixProcess.HasExited);
 
     public IntPtr CurrentProcessHandle
     {
@@ -1567,7 +1602,7 @@ public static class TerminalShellSupport
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();
-        var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var seen = new HashSet<string>(FileSystemPaths.Comparer);
 
         void AddShell(string id, string displayName, string? resolvedPath, string arguments)
         {

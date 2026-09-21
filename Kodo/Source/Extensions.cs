@@ -29,7 +29,7 @@ public partial class MainWindow
         _extensionsFolderWatcher = CreateExtensionFolderWatcher(ExtensionsFolderPath);
 
         if (Directory.Exists(ProjectExtensionsFolderPath) &&
-            !string.Equals(ProjectExtensionsFolderPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
+            !FileSystemPaths.Equals(ProjectExtensionsFolderPath, ExtensionsFolderPath))
         {
             _projectExtensionsFolderWatcher = CreateExtensionFolderWatcher(ProjectExtensionsFolderPath);
         }
@@ -1314,7 +1314,7 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
         var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
-        if (!string.Equals(srcPath, ExtensionsFolderPath, StringComparison.OrdinalIgnoreCase))
+        if (!FileSystemPaths.Equals(srcPath, ExtensionsFolderPath))
             yield return srcPath;
     }
 

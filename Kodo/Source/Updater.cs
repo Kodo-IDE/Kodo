@@ -41,6 +41,7 @@ internal static class UpdateService
 
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
+        LastIncompatibleReason = null;
         var fromLatest = await TryCheckLatestAsync(ct).ConfigureAwait(false);
         if (fromLatest is not null) return fromLatest;
         return await TryCheckReleasesListAsync(ct).ConfigureAwait(false);
@@ -87,6 +88,8 @@ internal static class UpdateService
         catch { return null; }
     }
 
+    internal static string? LastIncompatibleReason { get; private set; }
+
     private static GitHubAsset? PickInstallerAsset(GitHubAsset[]? assets)
     {
         if (assets is null || assets.Length == 0) return null;
@@ -96,16 +99,20 @@ internal static class UpdateService
             var archTokens = arch == "arm64"
                 ? new[] { "arm64", "aarch64" }
                 : new[] { "x64", "x86_64", "amd64" };
-            GitHubAsset? Match(Func<GitHubAsset, bool> pred) =>
-                assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase)) && pred(a))
-                ?? assets.FirstOrDefault(pred);
-            var tarball = Match(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && (a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)));
+            // Never cross-fallback between architectures: an asset must contain a token
+            // for the CURRENT process architecture. If none matches, report incompatible
+            // instead of installing the wrong CPU build.
+            GitHubAsset? MatchStrict(Func<GitHubAsset, bool> pred) =>
+                assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase)) && pred(a));
+            var tarball = MatchStrict(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && (a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)));
             if (tarball is not null) return tarball;
-            var appImage = Match(a => a.Name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase));
+            var appImage = MatchStrict(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase));
             if (appImage is not null) return appImage;
-            var deb = Match(a => a.Name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase));
+            var deb = MatchStrict(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase));
             if (deb is not null) return deb;
-            // Notify-only fallback: no usable Linux asset.
+            // No compatible build: do not fall back to another arch or to Windows .exe assets.
+            LastIncompatibleReason = $"No compatible build available (arch={arch}, need linux {string.Join("/", archTokens)} asset).";
+            KodoDiagnostics.LogDebug(LastIncompatibleReason);
             return null;
         }
         var preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo-", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith("-Installer.exe", StringComparison.OrdinalIgnoreCase));

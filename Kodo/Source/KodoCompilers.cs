@@ -289,7 +289,7 @@ public partial class MainWindow
         var loaded = ReadJsonCache<ManualCompilerRegistryFile>(ManualCompilersRegistryPath, "manual-compilers.json");
         if (loaded is null) return;
         _manualCompilers = new Dictionary<string, ManualCompilerRecord>(loaded.Entries, StringComparer.OrdinalIgnoreCase);
-        _autoDetectDismissedIds = new HashSet<string>(loaded.DismissedAutoDetectIds, OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+        _autoDetectDismissedIds = new HashSet<string>(loaded.DismissedAutoDetectIds, StringComparer.OrdinalIgnoreCase);
     }
 
     private void SaveManualCompilerRegistry() => WriteJsonCache(ManualCompilersRegistryPath, new ManualCompilerRegistryFile { Entries = _manualCompilers, DismissedAutoDetectIds = _autoDetectDismissedIds.ToList() }, "manual-compilers.json");
@@ -543,7 +543,7 @@ public partial class MainWindow
     {
         var results = new List<string>();
         // Phase 1 Linux: path lookup must be case-sensitive; Windows stays insensitive.
-        var seen = new HashSet<string>(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(FileSystemPaths.Comparer);
         try
         {
             var pathVar = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;

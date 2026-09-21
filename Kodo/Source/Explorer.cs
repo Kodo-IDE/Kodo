@@ -347,7 +347,7 @@ public partial class MainWindow
 
         var existingTab = OpenTabs.FirstOrDefault(tab =>
             !tab.IsUntitled &&
-            string.Equals(tab.Path, path, StringComparison.OrdinalIgnoreCase));
+            FileSystemPaths.Equals(tab.Path, path));
         if (existingTab is not null)
         {
             AddRecentFile(path);
@@ -517,7 +517,7 @@ public partial class MainWindow
         var expandedPaths = FileTreeItems
             .Where(i => i.IsDirectory && i.IsExpanded)
             .Select(i => i.FullPath)
-            .ToHashSet(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(FileSystemPaths.Comparer);
 
         var items = await BuildFileTreeItemsAsync(_currentFolderPath, depth: 0, expandedPaths);
         ReplaceFileTreeItems(items);
@@ -696,7 +696,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(path)) return;
 
         var existing = RecentFiles.FirstOrDefault(item =>
-            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+            FileSystemPaths.Equals(item.Path, path));
 
         if (existing is not null)
         {
@@ -716,7 +716,7 @@ public partial class MainWindow
     private void TogglePinnedRecentFile(string path)
     {
         var existing = RecentFiles.FirstOrDefault(item =>
-            string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+            FileSystemPaths.Equals(item.Path, path));
         if (existing is null) return;
 
         existing.IsPinned = !existing.IsPinned;
@@ -727,7 +727,7 @@ public partial class MainWindow
 
     private void RemoveRecentFile(string path)
     {
-        var existing = RecentFiles.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+        var existing = RecentFiles.FirstOrDefault(f => FileSystemPaths.Equals(f.Path, path));
         if (existing is null) return;
         RecentFiles.Remove(existing);
         SaveSettings();
@@ -1030,7 +1030,7 @@ public partial class MainWindow
             var expandedPaths = FileTreeItems
                 .Where(i => i.IsDirectory && i.IsExpanded)
                 .Select(i => i.FullPath)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                .ToHashSet(FileSystemPaths.Comparer);
 
             await PopulateFileTreeAsync(_currentFolderPath);
 
@@ -1043,8 +1043,8 @@ public partial class MainWindow
     {
         var matchingTabs = OpenTabs
             .Where(tab => !tab.IsUntitled && (
-                string.Equals(tab.Path, path, StringComparison.OrdinalIgnoreCase) ||
-                (isDirectory && tab.Path.StartsWith(path + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))))
+                FileSystemPaths.Equals(tab.Path, path) ||
+                (isDirectory && FileSystemPaths.IsPrefixOf(tab.Path, path))))
             .ToList();
 
         foreach (var tab in matchingTabs)
@@ -1251,7 +1251,7 @@ public partial class MainWindow
             if (isFile)
             {
                 var newItem = FileTreeItems.FirstOrDefault(item =>
-                    string.Equals(item.FullPath, path, StringComparison.OrdinalIgnoreCase));
+                    FileSystemPaths.Equals(item.FullPath, path));
                 if (newItem is not null)
                 {
                     _newFileInlineRenameItem = newItem;
@@ -1356,8 +1356,8 @@ public partial class MainWindow
 
             var matchingTabs = OpenTabs
                 .Where(tab => !tab.IsUntitled && (
-                    string.Equals(tab.Path, item.FullPath, StringComparison.OrdinalIgnoreCase) ||
-                    (item.IsDirectory && tab.Path.StartsWith(item.FullPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))))
+                    FileSystemPaths.Equals(tab.Path, item.FullPath) ||
+                    (item.IsDirectory && FileSystemPaths.IsPrefixOf(tab.Path, item.FullPath))))
                 .ToList();
 
             if (!await EnsureTabsReadyForDeletionAsync(matchingTabs))
@@ -1395,8 +1395,8 @@ public partial class MainWindow
         {
             var normalizedSrc = Path.GetFullPath(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             var normalizedDest = Path.GetFullPath(destPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-            if (normalizedDest.Equals(normalizedSrc, StringComparison.OrdinalIgnoreCase) ||
-                normalizedDest.StartsWith(normalizedSrc + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+            if (FileSystemPaths.Equals(normalizedDest, normalizedSrc) ||
+                FileSystemPaths.IsPrefixOf(normalizedDest, normalizedSrc))
             {
                 ExtensionsStatusText = "Paste failed: cannot paste a folder inside itself.";
                 await ShowWarningDialogAsync("Paste file", new InvalidOperationException("Cannot paste a folder into itself or its descendant."));

@@ -245,7 +245,22 @@ internal static class Program
 
         // Optional: if transaction carries Sha256, validate (future
 
-        // 4. Launch Inno installer
+        // Platform separation: Windows uses Inno Setup; Linux is manual/notify-only
+        // (.deb/.AppImage/tarball require user steps). Never run Inno flags on Unix.
+        if (OperatingSystem.IsLinux())
+        {
+            Log($"Linux manual update: staged={tx.InstallerPath}. " + LinuxManualBlurb(tx.InstallerPath));
+            TryDelete(transactionPath);
+            return 0;
+        }
+        if (!OperatingSystem.IsWindows())
+        {
+            Log($"Unsupported updater platform for automatic install: {tx.InstallerPath}. Manual installation required.");
+            TryDelete(transactionPath);
+            return 0;
+        }
+
+        // 4. Launch Inno installer (Windows only)
         Log($"Launching installer: {tx.InstallerPath}");
         var psi = new ProcessStartInfo
         {
@@ -339,6 +354,13 @@ internal static class Program
         Log("Update orchestration complete");
         return 0;
     }
+
+    private static string LinuxManualBlurb(string stagedPath) =>
+        stagedPath.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
+            ? "Install with e.g. sudo dpkg -i <file> (or software center), then restart Kodo."
+            : stagedPath.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)
+                ? "Make executable (chmod +x), move where you keep apps, then restart Kodo from it."
+                : "Extract the archive over the install folder (keep Kodo binary executable with chmod +x), then restart Kodo.";
 
     private static void TryDelete(string path)
     {

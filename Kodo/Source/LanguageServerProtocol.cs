@@ -842,26 +842,26 @@ internal sealed class LspClient : IDisposable
 public partial class MainWindow
 {
     private readonly LspManager _lspManager = new();
-    // Phase 2 Linux: document paths are case-sensitive on ext4; use OS-sensitive comparer.
-    private static StringComparer LspPathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-    private readonly Dictionary<string, int> _lspDocumentVersions = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-    private readonly HashSet<string> _lspOpenDocuments = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-    private readonly HashSet<string> _lspMissingNotified = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    // Filesystem document paths follow OS case semantics via FileSystemPaths.
+    private static StringComparer LspPathComparer => FileSystemPaths.Comparer;
+    private readonly Dictionary<string, int> _lspDocumentVersions = new(FileSystemPaths.Comparer);
+    private readonly HashSet<string> _lspOpenDocuments = new(FileSystemPaths.Comparer);
+    private readonly HashSet<string> _lspMissingNotified = new(FileSystemPaths.Comparer);
     private readonly DispatcherTimer _lspDidChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private string? _pendingLspChangePath;
     private readonly object _lspPendingLock = new();
-    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-    private readonly HashSet<string> _lspForceFullSync = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(FileSystemPaths.Comparer);
+    private readonly HashSet<string> _lspForceFullSync = new(FileSystemPaths.Comparer);
+    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(FileSystemPaths.Comparer);
     private static readonly TimeSpan LspHugeFileSyncInterval = TimeSpan.FromSeconds(8);
     private const int LspIncrementalMaxEdits = 500;
     private const int LspIncrementalMaxChars = 100_000;
-    private readonly Dictionary<string, List<LspRawDiagnostic>> _lspDiagnostics = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, int> _lspDiagnosticVersions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<LspRawDiagnostic>> _lspDiagnostics = new(FileSystemPaths.Comparer);
+    private readonly Dictionary<string, int> _lspDiagnosticVersions = new(FileSystemPaths.Comparer);
     private readonly HashSet<LspClient> _lspSubscribedClients = new();
     private readonly object _lspDiagnosticsLock = new();
-    private readonly HashSet<string> _lspDiagnosticRefreshPending = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _lspPendingOpens = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _lspDiagnosticRefreshPending = new(FileSystemPaths.Comparer);
+    private readonly HashSet<string> _lspPendingOpens = new(FileSystemPaths.Comparer);
     private readonly object _lspOpenLock = new();
     private CancellationTokenSource? _lspHoverCts;
     private readonly object _lspHoverLock = new();

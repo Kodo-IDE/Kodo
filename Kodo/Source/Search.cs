@@ -833,7 +833,7 @@ public partial class MainWindow
 
     private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null)
     {
-        visited ??= new HashSet<string>(OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase);
+        visited ??= new HashSet<string>(FileSystemPaths.Comparer);
         try
         {
             var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);

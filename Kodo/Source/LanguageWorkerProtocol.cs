@@ -13,7 +13,7 @@ public sealed class LanguageWorker : IDisposable
         new BoundedChannelOptions(16) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest, AllowSynchronousContinuations = false });
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _loop;
-    private readonly Dictionary<string, LanguageDocumentSnapshot> _documents = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, LanguageDocumentSnapshot> _documents = new(FileSystemPaths.Comparer);
 
     public LanguageWorker()
     {

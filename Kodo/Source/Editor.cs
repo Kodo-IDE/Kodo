@@ -100,7 +100,7 @@ public partial class MainWindow
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 if (capturedVersion != _insightDocVersion) return;
-                if (!string.Equals(capturedPath, _currentFilePath, OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase)) return;
+                if (!FileSystemPaths.Equals(capturedPath, _currentFilePath)) return;
                 if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
                 WordCountText = wc == 0 && string.IsNullOrWhiteSpace(snapshot) ? "0 words" : $"{wc} words";
                 OnPropertyChanged(nameof(IsWordCountVisible));
@@ -580,7 +580,7 @@ public partial class MainWindow
         var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             ToolTip.SetTip(EditorTextBox.TextArea.TextView, string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}");
             ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
         });
@@ -613,7 +613,7 @@ public partial class MainWindow
                 requests.Add(UpdateLspSemanticTokensAsync());
             }
             await Task.WhenAll(requests);
-            if (revision == _insightDocVersion && string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+            if (revision == _insightDocVersion && FileSystemPaths.Equals(path, _currentFilePath))
             {
                 _lspDocumentRefreshPending = false;
                 _lastPresentationClient = client;
@@ -650,7 +650,7 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspFoldingManager.UpdateFoldings(foldings.OrderBy(f => f.StartOffset), 0);
         });
     }
@@ -674,7 +674,7 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspHighlightRenderer.Clear();
             foreach (var match in matches) _lspHighlightRenderer.AddMatch(match.Offset, match.Length);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
@@ -698,7 +698,7 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspInlayHintRenderer.SetHints(hints);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
         });
@@ -759,7 +759,7 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspSemanticTokenRenderer.SetTokens(tokens);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         });
@@ -1307,7 +1307,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.TextArea is null) return;
-        if (fileKey != "untitled" && !string.Equals(_currentFilePath, fileKey, StringComparison.OrdinalIgnoreCase)) return;
+        if (fileKey != "untitled" && !FileSystemPaths.Equals(_currentFilePath, fileKey)) return;
 
         InsightSuggestion.PanelForeground = PrimaryTextBrush;
         InsightSuggestion.MutedForeground = MutedTextBrush;

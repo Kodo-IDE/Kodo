@@ -1,20 +1,25 @@
 ﻿<!-- Licensed under GPL-v3.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Phase 0 Linux: Exe by default; WinExe only on Windows (hides console).
-         WinExe is a Windows concept and breaks Linux apphost expectations. -->
+    <!-- Target-platform aware: Exe by default; WinExe only when targeting Windows.
+         WinExe is a Windows concept and breaks Linux apphost expectations.
+         NOTE: $(OS) describes the build HOST, not the target RID, so cross-publishing
+         from Windows to Linux must not leak Windows settings. Check RuntimeIdentifier. -->
     <OutputType>Exe</OutputType>
-    <OutputType Condition="'$(OS)' == 'Windows_NT'">WinExe</OutputType>
+    <OutputType Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">WinExe</OutputType>
+    <OutputType Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <!-- Phase 0 Linux: app.manifest is Windows-only (assemblyIdentity/supportedOS/dpiAwareness). -->
-    <ApplicationManifest Condition="'$(OS)' == 'Windows_NT'">app.manifest</ApplicationManifest>
+    <!-- app.manifest is Windows-target-only (assemblyIdentity/supportedOS/dpiAwareness). -->
+    <ApplicationManifest Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">app.manifest</ApplicationManifest>
+    <ApplicationManifest Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <!-- Disable Avalonia's build-time telemetry task. It can fail builds when
          the per-user BuildServices log is locked or not writable. -->
     <UsedAvaloniaProducts></UsedAvaloniaProducts>
-    <!-- Phase 0 Linux: .ico is Windows-only. Linux packaging uses kodo-logo.png + .desktop file. -->
-    <ApplicationIcon Condition="'$(OS)' == 'Windows_NT'">..\Assets\kodo_logo.ico</ApplicationIcon>
+    <!-- .ico is Windows-target-only. Linux packaging uses kodo-logo.png + .desktop file. -->
+    <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\Assets\kodo_logo.ico</ApplicationIcon>
+    <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\Assets\kodo_logo.ico</ApplicationIcon>
     <!-- Phase 0 Linux: publish-time RIDs, e.g. dotnet publish with linux-x64 self contained true -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>

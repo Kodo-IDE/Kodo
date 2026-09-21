@@ -1401,10 +1401,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var normalizedPath = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         var normalizedDirectory = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        // Phase 1 Linux: containment checks must be case-sensitive on ext4.
-        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-        return normalizedPath.StartsWith(normalizedDirectory + Path.DirectorySeparatorChar, comparison)
-            || string.Equals(normalizedPath, normalizedDirectory, comparison);
+        return FileSystemPaths.IsPrefixOf(normalizedPath, normalizedDirectory);
     }
 
     private static string TryGetFileNameFromUrl(string url)
@@ -6211,7 +6208,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             });
 
             if (update is null)
-                CheckForUpdatesStatusText = $"You're up to date - Kodo {KodoDiagnostics.AppVersion}.";
+                CheckForUpdatesStatusText = UpdateService.LastIncompatibleReason
+                    ?? $"You're up to date - Kodo {KodoDiagnostics.AppVersion}.";
         }
         catch (Exception ex)
         {
@@ -7228,10 +7226,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (wasDirectory)
             {
                 var prefix = oldPath + Path.DirectorySeparatorChar;
-                if (tab.Path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                if (FileSystemPaths.StartsWith(tab.Path, prefix))
                     updated = newPath + Path.DirectorySeparatorChar + tab.Path[prefix.Length..];
             }
-            else if (string.Equals(tab.Path, oldPath, StringComparison.OrdinalIgnoreCase))
+            else if (FileSystemPaths.Equals(tab.Path, oldPath))
             {
                 updated = newPath;
             }
