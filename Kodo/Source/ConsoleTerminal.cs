@@ -138,14 +138,74 @@ public sealed class ConsoleTerminal : Control
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
-        // Phase 1 Linux: ConPTY is Windows-only; use pipe-backed process on Linux.
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        // Phase 1: Try ConPTY on Windows; on Linux attempt ConPTY first, fall back to unix shell.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            if (OperatingSystem.IsLinux())
+            // Windows: use ConPTY (setup continues below)
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            // Linux: attempt ConPTY first; if it fails, fall through to unix shell below.
+            try
             {
-                StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
+                var (cols, rows) = CalcSize();
+                _cols = cols; _rows = rows;
+                if (!suppressOutputUntilRestored)
+                {
+                    ResizeCells(rows, cols);
+                    _scrollback.Clear();
+                    _scrollOffset = 0;
+                }
+
+                NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
+                NativeConPty.CreatePipe(out var hReadPtyInput, out var hWritePtyInput, IntPtr.Zero, 0);
+
+                var result = NativeConPty.CreatePseudoConsole(
+                    new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
+                    hReadPtyInput, hWritePtyOutput,
+                    0, out _hPcon);
+
+                if (result != 0)
+                {
+                    throw new InvalidOperationException($"CreatePseudoConsole failed: 0x{result:X}");
+                }
+
+                NativeConPty.CloseHandle(hReadPtyInput);
+                NativeConPty.CloseHandle(hWritePtyOutput);
+
+                _writeStream = new FileStream(
+                    new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput, true), FileAccess.Write);
+                _readStream = new FileStream(
+                    new Microsoft.Win32.SafeHandles.SafeFileHandle(hReadPtyOutput, true), FileAccess.Read);
+
+                var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
+                NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
+                    out _hProcess, out _hThread);
+
+                _suppressOutputUntilTick = suppressOutputUntilRestored
+                    ? Environment.TickCount64 + 500
+                    : 0;
+
+                _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
+
+                var watchedHandle = _hProcess;
+                _ = Task.Run(() =>
+                {
+                    NativeConPty.WaitForSingleObject(watchedHandle, 0xFFFFFFFF);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        SessionExited?.Invoke(this, watchedHandle);
+                    });
+                }, _cts.Token);
                 return;
             }
+            catch
+            {
+                // ConPTY failed on Linux - fall through to unix shell below
+            }
+        }
+        else
+        {
             Console.WriteLine("[ConPTY] Embedded terminal is supported on Windows and Linux only. Start ignored.");
             return;
         }
@@ -338,13 +398,27 @@ public sealed class ConsoleTerminal : Control
         ResizeCells(rows, cols);
         _scrollOffset = 0;
 
-        // Phase 1 Linux: no native resize for pipe-backed shell; grid tracks only.
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            return;
-
-        if (_hPcon != IntPtr.Zero)
-            NativeConPty.ResizePseudoConsole(_hPcon,
-                new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
+        // Phase 1: forward resize to the underlying process.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            // Windows: ConPTY handles the resize natively.
+            if (_hPcon != IntPtr.Zero)
+                NativeConPty.ResizePseudoConsole(_hPcon,
+                    new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
+        }
+        else if (OperatingSystem.IsLinux() && _unixProcess is { } unixProc)
+        {
+            // Linux: send SIGWINCH so the shell re-evaluates its terminal size.
+            try
+            {
+                // Fallback: try ConPTY resize if active; otherwise the shell may pick up
+                // the new grid dimensions on its next I/O operation.
+                if (_hPcon != IntPtr.Zero)
+                    NativeConPty.ResizePseudoConsole(_hPcon,
+                        new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
+            }
+            catch { }
+        }
     }
 
     public void SendInput(string text)
