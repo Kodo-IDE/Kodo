@@ -316,6 +316,19 @@ internal static class UpdateService
         try { if (File.Exists(finalPath)) File.Delete(finalPath); } catch { }
         File.Move(partialPath, finalPath);
 
+        // Linux: AppImages need the executable bit; set it at stage time so the
+        // user doesn't have to run chmod +x manually.
+        if (!OperatingSystem.IsWindows() && finalPath.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var mode = File.GetUnixFileMode(finalPath);
+                mode |= System.IO.UnixFileMode.UserExecute | System.IO.UnixFileMode.GroupExecute | System.IO.UnixFileMode.OtherExecute;
+                File.SetUnixFileMode(finalPath, mode);
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("AppImage chmod +x failed", ex); }
+        }
+
         KodoDiagnostics.LogDebug($"Update staged: {finalPath} ({FormatBytes(partialInfo.Length)})");
         return finalPath;
     }

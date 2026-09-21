@@ -44,7 +44,7 @@
 
   <ItemGroup>
     <AvaloniaResource Include="../Assets/**" Link="Assets/%(RecursiveDir)%(Filename)%(Extension)" Exclude="../Assets/kodo.desktop" />
-    <None Include="../Assets/kodo.desktop" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Assets/kodo.desktop" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../Assets/kodo.desktop')" />
   </ItemGroup>
 
   <ItemGroup>

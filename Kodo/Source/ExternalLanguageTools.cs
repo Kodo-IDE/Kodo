@@ -120,7 +120,7 @@ public static class ExternalLanguageToolRunner
                 if (File.Exists(candidate)) return candidate;
             }
             var parent = Directory.GetParent(directory);
-            if (parent is null || string.Equals(parent.FullName, directory, StringComparison.OrdinalIgnoreCase)) break;
+            if (parent is null || FileSystemPaths.Equals(parent.FullName, directory)) break;
             directory = parent.FullName;
         }
         return null;
@@ -191,8 +191,8 @@ public static class ExternalLanguageToolRunner
             var resolved = Path.IsPathRooted(reportedFile)
                 ? Path.GetFullPath(reportedFile)
                 : Path.GetFullPath(Path.Combine(baseDirectory, reportedFile));
-            return string.Equals(resolved, Path.GetFullPath(originalFile), StringComparison.OrdinalIgnoreCase) ||
-                   string.Equals(Path.GetFileName(resolved), Path.GetFileName(originalFile), StringComparison.OrdinalIgnoreCase);
+            return FileSystemPaths.Equals(resolved, Path.GetFullPath(originalFile)) ||
+                   FileSystemPaths.Equals(Path.GetFileName(resolved), Path.GetFileName(originalFile));
         }
         catch { return true; }
     }

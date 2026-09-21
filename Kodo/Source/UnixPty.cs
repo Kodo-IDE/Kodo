@@ -246,6 +246,18 @@ internal static class UnixPty
         try { kill(pid, SIGTERM); } catch { }
     }
 
+    /// <summary>
+    /// Terminate the entire process group (child was started via setsid so its
+    /// PID == PGID). Prevents grandchildren (e.g. bash -> python) surviving.
+    /// </summary>
+    public static void KillGroup(int pid, bool force = false)
+    {
+        if (pid <= 0) return;
+        try { kill(-pid, force ? SIGKILL : SIGTERM); } catch { }
+        // Also signal the leader directly in case group kill is restricted.
+        try { kill(pid, force ? SIGKILL : SIGTERM); } catch { }
+    }
+
     private static List<string> BuildArgv(string shellPath, string arguments)
     {
         var argv = new List<string> { shellPath };

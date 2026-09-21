@@ -3147,7 +3147,7 @@ internal static class LspInstallationManager
         var dir = Path.Combine(root, sanitized);
         var fullRoot = Path.GetFullPath(root);
         var fullDir = Path.GetFullPath(dir);
-        if (!fullDir.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase))
+        if (!FileSystemPaths.IsPrefixOf(fullDir, fullRoot))
             throw new InvalidOperationException($"Provider directory escapes managed root: {fullDir}");
         return fullDir;
     }
@@ -3675,9 +3675,8 @@ internal static class LspInstallationManager
             if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith("/")) continue; // directory
             var destPath = Path.GetFullPath(Path.Combine(destDir, entry.FullName));
             var fullDestDir = Path.GetFullPath(destDir);
-            // Phase 1 Linux: ZipSlip check must be case-sensitive on case-sensitive filesystems.
-            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (!destPath.StartsWith(fullDestDir, pathComparison))
+            // ZipSlip check: separator-aware and filesystem case semantics.
+            if (!FileSystemPaths.IsPrefixOf(destPath, fullDestDir))
                 throw new InvalidDataException($"Zip entry escapes destination: {entry.FullName}");
             var dir = Path.GetDirectoryName(destPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
@@ -3710,8 +3709,7 @@ internal static class LspInstallationManager
                         if (string.IsNullOrWhiteSpace(entryName)) continue;
                         var destPath = Path.GetFullPath(Path.Combine(destDir, entryName));
                         var fullDestDir = Path.GetFullPath(destDir);
-                        var tarPathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-                        if (!destPath.StartsWith(fullDestDir, tarPathComparison))
+                        if (!FileSystemPaths.IsPrefixOf(destPath, fullDestDir))
                             throw new InvalidDataException($"Tar entry escapes destination: {entryName}");
                         if (entry.EntryType.ToString() == "Directory")
                         {
@@ -3783,7 +3781,7 @@ internal static class LspInstallationManager
             var dir = GetProviderDir(cfg, settings);
             var fullRoot = Path.GetFullPath(GetManagedRoot(settings));
             var fullDir = Path.GetFullPath(dir);
-            if (!fullDir.StartsWith(fullRoot, StringComparison.OrdinalIgnoreCase) || fullDir.Equals(fullRoot, StringComparison.OrdinalIgnoreCase))
+            if (!FileSystemPaths.IsPrefixOf(fullDir, fullRoot) || FileSystemPaths.Equals(fullDir, fullRoot))
                 return new(InstallResultKind.Failed, "Uninstall blocked: invalid provider directory", null);
             if (!Directory.Exists(dir)) return new(InstallResultKind.Failed, "Not installed", null);
             Directory.Delete(dir, true);
@@ -3820,7 +3818,7 @@ internal sealed class LspManager : IDisposable
             foreach (var candidate in _clients.Values)
             {
                 if (!candidate.IsInitialized) continue;
-                if (!string.Equals(NormalizeRoot(candidate.ClientWorkspaceRoot), root, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!FileSystemPaths.Equals(NormalizeRoot(candidate.ClientWorkspaceRoot), root)) continue;
                 try
                 {
                     if (string.Equals(candidate.Configuration.EffectiveProviderId, config.EffectiveProviderId, StringComparison.OrdinalIgnoreCase))

@@ -675,6 +675,8 @@ public partial class MainWindow
 
     private static string? TryFindMsvcCl()
     {
+        // MSVC is Windows-only.
+        if (!OperatingSystem.IsWindows()) return null;
         try
         {
             var vswhere = Path.Combine(

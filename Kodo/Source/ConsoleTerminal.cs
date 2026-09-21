@@ -153,6 +153,8 @@ public sealed class ConsoleTerminal : Control
             if (StartUnixPty(shellPath, arguments, workingDirectory, suppressOutputUntilRestored))
                 return;
             StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
+            // Fallback is deliberately obvious: pipes can't support fullscreen apps or job control.
+            WriteFallbackNotice();
             return;
         }
         else
@@ -291,10 +293,35 @@ public sealed class ConsoleTerminal : Control
         var pid = _unixChildPid;
         _unixChildPid = -1;
         _unixMasterFd = -1;
-        if (pid > 0)
+        if (pid <= 0) return;
+        // SIGTERM the whole process group first (bash -> python etc.), escalate to
+        // SIGKILL after a grace period so stubborn processes can't survive.
+        try { UnixPty.KillGroup(pid, force: false); } catch { }
+        _ = Task.Run(async () =>
         {
-            try { UnixPty.Kill(pid); } catch { }
+            try
+            {
+                await Task.Delay(1500).ConfigureAwait(false);
+                if (!UnixPty.TryReap(pid))
+                    UnixPty.KillGroup(pid, force: true);
+            }
+            catch { }
+        });
+    }
+
+    private void WriteFallbackNotice()
+    {
+        const string notice = "[Kodo] PTY unavailable \u2013 limited pipe mode: vim/top/job control may not work.\r\n";
+        try
+        {
+            lock (_lock)
+            {
+                foreach (var ch in notice) ProcessChar(ch);
+            }
+            Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
         }
+        catch { }
+        Console.WriteLine("[PTY] Running in limited pipe fallback mode.");
     }
 
     private void StartUnixShell(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)

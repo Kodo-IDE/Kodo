@@ -814,7 +814,7 @@ public partial class MainWindow
     {
         var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         if (_searchFileCache is { } cached &&
-            string.Equals(cached.Rules.RootSnapshot, normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
+            FileSystemPaths.Equals(cached.Rules.RootSnapshot, normalizedRoot) &&
             string.Equals(cached.Rules.IncludeFilterSnapshot, includeFilter ?? "", StringComparison.Ordinal) &&
             string.Equals(cached.Rules.ExcludeFilterSnapshot, excludeFilter ?? "", StringComparison.Ordinal))
         {

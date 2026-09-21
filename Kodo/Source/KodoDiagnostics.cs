@@ -415,19 +415,19 @@ internal static class KodoDiagnostics
         var repoRoot = CachedRepoRoot;
 
         if (!string.IsNullOrWhiteSpace(repoRoot) &&
-            path.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase))
-            return path.Replace(repoRoot, "<repo>", StringComparison.OrdinalIgnoreCase);
+            FileSystemPaths.StartsWith(path, repoRoot))
+            return path.Replace(repoRoot, "<repo>", FileSystemPaths.Comparison);
         if (!string.IsNullOrWhiteSpace(appData) &&
-            path.StartsWith(appData, StringComparison.OrdinalIgnoreCase))
-            return path.Replace(appData, "%AppData%", StringComparison.OrdinalIgnoreCase);
+            FileSystemPaths.StartsWith(path, appData))
+            return path.Replace(appData, "%AppData%", FileSystemPaths.Comparison);
         if (!string.IsNullOrWhiteSpace(localAppData) &&
-            path.StartsWith(localAppData, StringComparison.OrdinalIgnoreCase))
-            return path.Replace(localAppData, "%LocalAppData%", StringComparison.OrdinalIgnoreCase);
+            FileSystemPaths.StartsWith(path, localAppData))
+            return path.Replace(localAppData, "%LocalAppData%", FileSystemPaths.Comparison);
 
-        // Phase 2 Linux: generalize Unix home dir in single paths too.
+        // Generalize Unix home dir in single paths too.
         var home = Environment.GetEnvironmentVariable("HOME");
         if (!string.IsNullOrWhiteSpace(home) &&
-            path.StartsWith(home, StringComparison.Ordinal) &&
+            FileSystemPaths.StartsWith(path, home) &&
             path.Length > home.Length)
             return "/home/<redacted>" + path[home.Length..];
 

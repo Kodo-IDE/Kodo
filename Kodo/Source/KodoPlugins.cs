@@ -41,9 +41,7 @@ public partial class MainWindow
             if (string.IsNullOrEmpty(entry.Name)) continue;
 
             var destPath = Path.GetFullPath(Path.Combine(pluginFolder, entry.FullName));
-            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            if (!destPath.StartsWith(fullPluginFolder + Path.DirectorySeparatorChar, pathComparison) &&
-                !string.Equals(destPath, fullPluginFolder, pathComparison))
+            if (!FileSystemPaths.IsPrefixOf(destPath, fullPluginFolder))
                 continue; // ZipSlip attempt – skip entry
 
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);

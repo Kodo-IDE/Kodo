@@ -1308,13 +1308,16 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         if (OperatingSystem.IsLinux())
         {
             var legacy = Path.Combine(KodoPaths.LegacyDataRoot, "Extensions");
-            if (!string.Equals(legacy, ExtensionsFolderPath, StringComparison.Ordinal) && Directory.Exists(legacy))
+            if (!FileSystemPaths.Equals(legacy, ExtensionsFolderPath) && Directory.Exists(legacy))
                 yield return legacy;
         }
 
+        // Development fallback only: never rely on ../../../ in production.
+        // Installed layouts won't have this directory, so gate on existence.
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        var srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions"));
-        if (!FileSystemPaths.Equals(srcPath, ExtensionsFolderPath))
+        string? srcPath = null;
+        try { srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions")); } catch { srcPath = null; }
+        if (!string.IsNullOrWhiteSpace(srcPath) && !FileSystemPaths.Equals(srcPath, ExtensionsFolderPath) && Directory.Exists(srcPath))
             yield return srcPath;
     }
 

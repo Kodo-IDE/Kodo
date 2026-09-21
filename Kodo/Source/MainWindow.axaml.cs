@@ -7392,8 +7392,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var affectedTabs = OpenTabs
             .Where(t => !t.IsUntitled && (
-                string.Equals(t.Path, item.FullPath, StringComparison.OrdinalIgnoreCase) ||
-                (item.IsDirectory && t.Path.StartsWith(item.FullPath + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))))
+                FileSystemPaths.Equals(t.Path, item.FullPath) ||
+                (item.IsDirectory && FileSystemPaths.IsPrefixOf(t.Path, item.FullPath))))
             .ToList();
 
         if (!await EnsureTabsReadyForDeletionAsync(affectedTabs)) return;

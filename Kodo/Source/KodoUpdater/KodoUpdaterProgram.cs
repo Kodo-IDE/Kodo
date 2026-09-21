@@ -139,15 +139,16 @@ internal static class Program
             return 6;
         }
 
-        // Verify transaction file is inside expected update dir (anti-hijack)
+        // Verify transaction file is inside expected update dir (anti-hijack).
+        // Separator-aware: /path/update-malicious must not match /path/update.
         var expectedDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
         try
         {
             var fullTx = Path.GetFullPath(transactionPath);
             var fullExpected = Path.GetFullPath(expectedDir);
-            if (!fullTx.StartsWith(fullExpected, PathComparison))
+            if (!IsInsideDirectory(fullTx, fullExpected))
             {
-                Log($"Transaction outside expected dir: {fullTx} !startsWith {fullExpected}");
+                Log($"Transaction outside expected dir: {fullTx} !inside {fullExpected}");
                 return 7;
             }
         }
@@ -374,10 +375,19 @@ internal static class Program
             var stagingRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "staging");
             var fullInst = Path.GetFullPath(installerPath);
             var fullStaging = Path.GetFullPath(stagingRoot);
-            if (fullInst.StartsWith(fullStaging, PathComparison))
+            if (IsInsideDirectory(fullInst, fullStaging))
                 TryDelete(fullInst);
         }
         catch { }
+    }
+
+    private static bool IsInsideDirectory(string path, string directory)
+    {
+        if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(directory))
+            return false;
+        var sep = Path.DirectorySeparatorChar.ToString();
+        return string.Equals(path, directory, PathComparison)
+            || path.StartsWith(directory + sep, PathComparison);
     }
 
     private static string SanitizeForMutex(string s)
