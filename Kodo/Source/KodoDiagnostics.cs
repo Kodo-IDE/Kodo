@@ -94,6 +94,34 @@ internal static class KodoPaths
         return ResolveMigratedDir(Path.Combine(CacheRoot, dirName), Path.Combine(DataRoot, dirName));
     }
 
+    /// <summary>
+    /// Settings file path. Linux prefers XDG config ($XDG_CONFIG_HOME/Kodo);
+    /// existing installs keep working via the historical data-root location
+    /// until the next save migrates them.
+    /// </summary>
+    public static string SettingsFilePath(string fileName = "kodosettings.json")
+    {
+        if (!OperatingSystem.IsLinux())
+            return Path.Combine(DataRoot, fileName);
+        var preferred = Path.Combine(ConfigRoot, fileName);
+        var legacy = Path.Combine(DataRoot, fileName);
+        if (FileSystemPaths.Equals(preferred, legacy) || File.Exists(preferred))
+            return preferred;
+        return legacy;
+    }
+
+    /// <summary>
+    /// Settings write path. Always the preferred location; creates it on demand.
+    /// </summary>
+    public static string SettingsWritePath(string fileName = "kodosettings.json")
+    {
+        var path = OperatingSystem.IsLinux()
+            ? Path.Combine(ConfigRoot, fileName)
+            : Path.Combine(DataRoot, fileName);
+        try { Directory.CreateDirectory(Path.GetDirectoryName(path)!); } catch { }
+        return path;
+    }
+
     private static string ResolveMigratedDir(string preferred, string legacy)
     {
         // Windows/macOS: keep historical locations (no migration churn).

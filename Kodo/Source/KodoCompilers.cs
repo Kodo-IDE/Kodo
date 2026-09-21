@@ -446,7 +446,7 @@ public partial class MainWindow
                 {
                     try
                     {
-                        foreach (var exeName in candidate.ExeNames)
+                        foreach (var exeName in GetPlatformExeNames(candidate))
                         {
                             if (candidate.MultiVersion)
                             {
@@ -567,6 +567,17 @@ public partial class MainWindow
         }
         catch { }
         return results;
+    }
+
+    private static IEnumerable<string> GetPlatformExeNames(
+        (string Id, string DisplayName, string Author, string[] ExeNames, string? CanonicalCompilerId, bool MultiVersion, string? VersionArg) candidate)
+    {
+        foreach (var n in candidate.ExeNames)
+            yield return n;
+        // Unix runtimes often only ship versioned/un-suffixed names that the
+        // Windows-style table doesn't list (e.g. distros with python3 but no python).
+        if (!OperatingSystem.IsWindows() && candidate.Id == "python-auto")
+            yield return "python3";
     }
 
     private static IEnumerable<string> CandidateProbes(string exeName)
@@ -1495,7 +1506,9 @@ public partial class MainWindow
             {
                 var at = string.IsNullOrWhiteSpace(installFolder) ? string.Empty : $" at {installFolder}";
                 ExtensionsStatusText = $"{compilerExtension.Name} still appears installed{at}. " +
-                    "Try Uninstall again, or remove it manually from Program Files.";
+                    (OperatingSystem.IsWindows()
+                        ? "Try Uninstall again, or remove it manually from Program Files."
+                        : "Try Uninstall again, or remove it manually (e.g. via your package manager).");
             }
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException || ex is FileNotFoundException || (ex is System.ComponentModel.Win32Exception win32 && win32.NativeErrorCode == 2))
@@ -1580,6 +1593,11 @@ public partial class MainWindow
 
     private static (string ExePath, string Arguments, string InstallFolder)? FindCompilerUninstaller(string compilerName)
     {
+        // System uninstallers (registry + unins*.exe) are a Windows concept.
+        // On Linux toolchains are package-manager-owned; just untrack them in Kodo.
+        if (!OperatingSystem.IsWindows())
+            return null;
+
         var registryCommand = FindWindowsUninstallCommand(compilerName);
         if (registryCommand is not null)
         {
@@ -2600,6 +2618,13 @@ public partial class MainWindow
         return expanded;
     }
 
+    private static bool IsExecutableAvailable(string exe)
+    {
+        if (string.IsNullOrWhiteSpace(exe)) return false;
+        if (Path.IsPathFullyQualified(exe)) return File.Exists(exe);
+        return TryFindOnPath(exe) is not null;
+    }
+
     private string? ResolveToolExecutable(string toolName)
     {
         if (string.IsNullOrWhiteSpace(toolName))
@@ -2736,10 +2761,11 @@ public partial class MainWindow
 
     private async Task ExecuteCurrentCommandAsync(bool isBuild, string? extraArgs)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
             await ShowWarningDialogAsync("Run / Build",
-                new InvalidOperationException("The terminal is only available on Windows."));
+                new InvalidOperationException("The terminal is only available on Windows and Linux."));
             return;
         }
 
@@ -2783,6 +2809,19 @@ public partial class MainWindow
             exe = resolvedExe;
             args = split.Arguments;
             toolLabel = Path.GetFileName(split.Exe);
+        }
+
+        // Fail fast with a clear message instead of opening an empty terminal.
+        // Covers .bat/.cmd scripts on Linux (cmd.exe doesn't exist there).
+        if (!IsExecutableAvailable(exe))
+        {
+            await ShowWarningDialogAsync("Run / Build",
+                new FileNotFoundException(
+                    $"Could not start '{exe}'. " +
+                    (OperatingSystem.IsWindows()
+                        ? "Make sure the tool is installed and on PATH."
+                        : $"'{Path.GetFileName(exe)}' was not found. Install it (e.g. via your package manager) and ensure it is on PATH.")));
+            return;
         }
 
         var workingDirectory = ResolveWorkingDirectory();
@@ -3059,8 +3098,10 @@ public partial class MainWindow
             ToolTip.SetTip(customItem, existingScript);
         else if (string.IsNullOrWhiteSpace(ext))
             ToolTip.SetTip(customItem, "Open a file with an extension to set a custom build script.");
-        else
+        else if (OperatingSystem.IsWindows())
             ToolTip.SetTip(customItem, "Pick a .bat, .cmd, .ps1, .sh or any executable to use for this file type.");
+        else
+            ToolTip.SetTip(customItem, "Pick a .sh, .ps1, .py or any executable to use for this file type (.bat/.cmd need Windows).");
         customItem.Click += async (_, _) => await PromptForCustomBuildScriptAsync(ext);
         menu.Items.Add(customItem);
 
@@ -3084,6 +3125,9 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(ext))
             return;
 
+        string[] scriptPatterns = OperatingSystem.IsWindows()
+            ? ["*.bat", "*.cmd", "*.ps1", "*.sh", "*.py", "*.exe", "*.bin", "*.command"]
+            : ["*.sh", "*.ps1", "*.py", "*.bin", "*.command"];
         var options = new Avalonia.Platform.Storage.FilePickerOpenOptions
         {
             Title = $"Select Custom Build Script for {ext}",
@@ -3092,7 +3136,7 @@ public partial class MainWindow
             [
                 new Avalonia.Platform.Storage.FilePickerFileType("Build Scripts")
                 {
-                    Patterns = ["*.bat", "*.cmd", "*.ps1", "*.sh", "*.py", "*.exe", "*.bin", "*.command"],
+                    Patterns = scriptPatterns,
                 },
                 new Avalonia.Platform.Storage.FilePickerFileType("All Files")
                 {
@@ -3436,9 +3480,10 @@ internal sealed class CompilerRunWindow : Window
 
     private void RunCommand()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
+            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            _statusText.Text = "Terminal is only available on Windows.";
+            _statusText.Text = "Terminal is only available on Windows and Linux.";
             return;
         }
 
@@ -3448,12 +3493,15 @@ internal sealed class CompilerRunWindow : Window
         _terminal.Start(_exePath, _arguments, _workingDirectory);
 
         var watchedHandle = _terminal.CurrentProcessHandle;
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         _terminal.SessionExited += OnSessionExited;
 
         void OnSessionExited(object? s, IntPtr exitedHandle)
         {
             _terminal.SessionExited -= OnSessionExited;
-            if (exitedHandle != watchedHandle)
+            // Unix PTY/pipe sessions report IntPtr.Zero; accept the first exit
+            // notification rather than matching a process handle.
+            if (isWindows && exitedHandle != watchedHandle)
                 return;
             Dispatcher.UIThread.Post(() =>
             {

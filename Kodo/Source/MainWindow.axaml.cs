@@ -4895,7 +4895,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
 
     private string SettingsFilePath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
+        KodoPaths.SettingsFilePath(SettingsFileName);
 
     private AppSettings LoadSettings()
     {
@@ -5044,12 +5044,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                var dir = Path.GetDirectoryName(SettingsFilePath);
+                // Writes always go to the preferred location, migrating Linux
+                // installs from the historical data-root path on first save.
+                var writePath = KodoPaths.SettingsWritePath(SettingsFileName);
+                var dir = Path.GetDirectoryName(writePath);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
 
-                var tempPath = SettingsFilePath + ".tmp";
+                var tempPath = writePath + ".tmp";
                 File.WriteAllText(tempPath, JsonSerializer.Serialize(toWrite));
-                File.Move(tempPath, SettingsFilePath, overwrite: true);
+                File.Move(tempPath, writePath, overwrite: true);
             }
             catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
         }

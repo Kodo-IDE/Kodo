@@ -185,7 +185,7 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
 
 public enum TerminalParseState { Ground, Escape, CsiEntry, CsiParam, CsiIgnore, OscString, OscStringEsc }
 
-public readonly record struct TermCell(char Char, Color? Fg, Color? Bg, bool Bold, bool Underline);
+public readonly record struct TermCell(string? Text, Color? Fg, Color? Bg, bool Bold, bool Underline);
 
 public sealed class TerminalSnapshot(
     TermCell[,] cells,

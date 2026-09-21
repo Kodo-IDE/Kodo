@@ -157,7 +157,7 @@ internal static class UpdateService
     {
         try
         {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "kodosettings.json");
+            var path = KodoPaths.SettingsFilePath("kodosettings.json");
             if (!File.Exists(path)) return fallback;
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return fallback;
@@ -698,7 +698,7 @@ internal static class AccentResolver
     {
         try
         {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
+            var path = KodoPaths.SettingsFilePath(SettingsFileName);
             if (!File.Exists(path)) return new AccentSettings();
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return new AccentSettings();
@@ -766,7 +766,7 @@ internal static class ThemeResolver
     {
         try
         {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", SettingsFileName);
+            var path = KodoPaths.SettingsFilePath(SettingsFileName);
             if (!File.Exists(path)) return new ThemeSettings();
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return new ThemeSettings();

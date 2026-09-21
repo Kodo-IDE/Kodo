@@ -3587,7 +3587,7 @@ internal static class LspInstallationManager
             }
             // Additional validation: ensure expected executable exists (or
             var foundExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
-                .FirstOrDefault(f => Path.GetFileName(f).Equals(Path.GetFileName(GetManagedExecutablePath(cfg, settings)), StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), Path.GetFileName(GetManagedExecutablePath(cfg, settings))));
             if (foundExe == null)
             {
                 // For zip that contains nested dir, and command not at top
@@ -4074,20 +4074,29 @@ internal static class LspRuntimeDetector
     {
         if (string.IsNullOrWhiteSpace(runtime)) return new(true, null, null, null);
         runtime = runtime.Trim().ToLowerInvariant();
-        string exe;
+        string[] exes;
         string args;
         switch (runtime)
         {
-            case "node": exe = "node"; args = "--version"; break;
-            case "npm": exe = "npm"; args = "--version"; break;
-            case "java": exe = "java"; args = "--version"; break;
-            case "dotnet": exe = "dotnet"; args = "--version"; break;
+            case "node": exes = ["node"]; args = "--version"; break;
+            case "npm": exes = ["npm"]; args = "--version"; break;
+            case "java": exes = ["java"]; args = "--version"; break;
+            case "dotnet": exes = ["dotnet"]; args = "--version"; break;
             case "powershell":
-            case "pwsh": exe = "pwsh"; args = "--version"; break;
-            case "python": exe = "python"; args = "--version"; break;
-            default: exe = runtime; args = "--version"; break;
+            case "pwsh": exes = ["pwsh"]; args = "--version"; break;
+            // Unix distros often ship only python3; venvs may only provide python.
+            // Try both so compiler ("python3") and LSP detection agree.
+            case "python": exes = OperatingSystem.IsWindows() ? ["python"] : ["python3", "python"]; args = "--version"; break;
+            default: exes = [runtime]; args = "--version"; break;
         }
-        var (found, output, error) = await TryRunAsync(exe, args, ct).ConfigureAwait(false);
+        string? output = null;
+        string? error = null;
+        var found = false;
+        foreach (var exe in exes)
+        {
+            (found, output, error) = await TryRunAsync(exe, args, ct).ConfigureAwait(false);
+            if (found) break;
+        }
         if (!found) return new(false, null, output, error ?? $"Runtime '{runtime}' not found on PATH. Install {runtime} to use this language server.");
         var version = ExtractVersion(output ?? "");
         if (!string.IsNullOrWhiteSpace(minVersion) && !string.IsNullOrWhiteSpace(version))

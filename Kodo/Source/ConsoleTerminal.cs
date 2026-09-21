@@ -70,6 +70,19 @@ public sealed class ConsoleTerminal : Control
     private Color _fg = DefaultFg, _bg = DefaultBg;
     private bool _bold, _underline, _reverse;
 
+    // Alternate screen (vim/top/less): separate grid without scrollback.
+    private TermCell[,]? _altCells;
+    private int _altCursorRow, _altCursorCol;
+    private bool _altActive;
+    // DECSTBM scroll region, 0-based inclusive. Defaults to the full grid.
+    private int _scrollTop, _scrollBottom = int.MaxValue;
+    // Saved cursor (CSI s/u, ESC 7/8) with attributes.
+    private int _savedRow, _savedCol;
+    private Color _savedFg = DefaultFg, _savedBg = DefaultBg;
+    private bool _savedBold, _savedUnderline, _savedReverse;
+    // Marker for the second cell of a double-width rune.
+    private const string WideContinuation = "\uFFFF";
+
     private static readonly Color SelectionBg = Color.FromArgb(120, 51, 153, 255);
     private bool _selecting;
     private (int Row, int Col)? _selStart;
@@ -262,22 +275,27 @@ public sealed class ConsoleTerminal : Control
                 : 0;
 
             var cts = _cts!;
-            _ = Task.Run(() => ReadOutputLoop(cts.Token), cts.Token);
+            var readerCts = cts.Token;
+            var readerStream = stream;
+            _ = Task.Run(() => ReadOutputLoop(readerCts, readerStream), readerCts);
             _ = Task.Run(async () =>
             {
+                var exited = false;
                 try
                 {
-                    while (!cts.Token.IsCancellationRequested)
+                    while (!readerCts.IsCancellationRequested)
                     {
-                        await Task.Delay(1000, cts.Token).ConfigureAwait(false);
-                        if (UnixPty.TryReap(childPid))
-                            break;
+                        await Task.Delay(1000, readerCts).ConfigureAwait(false);
+                        if (UnixPty.TryReap(childPid)) { exited = true; break; }
                     }
                 }
                 catch (OperationCanceledException) { }
                 catch { }
-                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
-            }, cts.Token);
+                // Only report natural exits. A canceled token means Stop() already
+                // handled teardown; posting here would clobber a replacement session.
+                if (exited && !readerCts.IsCancellationRequested)
+                    Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
+            }, readerCts);
             return true;
         }
         catch (Exception ex)
@@ -316,7 +334,7 @@ public sealed class ConsoleTerminal : Control
         {
             lock (_lock)
             {
-                foreach (var ch in notice) ProcessChar(ch);
+                foreach (var rune in notice.EnumerateRunes()) ProcessRune(rune);
             }
             Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
         }
@@ -399,12 +417,14 @@ public sealed class ConsoleTerminal : Control
                 lock (_lock)
                 {
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
-                        foreach (var ch in text) ProcessChar(ch);
+                        foreach (var rune in text.EnumerateRunes()) ProcessRune(rune);
                 }
                 Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
             }
         }
         catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
+        catch (InvalidOperationException) { }
         catch (Exception ex) { Console.WriteLine($"[ConPTY] Stderr drain: {ex.Message}"); }
     }
 
@@ -786,13 +806,13 @@ public sealed class ConsoleTerminal : Control
                     if (bg != DefaultBg)
                         ctx.FillRectangle(BrushCache.Get(bg), rect);
 
-                    if (cell.Char != '\0' && cell.Char != ' ')
+                    if (!string.IsNullOrEmpty(cell.Text) && cell.Text != " " && cell.Text != WideContinuation)
                     {
                         var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
                         var typeface = cell.Bold ? TypefaceBold : TypefaceNormal;
 
                         var ft = new FormattedText(
-                            cell.Char.ToString(),
+                            cell.Text,
                             System.Globalization.CultureInfo.InvariantCulture,
                             FlowDirection.LeftToRight,
                             typeface,
@@ -904,8 +924,9 @@ public sealed class ConsoleTerminal : Control
             var lineSb = new StringBuilder();
             for (var col = startCol; col < endCol; col++)
             {
-                var ch = GetAbsCell(row, col).Char;
-                lineSb.Append(ch == '\0' ? ' ' : ch);
+                var t = GetAbsCell(row, col).Text;
+                if (t == WideContinuation) continue;
+                lineSb.Append(string.IsNullOrEmpty(t) ? ' ' : t);
             }
             sb.Append(lineSb.ToString().TrimEnd());
             if (row < r1) sb.Append('\n');
@@ -988,8 +1009,9 @@ public sealed class ConsoleTerminal : Control
             var lineSb = new StringBuilder(lineLen);
             for (var col = 0; col < lineLen; col++)
             {
-                var ch = GetAbsCell(absRow, col).Char;
-                lineSb.Append(ch == '\0' ? ' ' : ch);
+                var t = GetAbsCell(absRow, col).Text;
+                if (t == WideContinuation) continue;
+                lineSb.Append(string.IsNullOrEmpty(t) ? ' ' : t);
             }
 
             var line = lineSb.ToString();
@@ -1049,80 +1071,116 @@ public sealed class ConsoleTerminal : Control
         }
     }
 
-    private async Task ReadOutputLoop(CancellationToken ct)
+    private async Task ReadOutputLoop(CancellationToken ct, Stream? stream = null)
     {
+        // Capture the stream up front: Stop() may clear/replace the field mid-read.
+        stream ??= _readStream;
+        if (stream is null) return;
         var buf = new byte[4096];
         try
         {
             while (!ct.IsCancellationRequested)
             {
-                var n = await _readStream!.ReadAsync(buf, 0, buf.Length, ct);
+                int n;
+                try
+                {
+                    n = await stream.ReadAsync(buf, 0, buf.Length, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) { break; }
+                catch (ObjectDisposedException) { break; }
+                catch (IOException) when (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !HasLiveProcess)
+                {
+                    // Linux PTY master reads surface child exit as EIO; pipes report
+                    // EOF the same way. Either is a normal exit, not an error.
+                    break;
+                }
                 if (n <= 0) break;
                 var text = Encoding.UTF8.GetString(buf, 0, n);
                 lock (_lock)
                 {
                     if (Environment.TickCount64 >= _suppressOutputUntilTick)
-                        foreach (var ch in text) ProcessChar(ch);
+                        foreach (var rune in text.EnumerateRunes()) ProcessRune(rune);
                 }
                 Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
             }
         }
         catch (OperationCanceledException) { }
+        catch (ObjectDisposedException) { }
         catch (Exception ex) { Console.WriteLine($"[ConPTY] ReadOutputLoop: {ex.Message}"); }
     }
 
-    private void ProcessChar(char ch)
+    private void ProcessRune(System.Text.Rune rune)
     {
+        // Control characters are single-codepoint ASCII; everything else is text.
+        if (rune.Value < 0x20 || rune.Value == 0x7F)
+        {
+            var ch = (char)rune.Value;
+            if (_parseState == TerminalParseState.OscString)
+            {
+                if (ch == '\x07') { HandleOscComplete(); _parseState = TerminalParseState.Ground; }
+                else if (ch == '\x1B') _parseState = TerminalParseState.OscStringEsc;
+                return;
+            }
+            if (_parseState != TerminalParseState.Ground)
+            {
+                // ESC inside a sequence aborts back to Escape state.
+                if (ch == '\x1B') _parseState = TerminalParseState.Escape;
+                return;
+            }
+            switch (ch)
+            {
+                case '\x1B': _parseState = TerminalParseState.Escape; break;
+                case '\r': _cursorCol = 0; break;
+                case '\n': LineFeed(); break;
+                case '\b': if (_cursorCol > 0) _cursorCol--; break;
+                case '\t': _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
+                case '\a': break;
+                case '\x0E': break;
+                case '\x0F': break;
+                default: break;
+            }
+            return;
+        }
+
         switch (_parseState)
         {
             case TerminalParseState.Ground:
-                switch (ch)
-                {
-                    case '\x1B': _parseState = TerminalParseState.Escape; break;
-                    case '\r': _cursorCol = 0; break;
-                    case '\n': LineFeed(); break;
-                    case '\b': if (_cursorCol > 0) _cursorCol--; break;
-                    case '\t': _cursorCol = Math.Min(_cols - 1, (_cursorCol / 8 + 1) * 8); break;
-                    case '\a': break;
-                    case '\x0E': break;
-                    case '\x0F': break;
-                    default:
-                        if (ch >= ' ')
-                        {
-                            SetCell(_cursorRow, _cursorCol, ch);
-                            _cursorCol++;
-                            if (_cursorCol >= _cols) { _cursorCol = 0; LineFeed(); }
-                        }
-                        break;
-                }
+                PutRune(rune);
                 break;
 
             case TerminalParseState.Escape:
-                switch (ch)
+                if (rune.Value > 0x7E)
+                {
+                    _parseState = TerminalParseState.Ground;
+                    break;
+                }
+                switch ((char)rune.Value)
                 {
                     case '[': _csiParam.Clear(); _parseState = TerminalParseState.CsiEntry; break;
                     case ']': _oscBuf.Clear(); _parseState = TerminalParseState.OscString; break;
                     case 'M': ReverseLineFeed(); _parseState = TerminalParseState.Ground; break;
                     case 'c': ResetTerminal(); _parseState = TerminalParseState.Ground; break;
+                    case '7': SaveCursor(); _parseState = TerminalParseState.Ground; break;
+                    case '8': RestoreCursor(); _parseState = TerminalParseState.Ground; break;
                     default: _parseState = TerminalParseState.Ground; break;
                 }
                 break;
 
             case TerminalParseState.CsiEntry:
             case TerminalParseState.CsiParam:
-                if (ch == '?' || ch == '>' || ch == '!')
+                if (rune.Value is '?' or '>' or '!')
                 {
-                    _csiParam.Append(ch);
+                    _csiParam.Append((char)rune.Value);
                     _parseState = TerminalParseState.CsiParam;
                 }
-                else if (ch >= '0' && ch <= '9' || ch == ';')
+                else if (rune.Value is >= '0' and <= '9' or ';')
                 {
-                    _csiParam.Append(ch);
+                    _csiParam.Append((char)rune.Value);
                     _parseState = TerminalParseState.CsiParam;
                 }
-                else if (ch >= 0x40 && ch <= 0x7E)
+                else if (rune.Value is >= 0x40 and <= 0x7E)
                 {
-                    DispatchCsi(ch, _csiParam.ToString());
+                    DispatchCsi((char)rune.Value, _csiParam.ToString());
                     _parseState = TerminalParseState.Ground;
                 }
                 else
@@ -1132,17 +1190,17 @@ public sealed class ConsoleTerminal : Control
                 break;
 
             case TerminalParseState.CsiIgnore:
-                if (ch >= 0x40 && ch <= 0x7E) _parseState = TerminalParseState.Ground;
+                if (rune.Value is >= 0x40 and <= 0x7E) _parseState = TerminalParseState.Ground;
                 break;
 
             case TerminalParseState.OscString:
-                if (ch == '\x07' || ch == '\x9C') { HandleOscComplete(); _parseState = TerminalParseState.Ground; }
-                else if (ch == '\x1B') _parseState = TerminalParseState.OscStringEsc;
-                else _oscBuf.Append(ch);
+                if (rune.Value is '\x07' or '\x9C') { HandleOscComplete(); _parseState = TerminalParseState.Ground; }
+                else if (rune.Value == '\x1B') _parseState = TerminalParseState.OscStringEsc;
+                else _oscBuf.Append(rune.ToString());
                 break;
 
             case TerminalParseState.OscStringEsc:
-                if (ch == '\\') HandleOscComplete();
+                if (rune.Value == '\\') HandleOscComplete();
                 _parseState = TerminalParseState.Ground;
                 break;
         }
@@ -1205,13 +1263,38 @@ public sealed class ConsoleTerminal : Control
             case 'm': ApplySgr(nums); break;
 
             case 'h':
-                if (priv && P0(0) == 25) _cursorVisible = true;
-                else if (priv && P0(0) == 2004) _bracketedPasteMode = true;
+                if (!priv) break;
+                foreach (var q in nums)
+                {
+                    switch (q)
+                    {
+                        case 25: _cursorVisible = true; break;
+                        case 2004: _bracketedPasteMode = true; break;
+                        case 1047: EnterAltScreen(saveCursor: false); break;
+                        case 1048: SaveCursor(); break;
+                        case 1049: EnterAltScreen(saveCursor: true); break;
+                    }
+                }
                 break;
             case 'l':
-                if (priv && P0(0) == 25) _cursorVisible = false;
-                else if (priv && P0(0) == 2004) _bracketedPasteMode = false;
+                if (!priv) break;
+                foreach (var q in nums)
+                {
+                    switch (q)
+                    {
+                        case 25: _cursorVisible = false; break;
+                        case 2004: _bracketedPasteMode = false; break;
+                        case 1047: ExitAltScreen(restoreCursor: false); break;
+                        case 1048: RestoreCursor(); break;
+                        case 1049: ExitAltScreen(restoreCursor: true); break;
+                    }
+                }
                 break;
+            case 'r':
+                if (!priv) SetScrollRegion(P(0, 1), nums.Count > 1 ? P(1, _rows) : _rows);
+                break;
+            case 's': SaveCursor(); break;
+            case 'u': RestoreCursor(); break;
 
             case 'L': InsertLines(P(0)); break;
             case 'M': DeleteLines(P(0)); break;
@@ -1258,45 +1341,223 @@ public sealed class ConsoleTerminal : Control
     }
 
     private void ResetAttrs() { _fg = DefaultFg; _bg = DefaultBg; _bold = false; _underline = false; _reverse = false; }
-    private void ResetTerminal() { ResetAttrs(); _cursorRow = 0; _cursorCol = 0; ClearAllCells(); }
+    private void ResetTerminal()
+    {
+        ResetAttrs();
+        if (_altActive) ExitAltScreen(restoreCursor: false);
+        ResetScrollRegion();
+        _cursorRow = 0; _cursorCol = 0;
+        ClearAllCells();
+    }
 
-    private void SetCell(int r, int c, char ch)
+    private void SetCell(int r, int c, string text)
     {
         if (r < 0 || r >= _rows || c < 0 || c >= _cols) return;
         var fg = _reverse ? _bg : _fg;
         var bg = _reverse ? _fg : _bg;
-        _cells[r, c] = new TermCell(ch, fg, bg, _bold, _underline);
+        _cells[r, c] = new TermCell(text, fg, bg, _bold, _underline);
+    }
+
+    private void PutRune(System.Text.Rune rune)
+    {
+        var category = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(rune.Value);
+        if (category == System.Globalization.UnicodeCategory.NonSpacingMark ||
+            category == System.Globalization.UnicodeCategory.SpacingCombiningMark ||
+            category == System.Globalization.UnicodeCategory.EnclosingMark)
+        {
+            // Combining mark: merge into the previous cell instead of advancing.
+            if (_cursorCol > 0)
+            {
+                var prev = _cells[_cursorRow, _cursorCol - 1];
+                if (!string.IsNullOrEmpty(prev.Text) && prev.Text != WideContinuation)
+                    _cells[_cursorRow, _cursorCol - 1] = prev with { Text = prev.Text + rune.ToString() };
+            }
+            return;
+        }
+        var text = rune.ToString();
+        if (IsWideRune(rune))
+        {
+            if (_cursorCol >= _cols - 1)
+            {
+                _cursorCol = 0;
+                LineFeed();
+            }
+            SetCell(_cursorRow, _cursorCol, text);
+            if (_cursorCol + 1 < _cols)
+                SetCell(_cursorRow, _cursorCol + 1, WideContinuation);
+            _cursorCol += 2;
+            if (_cursorCol >= _cols) { _cursorCol = 0; LineFeed(); }
+            return;
+        }
+        SetCell(_cursorRow, _cursorCol, text);
+        _cursorCol++;
+        if (_cursorCol >= _cols) { _cursorCol = 0; LineFeed(); }
+    }
+
+    private static bool IsWideRune(System.Text.Rune rune)
+    {
+        var v = rune.Value;
+        return (v >= 0x1100 && v <= 0x115F)
+            || (v >= 0x2E80 && v <= 0xA4CF)
+            || (v >= 0xAC00 && v <= 0xD7A3)
+            || (v >= 0xF900 && v <= 0xFAFF)
+            || (v >= 0xFE30 && v <= 0xFE4F)
+            || (v >= 0xFF00 && v <= 0xFF60)
+            || (v >= 0xFFE0 && v <= 0xFFE6)
+            || (v >= 0x1F000 && v <= 0x1FAFF)
+            || (v >= 0x20000 && v <= 0x3FFFD);
+    }
+
+    private int RegionBottom => Math.Min(_scrollBottom, _rows - 1);
+    private bool HasScrollRegion => _scrollTop > 0 || RegionBottom < _rows - 1;
+
+    private void ResetScrollRegion() { _scrollTop = 0; _scrollBottom = int.MaxValue; }
+
+    private void SetScrollRegion(int top1Based, int bottom1Based)
+    {
+        var top = Math.Clamp(top1Based - 1, 0, _rows - 1);
+        var bottom = bottom1Based <= 0 ? _rows - 1 : Math.Clamp(bottom1Based - 1, 0, _rows - 1);
+        if (top >= bottom) { ResetScrollRegion(); return; }
+        _scrollTop = top;
+        _scrollBottom = bottom;
+        _cursorRow = top;
+        _cursorCol = 0;
+    }
+
+    private void SaveCursor()
+    {
+        _savedRow = _cursorRow; _savedCol = _cursorCol;
+        _savedFg = _fg; _savedBg = _bg;
+        _savedBold = _bold; _savedUnderline = _underline; _savedReverse = _reverse;
+    }
+
+    private void RestoreCursor()
+    {
+        _cursorRow = Math.Clamp(_savedRow, 0, _rows - 1);
+        _cursorCol = Math.Clamp(_savedCol, 0, _cols - 1);
+        _fg = _savedFg; _bg = _savedBg;
+        _bold = _savedBold; _underline = _savedUnderline; _reverse = _savedReverse;
+    }
+
+    private void EnterAltScreen(bool saveCursor)
+    {
+        if (saveCursor) SaveCursor();
+        if (!_altActive)
+        {
+            _altCells = _cells;
+            _altCursorRow = _cursorRow; _altCursorCol = _cursorCol;
+            _cells = new TermCell[_rows, _cols];
+            _cursorRow = 0; _cursorCol = 0;
+            _scrollOffset = 0;
+            _altActive = true;
+        }
+        ResetScrollRegion();
+    }
+
+    private void ExitAltScreen(bool restoreCursor)
+    {
+        if (_altActive)
+        {
+            if (_altCells is not null)
+            {
+                var restored = new TermCell[_rows, _cols];
+                var copyR = Math.Min(_rows, _altCells.GetLength(0));
+                var copyC = Math.Min(_cols, _altCells.GetLength(1));
+                for (var r = 0; r < copyR; r++)
+                    for (var c = 0; c < copyC; c++)
+                        restored[r, c] = _altCells[r, c];
+                _cells = restored;
+                _cursorRow = Math.Clamp(_altCursorRow, 0, _rows - 1);
+                _cursorCol = Math.Clamp(_altCursorCol, 0, _cols - 1);
+            }
+            _altCells = null;
+            _altActive = false;
+            _scrollOffset = 0;
+        }
+        if (restoreCursor) RestoreCursor();
+        ResetScrollRegion();
     }
 
     private void LineFeed()
     {
+        var bottom = RegionBottom;
+        if (_cursorRow < bottom) { _cursorRow++; return; }
+        if (_cursorRow == bottom)
+        {
+            if (!HasScrollRegion) ScrollUp(1);
+            else ScrollRegionUp(1);
+            return;
+        }
         _cursorRow++;
         if (_cursorRow >= _rows) { ScrollUp(1); _cursorRow = _rows - 1; }
     }
 
     private void ReverseLineFeed()
     {
+        if (_cursorRow > _scrollTop) { _cursorRow--; return; }
+        if (_cursorRow == _scrollTop)
+        {
+            if (!HasScrollRegion) { ScrollDown(1); }
+            else ScrollRegionDown(1);
+            return;
+        }
         _cursorRow--;
         if (_cursorRow < 0) { ScrollDown(1); _cursorRow = 0; }
     }
 
+    private void ScrollRegionUp(int n)
+    {
+        var top = _scrollTop;
+        var bottom = RegionBottom;
+        n = Math.Clamp(n, 0, bottom - top + 1);
+        for (var r = top; r <= bottom - n; r++)
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r + n, c];
+        for (var r = Math.Max(top, bottom - n + 1); r <= bottom; r++)
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = default;
+    }
+
+    private void ScrollRegionDown(int n)
+    {
+        var top = _scrollTop;
+        var bottom = RegionBottom;
+        n = Math.Clamp(n, 0, bottom - top + 1);
+        for (var r = bottom; r >= top + n; r--)
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = _cells[r - n, c];
+        for (var r = top; r < top + n && r <= bottom; r++)
+            for (var c = 0; c < _cols; c++)
+                _cells[r, c] = default;
+    }
+
     private void ScrollUp(int n)
     {
-        n = Math.Clamp(n, 0, _rows);
-        for (var r = 0; r < n; r++)
+        var top = _scrollTop;
+        var bottom = RegionBottom;
+        if (top != 0 || bottom != _rows - 1)
         {
-            var row = new TermCell[_cols];
-            for (var c = 0; c < _cols; c++) row[c] = _cells[r, c];
-            _scrollback.Add(row);
+            ScrollRegionUp(n);
+            return;
         }
-        if (_scrollOffset > 0)
-            _scrollOffset += n;
+        n = Math.Clamp(n, 0, _rows);
+        if (!_altActive)
+        {
+            for (var r = 0; r < n; r++)
+            {
+                var row = new TermCell[_cols];
+                for (var c = 0; c < _cols; c++) row[c] = _cells[r, c];
+                _scrollback.Add(row);
+            }
+            if (_scrollOffset > 0)
+                _scrollOffset += n;
 
-        var trimmed = _scrollback.Count > MaxScrollbackLines ? _scrollback.Count - MaxScrollbackLines : 0;
-        if (trimmed > 0)
-            _scrollback.RemoveRange(0, trimmed);
+            var trimmed = _scrollback.Count > MaxScrollbackLines ? _scrollback.Count - MaxScrollbackLines : 0;
+            if (trimmed > 0)
+                _scrollback.RemoveRange(0, trimmed);
 
-        _scrollOffset = Math.Clamp(_scrollOffset - trimmed, 0, _scrollback.Count);
+            _scrollOffset = Math.Clamp(_scrollOffset - trimmed, 0, _scrollback.Count);
+        }
 
         for (var r = 0; r < _rows - n; r++)
             for (var c = 0; c < _cols; c++)
@@ -1308,6 +1569,13 @@ public sealed class ConsoleTerminal : Control
 
     private void ScrollDown(int n)
     {
+        var top = _scrollTop;
+        var bottom = RegionBottom;
+        if (top != 0 || bottom != _rows - 1)
+        {
+            ScrollRegionDown(n);
+            return;
+        }
         n = Math.Clamp(n, 0, _rows);
         for (var r = _rows - 1; r >= n; r--)
             for (var c = 0; c < _cols; c++)
@@ -1704,6 +1972,7 @@ public static class TerminalShellSupport
             AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
             AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");
             AddShell("fish", "Fish", ResolveExecutable("fish"), "-i");
+            AddShell("powershell", "PowerShell", ResolveExecutable("pwsh"), "-NoLogo");
             AddShell("sh", "Shell", ResolveExecutable("sh"), "-i");
         }
 
