@@ -997,7 +997,7 @@ public partial class MainWindow
         string? path;
         lock (_lspPendingLock) { path = _pendingLspChangePath; _pendingLspChangePath = null; }
         if (string.IsNullOrWhiteSpace(path) || EditorTextBox?.Document is null) return;
-        if (!string.Equals(path, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+        if (!FileSystemPaths.Equals(path, _currentFilePath))
         {
             lock (_lspOpenLock) _lspPendingEdits.Remove(NormalizeFilePath(path));
             return;
@@ -2394,7 +2394,7 @@ public partial class MainWindow
                 }
                 var fresh = await Dispatcher.UIThread.InvokeAsync<(string Text, int Caret, string? Path)?>(() =>
                 {
-                    if (EditorTextBox?.Document is null || !string.Equals(_currentFilePath, filePath, StringComparison.OrdinalIgnoreCase)) return null;
+                    if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath)) return null;
                     return (EditorTextBox.Document.Text, EditorTextBox.TextArea.Caret.Offset, _currentFilePath);
                 });
                 if (fresh is null || string.IsNullOrWhiteSpace(fresh.Value.Path)) return false;

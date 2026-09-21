@@ -831,9 +831,11 @@ public partial class MainWindow
         return _searchFileCache.Value;
     }
 
-    private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null)
+    private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null, int depth = 0)
     {
         visited ??= new HashSet<string>(FileSystemPaths.Comparer);
+        // Symlink-heavy projects can otherwise recurse forever (a -> b -> a).
+        if (depth > 64) return;
         try
         {
             var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
@@ -843,7 +845,17 @@ public partial class MainWindow
             foreach (var dir in Directory.GetDirectories(root))
             {
                 if (ignoreRules.ShouldSkipDirectory(dir)) continue;
-                EnumerateProjectFiles(dir, files, ignoreRules, visited);
+                // Resolve symlinks so differently-spelled paths to the same directory
+                // share one visited entry. Broken links resolve to null and are skipped.
+                try
+                {
+                    var real = new DirectoryInfo(dir).ResolveLinkTarget(returnFinalTarget: true)?.FullName
+                        ?? Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar);
+                    if (!visited.Add(real))
+                        continue;
+                }
+                catch { continue; }
+                EnumerateProjectFiles(dir, files, ignoreRules, visited, depth + 1);
             }
             foreach (var file in Directory.GetFiles(root))
             {

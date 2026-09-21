@@ -385,7 +385,10 @@ public partial class MainWindow
 
     private static string ComputeStablePathId(string path)
     {
-        var normalized = Path.GetFullPath(path).ToLowerInvariant();
+        // Windows paths are case-insensitive; Linux/macOS paths are case-sensitive
+        // (lowercasing would collide /Home/User/Tool with /home/user/tool).
+        var full = Path.GetFullPath(path);
+        var normalized = OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
         var hashBytes = System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
         return Convert.ToHexString(hashBytes)[..12];
     }
@@ -568,18 +571,22 @@ public partial class MainWindow
 
     private static IEnumerable<string> CandidateProbes(string exeName)
     {
-        yield return exeName;
         if (OperatingSystem.IsWindows())
         {
+            yield return exeName;
             if (!exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
                 yield return exeName + ".exe";
         }
         else
         {
-            if (exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            // Unix: probe the extensionless name first. The candidate table uses
+            // Windows-style ".exe" names; a literal "gcc.exe" almost never exists
+            // on Linux, so prefer the stripped name to avoid wasted stats.
+            if (exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                exeName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
+                exeName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
                 yield return exeName[..^4];
-            if (exeName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) || exeName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
-                yield return exeName[..^4];
+            yield return exeName;
         }
     }
 

@@ -1688,12 +1688,44 @@ public static class TerminalShellSupport
         }
         else
         {
+            // Prefer $SHELL: it reflects the user's login shell (bash/zsh/fish/...).
+            // Added first so it wins the default slot; AddShell dedupes by path.
+            var loginShell = Environment.GetEnvironmentVariable("SHELL");
+            if (!string.IsNullOrWhiteSpace(loginShell))
+            {
+                var baseName = Path.GetFileName(loginShell.Trim()).ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(baseName))
+                {
+                    var id = baseName is "bash" or "zsh" or "sh" or "fish" ? baseName : baseName;
+                    var display = char.ToUpperInvariant(baseName[0]) + baseName[1..];
+                    AddShell(id, display, ResolveExecutable(loginShell.Trim(), loginShell.Trim()), "-i");
+                }
+            }
             AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
             AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");
+            AddShell("fish", "Fish", ResolveExecutable("fish"), "-i");
             AddShell("sh", "Shell", ResolveExecutable("sh"), "-i");
         }
 
         return shells;
+    }
+
+    /// <summary>
+    /// Default shell id for fresh profiles: $SHELL basename on Unix, powershell on Windows.
+    /// </summary>
+    public static string GetDefaultShellId()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var loginShell = Environment.GetEnvironmentVariable("SHELL");
+            if (!string.IsNullOrWhiteSpace(loginShell))
+            {
+                var baseName = Path.GetFileName(loginShell.Trim()).ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(baseName))
+                    return baseName;
+            }
+        }
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "powershell" : "bash";
     }
 
     private static string? ResolveExecutable(string fileName, params string[] fallbacks)
@@ -1741,8 +1773,8 @@ public static class TerminalShellSupport
     public static string GetClearCommandForShell(string shellId) =>
         shellId switch
         {
-            "bash" or "zsh" or "sh" => "clear\r",
-            _ => "cls\r"
+            "bash" or "zsh" or "sh" or "fish" => "clear\r",
+            _ => RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "cls\r" : "clear\r"
         };
 
     public static double NormalizeTerminalPanelHeight(double value) =>

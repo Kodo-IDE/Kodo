@@ -28,6 +28,72 @@ internal static class KodoPaths
         Path.Combine(DataRoot, "PluginCache"),
         Path.Combine(LegacyDataRoot, "PluginCache"));
 
+    /// <summary>
+    /// XDG config root. Linux: $XDG_CONFIG_HOME/Kodo or ~/.config/Kodo.
+    /// Other platforms keep the historical data-root location to avoid migration churn.
+    /// </summary>
+    public static string ConfigRoot
+    {
+        get
+        {
+            if (!OperatingSystem.IsLinux())
+                return DataRoot;
+            var baseDir = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+            if (string.IsNullOrWhiteSpace(baseDir))
+                baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+            return Path.Combine(baseDir, "Kodo");
+        }
+    }
+
+    /// <summary>
+    /// XDG cache root. Linux: $XDG_CACHE_HOME/Kodo or ~/.cache/Kodo.
+    /// Other platforms keep the historical data-root location.
+    /// </summary>
+    public static string CacheRoot
+    {
+        get
+        {
+            if (!OperatingSystem.IsLinux())
+                return DataRoot;
+            var baseDir = Environment.GetEnvironmentVariable("XDG_CACHE_HOME");
+            if (string.IsNullOrWhiteSpace(baseDir))
+                baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache");
+            return Path.Combine(baseDir, "Kodo");
+        }
+    }
+
+    /// <summary>
+    /// Cache file with legacy fallback: prefers XDG cache, migrates from the
+    /// historical data-root location when present.
+    /// </summary>
+    public static string CacheFile(string fileName)
+    {
+        if (!OperatingSystem.IsLinux())
+            return Path.Combine(DataRoot, fileName);
+        var preferred = Path.Combine(CacheRoot, fileName);
+        var legacy = Path.Combine(DataRoot, fileName);
+        if (FileSystemPaths.Equals(preferred, legacy) || File.Exists(preferred))
+            return preferred;
+        if (File.Exists(legacy))
+        {
+            try
+            {
+                Directory.CreateDirectory(CacheRoot);
+                File.Copy(legacy, preferred, overwrite: false);
+                return preferred;
+            }
+            catch { return legacy; }
+        }
+        return preferred;
+    }
+
+    public static string CacheDir(string dirName)
+    {
+        if (!OperatingSystem.IsLinux())
+            return Path.Combine(DataRoot, dirName);
+        return ResolveMigratedDir(Path.Combine(CacheRoot, dirName), Path.Combine(DataRoot, dirName));
+    }
+
     private static string ResolveMigratedDir(string preferred, string legacy)
     {
         // Windows/macOS: keep historical locations (no migration churn).
@@ -435,7 +501,7 @@ internal static class KodoDiagnostics
     }
 
     private static readonly object _logWriteLock = new();
-    private static readonly Dictionary<string, FileStream> _logStreams = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, FileStream> _logStreams = new(FileSystemPaths.Comparer);
 
     private static void WritePayloadToDisk(string payload, string primaryPath)
     {

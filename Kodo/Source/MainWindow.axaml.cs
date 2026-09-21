@@ -286,22 +286,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static DateTime _gitHubRateLimitResetUtc = DateTime.MinValue;
     private static DateTime _gitHubRateLimitBackoffUntilUtc = DateTime.MinValue;
     private static readonly TimeSpan IconDiskCacheTtl = TimeSpan.FromDays(7);
-    private static string IconDiskCacheDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "IconCache");
+    private static string IconDiskCacheDir => KodoPaths.CacheDir("IconCache");
     private static readonly TimeSpan ExtensionsRefreshCooldown = TimeSpan.FromSeconds(8);
     private string MarketplaceIndexCachePath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json");
+        KodoPaths.CacheFile("marketplace-index.json");
     private string MarketplaceIndexETagPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "marketplace-index.json.etag");
+        KodoPaths.CacheFile("marketplace-index.json.etag");
     private string? _marketplaceIndexETag;
     private string CompilerIndexCachePath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json");
+        KodoPaths.CacheFile("compiler-index.json");
     private string CompilerIndexETagPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "compiler-index.json.etag");
+        KodoPaths.CacheFile("compiler-index.json.etag");
     private string? _compilerIndexETag;
     private string PluginsIndexCachePath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "plugins-index.json");
+        KodoPaths.CacheFile("plugins-index.json");
     private string PluginsIndexETagPath =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "plugins-index.json.etag");
+        KodoPaths.CacheFile("plugins-index.json.etag");
     private string? _pluginsIndexETag;
     private List<CompilerIndexEntry> _compilerIndexEntries = [];
     private List<MarketplaceExtension> _pluginsIndexEntries = [];
@@ -5325,10 +5325,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     AvailableTerminalShells.Clear();
                     foreach (var shell in shells)
                         AvailableTerminalShells.Add(shell);
+                    var platformDefaultId = TerminalShellSupport.GetDefaultShellId();
                     SelectedTerminalShell = AvailableTerminalShells.FirstOrDefault(s =>
                             string.Equals(s.Id, preferred, StringComparison.OrdinalIgnoreCase))
                         ?? AvailableTerminalShells.FirstOrDefault(s =>
-                            string.Equals(s.Id, "powershell", StringComparison.OrdinalIgnoreCase))
+                            string.Equals(s.Id, platformDefaultId, StringComparison.OrdinalIgnoreCase))
                         ?? AvailableTerminalShells.FirstOrDefault();
                 });
             }
@@ -5639,10 +5640,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         foreach (var shell in TerminalShellSupport.DetectTerminalShells(_isPSReadLinePredictionEnabled))
             AvailableTerminalShells.Add(shell);
 
+        var platformDefaultId = TerminalShellSupport.GetDefaultShellId();
         SelectedTerminalShell = AvailableTerminalShells.FirstOrDefault(shell =>
             string.Equals(shell.Id, preferredShellId, StringComparison.OrdinalIgnoreCase))
             ?? AvailableTerminalShells.FirstOrDefault(shell =>
-                string.Equals(shell.Id, "powershell", StringComparison.OrdinalIgnoreCase))
+                string.Equals(shell.Id, platformDefaultId, StringComparison.OrdinalIgnoreCase))
             ?? AvailableTerminalShells.FirstOrDefault();
     }
 
