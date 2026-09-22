@@ -222,7 +222,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Width = 140,
             Text = $"{initialColor.R}, {initialColor.G}, {initialColor.B}",
             Foreground = TextBrush,
-            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"),
+            FontFamily = KodoFonts.MonoFamily,
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -231,7 +231,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Width = 72,
             Text = FormatHex(initialColor, hasAlpha),
             Foreground = TextBrush,
-            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"),
+            FontFamily = KodoFonts.MonoFamily,
             FontSize = 12,
             VerticalAlignment = VerticalAlignment.Center,
         };

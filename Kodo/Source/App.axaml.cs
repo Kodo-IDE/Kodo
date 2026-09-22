@@ -121,7 +121,6 @@ public partial class App : Application
 
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
-                // Single scheduler in Kodo owns discovery. Even when background
                 var bg = UpdateService.IsAutoUpdateInBackgroundEnabledInSettings();
                 await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
             }
@@ -152,7 +151,6 @@ public partial class App : Application
         {
             try
             {
-                // Clean stale staging/transactions from previous interrupted updates
                 UpdateService.CleanupStaleArtifacts();
                 await Task.Delay(TimeSpan.FromSeconds(3));
                 CheckForUpdatesInBackground();
@@ -399,7 +397,7 @@ public partial class App : Application
             {
                 Text = source,
                 FontSize = 12,
-                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = KodoFonts.MonoFamily,
                 Foreground = new SolidColorBrush(KodoTokenBlue),
             },
         };
@@ -408,7 +406,7 @@ public partial class App : Application
         {
             Text = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
             FontSize = 11,
-            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+            FontFamily = KodoFonts.MonoFamily,
             Foreground = new SolidColorBrush(KodoTextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
@@ -417,7 +415,7 @@ public partial class App : Application
         {
             Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
             FontSize = 12,
-            FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+            FontFamily = KodoFonts.MonoFamily,
             Foreground = new SolidColorBrush(KodoTokenOrange),
             TextWrapping = TextWrapping.Wrap,
         };

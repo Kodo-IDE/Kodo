@@ -1044,7 +1044,6 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
-        // Philosophy 1: only render what user can see. For large files, skip off-screen lines.
         if (document.TextLength > 30_000)
         {
             var tv = CurrentContext.TextView;

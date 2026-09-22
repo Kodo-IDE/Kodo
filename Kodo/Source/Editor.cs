@@ -44,10 +44,8 @@ public partial class MainWindow
     {
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
-        // For large LSP files, throttle insight to avoid lag - LSP provides diagnostics
         if (hasLsp && len > 80_000)
         {
-            // Increase interval and skip dead-code/insight completion for huge files
             _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(len > 120_000 ? 2000 : 1200);
         }
         else
@@ -62,7 +60,6 @@ public partial class MainWindow
     {
         _InsightRefreshTimer.Stop();
         if (!IsActive) return;
-        // 02 Do Less: skip insight entirely for huge files already handled by LSP throttling
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         if (len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
         await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
@@ -71,7 +68,7 @@ public partial class MainWindow
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
-        if (!IsActive) return; // 02 Do Less: not visible when window inactive
+        if (!IsActive) return;
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
             WordCountText = string.Empty;
@@ -524,7 +521,6 @@ public partial class MainWindow
         _insightAnalysisCancellation.Dispose();
         _insightAnalysisCancellation = new CancellationTokenSource();
         HideDiagnosticPopup();
-        // Adaptive debounce: huge LSP files get longer debounce to avoid UI churn
         var curLen = EditorTextBox?.Document?.TextLength ?? 0;
         if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
         else if (curLen > 80_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
@@ -768,14 +764,11 @@ public partial class MainWindow
     private void SyntaxHighlightDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _syntaxHighlightDebounceTimer.Stop();
-        if (!IsActive) return; // 01 Editor Comes First: no need to recolor when not visible
+        if (!IsActive) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
-        // For very large LSP files, skip heavy colorizers and throttle redraws
         if (len > 80_000)
         {
-            // Rainbow brackets already no-ops for large files, but avoid churning layers
             _rainbowBracketColorizer.InvalidateCache();
-            // Only redraw background (indent guides) if not LSP-dominated
             var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
             if (!hasLsp)
             {
@@ -785,7 +778,6 @@ public partial class MainWindow
             }
             else if (len > 120_000)
             {
-                // Huge LSP file: defer background redraw
                 return;
             }
             EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
@@ -1213,7 +1205,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         }
 
         var doc = EditorTextBox.Document;
-        // Avoid lag on large files – completion uses heavy ScanDocument.
         if (doc.TextLength > 80_000)
         {
             CloseCompletionWindow();
@@ -1271,7 +1262,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         List<InsightSuggestion> suggestions;
         if (isLspPrimaryForCompletion)
         {
-            // LSP is actually running – suppress Insight's regex/semantic
             suggestions = new List<InsightSuggestion>();
             KodoDiagnostics.LogDebug($"Insight completion skipped (LSP primary for {lspForFile?.Id})");
         }
@@ -1284,7 +1274,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             });
         }
 
-        // LSP completions (generic, Phase 7) – always tried when LSP
         try
         {
             var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix);
@@ -1363,7 +1352,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             return;
         }
 
-        // Avoid immense lag on large files (>80k) – dead code scan is O(n) regex heavy.
         if (EditorTextBox.Document.TextLength > 80_000)
         {
             ClearDeadCodeHighlighting();
@@ -1743,7 +1731,6 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                 return;
 
             var lines = GetSelectedLines(doc, segment.Offset, segment.EndOffset);
-            // Remove exactly one indent level per line, from bottom to top to keep offsets stable
             var totalRemoved = 0;
             foreach (var line in lines.OrderByDescending(l => l.Offset))
             {
@@ -1755,7 +1742,6 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                 totalRemoved += removable;
             }
 
-            // Keep caret at start of original selection, but ensure it stays within doc bounds
             var newCaretOffset = Math.Clamp(segment.Offset, 0, doc.TextLength);
             SetCaretOffsetSafely(caret, doc, newCaretOffset);
         }

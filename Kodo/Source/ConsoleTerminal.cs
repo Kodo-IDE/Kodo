@@ -70,17 +70,13 @@ public sealed class ConsoleTerminal : Control
     private Color _fg = DefaultFg, _bg = DefaultBg;
     private bool _bold, _underline, _reverse;
 
-    // Alternate screen (vim/top/less): separate grid without scrollback.
     private TermCell[,]? _altCells;
     private int _altCursorRow, _altCursorCol;
     private bool _altActive;
-    // DECSTBM scroll region, 0-based inclusive. Defaults to the full grid.
     private int _scrollTop, _scrollBottom = int.MaxValue;
-    // Saved cursor (CSI s/u, ESC 7/8) with attributes.
     private int _savedRow, _savedCol;
     private Color _savedFg = DefaultFg, _savedBg = DefaultBg;
     private bool _savedBold, _savedUnderline, _savedReverse;
-    // Marker for the second cell of a double-width rune.
     private const string WideContinuation = "\uFFFF";
 
     private static readonly Color SelectionBg = Color.FromArgb(120, 51, 153, 255);
@@ -110,6 +106,7 @@ public sealed class ConsoleTerminal : Control
     private Stream? _writeStream;
     private Stream? _readStream;
     private CancellationTokenSource? _cts;
+    private TerminalProcessHandle? _attached;
 
     private long _suppressOutputUntilTick;
 
@@ -138,7 +135,9 @@ public sealed class ConsoleTerminal : Control
         DetachedFromVisualTree += (_, _) => _blinkTimer.Stop();
     }
 
-    public event EventHandler<IntPtr>? SessionExited;
+    public event EventHandler<TerminalProcessHandle>? SessionExited;
+
+    public event EventHandler<TerminalProcessHandle>? DetachedSessionExited;
 
     public event EventHandler<string>? TitleChanged;
 
@@ -153,20 +152,16 @@ public sealed class ConsoleTerminal : Control
     public void Start(string shellPath, string arguments, string workingDirectory,
                       bool suppressOutputUntilRestored = false)
     {
-        // Windows uses ConPTY below; Linux uses a real Unix PTY with pipe fallback.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Windows: use ConPTY (setup continues below)
         }
         else if (OperatingSystem.IsLinux())
         {
-            // Linux: real PTY first (vim/nano/top/job control/stty), pipe fallback if PTY unavailable.
             Stop();
             _cts = new CancellationTokenSource();
             if (StartUnixPty(shellPath, arguments, workingDirectory, suppressOutputUntilRestored))
                 return;
             StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
-            // Fallback is deliberately obvious: pipes can't support fullscreen apps or job control.
             WriteFallbackNotice();
             return;
         }
@@ -216,17 +211,23 @@ public sealed class ConsoleTerminal : Control
                 ? Environment.TickCount64 + 500
                 : 0;
 
-            _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
+            var attached = BindAttached(isUnixPty: false);
+            var winCts = _cts.Token;
+            _ = Task.Run(() => ReadOutputLoop(winCts, _readStream), winCts);
 
             var watchedHandle = _hProcess;
             _ = Task.Run(() =>
             {
                 NativeConPty.WaitForSingleObject(watchedHandle, 0xFFFFFFFF);
-                Dispatcher.UIThread.Post(() =>
+                if (!winCts.IsCancellationRequested)
                 {
-                    SessionExited?.Invoke(this, watchedHandle);
-                });
-            }, _cts.Token);
+                    attached.Exited = true;
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        SessionExited?.Invoke(this, attached);
+                    });
+                }
+            }, winCts);
         }
         catch (Exception ex)
         {
@@ -274,6 +275,7 @@ public sealed class ConsoleTerminal : Control
                 ? Environment.TickCount64 + 500
                 : 0;
 
+            var attached = BindAttached(isUnixPty: true);
             var cts = _cts!;
             var readerCts = cts.Token;
             var readerStream = stream;
@@ -291,10 +293,11 @@ public sealed class ConsoleTerminal : Control
                 }
                 catch (OperationCanceledException) { }
                 catch { }
-                // Only report natural exits. A canceled token means Stop() already
-                // handled teardown; posting here would clobber a replacement session.
                 if (exited && !readerCts.IsCancellationRequested)
-                    Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
+                {
+                    attached.Exited = true;
+                    Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, attached));
+                }
             }, readerCts);
             return true;
         }
@@ -312,8 +315,6 @@ public sealed class ConsoleTerminal : Control
         _unixChildPid = -1;
         _unixMasterFd = -1;
         if (pid <= 0) return;
-        // SIGTERM the whole process group first (bash -> python etc.), escalate to
-        // SIGKILL after a grace period so stubborn processes can't survive.
         try { UnixPty.KillGroup(pid, force: false); } catch { }
         _ = Task.Run(async () =>
         {
@@ -340,6 +341,215 @@ public sealed class ConsoleTerminal : Control
         }
         catch { }
         Console.WriteLine("[PTY] Running in limited pipe fallback mode.");
+    }
+
+    public TerminalProcessHandle? ActiveHandle => _attached;
+
+    private TerminalProcessHandle BindAttached(bool isUnixPty)
+    {
+        var handle = new TerminalProcessHandle
+        {
+            ReadStream = _readStream,
+            WriteStream = _writeStream,
+            UnixMasterFd = _unixMasterFd,
+            UnixChildPid = _unixChildPid,
+            PipeProcess = _unixProcess,
+            HPcon = _hPcon,
+            HProcess = _hProcess,
+            HThread = _hThread,
+            IsUnixPty = isUnixPty,
+        };
+        _attached = handle;
+        return handle;
+    }
+
+    public static bool IsHandleAlive(TerminalProcessHandle? handle)
+    {
+        if (handle is null || handle.Exited) return false;
+        if (handle.UnixChildPid > 0) return UnixPty.IsAlive(handle.UnixChildPid);
+        if (handle.PipeProcess is { } proc)
+        {
+            try { return !proc.HasExited; } catch { return false; }
+        }
+        return handle.HProcess != IntPtr.Zero;
+    }
+
+    public TerminalProcessHandle? Detach()
+    {
+        var handle = _attached;
+        if (handle is null && _readStream is null && _writeStream is null &&
+            _unixProcess is null && _hPcon == IntPtr.Zero && _unixChildPid <= 0)
+            return null;
+
+        handle ??= BindAttached(isUnixPty: _unixChildPid > 0);
+        _cts?.Cancel();
+        _cts = null;
+        _readStream = null;
+        _writeStream = null;
+        _unixProcess = null;
+        _unixMasterFd = -1;
+        _unixChildPid = -1;
+        _hPcon = IntPtr.Zero;
+        _hProcess = IntPtr.Zero;
+        _hThread = IntPtr.Zero;
+        _attached = null;
+
+        var watcherCts = new CancellationTokenSource();
+        handle.WatcherCts = watcherCts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!watcherCts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(2000, watcherCts.Token).ConfigureAwait(false);
+                    if (handle.UnixChildPid > 0 && UnixPty.TryReap(handle.UnixChildPid))
+                    {
+                        handle.Exited = true;
+                        break;
+                    }
+                    if (!IsHandleAlive(handle))
+                    {
+                        handle.Exited = true;
+                        break;
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch { }
+            if (handle.Exited && !watcherCts.Token.IsCancellationRequested)
+            {
+                var exited = handle;
+                Dispatcher.UIThread.Post(() => DetachedSessionExited?.Invoke(this, exited));
+            }
+        }, watcherCts.Token);
+        return handle;
+    }
+
+    public bool Attach(TerminalProcessHandle handle, bool suppressOutput = false)
+    {
+        if (handle is null || handle.Exited || !IsHandleAlive(handle))
+            return false;
+        try { handle.WatcherCts?.Cancel(); } catch { }
+        handle.WatcherCts = null;
+
+        if (_attached is not null)
+            DestroyAttached();
+
+        _readStream = handle.ReadStream;
+        _writeStream = handle.WriteStream;
+        _unixMasterFd = handle.UnixMasterFd;
+        _unixChildPid = handle.UnixChildPid;
+        _unixProcess = handle.PipeProcess;
+        _hPcon = handle.HPcon;
+        _hProcess = handle.HProcess;
+        _hThread = handle.HThread;
+        _attached = handle;
+        _cts = new CancellationTokenSource();
+
+        _suppressOutputUntilTick = suppressOutput ? Environment.TickCount64 + 500 : 0;
+
+        if (_readStream is null) return true;
+        var cts = _cts.Token;
+        var stream = _readStream;
+        _ = Task.Run(() => ReadOutputLoop(cts, stream), cts);
+        if (handle.IsUnixPty)
+        {
+            var childPid = handle.UnixChildPid;
+            _ = Task.Run(async () =>
+            {
+                var exited = false;
+                try
+                {
+                    while (!cts.IsCancellationRequested)
+                    {
+                        await Task.Delay(1000, cts).ConfigureAwait(false);
+                        if (UnixPty.TryReap(childPid)) { exited = true; break; }
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch { }
+                if (exited && !cts.IsCancellationRequested)
+                {
+                    handle.Exited = true;
+                    Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
+                }
+            }, cts);
+        }
+        else if (handle.PipeProcess is { } proc)
+        {
+            _ = Task.Run(() => DrainUnixStderrLoop(proc, cts), cts);
+            proc.Exited += (_, _) =>
+            {
+                if (cts.IsCancellationRequested) return;
+                handle.Exited = true;
+                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
+            };
+        }
+        return true;
+    }
+
+    public void DestroyHandle(TerminalProcessHandle? handle)
+    {
+        if (handle is null) return;
+        try { handle.WatcherCts?.Cancel(); } catch { }
+        handle.WatcherCts = null;
+        handle.Exited = true;
+        if (handle.UnixChildPid > 0)
+        {
+            try { UnixPty.KillGroup(handle.UnixChildPid, force: false); } catch { }
+            var pid = handle.UnixChildPid;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(1500).ConfigureAwait(false);
+                    if (!UnixPty.TryReap(pid))
+                        UnixPty.KillGroup(pid, force: true);
+                }
+                catch { }
+            });
+        }
+        try { handle.PipeProcess?.Kill(entireProcessTree: true); } catch { }
+        try { handle.PipeProcess?.Dispose(); } catch { }
+        handle.PipeProcess = null;
+        var read = handle.ReadStream;
+        var write = handle.WriteStream;
+        handle.ReadStream = null;
+        handle.WriteStream = null;
+        try { write?.Dispose(); } catch { }
+        if (!ReferenceEquals(read, write))
+        {
+            try { read?.Dispose(); } catch { }
+        }
+        handle.UnixMasterFd = -1;
+        handle.UnixChildPid = -1;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            if (handle.HPcon != IntPtr.Zero)
+            {
+                try { NativeConPty.ClosePseudoConsole(handle.HPcon); } catch { }
+                handle.HPcon = IntPtr.Zero;
+            }
+            if (handle.HProcess != IntPtr.Zero) { try { NativeConPty.CloseHandle(handle.HProcess); } catch { } handle.HProcess = IntPtr.Zero; }
+            if (handle.HThread != IntPtr.Zero) { try { NativeConPty.CloseHandle(handle.HThread); } catch { } handle.HThread = IntPtr.Zero; }
+        }
+        else
+        {
+            handle.HPcon = IntPtr.Zero;
+            handle.HProcess = IntPtr.Zero;
+            handle.HThread = IntPtr.Zero;
+        }
+        if (ReferenceEquals(_attached, handle))
+            _attached = null;
+    }
+
+    private void DestroyAttached()
+    {
+        var handle = _attached;
+        _attached = null;
+        if (handle is not null)
+            DestroyHandle(handle);
     }
 
     private void StartUnixShell(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)
@@ -377,7 +587,6 @@ public sealed class ConsoleTerminal : Control
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
-            // Ensure a sane TERM for ANSI colors when no PTY sets one.
             psi.Environment["TERM"] = psi.Environment.TryGetValue("TERM", out var term) && !string.IsNullOrWhiteSpace(term) ? term : "xterm-256color";
 
             var proc = new System.Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -390,12 +599,16 @@ public sealed class ConsoleTerminal : Control
                 ? Environment.TickCount64 + 500
                 : 0;
 
-            _ = Task.Run(() => ReadOutputLoop(_cts.Token), _cts.Token);
-            _ = Task.Run(() => DrainUnixStderrLoop(proc, _cts.Token), _cts.Token);
+            var attached = BindAttached(isUnixPty: false);
+            var pipeCts = _cts.Token;
+            _ = Task.Run(() => ReadOutputLoop(pipeCts, _readStream), pipeCts);
+            _ = Task.Run(() => DrainUnixStderrLoop(proc, pipeCts), pipeCts);
 
             proc.Exited += (_, _) =>
             {
-                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, IntPtr.Zero));
+                if (pipeCts.IsCancellationRequested) return;
+                attached.Exited = true;
+                Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, attached));
             };
         }
         catch (Exception ex)
@@ -433,47 +646,15 @@ public sealed class ConsoleTerminal : Control
         _suppressOutputUntilTick = 0;
         _cts?.Cancel();
         _cts = null;
-
-        // PTY and pipe streams share disposal safety: dispose once if same instance.
-        var writeStream = _writeStream;
-        var readStream = _readStream;
+        DestroyAttached();
         _writeStream = null;
         _readStream = null;
-        try { writeStream?.Dispose(); } catch { }
-        if (!ReferenceEquals(readStream, writeStream))
-        {
-            try { readStream?.Dispose(); } catch { }
-        }
-
-        // Unix PTY child cleanup.
-        var ptyPid = _unixChildPid;
-        _unixChildPid = -1;
-        _unixMasterFd = -1;
-        if (ptyPid > 0)
-        {
-            try { UnixPty.Kill(ptyPid); } catch { }
-        }
-
-        try { _unixProcess?.Kill(entireProcessTree: true); } catch { }
-        try { _unixProcess?.Dispose(); } catch { }
         _unixProcess = null;
-
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            if (_hPcon != IntPtr.Zero)
-            {
-                NativeConPty.ClosePseudoConsole(_hPcon);
-                _hPcon = IntPtr.Zero;
-            }
-            if (_hProcess != IntPtr.Zero) { NativeConPty.CloseHandle(_hProcess); _hProcess = IntPtr.Zero; }
-            if (_hThread != IntPtr.Zero) { NativeConPty.CloseHandle(_hThread); _hThread = IntPtr.Zero; }
-        }
-        else
-        {
-            _hPcon = IntPtr.Zero;
-            _hProcess = IntPtr.Zero;
-            _hThread = IntPtr.Zero;
-        }
+        _unixMasterFd = -1;
+        _unixChildPid = -1;
+        _hPcon = IntPtr.Zero;
+        _hProcess = IntPtr.Zero;
+        _hThread = IntPtr.Zero;
     }
 
     public void Resize(int cols, int rows)
@@ -485,18 +666,14 @@ public sealed class ConsoleTerminal : Control
         ResizeCells(rows, cols);
         _scrollOffset = 0;
 
-        // Forward resize to the underlying process: ConPTY on Windows,
-        // TIOCSWINSZ + SIGWINCH on Unix PTY. Pipe fallback tracks the grid only.
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            // Windows: ConPTY handles the resize natively.
             if (_hPcon != IntPtr.Zero)
                 NativeConPty.ResizePseudoConsole(_hPcon,
                     new NativeConPty.COORD { X = (short)cols, Y = (short)rows });
         }
         else if (_unixMasterFd >= 0 && _unixChildPid > 0)
         {
-            // Real Unix PTY: update kernel winsize and notify the foreground process group.
             try { UnixPty.Resize(_unixMasterFd, _unixChildPid, cols, rows); } catch { }
         }
     }
@@ -534,11 +711,14 @@ public sealed class ConsoleTerminal : Control
         lock (_lock)
         {
             var cells = (TermCell[,])_cells.Clone();
+            var altCells = _altActive && _altCells is not null ? (TermCell[,])_altCells.Clone() : null;
             return new TerminalSnapshot(
                 cells, _rows, _cols,
                 _cursorRow, _cursorCol, _cursorVisible,
                 _fg, _bg, _bold, _underline, _reverse,
-                _parseState, _csiParam.ToString());
+                _parseState, _csiParam.ToString(),
+                _altActive, altCells, _altCursorRow, _altCursorCol,
+                _scrollTop, _scrollBottom, _savedRow, _savedCol);
         }
     }
 
@@ -565,6 +745,14 @@ public sealed class ConsoleTerminal : Control
             _parseState = snap.ParseState;
             _csiParam.Clear();
             _csiParam.Append(snap.CsiParam);
+            _altActive = snap.AltActive;
+            _altCells = snap.AltCells is not null ? (TermCell[,])snap.AltCells.Clone() : null;
+            _altCursorRow = Math.Min(snap.AltCursorRow, _rows - 1);
+            _altCursorCol = Math.Min(snap.AltCursorCol, _cols - 1);
+            _scrollTop = Math.Clamp(snap.ScrollTop, 0, _rows - 1);
+            _scrollBottom = snap.ScrollBottom;
+            _savedRow = Math.Clamp(snap.SavedRow, 0, _rows - 1);
+            _savedCol = Math.Clamp(snap.SavedCol, 0, _cols - 1);
             _scrollOffset = 0;
         }
         InvalidateVisual();
@@ -1073,7 +1261,6 @@ public sealed class ConsoleTerminal : Control
 
     private async Task ReadOutputLoop(CancellationToken ct, Stream? stream = null)
     {
-        // Capture the stream up front: Stop() may clear/replace the field mid-read.
         stream ??= _readStream;
         if (stream is null) return;
         var buf = new byte[4096];
@@ -1090,8 +1277,6 @@ public sealed class ConsoleTerminal : Control
                 catch (ObjectDisposedException) { break; }
                 catch (IOException) when (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !HasLiveProcess)
                 {
-                    // Linux PTY master reads surface child exit as EIO; pipes report
-                    // EOF the same way. Either is a normal exit, not an error.
                     break;
                 }
                 if (n <= 0) break;
@@ -1111,7 +1296,6 @@ public sealed class ConsoleTerminal : Control
 
     private void ProcessRune(System.Text.Rune rune)
     {
-        // Control characters are single-codepoint ASCII; everything else is text.
         if (rune.Value < 0x20 || rune.Value == 0x7F)
         {
             var ch = (char)rune.Value;
@@ -1123,7 +1307,6 @@ public sealed class ConsoleTerminal : Control
             }
             if (_parseState != TerminalParseState.Ground)
             {
-                // ESC inside a sequence aborts back to Escape state.
                 if (ch == '\x1B') _parseState = TerminalParseState.Escape;
                 return;
             }
@@ -1365,7 +1548,6 @@ public sealed class ConsoleTerminal : Control
             category == System.Globalization.UnicodeCategory.SpacingCombiningMark ||
             category == System.Globalization.UnicodeCategory.EnclosingMark)
         {
-            // Combining mark: merge into the previous cell instead of advancing.
             if (_cursorCol > 0)
             {
                 var prev = _cells[_cursorRow, _cursorCol - 1];
@@ -1956,8 +2138,6 @@ public static class TerminalShellSupport
         }
         else
         {
-            // Prefer $SHELL: it reflects the user's login shell (bash/zsh/fish/...).
-            // Added first so it wins the default slot; AddShell dedupes by path.
             var loginShell = Environment.GetEnvironmentVariable("SHELL");
             if (!string.IsNullOrWhiteSpace(loginShell))
             {
@@ -1979,9 +2159,6 @@ public static class TerminalShellSupport
         return shells;
     }
 
-    /// <summary>
-    /// Default shell id for fresh profiles: $SHELL basename on Unix, powershell on Windows.
-    /// </summary>
     public static string GetDefaultShellId()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))

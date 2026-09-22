@@ -1148,7 +1148,6 @@ public partial class MainWindow
         if (arch.Length == 0 && item.TryGetProperty("architectures", out var archsEl) && archsEl.ValueKind == JsonValueKind.Array)
             arch = archsEl.EnumerateArray().Select(e => e.GetString() ?? string.Empty).Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
 
-        // Phase 2: optional payload checksum ("sha256", "checksum", "sha256Checksum").
         string? sha256 = null;
         foreach (var key in new[] { "sha256", "checksum", "sha256Checksum" })
         {
@@ -1198,7 +1197,7 @@ public partial class MainWindow
         }
         if (ext.Arch.Length > 0)
         {
-            var currentArch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant(); // x64, arm64, ...
+            var currentArch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
             var match = false;
             var hasKnown = false;
             foreach (var token in ext.Arch)
@@ -1329,7 +1328,6 @@ public partial class MainWindow
             return;
         }
 
-        // Phase 1 Linux: respect optional os/arch gating from the index.
         if (!IsCompatibleWithCurrentOS(marketplaceExtension))
         {
             ExtensionsStatusText = $"{marketplaceExtension.Name} is not available for this OS/arch and was skipped.";
@@ -1382,7 +1380,6 @@ public partial class MainWindow
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
 
-            // Dependencies are handled exclusively through extension downloads
             if (marketplaceExtension.Dependencies.Length > 0)
             {
                 foreach (var depId in marketplaceExtension.Dependencies)
@@ -1395,7 +1392,6 @@ public partial class MainWindow
                 }
             }
 
-            // Ensure LSP dependencies for this extension (handles multiple
             var installedExt = GetPreferredLoadedExtension(marketplaceExtension.Id);
             if (installedExt != null && installedExt.HasLsp)
             {
@@ -1427,12 +1423,9 @@ public partial class MainWindow
         {
             try
             {
-                // Register as consumer for shared provider tracking
                 LspProviderRegistry.RegisterConsumer(cfg.EffectiveProviderId, installed.Id);
                 var res = await LspServerResolver.ResolveAsync(cfg, lspSettings, installed.Id).ConfigureAwait(false);
-                // Update statuses
                 installed.LspProviderStatuses[cfg.EffectiveProviderId] = (res.ToDependencyStatus(), res.Error);
-                // Aggregate status
                 installed.LspStatus = res.ToDependencyStatus();
                 installed.LspStatusMessage = res.Error;
                 LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, res.ToDependencyStatus(), res.Error, res.Version, res.ExecutablePath, res.Source == LspServerSource.Managed);
@@ -1440,10 +1433,9 @@ public partial class MainWindow
                 if (res.IsReady)
                 {
                     KodoDiagnostics.LogDebug($"LSP dependency ready for {installed.Id} provider {cfg.EffectiveProviderId} source={res.Source}");
-                    continue; // already available
+                    continue;
                 }
 
-                // Incompatible also considered not ready – try managed install
                 if (res.Source == LspServerSource.Incompatible)
                 {
                     if (res.CanInstall && cfg.AllowAutoInstall)
@@ -1544,7 +1536,6 @@ public partial class MainWindow
                 ExtensionsStatusText = $"LSP check failed for {cfg.EffectiveProviderId}: {ex.Message}";
             }
         }
-        // Keep extension installed even if LSP failed – do NOT uninstall
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
     }
 
@@ -1560,7 +1551,6 @@ public partial class MainWindow
         }
         using var ms = new MemoryStream(packageBytes, writable: false);
         using var archive = new ZipArchive(ms, ZipArchiveMode.Read, leaveOpen: false);
-        // Phase 1 Linux: match the loader's case-insensitive manifest lookup.
         var manifestEntry = archive.GetEntry("manifest.json")
             ?? archive.Entries.FirstOrDefault(e => string.Equals(e.Name, "manifest.json", StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidDataException($"Downloaded package for {marketplaceExtension.Name} is missing manifest.json.");
@@ -1698,7 +1688,6 @@ public partial class MainWindow
 
         try
         {
-            // Capture provider IDs before removal for registry check
             var providerIds = extension.AllLspConfigurations.Select(c => c.EffectiveProviderId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
             var resolvedPath = Path.GetFullPath(extension.SourcePath);
@@ -1722,7 +1711,6 @@ public partial class MainWindow
 
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
 
-            // Update provider registry: remove this extension as consumer,
             foreach (var pid in providerIds)
             {
                 LspProviderRegistry.UnregisterConsumer(pid, extension.Id);
@@ -1732,9 +1720,7 @@ public partial class MainWindow
                 }
                 else
                 {
-                    // No other consumers – prefer keeping unused provider rather
                     KodoDiagnostics.LogDebug($"LSP provider '{pid}' now has no consumers but is kept (no auto-cleanup).");
-                    // Do NOT auto-delete managed installation; user can clean via
                 }
             }
             LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);

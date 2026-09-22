@@ -1,5 +1,4 @@
 // Licensed under GPL-v3.0
-// One-shot update orchestrator. transaction path + Kodo PID, then exits.
 
 using System.Diagnostics;
 using System.Text.Json;
@@ -16,7 +15,6 @@ internal static class Program
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    // Phase 0 Linux: updater temp binary keeps .exe on Windows, extensionless elsewhere.
     private static string UpdaterTempFileName =>
         OperatingSystem.IsWindows() ? "KodoUpdater-temp.exe" : "KodoUpdater-temp";
 
@@ -31,7 +29,6 @@ internal static class Program
     {
         Log($"KodoUpdater start args=[{string.Join(" ", args)}] pid={Environment.ProcessId}");
 
-        // Self-relocation: if running from {app} (Program Files\Kodo),
         try
         {
             var selfPath = Environment.ProcessPath;
@@ -39,7 +36,6 @@ internal static class Program
             {
                 var appDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
                 var selfDir = Path.GetDirectoryName(Path.GetFullPath(selfPath))?.TrimEnd(Path.DirectorySeparatorChar) ?? "";
-                // If self is inside appDir (or Program Files\Kodo on Windows) and not
                 var isInApp = selfDir.Equals(appDir, PathComparison)
                     || selfDir.EndsWith("Kodo", PathComparison);
                 var updateTempDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
@@ -51,7 +47,6 @@ internal static class Program
                     try
                     {
                         Directory.CreateDirectory(Path.GetDirectoryName(tempCopy)!);
-                        // Only copy if not already running from temp or if newer
                         File.Copy(selfPath, tempCopy, overwrite: true);
                         Log($"Relocating self to temp: {selfPath} -> {tempCopy}");
                         var psi = new ProcessStartInfo { FileName = tempCopy, UseShellExecute = false, CreateNoWindow = true };
@@ -72,9 +67,7 @@ internal static class Program
             return 2;
         }
 
-        // Support both quoted and unquoted path (Kodo may pass via
         var transactionPath = args[0].Trim().Trim('"');
-        // If Kodo passed extra args (legacy), join them
         if (args.Length > 1)
             transactionPath = string.Join(" ", args).Trim().Trim('"');
 
@@ -139,8 +132,6 @@ internal static class Program
             return 6;
         }
 
-        // Verify transaction file is inside expected update dir (anti-hijack).
-        // Separator-aware: /path/update-malicious must not match /path/update.
         var expectedDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
         try
         {
@@ -160,13 +151,11 @@ internal static class Program
 
         Log($"Transaction {tx.TransactionId} pid={tx.KodoPid} installer={tx.InstallerPath} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
 
-        // 2. Wait for exact Kodo PID to exit
         if (tx.KodoPid > 0)
         {
             try
             {
                 var proc = Process.GetProcessById(tx.KodoPid);
-                // Extra guard: PID reuse – if exe path mismatches, original Kodo
                 bool pidReused = false;
                 try
                 {
@@ -191,7 +180,6 @@ internal static class Program
                 else if (!proc.HasExited)
                 {
                     Log($"Waiting for Kodo PID {tx.KodoPid} to exit (timeout {PidWaitTimeoutSeconds}s)...");
-                    // WaitForExit with timeout, polling HasExited to handle PID
                     var sw = Stopwatch.StartNew();
                     while (!proc.HasExited && sw.Elapsed.TotalSeconds < PidWaitTimeoutSeconds)
                     {
@@ -226,7 +214,6 @@ internal static class Program
             Log("No Kodo PID supplied – not waiting");
         }
 
-        // Small settle delay – let OS release file locks, no arbitrary
         await Task.Delay(800).ConfigureAwait(false);
 
         if (!File.Exists(tx.InstallerPath))
@@ -244,10 +231,19 @@ internal static class Program
             return 9;
         }
 
-        // Optional: if transaction carries Sha256, validate (future
+        if (tx.ExpectedSize > 0 && fi.Length != tx.ExpectedSize)
+        {
+            Log($"Installer size mismatch: expected {tx.ExpectedSize} bytes, found {fi.Length}: {tx.InstallerPath}");
+            TryDelete(transactionPath);
+            return 9;
+        }
 
-        // Platform separation: Windows uses Inno Setup; Linux is manual/notify-only
-        // (.deb/.AppImage/tarball require user steps). Never run Inno flags on Unix.
+        if (!string.IsNullOrWhiteSpace(tx.Sha256) && !VerifyFileSha256(tx.InstallerPath, tx.Sha256))
+        {
+            Log($"Installer checksum mismatch for {tx.InstallerPath} – not launching, keeping files for diagnostics");
+            return 9;
+        }
+
         if (OperatingSystem.IsLinux())
         {
             Log($"Linux manual update: staged={tx.InstallerPath}. " + LinuxManualBlurb(tx.InstallerPath));
@@ -261,13 +257,12 @@ internal static class Program
             return 0;
         }
 
-        // 4. Launch Inno installer (Windows only)
         Log($"Launching installer: {tx.InstallerPath}");
         var psi = new ProcessStartInfo
         {
             FileName = tx.InstallerPath,
             Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS",
-            UseShellExecute = true, // allow UAC prompt
+            UseShellExecute = true,
             WorkingDirectory = Path.GetDirectoryName(tx.InstallerPath) ?? Path.GetTempPath(),
         };
 
@@ -309,17 +304,13 @@ internal static class Program
 
         Log($"Installer exited with code {installerProc.ExitCode}");
 
-        // 5. Determine success – Inno returns 0 on success
         if (installerProc.ExitCode != 0)
         {
             Log($"Installer failed with exit code {installerProc.ExitCode} – not restarting Kodo, keeping transaction for diagnostics");
-            // Keep transaction + installer for manual retry; do not delete
             return installerProc.ExitCode;
         }
 
-        // 6. Cleanup transaction
         TryDelete(transactionPath);
-        // Optionally delete installer staging file if inside our staging
         TryDeleteIfInStaging(tx.InstallerPath);
 
         if (tx.RestartAfterUpdate)
@@ -390,6 +381,26 @@ internal static class Program
             || path.StartsWith(directory + sep, PathComparison);
     }
 
+    private static bool VerifyFileSha256(string path, string expectedHex)
+    {
+        try
+        {
+            using var fs = File.OpenRead(path);
+            using var hasher = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+                hasher.AppendData(buffer, 0, read);
+            var actual = Convert.ToHexString(hasher.GetCurrentHash()).ToLowerInvariant();
+            return string.Equals(actual, expectedHex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            Log($"Checksum validation failed: {ex.Message}");
+            return false;
+        }
+    }
+
     private static string SanitizeForMutex(string s)
     {
         if (string.IsNullOrWhiteSpace(s)) return "default";
@@ -427,5 +438,8 @@ internal sealed record UpdateTransaction(
     int KodoPid,
     bool RestartAfterUpdate,
     DateTime CreatedAtUtc,
-    string Version
+    string Version,
+    string? Sha256 = null,
+    long ExpectedSize = 0,
+    string? AssetName = null
 );

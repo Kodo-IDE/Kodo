@@ -5,18 +5,10 @@ using System.Runtime.InteropServices;
 
 namespace Kodo;
 
-/// <summary>
-/// Real Unix pseudo-terminal support (Linux/macOS).
-/// Uses posix_openpt/grantpt/unlockpt + fork/setsid/dup2/exec so the child shell
-/// gets a controlling terminal. This enables vim/nano/top/htop/less, job control,
-/// and terminal modes that break on pipe-redirected stdin/stdout/stderr.
-/// Resize is propagated via TIOCSWINSZ + SIGWINCH.
-/// Windows never calls this class (ConPTY is used there instead).
-/// </summary>
 internal static class UnixPty
 {
     private const int O_RDWR = 2;
-    private const int O_NOCTTY = 0x100; // 0400 octal
+    private const int O_NOCTTY = 0x100;
     private const ulong TIOCSWINSZ = 0x5414;
     private const ulong TIOCSCTTY = 0x540E;
     private const int SIGWINCH = 28;
@@ -109,7 +101,6 @@ internal static class UnixPty
 
                 SetWinsize(master, cols, rows);
 
-                // Build argv BEFORE fork so the child only reads already-allocated memory.
                 var argvList = BuildArgv(shellPath, arguments);
                 var argvPtrs = new List<IntPtr>(argvList.Count + 1);
                 try
@@ -132,7 +123,6 @@ internal static class UnixPty
 
                         if (pid == 0)
                         {
-                            // ---- Child: must only use async-signal-safe operations ----
                             try
                             {
                                 setsid();
@@ -155,10 +145,9 @@ internal static class UnixPty
                             }
                             catch { _exit(127); }
                             _exit(127);
-                            return false; // unreachable
+                            return false;
                         }
 
-                        // ---- Parent ----
                         masterFd = master;
                         childPid = pid;
                         return true;
@@ -220,11 +209,10 @@ internal static class UnixPty
         if (pid <= 0) return false;
         try
         {
-            // kill(pid, 0) checks existence without sending a signal.
             var r = kill(pid, 0);
             if (r == 0) return true;
             var err = Marshal.GetLastWin32Error();
-            return err == 1; // EPERM: process exists but we lack permission
+            return err == 1;
         }
         catch { return false; }
     }
@@ -246,15 +234,10 @@ internal static class UnixPty
         try { kill(pid, SIGTERM); } catch { }
     }
 
-    /// <summary>
-    /// Terminate the entire process group (child was started via setsid so its
-    /// PID == PGID). Prevents grandchildren (e.g. bash -> python) surviving.
-    /// </summary>
     public static void KillGroup(int pid, bool force = false)
     {
         if (pid <= 0) return;
         try { kill(-pid, force ? SIGKILL : SIGTERM); } catch { }
-        // Also signal the leader directly in case group kill is restricted.
         try { kill(pid, force ? SIGKILL : SIGTERM); } catch { }
     }
 

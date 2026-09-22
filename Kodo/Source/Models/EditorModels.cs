@@ -254,7 +254,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         var docVersion = document.TextLength ^ document.LineCount ^ TabSize;
         if (docVersion != _cachedVersion || document.LineCount != _cachedLineCount)
         {
-            // Keep cache size bounded: only keep visible range + lookaround margin
             if (_depthCache.Count > 400)
                 _depthCache.Clear();
             _cachedVersion = docVersion;
@@ -509,7 +508,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public IReadOnlyList<ErrorSpan> Spans => _spans;
 
-    // Keep diagnostics on the background layer so multiple extension
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<ErrorSpan> spans)
@@ -541,7 +539,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             }
         }
         if (messages is null) return null;
-        // Keep hover text compact and predictable when several extensions
         return string.Join(Environment.NewLine, messages
             .GroupBy(message => message.Trim().TrimEnd('.').ToLowerInvariant())
             .Select(group => group.First()));
@@ -623,14 +620,12 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
             foreach (var index in _candidates)
             {
                 var span = _spans[index];
-                // Inclusive EOL: every error must have underline somewhere on affected line
                 bool isEol = span.StartOffset >= docLine.EndOffset && span.StartOffset <= docLine.EndOffset + 1 && docLine.Length > 0;
                 if (!isEol && (span.StartOffset > docLine.EndOffset || span.StartOffset + span.Length <= docLine.Offset))
                     continue;
                 int start, end;
                 if (isEol)
                 {
-                    // Missing semicolon / insertion at EOL: underline last 3-4 chars of line
                     var eolLen = Math.Min(4, Math.Max(1, docLine.Length));
                     start = Math.Max(docLine.Offset, docLine.EndOffset - eolLen);
                     end = docLine.EndOffset;
@@ -649,7 +644,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
                     var right = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, endColumn), VisualYPosition.LineBottom).X;
                     if (double.IsNaN(left) || double.IsNaN(right) || double.IsInfinity(left) || double.IsInfinity(right))
                     {
-                        // Fallback: draw across visible line width proportionally
                         var fallbackWidth = Math.Max(6, Math.Min(width * 0.6, (end - start) * textView.WideSpaceWidth));
                         left = textView.GetVisualPosition(new TextViewPosition(docLine.LineNumber, 1), VisualYPosition.LineBottom).X;
                         right = left + fallbackWidth;
@@ -660,11 +654,8 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
                     var thickness = isHint ? 2.0 : isInfo ? 2.5 : 3.0;
                     var underlineY = y1 + height - 2.5;
                     var underlineWidth = Math.Max(6, right - left);
-                    // Guarantee minimum visible underline for EOL errors even if right-left is tiny
                     if (isEol) underlineWidth = Math.Max(underlineWidth, Math.Min(40, Math.Max(12, docLine.Length * textView.WideSpaceWidth * 0.25)));
-                    // Draw with higher opacity for visibility on dark/light themes
                     drawingContext.DrawRectangle(brush, null, new Rect(left, underlineY, underlineWidth, thickness));
-                    // Second thin highlight for extra contrast when overlapping dead-code stripes
                     if (hasDeadOverlap)
                     {
                         var highlight = BrushForSeverity(span.Severity);

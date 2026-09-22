@@ -275,7 +275,7 @@ public partial class MainWindow
                 {
                     Text = path,
                     FontSize = 11,
-                    FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                    FontFamily = KodoFonts.MonoFamily,
                     Foreground = MutedTextBrush,
                     TextWrapping = TextWrapping.Wrap
                 }
@@ -617,7 +617,7 @@ public partial class MainWindow
                 {
                     Text = context.Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                     FontSize = 12,
-                    FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                    FontFamily = KodoFonts.MonoFamily,
                     Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
                     TextWrapping = TextWrapping.Wrap,
                     MaxWidth = 500,
@@ -628,7 +628,7 @@ public partial class MainWindow
             {
                 Text = KodoDiagnostics.BuildDiagnosticSummary(source, false, context),
                 FontSize = 11,
-                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = KodoFonts.MonoFamily,
                 Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
@@ -647,7 +647,7 @@ public partial class MainWindow
             {
                 Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),
                 FontSize = 12,
-                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = KodoFonts.MonoFamily,
                 Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
                 TextWrapping = TextWrapping.Wrap,
             };

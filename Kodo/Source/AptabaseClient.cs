@@ -109,7 +109,6 @@ internal static class AptabaseClient
             if (ver.Build >= 22000) return $"Windows 11 (Build {ver.Build})";
             if (ver.Build >= 10240) return $"Windows 10 (Build {ver.Build})";
         }
-        // Phase 2 Linux: prefer distro PRETTY_NAME over generic uname.
         if (OperatingSystem.IsLinux())
         {
             try

@@ -337,7 +337,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
     private static IEnumerable<string> EnumerateKoxFiles(string searchPath)
     {
-        // Phase 1 Linux: "*.kox" glob is case-sensitive on ext4; accept *.KOX too.
         foreach (var file in Directory.EnumerateFiles(searchPath))
         {
             if (file.EndsWith(".kox", StringComparison.OrdinalIgnoreCase))
@@ -569,7 +568,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
                 var destPath = Path.Combine(baseExt.PluginFolderPath, baseExt.LanguagePluginAssemblyFileName);
                 if (!File.Exists(destPath))
                 {
-                    // Phase 2: manifest may declare a subdirectory path; ensure it exists.
                     Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
                     var entry = GetKoxEntry(archive, baseExt.LanguagePluginAssemblyFileName)!;
                     using var entryStream = entry.Open();
@@ -702,7 +700,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
                     if (lsp is not null)
                     {
                         extension.Lsps.Add(lsp);
-                        // Keep Lsp as first for backward compat
                         extension.Lsp ??= lsp;
                     }
                     else
@@ -732,7 +729,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
                 KodoDiagnostics.LogDebug($"Invalid lsp configuration for '{extension.Id}': {ex.Message}");
             }
         }
-        // Also support alternative name "languageServers"
         if (extension.Lsps.Count == 0 && manifest.TryGetProperty("languageServers", out var langServersEl) && langServersEl.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in langServersEl.EnumerateArray())
@@ -766,14 +762,12 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
 
         var command = commandEl.GetString()!.Trim();
 
-        // arguments / args alias
         string[] arguments = [];
         if (lspElement.TryGetProperty("arguments", out var argsEl) && argsEl.ValueKind == JsonValueKind.Array)
             arguments = ReadStringArray(argsEl);
         else if (lspElement.TryGetProperty("args", out var args2) && args2.ValueKind == JsonValueKind.Array)
             arguments = ReadStringArray(args2);
 
-        // languages / languageIds alias
         string[] languages = [];
         if (lspElement.TryGetProperty("languages", out var langEl) && langEl.ValueKind == JsonValueKind.Array)
             languages = ReadStringArray(langEl);
@@ -782,7 +776,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         else if (lspElement.TryGetProperty("language", out var langSingle) && langSingle.ValueKind == JsonValueKind.String)
             languages = [langSingle.GetString()!];
 
-        // fileExtensions / extensions alias
         string[] fileExtensions = [];
         if (lspElement.TryGetProperty("fileExtensions", out var fe) && fe.ValueKind == JsonValueKind.Array)
             fileExtensions = ReadStringArray(fe);
@@ -792,7 +785,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         if (fileExtensions.Length == 0 && fallbackExtensions.Length > 0)
             fileExtensions = fallbackExtensions;
 
-        // normalize extensions to have dot
         fileExtensions = fileExtensions.Select(e => e.StartsWith(".") ? e : "." + e).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         languages = languages.Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
@@ -1312,8 +1304,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
                 yield return legacy;
         }
 
-        // Development fallback only: never rely on ../../../ in production.
-        // Installed layouts won't have this directory, so gate on existence.
         var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
         string? srcPath = null;
         try { srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions")); } catch { srcPath = null; }

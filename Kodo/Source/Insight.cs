@@ -140,11 +140,9 @@ public sealed class InsightEngine
         if (string.IsNullOrEmpty(documentText))
             return documentText;
 
-        // Do Less: cache masked doc per extension+text hash to avoid triple build per tick
         var extKey = extension?.Id ?? "plain";
         var hash = documentText.Length ^ documentText.GetHashCode() ^ extKey.GetHashCode();
         var cacheKey = extKey + "|" + documentText.Length;
-        // Quick check - use length+hash as key to avoid storing full text
         if (_maskedCache.TryGetValue(cacheKey, out var cached) && cached.hash == hash)
             return cached.masked;
 
@@ -386,7 +384,6 @@ public sealed class InsightEngine
 
         var result = new string(masked);
         _maskedCache[cacheKey] = (hash, result);
-        // Bounded cache
         if (_maskedCache.Count > 32) { foreach (var k in new System.Collections.Generic.List<string>(_maskedCache.Keys)) { if (_maskedCache.Count <= 24) break; _maskedCache.TryRemove(k, out _); } }
         return result;
     }

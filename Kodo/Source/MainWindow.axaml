@@ -812,7 +812,6 @@
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
-        <!-- Polished scrolling: overlay thin auto-hide scrollbars, prevent panel resize on scroll -->
         <Style Selector="ScrollViewer">
             <Setter Property="AllowAutoHide" Value="True" />
             <Setter Property="IsScrollChainingEnabled" Value="True" />
@@ -845,7 +844,6 @@
         <Style Selector="ScrollBar:disabled">
             <Setter Property="IsVisible" Value="False" />
         </Style>
-        <!-- Menus and popups: constrain height and ensure smooth scroll -->
         <Style Selector="Menu ScrollViewer, ContextMenu ScrollViewer, ComboBox ScrollViewer">
             <Setter Property="MaxHeight" Value="420" />
             <Setter Property="AllowAutoHide" Value="True" />
@@ -1739,9 +1737,8 @@
                     <avaloniaEdit:TextEditor x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
-                                             FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace"
                                              FontSize="14"
-                                             Padding="0,12,18,36"
+                                             Padding="8,12,18,36"
                                              KeyboardNavigation.TabNavigation="None"
                                              ShowLineNumbers="True"
                                              WordWrap="{Binding IsWordWrapEnabled}"
@@ -3082,14 +3079,12 @@
                     </Grid>
                 </Border>
 
-                <!-- Overhauled editor status bar -->
                 <Border Grid.Row="5"
                         Classes="statusBarRoot"
                         Padding="8,0"
                         Height="30"
                         PointerPressed="StatusBar_OnPointerPressed">
                     <Grid ColumnDefinitions="Auto,*,Auto">
-                        <!-- Left: file context -->
                         <StackPanel Grid.Column="0"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
@@ -3152,7 +3147,6 @@
                                     </MultiBinding>
                                 </TextBlock.IsVisible>
                             </TextBlock>
-                            <!-- Diagnostics summary centred left -->
                             <Border Classes="statusDivider"
                                     IsVisible="{Binding IsDocumentViewVisible}"
                                     Margin="8,0,6,0" />
@@ -3187,10 +3181,8 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- Spacer: keep right group pinned -->
                         <Border Grid.Column="1" Background="Transparent" />
 
-                        <!-- Right: editor vitals + actions -->
                         <StackPanel Grid.Column="2"
                                     Orientation="Horizontal"
                                     VerticalAlignment="Center"
@@ -3285,7 +3277,6 @@
                             <Border Classes="statusDivider"
                                     IsVisible="{Binding IsWordCountVisible}" />
 
-                            <!-- Caret / selection / doc summary -->
                             <StackPanel Orientation="Horizontal"
                                         Spacing="4"
                                         VerticalAlignment="Center"

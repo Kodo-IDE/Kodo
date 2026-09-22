@@ -385,8 +385,6 @@ public partial class MainWindow
 
     private static string ComputeStablePathId(string path)
     {
-        // Windows paths are case-insensitive; Linux/macOS paths are case-sensitive
-        // (lowercasing would collide /Home/User/Tool with /home/user/tool).
         var full = Path.GetFullPath(path);
         var normalized = OperatingSystem.IsWindows() ? full.ToLowerInvariant() : full;
         var hashBytes = System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(normalized));
@@ -545,7 +543,6 @@ public partial class MainWindow
     private static List<string> FindAllOnPath(string exeName)
     {
         var results = new List<string>();
-        // Phase 1 Linux: path lookup must be case-sensitive; Windows stays insensitive.
         var seen = new HashSet<string>(FileSystemPaths.Comparer);
         try
         {
@@ -574,8 +571,6 @@ public partial class MainWindow
     {
         foreach (var n in candidate.ExeNames)
             yield return n;
-        // Unix runtimes often only ship versioned/un-suffixed names that the
-        // Windows-style table doesn't list (e.g. distros with python3 but no python).
         if (!OperatingSystem.IsWindows() && candidate.Id == "python-auto")
             yield return "python3";
     }
@@ -590,9 +585,6 @@ public partial class MainWindow
         }
         else
         {
-            // Unix: probe the extensionless name first. The candidate table uses
-            // Windows-style ".exe" names; a literal "gcc.exe" almost never exists
-            // on Linux, so prefer the stripped name to avoid wasted stats.
             if (exeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
                 exeName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase) ||
                 exeName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase))
@@ -693,7 +685,6 @@ public partial class MainWindow
 
     private static string? TryFindMsvcCl()
     {
-        // MSVC is Windows-only.
         if (!OperatingSystem.IsWindows()) return null;
         try
         {
@@ -1593,8 +1584,6 @@ public partial class MainWindow
 
     private static (string ExePath, string Arguments, string InstallFolder)? FindCompilerUninstaller(string compilerName)
     {
-        // System uninstallers (registry + unins*.exe) are a Windows concept.
-        // On Linux toolchains are package-manager-owned; just untrack them in Kodo.
         if (!OperatingSystem.IsWindows())
             return null;
 
@@ -2473,7 +2462,6 @@ public partial class MainWindow
             return ("bash", $"{quotedPath}{extra}{fileArg}");
         if (ext is ".py" or ".pyw")
         {
-            // Phase 1 Linux: "python" is often unmapped; prefer python3 on Unix.
             if (!OperatingSystem.IsWindows())
                 return (TryFindOnPath("python3") ?? "python3", $"{quotedPath}{extra}{fileArg}");
             return ("python", $"{quotedPath}{extra}{fileArg}");
@@ -2658,7 +2646,6 @@ public partial class MainWindow
             if (File.Exists(goPath)) return goPath;
             var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
             if (File.Exists(localGo)) return localGo;
-            // Phase 1 Linux: standard Unix Go locations.
             if (!OperatingSystem.IsWindows())
             {
                 foreach (var unixGo in new[] { "/usr/local/go/bin/go", "/usr/local/bin/go", "/usr/bin/go" })
@@ -2811,8 +2798,6 @@ public partial class MainWindow
             toolLabel = Path.GetFileName(split.Exe);
         }
 
-        // Fail fast with a clear message instead of opening an empty terminal.
-        // Covers .bat/.cmd scripts on Linux (cmd.exe doesn't exist there).
         if (!IsExecutableAvailable(exe))
         {
             await ShowWarningDialogAsync("Run / Build",
@@ -3492,17 +3477,11 @@ internal sealed class CompilerRunWindow : Window
 
         _terminal.Start(_exePath, _arguments, _workingDirectory);
 
-        var watchedHandle = _terminal.CurrentProcessHandle;
-        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
         _terminal.SessionExited += OnSessionExited;
 
-        void OnSessionExited(object? s, IntPtr exitedHandle)
+        void OnSessionExited(object? s, TerminalProcessHandle exitedHandle)
         {
             _terminal.SessionExited -= OnSessionExited;
-            // Unix PTY/pipe sessions report IntPtr.Zero; accept the first exit
-            // notification rather than matching a process handle.
-            if (isWindows && exitedHandle != watchedHandle)
-                return;
             Dispatcher.UIThread.Post(() =>
             {
                 _statusText.Text = "Finished - the command exited. You can inspect the output below or re-run it.";

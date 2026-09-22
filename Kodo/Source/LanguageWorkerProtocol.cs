@@ -72,7 +72,6 @@ public sealed class LanguageWorker : IDisposable
             if (!_documents.TryGetValue(uri, out var current)) return null;
             var text = current.Text;
             if (request.Changes is null || request.Changes.Count == 0) return current;
-            // Fast path single change
             if (request.Changes.Count == 1)
             {
                 var c = request.Changes[0];
@@ -83,7 +82,6 @@ public sealed class LanguageWorker : IDisposable
             {
                 var sb = new System.Text.StringBuilder(text.Length + 256);
                 sb.Append(text);
-                // Sort descending so earlier offsets not shifted
                 foreach (var change in request.Changes.OrderByDescending(ch => ch.Start))
                 {
                     if (change.Start < 0 || change.Start > sb.Length || change.Length < 0 || change.Start + change.Length > sb.Length) continue;

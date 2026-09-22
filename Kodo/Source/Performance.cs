@@ -13,7 +13,6 @@ namespace Kodo;
 
 public static class PerformanceBudget
 {
-    // Budgets per frame (16ms at 60fps). Intensive work must yield if over budget.
     public const int InteractionBudgetMs = 4;
     public const int VisibleRenderBudgetMs = 6;
     public const int BackgroundBudgetMs = 12;

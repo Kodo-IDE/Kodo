@@ -845,8 +845,6 @@ public partial class MainWindow
             foreach (var dir in Directory.GetDirectories(root))
             {
                 if (ignoreRules.ShouldSkipDirectory(dir)) continue;
-                // Resolve symlinks so differently-spelled paths to the same directory
-                // share one visited entry. Broken links resolve to null and are skipped.
                 try
                 {
                     var real = new DirectoryInfo(dir).ResolveLinkTarget(returnFinalTarget: true)?.FullName
@@ -935,7 +933,7 @@ public partial class MainWindow
     private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
     {
         const int maxResults = 2000;
-        const long maxFileBytes = 1_500_000; // Do Less: skip huge files - LSP handles them, search would lag
+        const long maxFileBytes = 1_500_000;
         var comparison = matchCase ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         Regex? regex = null;
         if (useRegex)
@@ -960,7 +958,7 @@ public partial class MainWindow
             try
             {
                 var fi = new FileInfo(file);
-                if (fi.Length > maxFileBytes) continue; // Do Less: skip huge files
+                if (fi.Length > maxFileBytes) continue;
                 if (fi.Length == 0) continue;
             }
             catch { continue; }
@@ -971,7 +969,7 @@ public partial class MainWindow
                 foreach (var line in File.ReadLines(file))
                 {
                     lineNumber++;
-                    if (line.Length > 5000) continue; // skip minified huge lines
+                    if (line.Length > 5000) continue;
 
                     bool matched;
                     List<int>? matchIndices = null;

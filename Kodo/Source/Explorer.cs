@@ -83,14 +83,12 @@ public partial class MainWindow
     {
         if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
-        // Do Less: sample only visible + 200 items max, not entire tree (could be 10k files)
         var typeface = new Typeface("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace");
         var widest = 0.0;
         var sampled = 0;
         const int maxSample = 400;
         foreach (var item in FileTreeItems)
         {
-            // Editor Comes First: measuring text is expensive, cap sampling
             if (sampled++ >= maxSample) break;
             var formatted = new FormattedText(
                 item.Name,
@@ -499,7 +497,7 @@ public partial class MainWindow
     private async void FileTreeRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _fileTreeRefreshTimer.Stop();
-        if (!IsActive) { _fileTreeRefreshTimer.Start(); return; } // 01 Editor First: defer tree rebuild when not visible
+        if (!IsActive) { _fileTreeRefreshTimer.Start(); return; }
         _searchFileCache = null;
         if (_newFileInlineRenameItem?.IsRenaming == true)
         {
@@ -544,7 +542,6 @@ public partial class MainWindow
         var items = await CreateFileTreeItemsAsync(dirPath, depth);
         if (items.Count == 0) return;
 
-        // Performance Is a Feature: batch inserts, Do Less layout passes
         _suppressExplorerWidthRefresh = true;
         FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
         try
@@ -613,7 +610,6 @@ public partial class MainWindow
         var index = FileTreeItems.IndexOf(dirItem);
         if (index < 0) return;
 
-        // Do Less: batch collection changes to avoid per-item layout thrash (Editor Comes First)
         _suppressExplorerWidthRefresh = true;
         FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
         try

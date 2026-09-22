@@ -21,7 +21,8 @@ internal sealed record UpdateInfo(
     string ReleaseNotesUrl,
     string AssetDownloadUrl,
     string AssetName,
-    long AssetSizeBytes);
+    long AssetSizeBytes,
+    string? Sha256 = null);
 
 internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 

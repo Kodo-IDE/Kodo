@@ -3,13 +3,6 @@ using System;
 
 namespace Kodo;
 
-/// <summary>
-/// Centralized filesystem path comparison semantics.
-/// Windows filesystems are normally case-insensitive, Linux/macOS are normally case-sensitive.
-/// Use this helper for ALL filesystem path comparisons, HashSets, and Dictionaries.
-/// Do NOT use it for semantic identifiers (extension IDs, theme IDs, language keywords) —
-/// those stay OrdinalIgnoreCase intentionally.
-/// </summary>
 internal static class FileSystemPaths
 {
     public static StringComparison Comparison =>

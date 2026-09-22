@@ -648,7 +648,6 @@ public partial class MainWindow
 
     private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
     {
-        // 02 Do Less: skip entirely when not in windows accent mode
         if (!IsActive) return;
         if (_accentColorMode != "windows" && !IsSystemThemeActive) return;
         var current = GetWindowsAccentColor() ?? string.Empty;

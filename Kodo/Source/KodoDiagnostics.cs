@@ -28,10 +28,6 @@ internal static class KodoPaths
         Path.Combine(DataRoot, "PluginCache"),
         Path.Combine(LegacyDataRoot, "PluginCache"));
 
-    /// <summary>
-    /// XDG config root. Linux: $XDG_CONFIG_HOME/Kodo or ~/.config/Kodo.
-    /// Other platforms keep the historical data-root location to avoid migration churn.
-    /// </summary>
     public static string ConfigRoot
     {
         get
@@ -45,10 +41,6 @@ internal static class KodoPaths
         }
     }
 
-    /// <summary>
-    /// XDG cache root. Linux: $XDG_CACHE_HOME/Kodo or ~/.cache/Kodo.
-    /// Other platforms keep the historical data-root location.
-    /// </summary>
     public static string CacheRoot
     {
         get
@@ -62,10 +54,6 @@ internal static class KodoPaths
         }
     }
 
-    /// <summary>
-    /// Cache file with legacy fallback: prefers XDG cache, migrates from the
-    /// historical data-root location when present.
-    /// </summary>
     public static string CacheFile(string fileName)
     {
         if (!OperatingSystem.IsLinux())
@@ -94,11 +82,6 @@ internal static class KodoPaths
         return ResolveMigratedDir(Path.Combine(CacheRoot, dirName), Path.Combine(DataRoot, dirName));
     }
 
-    /// <summary>
-    /// Settings file path. Linux prefers XDG config ($XDG_CONFIG_HOME/Kodo);
-    /// existing installs keep working via the historical data-root location
-    /// until the next save migrates them.
-    /// </summary>
     public static string SettingsFilePath(string fileName = "kodosettings.json")
     {
         if (!OperatingSystem.IsLinux())
@@ -110,9 +93,6 @@ internal static class KodoPaths
         return legacy;
     }
 
-    /// <summary>
-    /// Settings write path. Always the preferred location; creates it on demand.
-    /// </summary>
     public static string SettingsWritePath(string fileName = "kodosettings.json")
     {
         var path = OperatingSystem.IsLinux()
@@ -124,7 +104,6 @@ internal static class KodoPaths
 
     private static string ResolveMigratedDir(string preferred, string legacy)
     {
-        // Windows/macOS: keep historical locations (no migration churn).
         if (!OperatingSystem.IsLinux())
             return Directory.Exists(preferred) || !Directory.Exists(legacy) ? preferred : legacy;
         try
@@ -518,7 +497,6 @@ internal static class KodoDiagnostics
             FileSystemPaths.StartsWith(path, localAppData))
             return path.Replace(localAppData, "%LocalAppData%", FileSystemPaths.Comparison);
 
-        // Generalize Unix home dir in single paths too.
         var home = Environment.GetEnvironmentVariable("HOME");
         if (!string.IsNullOrWhiteSpace(home) &&
             FileSystemPaths.StartsWith(path, home) &&

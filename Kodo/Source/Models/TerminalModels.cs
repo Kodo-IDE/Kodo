@@ -3,7 +3,9 @@ using Avalonia.Media;
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Kodo.Models;
 
@@ -35,6 +37,8 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
     public string ShellDisplayName { get; }
 
     public TerminalSnapshot? Snapshot { get; set; }
+
+    public TerminalProcessHandle? LiveHandle { get; set; }
 
     public string Title
     {
@@ -192,7 +196,12 @@ public sealed class TerminalSnapshot(
     int rows, int cols,
     int cursorRow, int cursorCol, bool cursorVisible,
     Color fg, Color bg, bool bold, bool underline, bool reverse,
-    TerminalParseState parseState, string csiParam)
+    TerminalParseState parseState, string csiParam,
+    bool altActive = false,
+    TermCell[,]? altCells = null,
+    int altCursorRow = 0, int altCursorCol = 0,
+    int scrollTop = 0, int scrollBottom = int.MaxValue,
+    int savedRow = 0, int savedCol = 0)
 {
     internal TermCell[,] Cells { get; } = cells;
     public int Rows { get; } = rows;
@@ -207,6 +216,29 @@ public sealed class TerminalSnapshot(
     internal bool Reverse { get; } = reverse;
     internal TerminalParseState ParseState { get; } = parseState;
     internal string CsiParam { get; } = csiParam;
+    internal bool AltActive { get; } = altActive;
+    internal TermCell[,]? AltCells { get; } = altCells;
+    internal int AltCursorRow { get; } = altCursorRow;
+    internal int AltCursorCol { get; } = altCursorCol;
+    internal int ScrollTop { get; } = scrollTop;
+    internal int ScrollBottom { get; } = scrollBottom;
+    internal int SavedRow { get; } = savedRow;
+    internal int SavedCol { get; } = savedCol;
+}
+
+public sealed class TerminalProcessHandle
+{
+    public Stream? ReadStream;
+    public Stream? WriteStream;
+    public int UnixMasterFd = -1;
+    public int UnixChildPid = -1;
+    public Process? PipeProcess;
+    public IntPtr HPcon = IntPtr.Zero;
+    public IntPtr HProcess = IntPtr.Zero;
+    public IntPtr HThread = IntPtr.Zero;
+    public bool IsUnixPty;
+    public bool Exited;
+    public CancellationTokenSource? WatcherCts;
 }
 
 public sealed class TerminalShellOption

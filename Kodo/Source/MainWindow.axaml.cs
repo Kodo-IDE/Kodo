@@ -138,7 +138,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastSeenWindowsAccentHex = string.Empty;
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsThemeName = string.Empty;
-    // LSP centralized management settings
     private bool _lspEnabled = true;
     private bool _lspAutoInstall;
     private bool _lspPreferManaged = true;
@@ -406,7 +405,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string? _hoveredErrorReason;
     private readonly HashSet<EditorTab> _corruptedTabs = new(ReferenceEqualityComparer.Instance);
     private TerminalSession? _activeTerminalSession;
-    private EventHandler<IntPtr>? _activeSessionExitedHandler;
+    private EventHandler<TerminalProcessHandle>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
@@ -427,10 +426,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<LoadedExtension, CompiledSyntaxProfile> _compiledSyntaxProfileCache =
         new(ReferenceEqualityComparer.Instance);
-    // Phase 2 Linux: path-keyed caches must be case-sensitive on ext4 (File.c != file.c).
-    private static StringComparer PathKeyComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
-        new(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        new(FileSystemPaths.Comparer);
     private string? _lastAppliedExtensionFingerprint;
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
 
@@ -739,6 +736,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         NotifySettingsSearchChanged();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
+        EditorTextBox.FontFamily = KodoFonts.MonoFamily;
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
@@ -770,6 +768,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
+        TerminalHostControl.DetachedSessionExited += TerminalHostControl_OnDetachedSessionExited;
         FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
@@ -928,7 +927,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
-        // Theme fast-path: themes must be available before first paint
         try
         {
             var themeScan = _cachedThemeScan is not null && DateTime.UtcNow - _cachedThemeScanUtc < ThemeScanCacheValidity
@@ -944,7 +942,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
         ApplyThemeBrushes(_requestedThemeName);
 
-        // Startup fast-path: defer heavy language .kox scan + DLL loads
         _ = Task.Run(async () =>
         {
             try
@@ -2865,7 +2862,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!_isInsightErrorDetectionEnabled)
             {
                 ClearErrorHighlighting();
-                // Force refresh so LSP-only diagnostics are shown immediately without stale cache.
                 QueueInsightRefresh();
             }
             else
@@ -2876,7 +2872,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // LSP management settings (lightweight UI bindings)
     public bool LspEnabled
     {
         get => _lspEnabled;
@@ -3644,6 +3639,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (TerminalHostControl.HasLiveProcess)
                     _activeTerminalSession.Snapshot = TerminalHostControl.SaveSnapshot();
+                var detached = TerminalHostControl.Detach();
+                if (detached is not null)
+                    _activeTerminalSession.LiveHandle = detached;
                 if (_activeTerminalSession.StatusText is not "Exited" && !_activeTerminalSession.StatusText.StartsWith("Failed", StringComparison.Ordinal))
                     _activeTerminalSession.StatusText = "Paused";
                 _activeTerminalSession.IsSelected = false;
@@ -3673,19 +3671,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             _activeSessionExitedHandler = null;
                         }
 
-                        var hasSnapshot = _activeTerminalSession.Snapshot is not null;
-                        TerminalHostControl.Start(shell.FileName, shell.Arguments,
-                            _activeTerminalSession.WorkingDirectory,
-                            suppressOutputUntilRestored: hasSnapshot);
-                        _activeTerminalSession.IsRunning = true;
-                        _activeTerminalSession.StatusText = "Ready";
-
-                        var expectedHandle = TerminalHostControl.CurrentProcessHandle;
-
                         var watchedSession = _activeTerminalSession;
-                        void OnExited(object? s, IntPtr exitedHandle)
+                        void OnExited(object? s, TerminalProcessHandle exitedHandle)
                         {
-                            if (exitedHandle != expectedHandle)
+                            if (!ReferenceEquals(exitedHandle, watchedSession.LiveHandle) &&
+                                !ReferenceEquals(exitedHandle, TerminalHostControl.ActiveHandle))
                                 return;
 
                             TerminalHostControl.SessionExited -= OnExited;
@@ -3697,6 +3687,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         }
                         _activeSessionExitedHandler = OnExited;
                         TerminalHostControl.SessionExited += OnExited;
+
+                        var liveHandle = watchedSession.LiveHandle;
+                        if (liveHandle is not null && !liveHandle.Exited && ConsoleTerminal.IsHandleAlive(liveHandle))
+                        {
+                            TerminalHostControl.Attach(liveHandle);
+                            if (watchedSession.Snapshot is not null)
+                                TerminalHostControl.RestoreSnapshot(watchedSession.Snapshot);
+                            watchedSession.IsRunning = true;
+                            watchedSession.StatusText = "Ready";
+                        }
+                        else
+                        {
+                            if (liveHandle is not null)
+                            {
+                                TerminalHostControl.DestroyHandle(liveHandle);
+                                watchedSession.LiveHandle = null;
+                            }
+                            var hasSnapshot = watchedSession.Snapshot is not null;
+                            TerminalHostControl.Start(shell.FileName, shell.Arguments,
+                                watchedSession.WorkingDirectory,
+                                suppressOutputUntilRestored: hasSnapshot);
+                            watchedSession.LiveHandle = TerminalHostControl.ActiveHandle;
+                            watchedSession.IsRunning = true;
+                            watchedSession.StatusText = "Ready";
+                            if (watchedSession.Snapshot is not null)
+                                TerminalHostControl.RestoreSnapshot(watchedSession.Snapshot);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -3705,9 +3722,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         _activeTerminalSession.StatusText = $"Failed to start: {ex.Message}";
                     }
                 }
-
-                if (_activeTerminalSession.Snapshot is not null)
-                    TerminalHostControl.RestoreSnapshot(_activeTerminalSession.Snapshot);
             }
             else
             {
@@ -4499,7 +4513,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled) return;
         var hasLsp = ResolveLspExtensionForFile(tab.Path) is not null;
-        if (hasLsp) return; // LSP is authoritative
+        if (hasLsp) return;
 
         var text = tab.Content;
         if (text.Length > 80_000) return;
@@ -4511,7 +4525,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var deadSpans = await Task.Run(() => _InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path));
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                // Only update if tab still exists and not active (active already handled)
                 if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;
                 UpdateTabDiagnostics(tab, spans, deadSpans);
             });
@@ -4744,7 +4757,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DiscordReconnectTimer_OnTick(object? sender, EventArgs e)
     {
         _discordReconnectTimer.Stop();
-        // 02 Do Less: don't reconnect when disabled or window inactive
         if (!IsDiscordRichPresenceEnabled) return;
         if (!IsActive) { _discordReconnectTimer.Interval = TimeSpan.FromSeconds(30); _discordReconnectTimer.Start(); return; }
         _discordReconnectTimer.Interval = TimeSpan.FromSeconds(10);
@@ -5044,8 +5056,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             try
             {
-                // Writes always go to the preferred location, migrating Linux
-                // installs from the historical data-root path on first save.
                 var writePath = KodoPaths.SettingsWritePath(SettingsFileName);
                 var dir = Path.GetDirectoryName(writePath);
                 if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
@@ -5823,6 +5833,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TerminalHostControl.SendInput(text);
     }
 
+    private void TerminalHostControl_OnDetachedSessionExited(object? sender, TerminalProcessHandle handle)
+    {
+        var session = TerminalSessions.FirstOrDefault(t => ReferenceEquals(t.LiveHandle, handle));
+        if (session is null)
+        {
+            TerminalHostControl.DestroyHandle(handle);
+            return;
+        }
+        if (ReferenceEquals(session, ActiveTerminalSession))
+        {
+            session.IsRunning = false;
+            CloseTerminalSession(session);
+            RefreshTerminalStatusBindings();
+            return;
+        }
+        session.IsRunning = false;
+        session.StatusText = "Exited";
+        RefreshTerminalStatusBindings();
+    }
+
     private void CloseTerminalSession(TerminalSession session, bool activateReplacement = true)
     {
         if (ReferenceEquals(session, ActiveTerminalSession))
@@ -5833,6 +5863,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _activeSessionExitedHandler = null;
             }
             TerminalHostControl.Stop();
+            session.LiveHandle = null;
+        }
+        else if (session.LiveHandle is { } detached)
+        {
+            TerminalHostControl.DestroyHandle(detached);
+            session.LiveHandle = null;
         }
 
         session.IsRunning = false;
@@ -6421,7 +6457,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 {
                     Text = gesture,
                     FontSize = 12,
-                    FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                    FontFamily = KodoFonts.MonoFamily,
                     Foreground = PrimaryTextBrush,
                 },
             };
@@ -6522,7 +6558,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 Text = FormatGesture(_keybinds[def.Id]),
                 FontSize = 12,
-                FontFamily = new FontFamily("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"),
+                FontFamily = KodoFonts.MonoFamily,
                 Foreground = PrimaryTextBrush,
             };
             gestureBorder.Child = gestureText;
@@ -7982,11 +8018,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var isVariable = false;
                 if (word is not null && CurrentLanguageExtension?.LangRules is { HasDefinitionProvider: true } rules && EditorTextBox?.Document is not null)
                 {
-                    // Check if word is a variable via symbols or token kind
                     var symbols = rules.AnalyzeSymbols(EditorTextBox.Document.Text);
                     isVariable = symbols.Any(s => s.Name == word && (s.Kind == "Variable" || s.Kind == "Parameter" || s.Kind == "Field" || s.Kind == "Constant") && s.IsDeclaration)
                                || rules.Tokenize(EditorTextBox.Document.Text).Any(t => t.Text == word && (t.Kind == "Variable" || t.Kind == "Parameter"));
-                    // Fallback: also consider declared variables set
                     if (!isVariable)
                     {
                         var declared = rules.AnalyzeSymbols(EditorTextBox.Document.Text).Where(s => s.IsDeclaration).Select(s => s.Name).ToHashSet();
@@ -7994,7 +8028,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }
                 }
                 item.IsEnabled = isVariable;
-                // Also control visibility so it only appears for variables
                 item.IsVisible = isVariable;
                 item.InputGesture = _keybinds.TryGetValue("GoToDefinition", out var definitionGesture) ? definitionGesture : null;
             }
@@ -8199,7 +8232,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task UpdateErrorHighlightingAsync()
     {
         var hasLspForFile = ResolveLspExtensionForFile(_currentFilePath) is not null;
-        // Zed-like: LSP diagnostics should still show even if Insight is
         if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
@@ -8237,7 +8269,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // LSP ALWAYS prioritized: when an extension declares an LSP,
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var cfgForFile = ResolveLspConfigurationForFile(_currentFilePath);
         var isLspPrimary = lspForFile?.HasLsp == true && cfgForFile != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForFile) is { IsInitialized: true };
@@ -8292,7 +8323,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Code,
                         diagnostic.Source));
                 }
-                // Group Insight+External (keep LSP separate for cache) - keep distinct messages/codes for conventions
                 rawSpans = rawSpans
                     .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), Message: span.Message.Trim().ToLowerInvariant(), span.Code))
                     .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
@@ -8316,14 +8346,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        // LSP diagnostics (generic, Phase 6) – always merged, not cached...
         var mergeWatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var lspSpans = GetLspDiagnosticsForFile(_currentFilePath, text);
             if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
             rawSpans.AddRange(lspSpans);
-            // Re-group: dedupe only identical diagnostics (same
             rawSpans = rawSpans
                 .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
                 .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())
@@ -8897,7 +8925,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (i == 0)
                 continue;
 
-            // Mixed indentation on same line – ignore for detection.
             if (hasTab && hasSpace)
                 continue;
 
@@ -8917,17 +8944,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (tabLines == 0 && spaceLines == 0)
             return null;
 
-        // Need a minimum signal to avoid flipping on tiny files.
         if (tabLines + spaceLines < 2)
             return null;
 
         if (tabLines > spaceLines)
         {
-            // Tabs dominate – keep current TabSize for visual width.
             return (false, TabSize);
         }
 
-        // Spaces dominate – infer width from indent deltas.
         var deltas = new Dictionary<int, int>();
         for (var idx = 0; idx < orderedSpaceIndents.Count - 1; idx++)
         {

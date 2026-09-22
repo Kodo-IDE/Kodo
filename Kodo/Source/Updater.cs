@@ -38,7 +38,6 @@ internal static class UpdateService
         return client;
     }
 
-
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
     {
         LastIncompatibleReason = null;
@@ -60,7 +59,8 @@ internal static class UpdateService
             if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion)) return null;
             var asset = PickInstallerAsset(release.Assets);
             if (asset is null) return null;
-            return new UpdateInfo(release.TagName, release.HtmlUrl ?? ReleaseNotesUrl, asset.BrowserDownloadUrl, asset.Name, asset.Size);
+            var sha256 = await TryResolveAssetChecksumAsync(release.Assets, asset.Name, ct).ConfigureAwait(false);
+            return new UpdateInfo(release.TagName, release.HtmlUrl ?? ReleaseNotesUrl, asset.BrowserDownloadUrl, asset.Name, asset.Size, sha256);
         }
         catch { return null; }
     }
@@ -81,7 +81,8 @@ internal static class UpdateService
                 if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion)) continue;
                 var asset = PickInstallerAsset(release.Assets);
                 if (asset is null) continue;
-                return new UpdateInfo(release.TagName, release.HtmlUrl ?? ReleaseNotesUrl, asset.BrowserDownloadUrl, asset.Name, asset.Size);
+                var sha256 = await TryResolveAssetChecksumAsync(release.Assets, asset.Name, ct).ConfigureAwait(false);
+                return new UpdateInfo(release.TagName, release.HtmlUrl ?? ReleaseNotesUrl, asset.BrowserDownloadUrl, asset.Name, asset.Size, sha256);
             }
             return null;
         }
@@ -99,9 +100,6 @@ internal static class UpdateService
             var archTokens = arch == "arm64"
                 ? new[] { "arm64", "aarch64" }
                 : new[] { "x64", "x86_64", "amd64" };
-            // Never cross-fallback between architectures: an asset must contain a token
-            // for the CURRENT process architecture. If none matches, report incompatible
-            // instead of installing the wrong CPU build.
             GitHubAsset? MatchStrict(Func<GitHubAsset, bool> pred) =>
                 assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase)) && pred(a));
             var tarball = MatchStrict(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && (a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)));
@@ -110,7 +108,6 @@ internal static class UpdateService
             if (appImage is not null) return appImage;
             var deb = MatchStrict(a => a.Name.Contains("linux", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase));
             if (deb is not null) return deb;
-            // No compatible build: do not fall back to another arch or to Windows .exe assets.
             LastIncompatibleReason = $"No compatible build available (arch={arch}, need linux {string.Join("/", archTokens)} asset).";
             KodoDiagnostics.LogDebug(LastIncompatibleReason);
             return null;
@@ -120,6 +117,64 @@ internal static class UpdateService
         preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
         if (preferred is not null) return preferred;
         return assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<string?> TryResolveAssetChecksumAsync(GitHubAsset[]? assets, string assetName, CancellationToken ct)
+    {
+        try
+        {
+            if (assets is null || assets.Length == 0 || string.IsNullOrWhiteSpace(assetName))
+                return null;
+            var checksumAsset = assets.FirstOrDefault(a =>
+                a.Name.Equals("SHA256SUMS", StringComparison.OrdinalIgnoreCase) ||
+                a.Name.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
+                a.Name.Equals("CHECKSUMS", StringComparison.OrdinalIgnoreCase) ||
+                a.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase));
+            if (checksumAsset is null || string.IsNullOrWhiteSpace(checksumAsset.BrowserDownloadUrl))
+                return null;
+            using var response = await Http.GetAsync(checksumAsset.BrowserDownloadUrl, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode) return null;
+            var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            if (bytes.Length == 0 || bytes.Length > 1024 * 1024) return null;
+            var text = System.Text.Encoding.UTF8.GetString(bytes);
+            foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var line = rawLine.Trim();
+                if (line.StartsWith('#')) continue;
+                var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2) continue;
+                var hash = parts[0].Trim().TrimStart('*');
+                var file = parts[^1].Trim().TrimStart('*');
+                file = file.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                file = Path.GetFileName(file);
+                if (hash.Length != 64 || !hash.All(Uri.IsHexDigit)) continue;
+                if (string.Equals(file, assetName, StringComparison.OrdinalIgnoreCase))
+                    return hash.ToLowerInvariant();
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    internal static string? ComputeFileSha256(string path)
+    {
+        try
+        {
+            using var fs = File.OpenRead(path);
+            using var hasher = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+            var buffer = new byte[81920];
+            int read;
+            while ((read = fs.Read(buffer, 0, buffer.Length)) > 0)
+                hasher.AppendData(buffer, 0, read);
+            return Convert.ToHexString(hasher.GetCurrentHash()).ToLowerInvariant();
+        }
+        catch { return null; }
+    }
+
+    internal static bool VerifyFileSha256(string path, string expectedHex)
+    {
+        var actual = ComputeFileSha256(path);
+        return actual is not null && string.Equals(actual, expectedHex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
     }
 
     internal static bool IsNewerVersion(string remote, string local)
@@ -152,7 +207,6 @@ internal static class UpdateService
         return parts.Length > 0 ? parts : null;
     }
 
-
     private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
     {
         try
@@ -170,12 +224,10 @@ internal static class UpdateService
     public static bool IsAutoUpdateEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppEnabled, true);
     public static bool IsAutoUpdateInBackgroundEnabledInSettings() => ReadAutoUpdateFlag(s => s.AutoUpdateAppInBackgroundEnabled, false);
 
-    // Compat shims – Task Scheduler autostart removed.
     [Obsolete("Resident updater removed – no Task Scheduler registration needed.")]
     public static void EnsureAutostartRegistered() => KodoDiagnostics.LogDebug("EnsureAutostartRegistered no-op (resident updater removed)");
     [Obsolete("Resident updater removed")]
     public static void RemoveAutostartRegistration() => KodoDiagnostics.LogDebug("RemoveAutostartRegistration no-op");
-
 
     internal static string UpdateRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
     internal static string StagingRoot => Path.Combine(UpdateRoot, "staging");
@@ -266,7 +318,6 @@ internal static class UpdateService
         IProgress<UpdateDownloadProgress>? progress,
         CancellationToken ct = default)
     {
-        // Stage atomically under LocalAppData (not %TEMP% – survives cleanup)
         var versionDir = Path.Combine(StagingRoot, SanitizeVersionForPath(update.Version));
         Directory.CreateDirectory(versionDir);
 
@@ -275,7 +326,6 @@ internal static class UpdateService
         var finalPath = Path.Combine(versionDir, safeName);
         var partialPath = finalPath + ".partial";
 
-        // If final already exists and looks complete, reuse it
         if (File.Exists(finalPath) && new FileInfo(finalPath).Length > 1024 * 1024)
         {
             KodoDiagnostics.LogDebug($"Update installer already staged: {finalPath}");
@@ -290,12 +340,16 @@ internal static class UpdateService
         await using var httpStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         await using var fileStream = new FileStream(partialPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true);
 
+        using var hasher = string.IsNullOrWhiteSpace(update.Sha256)
+            ? null
+            : System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
         var buffer = new byte[81920];
         long readTotal = 0;
         int read;
         while ((read = await httpStream.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
         {
             await fileStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+            hasher?.AppendData(buffer, 0, read);
             readTotal += read;
             if (progress is not null && totalBytes > 0)
             {
@@ -312,12 +366,20 @@ internal static class UpdateService
         if (!partialInfo.Exists || partialInfo.Length < 1024 * 1024)
             throw new InvalidDataException($"Download incomplete or too small ({partialInfo.Length} bytes): {partialPath}");
 
-        // Atomic move: partial -> final
+        if (hasher is not null)
+        {
+            var actual = Convert.ToHexString(hasher.GetCurrentHash()).ToLowerInvariant();
+            var expected = update.Sha256!.Trim().ToLowerInvariant();
+            if (!string.Equals(actual, expected, StringComparison.Ordinal))
+            {
+                try { File.Delete(partialPath); } catch { }
+                throw new InvalidDataException($"Update checksum mismatch for {update.AssetName}. Expected {expected}, got {actual}. The download may be corrupt or tampered with; it was discarded.");
+            }
+        }
+
         try { if (File.Exists(finalPath)) File.Delete(finalPath); } catch { }
         File.Move(partialPath, finalPath);
 
-        // Linux: AppImages need the executable bit; set it at stage time so the
-        // user doesn't have to run chmod +x manually.
         if (!OperatingSystem.IsWindows() && finalPath.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase))
         {
             try
@@ -339,19 +401,17 @@ internal static class UpdateService
         return bytes >= mb ? $"{bytes / mb:0.#} MB" : $"{bytes / 1024.0:0} KB";
     }
 
-
-    public static string CreateUpdateTransaction(string installerPath, string version, bool restartAfterUpdate = true)
+    public static string CreateUpdateTransaction(string installerPath, string version, bool restartAfterUpdate = true, string? expectedSha256 = null)
     {
         if (!File.Exists(installerPath)) throw new FileNotFoundException("Staged installer not found", installerPath);
         var fi = new FileInfo(installerPath);
         if (fi.Length < 1024 * 1024) throw new InvalidDataException($"Staged installer too small ({fi.Length} bytes)");
+        expectedSha256 ??= ComputeFileSha256(installerPath);
 
         Directory.CreateDirectory(TransactionDir);
         var transactionId = Guid.NewGuid().ToString("N");
-        // Phase 1 Linux: binary is "Kodo", not "Kodo.exe".
         var kodoExeName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
         var kodoExePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, kodoExeName);
-        // Prefer actual Kodo binary alongside Kodo.dll; fallback to ProcessPath
         var baseDir = AppContext.BaseDirectory;
         var candidateKodo = Path.Combine(baseDir, kodoExeName);
         if (File.Exists(candidateKodo)) kodoExePath = Path.GetFullPath(candidateKodo);
@@ -363,7 +423,10 @@ internal static class UpdateService
             KodoPid: Environment.ProcessId,
             RestartAfterUpdate: restartAfterUpdate,
             CreatedAtUtc: DateTime.UtcNow,
-            Version: version);
+            Version: version,
+            Sha256: expectedSha256,
+            ExpectedSize: fi.Length,
+            AssetName: Path.GetFileName(installerPath));
 
         var txPath = Path.Combine(TransactionDir, $"{transactionId}.json");
         var json = JsonSerializer.Serialize(tx, TransactionJsonOptions);
@@ -377,18 +440,15 @@ internal static class UpdateService
     public static void LaunchUpdaterAndExit(string transactionPath)
     {
         var exeDir = AppContext.BaseDirectory;
-        // Phase 1 Linux: updater binary is extensionless on Unix.
         var updaterFileName = OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
         var updaterPath = Path.Combine(exeDir, updaterFileName);
         if (!File.Exists(updaterPath))
         {
-            // Fallback to published location
             updaterPath = Path.Combine(exeDir, "KodoUpdater", updaterFileName);
             if (!File.Exists(updaterPath))
                 throw new FileNotFoundException($"{updaterFileName} not found", updaterPath);
         }
 
-        // Launch one-shot helper with transaction path.
         var psi = new ProcessStartInfo
         {
             FileName = updaterPath,
@@ -396,7 +456,6 @@ internal static class UpdateService
             CreateNoWindow = true,
             WorkingDirectory = exeDir,
         };
-        // .NET 8+ supports ArgumentList; use it to avoid quoting issues
         psi.ArgumentList.Add(transactionPath);
 
         try
@@ -405,7 +464,6 @@ internal static class UpdateService
         }
         catch
         {
-            // Fallback to UseShellExecute=true quoted string
             var fallback = new ProcessStartInfo
             {
                 FileName = updaterPath,
@@ -417,18 +475,15 @@ internal static class UpdateService
         }
 
         KodoDiagnostics.LogDebug($"KodoUpdater launched for {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
-        // Give updater a moment to open handle to our PID before we exit
         Thread.Sleep(400);
         Environment.Exit(0);
     }
 
-    // Public orchestrator called by UpdateDialog "Restart & Update"
-    public static void PrepareAndLaunchUpdate(string installerPath, string version, bool restartAfterUpdate = true)
+    public static void PrepareAndLaunchUpdate(string installerPath, string version, bool restartAfterUpdate = true, string? expectedSha256 = null)
     {
-        var txPath = CreateUpdateTransaction(installerPath, version, restartAfterUpdate);
+        var txPath = CreateUpdateTransaction(installerPath, version, restartAfterUpdate, expectedSha256);
         LaunchUpdaterAndExit(txPath);
     }
-
 
     public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
         bool installInBackground,
@@ -442,7 +497,6 @@ internal static class UpdateService
 
         if (installInBackground)
         {
-            // Background download: stage silently then show "Ready" dialog
             try
             {
                 var staged = await DownloadInstallerAsync(update, progress: null, ct).ConfigureAwait(false);
@@ -463,7 +517,6 @@ internal static class UpdateService
 
 }
 
-// UpdateDialog: Download -> Ready -> Restart & Update (no BAT,
 internal sealed class UpdateDialog : Window
 {
     private readonly DialogThemePalette _palette;
@@ -579,7 +632,6 @@ internal sealed class UpdateDialog : Window
                 _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
                 return;
             }
-            // Restart & Update
             _canClose = false;
             _primaryButton.IsEnabled = false;
             _laterButton.IsEnabled = false;
@@ -587,7 +639,7 @@ internal sealed class UpdateDialog : Window
             _progressBar.IsVisible = true;
             _progressBar.IsIndeterminate = true;
             await Task.Delay(300);
-            try { UpdateService.PrepareAndLaunchUpdate(_stagedInstallerPath, _update.Version, restartAfterUpdate: true); }
+            try { UpdateService.PrepareAndLaunchUpdate(_stagedInstallerPath, _update.Version, restartAfterUpdate: true, expectedSha256: _update.Sha256); }
             catch (Exception ex)
             {
                 _statusText.Text = $"Couldn't start updater: {ex.Message}";
@@ -643,7 +695,9 @@ internal sealed class UpdateDialog : Window
         catch (Exception ex)
         {
             _isDownloading = false;
-            _statusText.Text = "The update couldn't be downloaded. Check your connection and try again.";
+            _statusText.Text = ex is InvalidDataException && ex.Message.Contains("checksum", StringComparison.OrdinalIgnoreCase)
+                ? "The update failed integrity verification and was discarded. Try again; if it persists, download manually from the releases page."
+                : "The update couldn't be downloaded. Check your connection and try again.";
             _primaryButton.Content = "Retry";
             _primaryButton.IsEnabled = true;
             _laterButton.IsEnabled = true;

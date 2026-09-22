@@ -37,12 +37,11 @@ public partial class MainWindow
                 (entry.Name.EndsWith(".so", StringComparison.OrdinalIgnoreCase) ||
                  entry.Name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase));
             if (!isManaged && !isUnixNative) continue;
-            // Skip directory entries (Name empty, FullName ends with /).
             if (string.IsNullOrEmpty(entry.Name)) continue;
 
             var destPath = Path.GetFullPath(Path.Combine(pluginFolder, entry.FullName));
             if (!FileSystemPaths.IsPrefixOf(destPath, fullPluginFolder))
-                continue; // ZipSlip attempt – skip entry
+                continue;
 
             Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
             using var entryStream = entry.Open();

@@ -1,5 +1,5 @@
 // Licensed under GPL-v3.0
-#pragma warning disable CA1416 // Validate platform compatibility - guarded with IsOSPlatform checks
+#pragma warning disable CA1416
 using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -161,7 +161,6 @@ internal sealed class LspClient : IDisposable
         }
         catch (Exception ex) when (ex is not IOException)
         {
-            // FileNotFound / Win32Exception -> wrap with useful message
             KodoDiagnostics.LogDebug($"LSP start failed for '{_config.Command}'", ex);
             throw new FileNotFoundException($"Language server '{_config.Command}' could not be started. Check that it is installed and available on PATH.", ex);
         }
@@ -263,7 +262,6 @@ internal sealed class LspClient : IDisposable
         {
             if (!cancellationToken.IsCancellationRequested)
                 KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialization failed", ex);
-            // Do not mark initialized; allow retry.
             lock (_initLock) _initTask = null;
             if (ex is FileNotFoundException or TimeoutException or InvalidOperationException or IOException)
                 throw;
@@ -477,7 +475,6 @@ internal sealed class LspClient : IDisposable
                 var contentLength = -1;
                 var foundHeaderEnd = false;
 
-                // Read headers chunk-wise until \r\n\r\n or \n\n
                 while (!foundHeaderEnd)
                 {
                     if (!skipRead)
@@ -487,7 +484,6 @@ internal sealed class LspClient : IDisposable
                         headerAccum.Write(buffer, 0, read);
                     }
                     skipRead = false;
-                    // Search for \r\n\r\n
                     var headerText = Encoding.UTF8.GetString(headerAccum.GetBuffer(), 0, (int)headerAccum.Length);
                     int headerEnd = headerText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
                     int headerEndLen = 4;
@@ -504,13 +500,10 @@ internal sealed class LspClient : IDisposable
                         }
                         var bodyStartInBuffer = headerEnd + headerEndLen;
                         var headerBytesLen = Encoding.UTF8.GetByteCount(headerText.Substring(0, bodyStartInBuffer));
-                        // Handle body bytes already in headerAccum beyond header
                         var remainingInAccum = (int)headerAccum.Length - headerBytesLen;
-                        // Prepare to read body, but first handle leftover bytes
                         if (contentLength < 0)
                         {
                             KodoDiagnostics.LogDebug($"LSP missing Content-Length headers: {string.Join("|", headerLines)}");
-                            // Drain remaining and continue
                             headerAccum.SetLength(0);
                             if (remainingInAccum > 0) headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen, remainingInAccum);
                             break;
@@ -519,7 +512,6 @@ internal sealed class LspClient : IDisposable
                         if (contentLength > 8 * 1024 * 1024)
                         {
                             KodoDiagnostics.LogDebug($"LSP message too large: {contentLength}");
-                            // Drain body
                             int toDrain = contentLength - remainingInAccum;
                             var drainBuf = new byte[8192];
                             while (toDrain > 0)
@@ -527,18 +519,15 @@ internal sealed class LspClient : IDisposable
                                 var r = await stdout.ReadAsync(drainBuf, 0, Math.Min(drainBuf.Length, toDrain), ct).ConfigureAwait(false);
                                 if (r == 0) return; toDrain -= r;
                             }
-                            // Keep any extra bytes beyond body? For simplicity reset
                             headerAccum.SetLength(0);
                             if (remainingInAccum > 0 && remainingInAccum > contentLength)
                             {
-                                // Extra bytes after body - keep for next message
                                 var extra = remainingInAccum - contentLength;
                                 headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen + contentLength, extra);
                             }
                             foundHeaderEnd = true;
                             break;
                         }
-                        // Ensure bodyBuffer sized
                         if (bodyBuffer.Length < contentLength) bodyBuffer = new byte[contentLength];
                         int bodyOffset = 0;
                         if (remainingInAccum > 0)
@@ -564,7 +553,6 @@ internal sealed class LspClient : IDisposable
                         skipRead = headerAccum.Length > 0;
                         break;
                     }
-                    // If header too large without terminator, protect
                     if (headerAccum.Length > 8192)
                     {
                         KodoDiagnostics.LogDebug($"LSP header too large, draining");
@@ -662,23 +650,19 @@ internal sealed class LspClient : IDisposable
             foreach (var item in items.EnumerateArray())
             {
                 var section = item.TryGetProperty("section", out var sec) ? sec.GetString() : null;
-                // Use init options for workspace/configuration
                 if (!string.IsNullOrWhiteSpace(section) && _config.InitializationOptions is JsonElement initOpts && initOpts.ValueKind == JsonValueKind.Object)
                 {
                     if (TryGetSection(initOpts, section, out var sectionValue))
                     {
-                        // Deserialize to object for response
                         try { results.Add(JsonSerializer.Deserialize<object>(sectionValue.GetRawText())); continue; }
                         catch { }
                     }
-                    // Also try without prefix (e.g., request for "python" when init
                     if (section == "python" && initOpts.TryGetProperty("python", out var py))
                     {
                         try { results.Add(JsonSerializer.Deserialize<object>(py.GetRawText())); continue; }
                         catch { }
                     }
                 }
-                // Generic: try to satisfy request from .kox
                 if (!string.IsNullOrWhiteSpace(section) && _config.InitializationOptions is JsonElement initOptsCheck && initOptsCheck.ValueKind == JsonValueKind.Object)
                 {
                     if (TryGetSection(initOptsCheck, section, out var directValue))
@@ -691,7 +675,6 @@ internal sealed class LspClient : IDisposable
                         }
                         catch { }
                     }
-                    // Handle "python" vs "python.analysis" nesting
                     if (section == "python" && initOptsCheck.TryGetProperty("python", out var py))
                     {
                         try { results.Add(JsonSerializer.Deserialize<object>(py.GetRawText())); continue; }
@@ -703,13 +686,11 @@ internal sealed class LspClient : IDisposable
                         catch { }
                     }
                 }
-                // For python analysis, if .kox has python.analysis, return it;
                 if (!string.IsNullOrWhiteSpace(section))
                 {
                     var lower = section.ToLowerInvariant();
                     if (lower == "python" || lower == "python.analysis" || lower == "pyright")
                     {
-                        // Check .kox for python.analysis specifically
                         if (_config.InitializationOptions is JsonElement init2 && init2.ValueKind == JsonValueKind.Object)
                         {
                             JsonElement analysisEl = default;
@@ -726,7 +707,6 @@ internal sealed class LspClient : IDisposable
                                 try
                                 {
                                     var obj = JsonSerializer.Deserialize<object>(analysisEl.GetRawText());
-                                    // For "python" section, wrap as {analysis: obj} if needed
                                     if (section == "python" && lower == "python" && analysisEl.ValueKind == JsonValueKind.Object && !analysisEl.TryGetProperty("analysis", out _))
                                     {
                                         results.Add(new Dictionary<string, object?>(StringComparer.Ordinal) { ["analysis"] = obj });
@@ -742,7 +722,6 @@ internal sealed class LspClient : IDisposable
                         }
                     }
                 }
-                // For other sections or if no .kox config, return null to let
                 results.Add(null);
             }
             return results.ToArray();
@@ -806,7 +785,6 @@ internal sealed class LspClient : IDisposable
             }
             return (command, false, string.Empty);
         }
-        // Non-Windows: strip .cmd/.bat for portability so a
         if (isCmdScript)
             return (command[..^4], false, string.Empty);
         return (command, false, string.Empty);
@@ -842,7 +820,6 @@ internal sealed class LspClient : IDisposable
 public partial class MainWindow
 {
     private readonly LspManager _lspManager = new();
-    // Filesystem document paths follow OS case semantics via FileSystemPaths.
     private static StringComparer LspPathComparer => FileSystemPaths.Comparer;
     private readonly Dictionary<string, int> _lspDocumentVersions = new(FileSystemPaths.Comparer);
     private readonly HashSet<string> _lspOpenDocuments = new(FileSystemPaths.Comparer);
@@ -977,7 +954,6 @@ public partial class MainWindow
     private string GetLanguageId(LspConfiguration lsp, string? filePath)
     {
         if (lsp.Languages.Length > 0) return lsp.Languages[0];
-        // Derive from extension if no language id
         if (!string.IsNullOrWhiteSpace(filePath))
         {
             var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
@@ -1096,14 +1072,12 @@ public partial class MainWindow
 
     private async Task<bool> HandleLspNotReadyAsync(LoadedExtension lspExt, LspResolution resolution, string filePath)
     {
-        // Update provider registry and extension status
         var providerId = resolution.ResolvedConfiguration.EffectiveProviderId;
         LspProviderRegistry.SetStatus(providerId, resolution.ToDependencyStatus(), resolution.Error, resolution.Version, resolution.ExecutablePath, resolution.Source == LspServerSource.Managed);
         lspExt.LspStatus = resolution.ToDependencyStatus();
         lspExt.LspStatusMessage = resolution.Error;
         lspExt.LspProviderStatuses[providerId] = (resolution.ToDependencyStatus(), resolution.Error);
 
-        // Respect dismissed prompts unless auto-install enabled
         if (resolution.Source == LspServerSource.Disabled)
         {
             KodoDiagnostics.LogDebug($"LSP disabled for {lspExt.Id}");
@@ -1161,7 +1135,6 @@ public partial class MainWindow
                 var autoResult = await PromptAndInstallLspAsync(lspExt, resolution, autoInstall: true).ConfigureAwait(false);
                 return autoResult;
             }
-            // Offer install
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 ExtensionsStatusText = $"{lspExt.Name} language support requires {resolution.ResolvedConfiguration.EffectiveProviderId}.";
@@ -1209,7 +1182,6 @@ public partial class MainWindow
             bool shouldInstall = autoInstall;
             if (!autoInstall)
             {
-                // Use confirmation dialog with Install / Not Now
                 shouldInstall = await ShowConfirmationDialogAsync(title, body, confirmLabel: $"Install {providerName}", isDestructive: false).ConfigureAwait(false);
                 if (!shouldInstall)
                 {
@@ -1246,15 +1218,12 @@ public partial class MainWindow
                     lspExt.LspProviderStatuses[providerId!] = (LspDependencyStatus.Installed, null);
                     LspProviderRegistry.RegisterConsumer(providerId!, lspExt.Id);
                     LspProviderRegistry.SetStatus(providerId!, LspDependencyStatus.Installed, null, result.InstalledPath, result.InstalledPath, true);
-                    // Clear dismissed and missing flags so next open succeeds
                     _lspDismissedInstallPrompts.Remove(lspExt.Id);
                     _lspMissingNotified.Remove(lspExt.Id);
                     _lspMissingNotified.Remove(lspExt.Id + ":" + providerId);
                     SaveSettings(immediate: true);
-                    // Trigger retry by reopening current file if still same
                     if (!string.IsNullOrWhiteSpace(_currentFilePath) && IsSameDocument(_currentFilePath, _currentFilePath))
                     {
-                        // Remove pending open so next didOpen can proceed
                         lock (_lspOpenLock) _lspPendingOpens.Remove(NormalizeFilePath(_currentFilePath));
                         if (EditorTextBox?.Document != null)
                             _ = LspNotifyDidOpenAsync(_currentFilePath, EditorTextBox.Document.Text);
@@ -1324,16 +1293,13 @@ public partial class MainWindow
         if (isLargeFileForLsp)
         {
             try { await Task.Delay(500).ConfigureAwait(false); } catch { }
-            // If user switched away, still continue but at background priority – don't block UI.
             await Task.Yield();
         }
         else
         {
-            // Small cooperative yield so file open isn't blocked by LSP resolve/start.
             await Task.Yield();
         }
 
-        // Centralized resolution: managed -> system -> installable
         var settings = BuildLspResolverSettings();
         var resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);
         KodoDiagnostics.LogDebug($"LSP resolve {lspExt.Id} source={resolution.Source} exe={resolution.ExecutablePath} canInstall={resolution.CanInstall} err={resolution.Error}");
@@ -1345,7 +1311,6 @@ public partial class MainWindow
         }
         else
         {
-            // Record successful resolution
             lspExt.LspStatus = LspDependencyStatus.Available;
             lspExt.LspStatusMessage = null;
             var pidOk = resolution.ResolvedConfiguration.EffectiveProviderId;
@@ -1451,7 +1416,6 @@ public partial class MainWindow
         var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (targetCfg is null) return null;
         var workspace = GetWorkspaceRootForFile(filePath);
-        // Resolve using centralized resolver to match didOpen's resolved
         var resolveWatch = System.Diagnostics.Stopwatch.StartNew();
         var settings2 = BuildLspResolverSettings();
         var res2 = await LspServerResolver.ResolveAsync(targetCfg, settings2, lspExt.Id).ConfigureAwait(false);
@@ -1594,13 +1558,11 @@ public partial class MainWindow
             var _uri = FilePathToUri(filePath);
             _lspDiagnostics.Remove(_uri);
             _lspDiagnostics.Remove(NormalizeFilePath(_uri));
-            // Remove any stale uri-keyed entries that outlive filePath via
             List<string>? _stale = null;
             foreach (var _k in _lspDiagnostics.Keys)
                 if (IsSameDocument(_k, filePath)) (_stale ??= new List<string>()).Add(_k);
             if (_stale != null) foreach (var _k in _stale) { _lspDiagnostics.Remove(_k); _lspDiagnosticVersions.Remove(_k); }
         }
-        // Refresh tab diagnostics even if LSP not configured (clear previous LSP counts)
         Dispatcher.UIThread.Post(() => UpdateInactiveTabDiagnosticsForFile(filePath));
 
         var lspExt = ResolveLspExtensionForFile(filePath);
@@ -1608,7 +1570,6 @@ public partial class MainWindow
         var closeCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (closeCfg is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
-        // Try resolved config first, then fallback to original for
         LspClient? client = null;
         try
         {
@@ -1704,7 +1665,6 @@ public partial class MainWindow
             int? publishVersion = root.TryGetProperty("version", out var versionEl) && versionEl.ValueKind == JsonValueKind.Number ? versionEl.GetInt32() : null;
             lock (_lspDiagnosticsLock)
             {
-                // Normalize so lookups use consistent key; filePath came from
                 var normPath = NormalizeFilePath(filePath);
                 if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
                 _lspDiagnostics[normPath] = diagnostics;
@@ -1716,13 +1676,11 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug($"LSP publishDiagnostics {filePath} count={diagnostics.Count} uri={uri} version={(publishVersion?.ToString() ?? "<none>")}");
             for (var i = 0; i < Math.Min(diagnostics.Count, 3); i++)
                 KodoDiagnostics.LogDebug($"  LSP diag {i}: [{diagnostics[i].StartLine}:{diagnostics[i].StartChar}-{diagnostics[i].EndLine}:{diagnostics[i].EndChar}] {diagnostics[i].Severity} {diagnostics[i].Message}");
-            // Invalidate Insight cache so next UpdateErrorHighlightingAsync
             lock (_insightAnalysisCacheLock)
             {
                 _cachedInsightAnalysisVersion = -1;
                 _cachedInsightAnalysisText = null;
             }
-            // Trigger UI refresh if current file (normalize both sides to
             Dispatcher.UIThread.Post(() =>
             {
                 lock (_lspDiagnosticsLock) _lspDiagnosticRefreshPending.Remove(refreshKey);
@@ -1743,7 +1701,6 @@ public partial class MainWindow
                 }
                 else
                 {
-                    // Still ensure diagnostics for that file will be shown when it
                     KodoDiagnostics.LogDebug($"LSP diagnostics stored for inactive file {filePath} (current {_currentFilePath}) – will show on activation");
                     UpdateInactiveTabDiagnosticsForFile(filePath);
                 }
@@ -1755,7 +1712,6 @@ public partial class MainWindow
     private static string FileUriToPath(string uriOrPath)
     {
         if (string.IsNullOrWhiteSpace(uriOrPath)) return uriOrPath;
-        // Already a rooted Windows path (C:\ or C:/ or \\), just
         if (Path.IsPathRooted(uriOrPath) && !uriOrPath.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
         {
             try { return Path.GetFullPath(uriOrPath); } catch { return uriOrPath; }
@@ -1764,19 +1720,15 @@ public partial class MainWindow
         {
             try
             {
-                // Use Uri to handle percent-encoding and drive letters correctly
                 var u = new Uri(uriOrPath, UriKind.Absolute);
                 if (u.IsFile)
                 {
                     var local = u.LocalPath;
-                    // LocalPath on Windows is already "C:\..." but for
                     if (local.Length >= 3 && local[0] == '/' && char.IsLetter(local[1]) && local[2] == ':')
                         local = local.Substring(1);
-                    // If local somehow is still ":\Users" (missing drive), recover
                     if (local.StartsWith(":\\", StringComparison.Ordinal) || local.StartsWith(":/", StringComparison.Ordinal) || local.StartsWith(":", StringComparison.Ordinal))
                     {
                         var abs = Uri.UnescapeDataString(u.AbsolutePath);
-                        // AbsolutePath is "/c:/Users/..." or "/C:/Users/..." – trim
                         abs = abs.TrimStart('/');
                         abs = abs.Replace('/', Path.DirectorySeparatorChar);
                         if (abs.Length >= 2 && abs[1] == ':')
@@ -1792,7 +1744,6 @@ public partial class MainWindow
             {
                 KodoDiagnostics.LogDebug($"FileUriToPath: failed to parse URI '{uriOrPath}': {ex.Message}");
             }
-            // Fallback: manual extraction without using GetFullPath on URI
             try
             {
                 var idx = uriOrPath.IndexOf("://", StringComparison.Ordinal);
@@ -1802,13 +1753,11 @@ public partial class MainWindow
                 part = part.Replace('/', Path.DirectorySeparatorChar);
                 if (part.Length >= 2 && part[1] == ':')
                     return Path.GetFullPath(part);
-                // If still not rooted, don't combine with current directory –
                 return part;
             }
             catch { }
             return uriOrPath;
         }
-        // Plain relative path – don't combine with Kodo source; return as-is
         return uriOrPath;
     }
 
@@ -1825,7 +1774,6 @@ public partial class MainWindow
                 var normUri = NormalizeFilePath(uri);
                 if (!_lspDiagnostics.TryGetValue(uri, out raw) && !_lspDiagnostics.TryGetValue(normUri, out raw))
                 {
-                    // Fallback: linear scan for same document (handles any remaining
                     foreach (var kv in _lspDiagnostics)
                     {
                         if (IsSameDocument(kv.Key, filePath))
@@ -1931,7 +1879,6 @@ public partial class MainWindow
         if (line >= starts.Length) return text.Length;
         var offset = starts[line];
         var lineEnd = line + 1 < starts.Length ? starts[line + 1] - 1 : text.Length;
-        // Exclude trailing \r for CRLF files when computing column limit
         var lineLen = lineEnd - offset;
         if (lineLen > 0 && lineEnd > offset && text[lineEnd - 1] == '\r')
             lineLen--;
@@ -1962,11 +1909,9 @@ public partial class MainWindow
         return (line, character);
     }
 
-    // Phase 7 – Completion (generic)
     private async Task<IReadOnlyList<InsightSuggestion>> GetLspCompletionSuggestionsAsync(string? filePath, int offset, string text, string prefix, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return Array.Empty<InsightSuggestion>();
-        // Allow empty prefix for trigger characters like '.' – LSP will
         var lspExt = ResolveLspExtensionForFile(filePath);
         if (lspExt is null || !lspExt.HasLsp) return Array.Empty<InsightSuggestion>();
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
@@ -2034,7 +1979,6 @@ public partial class MainWindow
             if (!item.TryGetProperty("label", out var labelEl)) continue;
             var label = labelEl.GetString();
             if (string.IsNullOrWhiteSpace(label)) continue;
-            // Filter by prefix (LSP should already filter, but ensure)
             var filterText = item.TryGetProperty("filterText", out var filterEl) ? filterEl.GetString() ?? label : label;
             if (!filterText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -2049,12 +1993,12 @@ public partial class MainWindow
             var kindInt = item.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.Number ? k.GetInt32() : 0;
             var kind = kindInt switch
             {
-                2 or 3 or 4 => InsightKind.Function, // Method, Function, Constructor
-                5 or 10 => InsightKind.Property, // Field, Property
-                7 or 8 or 22 or 13 or 25 => InsightKind.Type, // Class, Interface, Struct, Enum, TypeParameter
-                9 => InsightKind.Namespace, // Module
+                2 or 3 or 4 => InsightKind.Function,
+                5 or 10 => InsightKind.Property,
+                7 or 8 or 22 or 13 or 25 => InsightKind.Type,
+                9 => InsightKind.Namespace,
                 14 => InsightKind.Keyword,
-                6 or 12 or 21 => InsightKind.Variable, // Variable, Value, Constant
+                6 or 12 or 21 => InsightKind.Variable,
                 _ => InsightKind.Variable
             };
 
@@ -2067,12 +2011,10 @@ public partial class MainWindow
         return suggestions;
     }
 
-    // Phase 8 – Hover (generic) with coalescing and dedup
     private async Task<string?> GetLspHoverAsync(string? filePath, int offset, int line, int character, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
         var hoverKey = $"{NormalizeFilePath(filePath)}:{offset}";
-        // Deduplicate same hover within 500ms (mouse jitter)
         lock (_lspHoverCacheLock)
         {
             if (hoverKey == _lastHoverKey && (DateTime.UtcNow - _lastHoverTime).TotalMilliseconds < 500)
@@ -2155,7 +2097,6 @@ public partial class MainWindow
             return null;
         }
 
-        // contents can be string, {language, value}, MarkupContent
         if (contents.ValueKind == JsonValueKind.String) return contents.GetString();
         if (contents.ValueKind == JsonValueKind.Object)
         {
@@ -2176,7 +2117,6 @@ public partial class MainWindow
         return contents.ToString();
     }
 
-    // Phase 9b – Find References (generic, HasReferenceProvider)
     private async Task<bool> TryLspFindReferencesAsync(string? filePath, int offset, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
@@ -2262,7 +2202,6 @@ public partial class MainWindow
 
     private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
 
-    // Phase 9c – Document Formatting (generic, HasFormatter)
     private async Task<bool> TryLspFormatDocumentAsync(string? filePath, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
@@ -2281,7 +2220,6 @@ public partial class MainWindow
             }
         }
         if (client is null || !client.IsInitialized) return false;
-        // Check if server supports formatting (via capabilities)
         if (client.ServerCapabilities is JsonElement caps && caps.TryGetProperty("documentFormattingProvider", out var fmt) && fmt.ValueKind == JsonValueKind.False)
             return false;
         KodoDiagnostics.LogDebug($"LSP formatting request file={filePath}");
@@ -2315,9 +2253,7 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug($"LSP formatting rejected as stale for {filePath}");
                 return;
             }
-            // Apply edits in reverse order to preserve offsets
             var doc = EditorTextBox.Document;
-            // Simple: if single edit covering whole document, replace all
             if (edits.Count == 1)
             {
                 var edit = edits[0];
@@ -2360,7 +2296,6 @@ public partial class MainWindow
         return true;
     }
 
-    // Phase 9d – Code Actions (generic, HasCodeActionProvider)
     private async Task<bool> TryLspCodeActionsAsync(string? filePath, int offset, string text, CancellationToken ct = default)
     {
         if (!string.IsNullOrWhiteSpace(filePath))
@@ -2443,7 +2378,6 @@ public partial class MainWindow
         var uri = FilePathToUri(filePath);
         var (line, character) = OffsetToLspPosition(text, offset);
         var contextDiag = GetDiagnosticAtCaret();
-        // For code actions, we need range and context
         var endLine = line;
         var endChar = character + 1;
         var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -2812,7 +2746,6 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP workspace edit rejected as stale for {filePath}");
                     return;
                 }
-                // edit can be {changes: {uri: [edits]}} or {documentChanges: [...]}
 if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == JsonValueKind.Object)
                 {
                     foreach (var prop in changes.EnumerateObject())
@@ -2986,7 +2919,6 @@ if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == Json
         catch (Exception ex) { KodoDiagnostics.LogDebug($"ApplyLspWorkspaceEdit failed: {ex.Message}", ex); return false; }
     }
 
-    // Phase 9 – Go to Definition (generic)
     private async Task<bool> TryLspGoToDefinitionAsync(string? filePath, int offset, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return false;
@@ -3065,7 +2997,6 @@ if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == Json
 
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            // Ensure file is loaded to get text for offset calc
             string targetText;
             try { targetText = await File.ReadAllTextAsync(targetPath).ConfigureAwait(false); } catch { targetText = ""; }
             var targetOffset = OffsetFromLspPosition(targetText, first.sLine, first.sChar);
@@ -3080,7 +3011,6 @@ if (edit.TryGetProperty("changes", out var changes) && changes.ValueKind == Json
             else
             {
                 await OpenFileFromPathAsync(targetPath).ConfigureAwait(false);
-                // Delay caret move until document loaded
                 Dispatcher.UIThread.Post(() =>
                 {
                     if (EditorTextBox?.Document is null) return;
@@ -3116,9 +3046,7 @@ internal static class LspInstallationManager
         {
             try
             {
-                // Must be absolute and inside user's profile or local app data;
                 var full = Path.GetFullPath(custom);
-                // Allow any absolute path that is not system root, but ensure
                 if (Path.IsPathRooted(full)) return full;
             }
             catch { }
@@ -3131,10 +3059,8 @@ internal static class LspInstallationManager
     private static string SanitizeProviderId(string providerId)
     {
         if (string.IsNullOrWhiteSpace(providerId)) throw new ArgumentException("ProviderId required");
-        // Allow only alphanum, dash, underscore, dot
         var sanitized = new string(providerId.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_' || c == '.').ToArray());
         if (string.IsNullOrWhiteSpace(sanitized)) sanitized = "lsp";
-        // Prevent .. traversal
         sanitized = sanitized.Replace("..", "_");
         return sanitized.ToLowerInvariant();
     }
@@ -3159,7 +3085,6 @@ internal static class LspInstallationManager
         var cmd = cfg.Command.Trim().Trim('"');
         var fileName = Path.GetFileName(cmd);
         if (string.IsNullOrWhiteSpace(fileName)) fileName = SanitizeProviderId(cfg.EffectiveProviderId);
-        // Prevent path traversal in fileName
         fileName = Path.GetFileName(fileName);
         return Path.Combine(dir, fileName);
     }
@@ -3176,7 +3101,6 @@ internal static class LspInstallationManager
         if (!cfg.AllowSystem) return null;
         var found = LspRuntimeDetector.FindOnPath(cfg.Command);
         if (found != null) return found;
-        // Dotnet tool fallback: check %USERPROFILE%\.dotnet\tools
         if (cfg.InstallMethod?.Equals("dotnet", StringComparison.OrdinalIgnoreCase) == true)
         {
             try
@@ -3197,16 +3121,13 @@ internal static class LspInstallationManager
         if (File.Exists(exe)) return exe;
         var dir = GetProviderDir(cfg, settings);
         if (!Directory.Exists(dir)) return null;
-        // Strict: look for file matching Command fileName exactly,
         try
         {
             var targetName = Path.GetFileName(exe);
             var targetWithoutExt = Path.GetFileNameWithoutExtension(targetName);
-            // Search up to 3 levels deep, prefer .bin
             var candidates = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                 .Where(f => {
                     var name = Path.GetFileName(f);
-                    // Exact match or without extension match
                     return name.Equals(targetName, StringComparison.OrdinalIgnoreCase)
                         || Path.GetFileNameWithoutExtension(name).Equals(targetWithoutExt, StringComparison.OrdinalIgnoreCase);
                 }).ToList();
@@ -3294,7 +3215,6 @@ internal static class LspInstallationManager
         await sem.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            // Double-check after acquiring lock: maybe another thread
             if (IsManagedInstalled(cfg, settings))
                 return new(InstallResultKind.AlreadyInstalled, "Already installed", GetProviderDir(cfg, settings));
 
@@ -3305,7 +3225,6 @@ internal static class LspInstallationManager
                 return await InstallViaNpmAsync(cfg, settings, progress, ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(cfg.DownloadUrl))
             {
-                // Enforce SHA-256 for github/standalone artifacts
                 var isGithub = method == "github" || cfg.DownloadUrl.Contains("github.com", StringComparison.OrdinalIgnoreCase) || cfg.DownloadUrl.Contains("githubusercontent.com", StringComparison.OrdinalIgnoreCase);
                 if (string.IsNullOrWhiteSpace(cfg.Sha256))
                     return new(InstallResultKind.NotInstallable, $"Provider '{cfg.EffectiveProviderId}' download requires SHA-256 verification. No checksum provided – please install manually from {cfg.DownloadUrl} and configure an override, or update the provider to include a trusted checksum.", null);
@@ -3322,7 +3241,6 @@ internal static class LspInstallationManager
     private static bool IsValidNpmPackageName(string pkg)
     {
         if (string.IsNullOrWhiteSpace(pkg)) return false;
-        // Reject shell metacharacters, traversal, absolute paths
         if (pkg.IndexOfAny(new[] { ';', '&', '|', '`', '$', '(', ')', '<', '>', '"', '\'', '\\', ' ', '\n', '\r', '\t' }) >= 0) return false;
         if (pkg.Contains("..", StringComparison.Ordinal)) return false;
         return NpmPackageNameRegex.IsMatch(pkg.Trim());
@@ -3334,7 +3252,6 @@ internal static class LspInstallationManager
         if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
         {
             var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-            // Escape each arg for cmd: quote if contains space or quote
             static string EscapeArg(string a)
             {
                 if (string.IsNullOrEmpty(a)) return "\"\"";
@@ -3374,7 +3291,6 @@ internal static class LspInstallationManager
         var pkg = cfg.PackageName ?? cfg.EffectiveProviderId;
         if (!IsValidNpmPackageName(pkg))
             return new(InstallResultKind.Failed, $"Invalid npm package name '{pkg}'. Package name contains illegal characters or pattern.", null);
-        // Detect node + npm via enhanced lookup (PATH + known locations
         var nodeRt = await LspRuntimeDetector.DetectAsync("node", cfg.RuntimeMinVersion ?? "16.0.0", ct).ConfigureAwait(false);
         if (!nodeRt.Found) return new(InstallResultKind.RuntimeMissing, nodeRt.Error ?? "Node.js is required. Install Node.js 16+ from https://nodejs.org/", null);
         var npmRt = await LspRuntimeDetector.DetectAsync("npm", null, ct).ConfigureAwait(false);
@@ -3388,7 +3304,6 @@ internal static class LspInstallationManager
         {
             Directory.CreateDirectory(stagingDir);
             var npmExe = LspRuntimeDetector.FindExecutable("npm") ?? LspRuntimeDetector.FindOnPath("npm") ?? "npm";
-            // Harden npm install: disable lifecycle scripts (supply-chain),
             var npmArgs = new[] { "install", "--prefix", stagingDir, "--ignore-scripts", "--no-audit", "--no-fund", "--progress=false", "--loglevel=error", pkg };
             var psi = BuildNpmProcessStartInfo(npmExe, npmArgs, Path.GetTempPath());
             using var proc = new Process { StartInfo = psi };
@@ -3406,13 +3321,11 @@ internal static class LspInstallationManager
             }
             var stagedExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
                 .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals(pkg, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(f).Equals(cfg.Command, StringComparison.OrdinalIgnoreCase));
-            // For vscode-langservers-extracted, we expect multiple servers;
             if (stagedExe == null && !Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories).Any())
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
                 return new(InstallResultKind.Failed, "npm install produced no files", null);
             }
-            // Atomic move staging -> providerDir with retry for locked files
             const int maxRetries = 5;
             for (int attempt = 0; attempt < maxRetries; attempt++)
             {
@@ -3522,7 +3435,6 @@ internal static class LspInstallationManager
         try
         {
             using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            // Verify final request URI is still HTTPS (followed redirects)
             if (resp.RequestMessage?.RequestUri != null && !resp.RequestMessage.RequestUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
                 return new(InstallResultKind.Failed, "Download redirected to non-HTTPS URL – blocked for security", null);
             if (!resp.IsSuccessStatusCode)
@@ -3572,25 +3484,20 @@ internal static class LspInstallationManager
             }
             else
             {
-                // Single binary – copy into staging dir
                 var fileName = Path.GetFileName(GetManagedExecutablePath(cfg, settings));
                 var dest = Path.Combine(stagingDir, fileName);
                 File.Copy(tempFile, dest, true);
-                // Phase 1 Linux: single-file downloads lose the exec bit on copy.
                 MakeExecutable(dest);
             }
-            // Validate staging contains at least one file
             if (!Directory.EnumerateFileSystemEntries(stagingDir).Any())
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
                 return new(InstallResultKind.Failed, "Archive extracted no files", null);
             }
-            // Additional validation: ensure expected executable exists (or
             var foundExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
                 .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), Path.GetFileName(GetManagedExecutablePath(cfg, settings))));
             if (foundExe == null)
             {
-                // For zip that contains nested dir, and command not at top
                 if (!Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories).Any())
                 {
                     try { Directory.Delete(stagingDir, true); } catch { }
@@ -3598,7 +3505,6 @@ internal static class LspInstallationManager
                 }
             }
             try { File.Delete(tempFile); } catch { }
-            // Atomic move: delete old providerDir and move staging
             try
             {
                 if (Directory.Exists(providerDir)) Directory.Delete(providerDir, true);
@@ -3649,7 +3555,7 @@ internal static class LspInstallationManager
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
             var header = new byte[4];
             if (fs.Read(header, 0, 4) < 4) return false;
-            return header[0] == 0x50 && header[1] == 0x4B; // PK
+            return header[0] == 0x50 && header[1] == 0x4B;
         }
         catch { return false; }
     }
@@ -3661,7 +3567,7 @@ internal static class LspInstallationManager
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read);
             var header = new byte[2];
             if (fs.Read(header, 0, 2) < 2) return false;
-            return header[0] == 0x1F && header[1] == 0x8B; // gzip magic
+            return header[0] == 0x1F && header[1] == 0x8B;
         }
         catch { return false; }
     }
@@ -3672,10 +3578,9 @@ internal static class LspInstallationManager
         foreach (var entry in archive.Entries)
         {
             ct.ThrowIfCancellationRequested();
-            if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith("/")) continue; // directory
+            if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith("/")) continue;
             var destPath = Path.GetFullPath(Path.Combine(destDir, entry.FullName));
             var fullDestDir = Path.GetFullPath(destDir);
-            // ZipSlip check: separator-aware and filesystem case semantics.
             if (!FileSystemPaths.IsPrefixOf(destPath, fullDestDir))
                 throw new InvalidDataException($"Zip entry escapes destination: {entry.FullName}");
             var dir = Path.GetDirectoryName(destPath);
@@ -3688,7 +3593,6 @@ internal static class LspInstallationManager
 
     private static async Task ExtractTarGzSecureAsync(string tgzPath, string destDir, CancellationToken ct)
     {
-        // Use System.Formats.Tar if available (.NET 7+); fallback to
         await Task.Run(() =>
         {
             using var fs = File.OpenRead(tgzPath);
@@ -3696,7 +3600,6 @@ internal static class LspInstallationManager
             var tarType = Type.GetType("System.Formats.Tar.TarReader, System.Formats.Tar");
             if (tarType != null)
             {
-                // Use reflection to avoid compile-time dependency if not available
                 dynamic reader = Activator.CreateInstance(tarType, gz)!;
                 try
                 {
@@ -3796,7 +3699,6 @@ internal static class LspInstallationManager
     public static async Task<InstallResult> UpdateAsync(LspConfiguration cfg, AppSettings? settings, IProgress<string>? progress, CancellationToken ct = default)
     {
         var uninstall = Uninstall(cfg, settings);
-        // ignore uninstall failure if not installed
         return await InstallAsync(cfg, settings, progress, ct).ConfigureAwait(false);
     }
 }
@@ -3848,7 +3750,6 @@ internal sealed class LspManager : IDisposable
             if (_starting.TryGetValue(key, out var inProgress))
                 return inProgress;
 
-            // stale entry (IsStarted == false and no in-progress task)
             if (existing is not null)
             {
                 _clients.Remove(key);
@@ -3880,7 +3781,6 @@ internal sealed class LspManager : IDisposable
                     _clients[key] = client;
                 else
                 {
-                    // Manager disposed while starting – clean up
                     try { client.Dispose(); } catch { }
                     _starting.Remove(key);
                     throw new ObjectDisposedException(nameof(LspManager));
@@ -3929,7 +3829,6 @@ internal sealed class LspManager : IDisposable
             _clients.Clear();
             _starting.Clear();
         }
-        // Wait for any in-progress starts to finish, then shut them down too
         foreach (var t in startingSnapshot)
         {
             try
@@ -3964,7 +3863,6 @@ internal sealed class LspManager : IDisposable
         _disposed = true;
         try
         {
-            // Avoid sync-over-async deadlock if called on UI thread
             if (Dispatcher.UIThread.CheckAccess())
             {
                 var task = Task.Run(async () => await ShutdownAllAsync("manager dispose").ConfigureAwait(false));
@@ -3977,7 +3875,6 @@ internal sealed class LspManager : IDisposable
             }
         }
         catch { }
-        // Fallback: ensure any remaining clients are disposed even if
         lock (_lock)
         {
             foreach (var c in _clients.Values) try { c.Dispose(); } catch { }
@@ -4084,8 +3981,6 @@ internal static class LspRuntimeDetector
             case "dotnet": exes = ["dotnet"]; args = "--version"; break;
             case "powershell":
             case "pwsh": exes = ["pwsh"]; args = "--version"; break;
-            // Unix distros often ship only python3; venvs may only provide python.
-            // Try both so compiler ("python3") and LSP detection agree.
             case "python": exes = OperatingSystem.IsWindows() ? ["python"] : ["python3", "python"]; args = "--version"; break;
             default: exes = [runtime]; args = "--version"; break;
         }
@@ -4128,7 +4023,6 @@ internal static class LspRuntimeDetector
 
     private static int[] ParseVersion(string v)
     {
-        // strip leading 'v' and trailing non-numeric
         v = v.Trim().TrimStart('v', 'V');
         var parts = new System.Collections.Generic.List<int>();
         var cur = "";
@@ -4148,7 +4042,6 @@ internal static class LspRuntimeDetector
         if (string.IsNullOrWhiteSpace(output)) return null;
         var m = System.Text.RegularExpressions.Regex.Match(output, @"v?(\d+\.\d+(?:\.\d+)?(?:[.-]\w+)*)");
         if (m.Success) return m.Groups[1].Value;
-        // Fallback for 'openjdk 21.0.1' or 'Python 3.11.5'
         var parts = output.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         foreach (var p in parts)
         {
@@ -4162,14 +4055,12 @@ internal static class LspRuntimeDetector
     {
         try
         {
-            // Resolve exe via enhanced PATH + known locations and handle
             var resolvedExe = FindExecutable(exe) ?? exe;
             var isCmdScript = resolvedExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
             ProcessStartInfo psi;
             if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
-                // Use /d /s /c ""exe" args" so paths with spaces are handled
                 psi = new ProcessStartInfo
                 {
                     FileName = comSpec,
@@ -4200,7 +4091,6 @@ internal static class LspRuntimeDetector
             var stdout = await stdoutTask.ConfigureAwait(false);
             var stderr = await stderrTask.ConfigureAwait(false);
             var combined = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
-            // Even if exit code non-zero, we got output – treat as found
             if (proc.ExitCode == 0 || !string.IsNullOrWhiteSpace(combined))
                 return (true, combined.Trim(), null);
             return (false, combined, $"Exit code {proc.ExitCode}");
@@ -4275,7 +4165,6 @@ internal static class LspRuntimeDetector
             }
             else
             {
-                // Unix: nvm (NVM_DIR), fnm, volta, standard paths.
                 var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var nvmDir = Environment.GetEnvironmentVariable("NVM_DIR");
                 if (string.IsNullOrWhiteSpace(nvmDir)) nvmDir = Path.Combine(home, ".nvm");
@@ -4374,7 +4263,6 @@ internal static class LspRuntimeDetector
                     if (File.Exists(withExt)) return Path.GetFullPath(withExt);
                 }
             }
-            // Unix fallback: if command had a Windows extension, retry without it.
             if (!isWindows && (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
             {
                 var stripped = fileName[..^4];
@@ -4507,7 +4395,6 @@ internal static class LspServerResolver
         var cfg = extension.Lsp;
         if (cfg == null || string.IsNullOrWhiteSpace(cfg.Command))
         {
-            // Try first from Lsps collection if Lsp is null but Lsps has entries
             if (extension.Lsps.Count > 0) cfg = extension.Lsps[0];
         }
         if (cfg == null || string.IsNullOrWhiteSpace(cfg.Command))
@@ -4526,7 +4413,6 @@ internal static class LspServerResolver
         if (settings != null && !settings.LspEnabled)
             return new(LspServerSource.Disabled, null, cfg, null, "LSP globally disabled", false);
 
-        // Runtime check first – if missing, report before path checks
         if (!string.IsNullOrWhiteSpace(cfg.Runtime))
         {
             var rt = await LspRuntimeDetector.DetectAsync(cfg.Runtime!, cfg.RuntimeMinVersion, ct).ConfigureAwait(false);
@@ -4536,7 +4422,6 @@ internal static class LspServerResolver
             }
         }
 
-        // 1.
         string? overrideKey = null;
         string? ov = null;
         if (settings != null)
@@ -4566,14 +4451,11 @@ internal static class LspServerResolver
                     return new(LspServerSource.Incompatible, found, resolved, ver, $"Language server '{cfg.EffectiveProviderId}' version {ver ?? "unknown"} is incompatible with required {cfg.Version}.", cfg.AllowAutoInstall);
                 return new(LspServerSource.UserOverride, found, resolved, ver, null, false);
             }
-            // override points to non-existent – treat as error but fallback
             KodoDiagnostics.LogDebug($"LSP user override for {overrideKey} not found: {trimmed}");
         }
 
-        // 2 & 3: Deterministic preference handling
         bool preferManaged = settings?.LspPreferManaged ?? true;
         bool preferSystem = settings?.LspPreferSystem ?? true;
-        // Validate managed presence (requires actual executable, not
         var managedExe = LspInstallationManager.FindManagedExecutable(cfg, settings);
         bool managedExists = managedExe != null && File.Exists(managedExe);
         string? systemExe = null;
@@ -4586,7 +4468,6 @@ internal static class LspServerResolver
         }
         bool systemExists = systemExe != null && File.Exists(systemExe);
 
-        // Deterministic order: - UserOverride already returned
         async Task<LspResolution?> TryResolveManagedOrSystemAsync(string exe, LspServerSource source)
         {
             var resolved = CloneWithCommand(cfg, exe);
@@ -4596,7 +4477,6 @@ internal static class LspServerResolver
                 KodoDiagnostics.LogDebug($"LSP {source} {cfg.EffectiveProviderId} version {ver} incompatible with required {cfg.Version}");
                 return new(LspServerSource.Incompatible, exe, resolved, ver, $"Language server '{cfg.EffectiveProviderId}' version {ver} is incompatible with required {cfg.Version}.", cfg.AllowAutoInstall);
             }
-            // Version unknown treated as compatible (don't block valid install)
             if (!string.IsNullOrWhiteSpace(cfg.Version) && string.IsNullOrWhiteSpace(ver))
                 KodoDiagnostics.LogDebug($"LSP {source} {cfg.EffectiveProviderId} version unknown; treating as compatible with required {cfg.Version}");
             return new(source, exe, resolved, ver, null, false);
@@ -4622,7 +4502,6 @@ internal static class LspServerResolver
                 var r = await TryResolveManagedOrSystemAsync(managedExe!, LspServerSource.Managed).ConfigureAwait(false);
                 return r!;
             }
-            // System explicitly disabled – don't fall back
         }
         else if (!preferManaged && preferSystem)
         {
@@ -4637,15 +4516,12 @@ internal static class LspServerResolver
                 return r!;
             }
         }
-        // If both disabled, skip both and go to installable/manual
 
-        // 4. Installable? Enforce SHA-256 for github artifacts
         bool isGithub = (cfg.InstallMethod?.Equals("github", StringComparison.OrdinalIgnoreCase) ?? false)
             || (cfg.DownloadUrl?.Contains("github.com", StringComparison.OrdinalIgnoreCase) ?? false);
         bool hasSha = !string.IsNullOrWhiteSpace(cfg.Sha256);
         bool canInstall = cfg.AllowAutoInstall && !string.Equals(cfg.InstallMethod, "manual", StringComparison.OrdinalIgnoreCase)
             && (!string.IsNullOrWhiteSpace(cfg.DownloadUrl) || !string.IsNullOrWhiteSpace(cfg.PackageName) || cfg.InstallMethod == "npm" || cfg.InstallMethod == "github" || cfg.InstallMethod == "dotnet");
-        // For github/standalone without checksum, treat as manual –
         if (canInstall && isGithub && !hasSha)
         {
             return new(LspServerSource.ManualRequired, null, cfg, null, $"Language server '{cfg.EffectiveProviderId}' download requires SHA-256 verification (no checksum provided). Please install manually from {cfg.DownloadUrl} or update provider metadata.", false);
@@ -4719,10 +4595,9 @@ internal static class LspServerResolver
     internal static bool IsVersionCompatible(string? installedRaw, string? required)
     {
         if (string.IsNullOrWhiteSpace(required)) return true;
-        if (string.IsNullOrWhiteSpace(installedRaw)) return true; // unknown -> don't block
+        if (string.IsNullOrWhiteSpace(installedRaw)) return true;
         try
         {
-            // Extract versions via same logic as LspRuntimeDetector
             string Extract(string s)
             {
                 var m = System.Text.RegularExpressions.Regex.Match(s, @"v?(\d+\.\d+(?:\.\d+)?)");
