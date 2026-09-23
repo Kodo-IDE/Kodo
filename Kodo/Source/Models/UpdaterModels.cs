@@ -26,6 +26,32 @@ internal sealed record UpdateInfo(
 
 internal sealed record UpdateDownloadProgress(double Fraction, string Label);
 
+internal enum UpdateKind
+{
+    None,
+    FullRelease,
+    Hotfix,
+}
+
+// Phase 2: combined update-check outcome. A newer full release always takes
+// precedence over hotfixes for an older base version.
+internal sealed record UpdateCheckResult(
+    UpdateKind Kind,
+    UpdateInfo? FullRelease,
+    HotfixCandidate? Hotfix)
+{
+    public static readonly UpdateCheckResult None = new(UpdateKind.None, null, null);
+
+    public bool HasUpdate => Kind != UpdateKind.None;
+
+    public static UpdateCheckResult Create(UpdateInfo? fullRelease, HotfixCandidate? hotfix) =>
+        fullRelease is not null
+            ? new UpdateCheckResult(UpdateKind.FullRelease, fullRelease, null)
+            : hotfix is not null
+                ? new UpdateCheckResult(UpdateKind.Hotfix, null, hotfix)
+                : None;
+}
+
 internal sealed class AutoUpdateSettings
 {
     public bool AutoUpdateAppEnabled { get; set; } = true;

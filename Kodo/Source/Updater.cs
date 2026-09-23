@@ -16,6 +16,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Shared = Kodo.HotfixShared.HotfixShared;
 
 namespace Kodo;
 
@@ -56,6 +57,8 @@ internal static class UpdateService
             var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, ct).ConfigureAwait(false);
             if (release is null || string.IsNullOrWhiteSpace(release.TagName)) return null;
             if (release.Draft || release.Prerelease) return null;
+            // Hotfix tags (hotfix/2.1.0/1) are handled by hotfix discovery, never as full releases.
+            if (HotfixDiscovery.IsHotfixTag(release.TagName)) return null;
             if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion)) return null;
             var asset = PickInstallerAsset(release.Assets);
             if (asset is null) return null;
@@ -78,6 +81,8 @@ internal static class UpdateService
             {
                 if (release is null || string.IsNullOrWhiteSpace(release.TagName)) continue;
                 if (release.Draft || release.Prerelease) continue;
+                // Hotfix tags (hotfix/2.1.0/1) are handled by hotfix discovery, never as full releases.
+                if (HotfixDiscovery.IsHotfixTag(release.TagName)) continue;
                 if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion)) continue;
                 var asset = PickInstallerAsset(release.Assets);
                 if (asset is null) continue;
@@ -90,6 +95,116 @@ internal static class UpdateService
     }
 
     internal static string? LastIncompatibleReason { get; private set; }
+
+    // --- Phase 2: hotfix discovery (identify only; no download/apply) ---
+
+    internal static (string BaseVersion, int HotfixLevel) ResolveInstalledHotfix()
+    {
+        var currentBase = HotfixVersion.CurrentBaseVersion;
+        var state = HotfixStateStore.LoadOrDefault();
+        if (!HotfixVersion.AreSameBaseVersion(state.BaseVersion, currentBase))
+            return (currentBase, 0);
+        return (HotfixVersion.NormalizeBaseVersion(state.BaseVersion) ?? currentBase, Math.Max(0, state.HotfixLevel));
+    }
+
+    internal static async Task<GitHubRelease[]?> FetchGitHubReleasesAsync(CancellationToken ct = default)
+    {
+        using var response = await Http.GetAsync(ReleasesListUrl, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync<GitHubRelease[]>(stream, JsonOptions, ct).ConfigureAwait(false);
+    }
+
+    public static async Task<HotfixCandidate?> CheckForHotfixAsync(CancellationToken ct = default)
+    {
+        KodoDiagnostics.LogDebug("Hotfix check started");
+        var (installedBase, installedLevel) = ResolveInstalledHotfix();
+        KodoDiagnostics.LogDebug($"Installed base version: {installedBase}");
+        KodoDiagnostics.LogDebug($"Installed hotfix: HF{installedLevel}");
+
+        GitHubRelease[]? releases;
+        try
+        {
+            releases = await FetchGitHubReleasesAsync(ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Hotfix check failed to fetch releases", ex);
+            return null;
+        }
+        if (releases is null) return null;
+
+        var compatible = HotfixDiscovery.FindCompatibleHotfixes(releases, installedBase, installedLevel);
+        foreach (var c in compatible)
+            KodoDiagnostics.LogDebug($"Found compatible hotfix: HF{c.HotfixLevel} ({c.TagName})");
+
+        // Loop prevention: drop hotfixes blocked after repeated startup failures.
+        HotfixCandidate? selected = null;
+        var blockedNewest = false;
+        foreach (var c in compatible)
+        {
+            if (Shared.IsBlocked(UpdateRoot, c.BaseVersion, c.HotfixLevel))
+            {
+                blockedNewest = true;
+                KodoDiagnostics.LogDebug($"Hotfix {c.TagName} blocked after repeated failures; not offered.");
+                continue;
+            }
+            blockedNewest = false;
+            selected = c;
+        }
+
+        if (selected is null)
+        {
+            KodoDiagnostics.LogDebug(blockedNewest
+                ? "No newer hotfix available (newest compatible hotfix is blocked after failures)"
+                : "No newer hotfix available");
+            return null;
+        }
+
+        KodoDiagnostics.LogDebug($"Selected hotfix: {HotfixVersion.Format(selected.BaseVersion, selected.HotfixLevel)} ({selected.TagName})");
+        return selected;
+    }
+
+    public static async Task<UpdateCheckResult> CheckForAnyUpdateAsync(CancellationToken ct = default)
+    {
+        var full = await CheckForUpdateAsync(ct).ConfigureAwait(false);
+        if (full is not null)
+        {
+            KodoDiagnostics.LogDebug($"Full release {full.Version} available; it takes precedence over hotfixes.");
+            return UpdateCheckResult.Create(full, null);
+        }
+        var hotfix = await CheckForHotfixAsync(ct).ConfigureAwait(false);
+        return UpdateCheckResult.Create(null, hotfix);
+    }
+
+    // --- Phase 3: hotfix application (download/verify/stage here; KodoUpdater applies) ---
+
+    internal static HttpClient SharedHttpClient => Http;
+
+    public static Task<string> DownloadHotfixPackageAsync(
+        HotfixCandidate candidate,
+        IProgress<UpdateDownloadProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var safeTag = candidate.TagName.Trim().Replace('/', '-').Replace('\\', '-');
+        foreach (var c in Path.GetInvalidFileNameChars()) safeTag = safeTag.Replace(c, '_');
+        var destPath = Path.Combine(HotfixStaging.DownloadsRoot, safeTag, "package.zip");
+        return HotfixStaging.DownloadAsync(Http, candidate, destPath, progress, ct);
+    }
+
+    public static async Task<string> PrepareAndLaunchHotfixAsync(
+        HotfixCandidate candidate,
+        bool restartAfterUpdate = true,
+        IProgress<UpdateDownloadProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        var prepared = await HotfixStaging.PrepareAsync(candidate, progress, ct).ConfigureAwait(false);
+        if (prepared.AlreadyInstalled || prepared.TransactionPath is null)
+            throw new InvalidOperationException($"Hotfix {candidate.TagName} is already installed.");
+        KodoDiagnostics.LogDebug("Kodo shutdown requested for hotfix apply; launching updater.");
+        LaunchUpdaterAndExit(prepared.TransactionPath);
+        return prepared.TransactionPath;
+    }
 
     private static GitHubAsset? PickInstallerAsset(GitHubAsset[]? assets)
     {
@@ -295,6 +410,21 @@ internal static class UpdateService
                     catch { }
                 }
             }
+            // Hotfix downloads use .partial files too; transaction/backup dirs are
+            // retained for Phase 4 rollback and must not be deleted here.
+            var hotfixDownloads = Path.Combine(UpdateRoot, "hotfix", "downloads");
+            if (Directory.Exists(hotfixDownloads))
+            {
+                foreach (var f in Directory.GetFiles(hotfixDownloads, "*.partial", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        var info = new FileInfo(f);
+                        if (DateTime.UtcNow - info.LastWriteTimeUtc > TimeSpan.FromHours(48)) File.Delete(f);
+                    }
+                    catch { }
+                }
+            }
         }
         catch { }
     }
@@ -439,15 +569,8 @@ internal static class UpdateService
 
     public static void LaunchUpdaterAndExit(string transactionPath)
     {
+        var updaterPath = ResolveUpdaterPath();
         var exeDir = AppContext.BaseDirectory;
-        var updaterFileName = OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
-        var updaterPath = Path.Combine(exeDir, updaterFileName);
-        if (!File.Exists(updaterPath))
-        {
-            updaterPath = Path.Combine(exeDir, "KodoUpdater", updaterFileName);
-            if (!File.Exists(updaterPath))
-                throw new FileNotFoundException($"{updaterFileName} not found", updaterPath);
-        }
 
         var psi = new ProcessStartInfo
         {
@@ -475,6 +598,58 @@ internal static class UpdateService
         }
 
         KodoDiagnostics.LogDebug($"KodoUpdater launched for {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
+        Thread.Sleep(400);
+        Environment.Exit(0);
+    }
+
+    internal static string ResolveUpdaterPath()
+    {
+        var exeDir = AppContext.BaseDirectory;
+        var updaterFileName = OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
+        var updaterPath = Path.Combine(exeDir, updaterFileName);
+        if (!File.Exists(updaterPath))
+        {
+            updaterPath = Path.Combine(exeDir, "KodoUpdater", updaterFileName);
+            if (!File.Exists(updaterPath))
+                throw new FileNotFoundException($"{updaterFileName} not found", updaterPath);
+        }
+        return updaterPath;
+    }
+
+    // Phase 4: hand a failed/unverifiable hotfix to the updater for rollback,
+    // then exit so files are not locked. Never returns.
+    public static void LaunchUpdaterForRollback(string transactionPath)
+    {
+        var updaterPath = ResolveUpdaterPath();
+        var exeDir = AppContext.BaseDirectory;
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = updaterPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = exeDir,
+        };
+        psi.ArgumentList.Add("--rollback");
+        psi.ArgumentList.Add(transactionPath);
+
+        try
+        {
+            Process.Start(psi);
+        }
+        catch
+        {
+            var fallback = new ProcessStartInfo
+            {
+                FileName = updaterPath,
+                Arguments = $"--rollback \"{transactionPath}\"",
+                UseShellExecute = true,
+                WorkingDirectory = exeDir,
+            };
+            Process.Start(fallback);
+        }
+
+        KodoDiagnostics.LogDebug($"KodoUpdater launched for rollback of {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
         Thread.Sleep(400);
         Environment.Exit(0);
     }
@@ -522,8 +697,11 @@ internal sealed class UpdateDialog : Window
     private readonly DialogThemePalette _palette;
     private readonly Color _accentColor;
     private readonly Color _accentForeground;
-    private readonly UpdateInfo _update;
+    private readonly UpdateInfo? _update;
     private string? _stagedInstallerPath;
+    private readonly HotfixCandidate? _hotfix;
+    private string? _stagedHotfixTxPath;
+    private readonly bool _isHotfixMode;
     private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
     private readonly Button _primaryButton;
@@ -609,21 +787,103 @@ internal sealed class UpdateDialog : Window
 
     public static void ShowFor(UpdateInfo update, string? stagedPath = null)
     {
-        Dispatcher.UIThread.Post(() =>
+        Dispatcher.UIThread.Post(() => ShowDialog(new UpdateDialog(update, stagedPath)));
+    }
+
+    public static void ShowForHotfix(HotfixCandidate hotfix, string? stagedTxPath = null)
+    {
+        Dispatcher.UIThread.Post(() => ShowDialog(new UpdateDialog(hotfix, stagedTxPath)));
+    }
+
+    private static void ShowDialog(UpdateDialog dialog)
+    {
+        Window? owner = null;
+        if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
         {
-            var dialog = new UpdateDialog(update, stagedPath);
-            Window? owner = null;
-            if (Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop)
-            {
-                var main = desktop.MainWindow;
-                if (main is { IsVisible: true }) owner = main;
-            }
-            if (owner is not null) dialog.Show(owner); else dialog.Show();
-        });
+            var main = desktop.MainWindow;
+            if (main is { IsVisible: true }) owner = main;
+        }
+        if (owner is not null) dialog.Show(owner); else dialog.Show();
+    }
+
+    public UpdateDialog(HotfixCandidate hotfix, string? stagedTxPath = null)
+    {
+        _hotfix = hotfix;
+        _isHotfixMode = true;
+        _stagedHotfixTxPath = stagedTxPath;
+        _palette = ThemeResolver.GetCurrentPalette();
+        (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
+        var display = HotfixVersion.Format(hotfix.BaseVersion, hotfix.HotfixLevel);
+
+        Title = "Kodo - Hotfix Available";
+        Width = 460;
+        SizeToContent = SizeToContent.Height;
+        CanResize = false;
+        Background = new SolidColorBrush(_palette.Background);
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+
+        var iconBadge = new Border
+        {
+            Background = new SolidColorBrush(_accentColor),
+            CornerRadius = new CornerRadius(8),
+            Width = 40, Height = 40,
+            Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
+        };
+        var titleText = new TextBlock
+        {
+            Text = $"Kodo {display} hotfix is available",
+            FontSize = 16, FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(_palette.Text), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+        };
+        var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { iconBadge, titleText } };
+
+        _statusText = new TextBlock
+        {
+            Text = stagedTxPath is not null && File.Exists(stagedTxPath)
+                ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
+                : $"A hotfix for Kodo {hotfix.BaseVersion} is available (HF{hotfix.HotfixLevel}). Download now to get the latest fixes.",
+            FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
+        };
+        var notesLink = new TextBlock { Text = "View release notes", FontSize = 12, Foreground = new SolidColorBrush(_accentColor), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
+        notesLink.PointerPressed += (_, _) => OpenUrl(hotfix.ReleaseNotesUrl);
+
+        _progressBar = new ProgressBar { Minimum = 0, Maximum = 1, Value = 0, Height = 8, IsVisible = false, Foreground = new SolidColorBrush(_accentColor), Background = new SolidColorBrush(_palette.BadgeBg), CornerRadius = new CornerRadius(4) };
+
+        _laterButton = new Button { Content = "Later", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 8), Background = new SolidColorBrush(_palette.BadgeBg), Foreground = new SolidColorBrush(_palette.TextMuted), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
+        _laterButton.Click += (_, _) => Close();
+
+        _primaryButton = new Button
+        {
+            Content = stagedTxPath is not null ? "Restart & Update" : "Download Hotfix",
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Padding = new Thickness(20, 8),
+            Background = new SolidColorBrush(_accentColor),
+            Foreground = new SolidColorBrush(_accentForeground),
+            BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(8),
+        };
+        _primaryButton.Click += async (_, _) => await OnPrimaryClickAsync();
+
+        if (stagedTxPath is not null && File.Exists(stagedTxPath)) _isReady = true;
+
+        var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        buttonRow.Children.Add(_laterButton);
+        Grid.SetColumn(_primaryButton, 1);
+        buttonRow.Children.Add(_primaryButton);
+
+        var headerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
+
+        var content = new StackPanel { Spacing = 12, Children = { headerRow, headerDivider, _statusText, notesLink, _progressBar, footerDivider, buttonRow } };
+        Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
     }
 
     private async Task OnPrimaryClickAsync()
     {
+        if (_isHotfixMode)
+        {
+            await OnHotfixPrimaryClickAsync();
+            return;
+        }
         if (_isReady && _stagedInstallerPath is not null && File.Exists(_stagedInstallerPath))
         {
             if (UpdateService.IsLinuxNotifyOnly)
@@ -639,7 +899,7 @@ internal sealed class UpdateDialog : Window
             _progressBar.IsVisible = true;
             _progressBar.IsIndeterminate = true;
             await Task.Delay(300);
-            try { UpdateService.PrepareAndLaunchUpdate(_stagedInstallerPath, _update.Version, restartAfterUpdate: true, expectedSha256: _update.Sha256); }
+            try { UpdateService.PrepareAndLaunchUpdate(_stagedInstallerPath, _update!.Version, restartAfterUpdate: true, expectedSha256: _update!.Sha256); }
             catch (Exception ex)
             {
                 _statusText.Text = $"Couldn't start updater: {ex.Message}";
@@ -673,7 +933,7 @@ internal sealed class UpdateDialog : Window
 
         try
         {
-            _stagedInstallerPath = await UpdateService.DownloadInstallerAsync(_update, progress);
+            _stagedInstallerPath = await UpdateService.DownloadInstallerAsync(_update!, progress);
             _isDownloading = false;
             _isReady = true;
             _progressBar.IsVisible = false;
@@ -704,6 +964,90 @@ internal sealed class UpdateDialog : Window
             _progressBar.IsVisible = false;
             _canClose = true;
             KodoDiagnostics.WriteDiagnosticLog("UpdateDialog.BeginDownloadAsync", ex, false, "Warning", "AutoUpdate");
+        }
+    }
+
+    private async Task OnHotfixPrimaryClickAsync()
+    {
+        if (_hotfix is null) return;
+        if (_isReady && _stagedHotfixTxPath is not null && File.Exists(_stagedHotfixTxPath))
+        {
+            _canClose = false;
+            _primaryButton.IsEnabled = false;
+            _laterButton.IsEnabled = false;
+            _statusText.Text = "Launching updater… Kodo will restart shortly.";
+            _progressBar.IsVisible = true;
+            _progressBar.IsIndeterminate = true;
+            await Task.Delay(300);
+            try { UpdateService.LaunchUpdaterAndExit(_stagedHotfixTxPath); }
+            catch (Exception ex)
+            {
+                _statusText.Text = $"Couldn't start updater: {ex.Message}";
+                _primaryButton.IsEnabled = true;
+                _laterButton.IsEnabled = true;
+                _canClose = true;
+            }
+            return;
+        }
+        await BeginHotfixDownloadAsync();
+    }
+
+    private async Task BeginHotfixDownloadAsync()
+    {
+        if (_hotfix is null) return;
+        if (_isDownloading) return;
+        _isDownloading = true;
+        _canClose = false;
+        _primaryButton.IsEnabled = false;
+        _laterButton.IsEnabled = false;
+        _primaryButton.Content = "Downloading…";
+        _progressBar.IsVisible = true;
+        _progressBar.IsIndeterminate = false;
+        _progressBar.Value = 0;
+        _statusText.Text = "Downloading the hotfix…";
+
+        var progress = new Progress<UpdateDownloadProgress>(p =>
+        {
+            _progressBar.Value = p.Fraction;
+            _statusText.Text = $"Downloading… {p.Label}";
+        });
+
+        try
+        {
+            var prepared = await HotfixStaging.PrepareAsync(_hotfix, progress);
+            if (prepared.AlreadyInstalled || prepared.TransactionPath is null)
+            {
+                _statusText.Text = "This hotfix is already installed.";
+                _primaryButton.Content = "Close";
+                _primaryButton.IsEnabled = true;
+                _laterButton.IsEnabled = true;
+                _canClose = true;
+                _isDownloading = false;
+                return;
+            }
+            _stagedHotfixTxPath = prepared.TransactionPath;
+            _isDownloading = false;
+            _isReady = true;
+            _progressBar.IsVisible = false;
+            _statusText.Text = "Hotfix downloaded and verified. Ready to apply – choose Restart & Update when you're ready.";
+            _primaryButton.Content = "Restart & Update";
+            _primaryButton.IsEnabled = true;
+            _laterButton.IsEnabled = true;
+            _laterButton.Content = "Later";
+            _canClose = true;
+        }
+        catch (Exception ex)
+        {
+            _isDownloading = false;
+            _statusText.Text = ex is InvalidDataException
+                ? "The hotfix failed verification and was discarded. The current installation is untouched."
+                : "The hotfix couldn't be downloaded. Check your connection and try again.";
+            _primaryButton.Content = "Retry";
+            _primaryButton.IsEnabled = true;
+            _laterButton.IsEnabled = true;
+            _progressBar.IsVisible = false;
+            _canClose = true;
+            KodoDiagnostics.WriteDiagnosticLog("UpdateDialog.BeginHotfixDownloadAsync", ex, false, "Warning", "HotfixUpdate");
         }
     }
 

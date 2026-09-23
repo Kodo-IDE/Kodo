@@ -6249,8 +6249,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             });
 
             if (update is null)
+            {
+                var hotfix = await UpdateService.CheckForHotfixAsync();
+                if (hotfix is not null)
+                {
+                    var installed = UpdateService.ResolveInstalledHotfix();
+                    CheckForUpdatesStatusText = $"Kodo {installed.BaseVersion} HF{hotfix.HotfixLevel} hotfix available.";
+                    UpdateDialog.ShowForHotfix(hotfix);
+                    return;
+                }
                 CheckForUpdatesStatusText = UpdateService.LastIncompatibleReason
                     ?? $"You're up to date - Kodo {KodoDiagnostics.AppVersion}.";
+            }
         }
         catch (Exception ex)
         {

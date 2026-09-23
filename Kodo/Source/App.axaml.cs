@@ -83,7 +83,33 @@ public partial class App : Application
             DeferUpdateChecks();
         }
 
+        DeferHotfixConfirmation();
+
         base.OnFrameworkInitializationCompleted();
+    }
+
+    // Phase 4: confirm a freshly applied hotfix only after Kodo has reached a
+    // reliable startup point. Fire-and-forget and infallible by design — a
+    // confirmation failure must never break startup.
+    private static void DeferHotfixConfirmation()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+                var result = await HotfixRecovery.ConfirmStartupAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(result.NeedsRollbackTxPath))
+                {
+                    KodoDiagnostics.LogDebug("Hotfix files do not match manifest after startup; handing off to updater for rollback.");
+                    UpdateService.LaunchUpdaterForRollback(result.NeedsRollbackTxPath!);
+                }
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Deferred hotfix confirmation failed", ex);
+            }
+        });
     }
 
     private static void DeleteKodoDataBeforeStartup()

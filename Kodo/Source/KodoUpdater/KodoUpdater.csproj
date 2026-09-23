@@ -30,4 +30,9 @@
     <!-- One-shot helper: no Avalonia, minimal deps -->
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Shared hotfix-apply core (BCL-only, trim-safe; also compiled into Kodo). -->
+    <Compile Include="..\HotfixApplyShared.cs" Link="HotfixApplyShared.cs" />
+  </ItemGroup>
+
 </Project>
