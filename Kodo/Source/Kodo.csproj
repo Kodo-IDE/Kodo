@@ -48,11 +48,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Kodo.Hotfix.Tests" />
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
-    <Compile Remove="Kodo.Hotfix.Tests\**\*.cs" />
-    <None Remove="Kodo.Hotfix.Tests\**\*.cs" />
   </ItemGroup>
 
   <Target Name="RemovePdbFilesFromPublish"
