@@ -1,4 +1,4 @@
-﻿<!-- Licensed under GPL-v3.0 -->
+<!-- Licensed under GPL v3.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- Target-platform aware: Exe by default; WinExe only when targeting Windows.

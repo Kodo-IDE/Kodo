@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -874,7 +874,7 @@ public partial class MainWindow
             try
             {
                 var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
-                regex = new Regex(query, options | RegexOptions.Compiled);
+                regex = new Regex(query, options | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
             }
             catch
             {
@@ -890,7 +890,9 @@ public partial class MainWindow
 
             if (regex is not null)
             {
-                var match = regex.Match(name);
+                Match match;
+                try { match = regex.Match(name); }
+                catch (RegexMatchTimeoutException) { continue; }
                 if (!match.Success) continue;
 
                 var matchIndices = new List<int>();
@@ -941,7 +943,7 @@ public partial class MainWindow
             try
             {
                 var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
-                regex = new Regex(query, options | RegexOptions.Compiled);
+                regex = new Regex(query, options | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
             }
             catch
             {
@@ -975,7 +977,9 @@ public partial class MainWindow
                     List<int>? matchIndices = null;
                     if (regex is not null)
                     {
-                        var m = regex.Match(line);
+                        Match m;
+                        try { m = regex.Match(line); }
+                        catch (RegexMatchTimeoutException) { continue; }
                         matched = m.Success;
                         if (matched)
                         {
@@ -1361,7 +1365,7 @@ FindInEditor(forward: true);
         try
         {
             var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;
-            var regex = new Regex(FindText, options | RegexOptions.Compiled);
+            var regex = new Regex(FindText, options | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
             _cachedFindRegex = regex;
             return regex;
         }

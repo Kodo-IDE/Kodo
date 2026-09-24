@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 
 namespace Kodo;
@@ -26,6 +26,12 @@ internal static class FileSystemPaths
     {
         if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(dirPrefix))
             return false;
+        try
+        {
+            path = System.IO.Path.GetFullPath(path);
+            dirPrefix = System.IO.Path.GetFullPath(dirPrefix.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+        }
+        catch { return false; }
         var sep = System.IO.Path.DirectorySeparatorChar.ToString();
         return Equals(path, dirPrefix) || StartsWith(path, dirPrefix + sep);
     }

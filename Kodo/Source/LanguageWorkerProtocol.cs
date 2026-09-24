@@ -1,3 +1,5 @@
+// Licensed under GPL v3.0
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,11 +11,13 @@ namespace Kodo;
 
 public sealed class LanguageWorker : IDisposable
 {
-    private readonly Channel<WorkItem> _queue = Channel.CreateBounded<WorkItem>(
-        new BoundedChannelOptions(16) { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.DropOldest, AllowSynchronousContinuations = false });
+    private readonly Channel<WorkItem> _queue = Channel.CreateUnbounded<WorkItem>(
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false, AllowSynchronousContinuations = false });
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _loop;
     private readonly Dictionary<string, LanguageDocumentSnapshot> _documents = new(FileSystemPaths.Comparer);
+    private readonly object _docLock = new();
+    private bool _disposed;
 
     public LanguageWorker()
     {
@@ -62,43 +66,64 @@ public sealed class LanguageWorker : IDisposable
     public LanguageWorkerResponse Open(LanguageDocumentSnapshot document) =>
         Send(new("textDocument/didOpen", document), request =>
         {
-            _documents[request.Document.Uri] = request.Document;
+            lock (_docLock) { _documents[request.Document.Uri] = request.Document; }
             return request.Document;
         });
 
     public LanguageWorkerResponse Change(string uri, long version, IReadOnlyList<LanguageTextChange> changes, CancellationToken cancellationToken = default) =>
         Send(new("textDocument/didChange", new(uri, version, string.Empty), Changes: changes), request =>
         {
-            if (!_documents.TryGetValue(uri, out var current)) return null;
-            var text = current.Text;
-            if (request.Changes is null || request.Changes.Count == 0) return current;
-            if (request.Changes.Count == 1)
+            lock (_docLock)
             {
-                var c = request.Changes[0];
-                if (c.Start < 0 || c.Start > text.Length || c.Length < 0 || c.Start + c.Length > text.Length) return current;
-                text = string.Concat(text.AsSpan(0, c.Start), c.NewText, text.AsSpan(c.Start + c.Length));
-            }
-            else
-            {
-                var sb = new System.Text.StringBuilder(text.Length + 256);
-                sb.Append(text);
-                foreach (var change in request.Changes.OrderByDescending(ch => ch.Start))
+                if (!_documents.TryGetValue(uri, out var current)) return null;
+                var text = current.Text;
+                if (request.Changes is null || request.Changes.Count == 0) return current;
+                if (request.Changes.Count == 1)
                 {
-                    if (change.Start < 0 || change.Start > sb.Length || change.Length < 0 || change.Start + change.Length > sb.Length) continue;
-                    sb.Remove(change.Start, change.Length);
-                    sb.Insert(change.Start, change.NewText);
+                    var c = request.Changes[0];
+                    if (c.Start < 0 || c.Start > text.Length || c.Length < 0 || c.Start + c.Length > text.Length) return current;
+                    text = string.Concat(text.AsSpan(0, c.Start), c.NewText, text.AsSpan(c.Start + c.Length));
                 }
-                text = sb.ToString();
+                else
+                {
+                    foreach (var change in request.Changes)
+                    {
+                        if (change.Start < 0 || change.Length < 0 || change.Start + change.Length > text.Length) return current;
+                    }
+                    for (var i = 0; i < request.Changes.Count - 1; i++)
+                    {
+                        var a = request.Changes[i];
+                        var b = request.Changes[i + 1];
+                        var aEnd = a.Start + a.Length;
+                        var bEnd = b.Start + b.Length;
+                        if (a.Start < bEnd && b.Start < aEnd) return current;
+                    }
+                    var sb = new System.Text.StringBuilder(text.Length + 256);
+                    sb.Append(text);
+                    foreach (var change in request.Changes.OrderByDescending(ch => ch.Start))
+                    {
+                        if (change.Start < 0 || change.Start > sb.Length || change.Length < 0 || change.Start + change.Length > sb.Length) continue;
+                        sb.Remove(change.Start, change.Length);
+                        sb.Insert(change.Start, change.NewText);
+                    }
+                    text = sb.ToString();
+                }
+                var updated = new LanguageDocumentSnapshot(uri, version, text);
+                _documents[uri] = updated;
+                return updated;
             }
-            var updated = new LanguageDocumentSnapshot(uri, version, text);
-            _documents[uri] = updated;
-            return updated;
         }, cancellationToken);
 
     public LanguageWorkerResponse Close(string uri, long version = 0) =>
-        Send(new("textDocument/didClose", new(uri, version, string.Empty)), request => _documents.Remove(request.Document.Uri));
+        Send(new("textDocument/didClose", new(uri, version, string.Empty)), request =>
+        {
+            lock (_docLock) { return _documents.Remove(request.Document.Uri); }
+        });
 
-    public LanguageDocumentSnapshot? GetDocument(string uri) => _documents.TryGetValue(uri, out var document) ? document : null;
+    public LanguageDocumentSnapshot? GetDocument(string uri)
+    {
+        lock (_docLock) { return _documents.TryGetValue(uri, out var document) ? document : null; }
+    }
 
     private async Task ProcessAsync()
     {
@@ -124,9 +149,15 @@ public sealed class LanguageWorker : IDisposable
 
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _queue.Writer.TryComplete();
-        _shutdown.Cancel();
-        _shutdown.Dispose();
+        try { _shutdown.Cancel(); } catch { }
+        while (_queue.Reader.TryRead(out var pending))
+        {
+            try { pending.Completion.TrySetResult(new(pending.Request.Method, pending.Request.Document.Version, null, "disposed")); } catch { }
+        }
+        try { _shutdown.Dispose(); } catch { }
     }
 
     private sealed record WorkItem(

@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 //
 // Consolidated Kodo-side hotfix system (Phases 1-4): versioning, models,
 // validation, state, discovery, packaging, staging, and startup confirmation.
@@ -53,7 +53,16 @@ internal static class HotfixVersion
         var na = NormalizeBaseVersion(a);
         var nb = NormalizeBaseVersion(b);
         if (na is null || nb is null) return false;
-        return string.Equals(na, nb, StringComparison.OrdinalIgnoreCase);
+        var pa = na.Split('.');
+        var pb = nb.Split('.');
+        var max = Math.Max(pa.Length, pb.Length);
+        for (var i = 0; i < max; i++)
+        {
+            var ia = i < pa.Length && int.TryParse(pa[i], out var va) ? va : 0;
+            var ib = i < pb.Length && int.TryParse(pb[i], out var vb) ? vb : 0;
+            if (ia != ib) return false;
+        }
+        return true;
     }
 
     public static bool IsHotfixUpdateAvailable(

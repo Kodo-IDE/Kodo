@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -641,10 +641,18 @@ public partial class MainWindow
             if (process is null)
                 return string.Empty;
 
-            var output = process.StandardOutput.ReadToEnd().Trim();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(3000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return string.Empty;
+            }
+            if (!System.Threading.Tasks.Task.WaitAll(new[] { stdoutTask, stderrTask }, 2000))
+                return string.Empty;
+            var output = (stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result ?? string.Empty : string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(output))
-                output = process.StandardError.ReadToEnd().Trim();
-            process.WaitForExit(3000);
+                output = (stderrTask.IsCompletedSuccessfully ? stderrTask.Result ?? string.Empty : string.Empty).Trim();
 
             var match = Regex.Match(output, @"(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)");
             return match.Success ? match.Groups[1].Value : string.Empty;
@@ -705,8 +713,15 @@ public partial class MainWindow
             if (process is null)
                 return null;
 
-            var installPath = process.StandardOutput.ReadToEnd().Trim();
-            process.WaitForExit(5000);
+            var readTask = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(5000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                return null;
+            }
+            if (!System.Threading.Tasks.Task.WaitAll(new[] { readTask }, 2000))
+                return null;
+            var installPath = (readTask.IsCompletedSuccessfully ? readTask.Result ?? string.Empty : string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(installPath))
                 return null;
 

@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 //
 // Shared hotfix-apply core, compiled into BOTH the Kodo app and KodoUpdater.
 //
@@ -909,8 +909,17 @@ internal static class HotfixShared
     {
         var na = NormalizeBaseVersion(a);
         var nb = NormalizeBaseVersion(b);
-        return na is not null && nb is not null &&
-            string.Equals(na, nb, StringComparison.OrdinalIgnoreCase);
+        if (na is null || nb is null) return false;
+        var pa = na.Split('.');
+        var pb = nb.Split('.');
+        var max = Math.Max(pa.Length, pb.Length);
+        for (var i = 0; i < max; i++)
+        {
+            var ia = i < pa.Length && int.TryParse(pa[i], out var va) ? va : 0;
+            var ib = i < pb.Length && int.TryParse(pb[i], out var vb) ? vb : 0;
+            if (ia != ib) return false;
+        }
+        return true;
     }
 
     internal static bool IsValidSha256(string? value)
@@ -943,6 +952,12 @@ internal static class HotfixShared
     internal static bool IsInsideDirectory(string path, string directory)
     {
         if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(directory)) return false;
+        try
+        {
+            path = Path.GetFullPath(path);
+            directory = Path.GetFullPath(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        }
+        catch { return false; }
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;

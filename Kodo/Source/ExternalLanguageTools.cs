@@ -1,3 +1,5 @@
+// Licensed under GPL v3.0
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -160,6 +162,8 @@ public static class ExternalLanguageToolRunner
             if (!match.Success || string.IsNullOrWhiteSpace(match.Groups["message"].Value)) continue;
             var lineNumber = match.Groups["line"].Success ? match.Groups["line"].Value : match.Groups["msline"].Value;
             var columnNumber = match.Groups["column"].Success ? match.Groups["column"].Value : match.Groups["mscolumn"].Value;
+            if (!int.TryParse(lineNumber, out var parsedLine) || !int.TryParse(columnNumber, out var parsedColumn))
+                continue;
             var reportedFile = match.Groups["gccfile"].Success ? match.Groups["gccfile"].Value : match.Groups["msfile"].Value;
             if (projectFile is not null && !IsDiagnosticForFile(reportedFile, originalFile, projectFile))
                 continue;
@@ -171,7 +175,7 @@ public static class ExternalLanguageToolRunner
                 _ => "error",
             };
             results.Add(new ExternalToolDiagnostic(
-                OffsetAtLineColumn(documentText, int.Parse(lineNumber), int.Parse(columnNumber)),
+                OffsetAtLineColumn(documentText, parsedLine, parsedColumn),
                 1,
                 match.Groups["message"].Value.Trim(),
                 severity,
@@ -207,7 +211,7 @@ public static class ExternalLanguageToolRunner
         }
         var lineEnd = text.IndexOf('\n', offset);
         if (lineEnd < 0) lineEnd = text.Length;
-        return Math.Clamp(offset + Math.Max(0, column - 1), offset, Math.Max(offset, lineEnd - 1));
+        return Math.Clamp(offset + Math.Max(0, column - 1), offset, Math.Max(offset, lineEnd));
     }
 
     private static IEnumerable<ExternalToolDiagnostic> ParseJson(string output, ExternalLanguageTool tool, string documentText)
@@ -263,7 +267,7 @@ public static class ExternalLanguageToolRunner
     private static int OffsetAtLineColumnFromJson(JsonElement position, string text)
     {
         if (position.TryGetProperty("offset", out var offset) && offset.ValueKind == JsonValueKind.Number)
-            return Math.Clamp(offset.GetInt32(), 0, Math.Max(0, text.Length - 1));
+            return Math.Clamp(offset.GetInt32(), 0, Math.Max(0, text.Length));
         var line = position.TryGetProperty("line", out var lineValue) ? lineValue.GetInt32() + 1 : 1;
         var character = position.TryGetProperty("character", out var characterValue) ? characterValue.GetInt32() + 1 : 1;
         return OffsetAtLineColumn(text, line, character);

@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 
 using System.Diagnostics;
 using System.Text.Json;
@@ -99,8 +99,8 @@ internal static class Program
         var mutexName = OperatingSystem.IsWindows()
             ? $"Global\\Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}"
             : $"Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}";
-        using var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
-        if (!createdNew)
+        using var guard = UpdaterMutex.TryAcquire(mutexName);
+        if (guard is null)
         {
             Log($"Another updater already running for {transactionPath} (mutex {mutexName}). Exiting.");
             return 3;
@@ -117,7 +117,6 @@ internal static class Program
         }
         finally
         {
-            try { mutex.ReleaseMutex(); } catch { }
             Log("KodoUpdater exit");
         }
     }
@@ -137,7 +136,7 @@ internal static class Program
             rawJson = await File.ReadAllTextAsync(transactionPath).ConfigureAwait(false);
             if (Kodo.HotfixShared.HotfixShared.IsHotfixTransactionJson(rawJson))
                 return await RunHotfixTransactionAsync(transactionPath, rawJson).ConfigureAwait(false);
-            tx = JsonSerializer.Deserialize<UpdateTransaction>(rawJson, JsonOptions);
+            tx = JsonSerializer.Deserialize(rawJson, UpdateTransactionJsonContext.Default.UpdateTransaction);
         }
         catch (Exception ex)
         {
@@ -731,8 +730,8 @@ internal static class Program
         var mutexName = OperatingSystem.IsWindows()
             ? $"Global\\Kodo-Updater-rollback-{SanitizeForMutex(Path.GetFileNameWithoutExtension(resolved) + Path.GetFileName(Path.GetDirectoryName(resolved) ?? ""))}"
             : $"Kodo-Updater-rollback-{SanitizeForMutex(Path.GetFileNameWithoutExtension(resolved) + Path.GetFileName(Path.GetDirectoryName(resolved) ?? ""))}";
-        using var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
-        if (!createdNew)
+        using var guard = UpdaterMutex.TryAcquire(mutexName);
+        if (guard is null)
         {
             Log($"Another updater operation is running for {resolved}. Exiting.");
             return 3;
@@ -749,7 +748,6 @@ internal static class Program
         }
         finally
         {
-            try { mutex.ReleaseMutex(); } catch { }
             Log("KodoUpdater exit");
         }
     }
@@ -971,9 +969,77 @@ internal static class Program
         try { Debug.WriteLine(line); } catch { }
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = false, TypeInfoResolver = UpdateTransactionJsonContext.Default };
+    // Single-instance guard that is safe to dispose after awaits.
+    //
+    // Named mutexes are thread-affine: ReleaseMutex must run on the thread that
+    // acquired ownership, and Main awaits with ConfigureAwait(false), so the
+    // finally routinely runs on a different threadpool thread. Releasing there
+    // throws ApplicationException ("unsynchronized block of code"), which in the
+    // trimmed single-file build surfaced as a fatal crash instead of the
+    // intended exit code. This guard only releases on the acquiring thread and
+    // otherwise just disposes; process exit drops the rest. The guard only needs
+    // to live as long as this one-shot process.
+    private sealed class UpdaterMutex : IDisposable
+    {
+        private readonly Mutex _mutex;
+        private readonly int _owningThreadId;
+        private bool _disposed;
+
+        private UpdaterMutex(Mutex mutex)
+        {
+            _mutex = mutex;
+            _owningThreadId = Environment.CurrentManagedThreadId;
+        }
+
+        public static UpdaterMutex? TryAcquire(string name)
+        {
+            Mutex mutex;
+            try
+            {
+                mutex = new Mutex(initiallyOwned: false, name, out _);
+            }
+            catch
+            {
+                return null;
+            }
+
+            bool owns;
+            try
+            {
+                owns = mutex.WaitOne(TimeSpan.Zero, exitContext: false);
+            }
+            catch (AbandonedMutexException)
+            {
+                // Previous owner died without releasing; we now own it.
+                owns = true;
+            }
+            catch
+            {
+                owns = false;
+            }
+
+            if (!owns)
+            {
+                try { mutex.Dispose(); } catch { }
+                return null;
+            }
+            return new UpdaterMutex(mutex);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (Environment.CurrentManagedThreadId == _owningThreadId)
+            {
+                try { _mutex.ReleaseMutex(); } catch { }
+            }
+            try { _mutex.Dispose(); } catch { }
+        }
+    }
 }
 
+[JsonSourceGenerationOptions(PropertyNameCaseInsensitive = true, WriteIndented = false)]
 [JsonSerializable(typeof(UpdateTransaction))]
 internal sealed partial class UpdateTransactionJsonContext : JsonSerializerContext
 {

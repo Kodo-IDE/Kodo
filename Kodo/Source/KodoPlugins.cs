@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -106,7 +106,11 @@ public partial class MainWindow
 
     private void LoadPlugin(LoadedExtension ext)
     {
-        var assemblyPath = Path.Combine(ext.PluginFolderPath!, ext.PluginAssemblyFileName!);
+        if (string.IsNullOrWhiteSpace(ext.PluginFolderPath) || string.IsNullOrWhiteSpace(ext.PluginAssemblyFileName))
+            return;
+        var assemblyPath = Path.GetFullPath(Path.Combine(ext.PluginFolderPath!, ext.PluginAssemblyFileName!));
+        if (!FileSystemPaths.IsPrefixOf(assemblyPath, Path.GetFullPath(ext.PluginFolderPath!)))
+            return;
         if (!File.Exists(assemblyPath))
         {
             var fallback = Directory.EnumerateFiles(ext.PluginFolderPath!, Path.GetFileName(ext.PluginAssemblyFileName!), SearchOption.AllDirectories).FirstOrDefault();
@@ -169,7 +173,11 @@ public partial class MainWindow
 
     private void LoadLanguagePlugin(LoadedExtension ext)
     {
-        var assemblyPath = Path.Combine(ext.LanguagePluginFolderPath!, ext.LanguagePluginAssemblyFileName!);
+        if (string.IsNullOrWhiteSpace(ext.LanguagePluginFolderPath) || string.IsNullOrWhiteSpace(ext.LanguagePluginAssemblyFileName))
+            return;
+        var assemblyPath = Path.GetFullPath(Path.Combine(ext.LanguagePluginFolderPath!, ext.LanguagePluginAssemblyFileName!));
+        if (!FileSystemPaths.IsPrefixOf(assemblyPath, Path.GetFullPath(ext.LanguagePluginFolderPath!)))
+            return;
         if (!File.Exists(assemblyPath))
         {
             var fallback = Directory.EnumerateFiles(ext.LanguagePluginFolderPath!, Path.GetFileName(ext.LanguagePluginAssemblyFileName!), SearchOption.AllDirectories).FirstOrDefault();

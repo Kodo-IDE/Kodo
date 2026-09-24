@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 
@@ -422,19 +422,27 @@ internal static class WelcomeMessageBuilder
             if (raw.Contains(':'))
             {
                 var parts = raw.Split(':', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                if (parts.Length >= 2 && double.TryParse(parts[0], out var h) && double.TryParse(parts[1], out var m))
+                if (parts.Length >= 2 && parts.Length <= 3 &&
+                    double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var h) &&
+                    double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var m) &&
+                    h >= 0 && h <= 14 && m >= 0 && m < 60 &&
+                    (parts.Length < 3 || (double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s2) && s2 >= 0 && s2 < 60)))
                 {
                     var offset = TimeSpan.FromHours(h) + TimeSpan.FromMinutes(m);
-                    if (parts.Length > 2 && double.TryParse(parts[2], out var s)) offset += TimeSpan.FromSeconds(s);
+                    if (parts.Length > 2 && double.TryParse(parts[2], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var s)) offset += TimeSpan.FromSeconds(s);
                     if (sign == -1) offset = -offset;
-                    now = DateTime.UtcNow + offset;
+                    if (offset.TotalHours is >= -12 and <= 14)
+                        now = DateTime.UtcNow + offset;
+                    else
+                        now = DateTime.Now;
                 }
                 else
                 {
                     now = DateTime.Now;
                 }
             }
-            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var offsetHours))
+            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var offsetHours) &&
+                offsetHours is >= -12 and <= 14)
             {
                 var offset = TimeSpan.FromHours(offsetHours * sign);
                 now = DateTime.UtcNow + offset;

@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using Avalonia.Media;
 using System;
 using System.ComponentModel;

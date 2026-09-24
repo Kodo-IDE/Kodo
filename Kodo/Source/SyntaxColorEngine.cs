@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -132,7 +132,7 @@ public sealed class CompiledSyntaxProfile
         foreach (var delimiter in extension.MultiLineStringDelimiters.Where(d => !string.IsNullOrWhiteSpace(d)).Distinct())
         {
             var escaped = Regex.Escape(delimiter);
-            stringRegexes.Add(new Regex($@"{escaped}.*?{escaped}", RegexOptions.Compiled));
+            stringRegexes.Add(new Regex($@"{escaped}.*?{escaped}", RegexOptions.Compiled | RegexOptions.Singleline));
         }
         foreach (var delimiter in extension.StringDelimiters.Where(d => !string.IsNullOrWhiteSpace(d)).Distinct())
         {
@@ -148,11 +148,11 @@ public sealed class CompiledSyntaxProfile
         }
         else if (isBatch)
         {
-            singleLineCommentRegex = new Regex(@"(?:(?i)rem|::).*$", RegexOptions.Compiled);
+            singleLineCommentRegex = new Regex(@"(?:(?i)rem|::).*$", RegexOptions.Compiled | RegexOptions.Multiline);
         }
         else
         {
-            singleLineCommentRegex = new Regex(Regex.Escape(extension.CommentLine) + @".*$", RegexOptions.Compiled);
+            singleLineCommentRegex = new Regex(Regex.Escape(extension.CommentLine) + @".*$", RegexOptions.Compiled | RegexOptions.Multiline);
         }
 
         return new CompiledSyntaxProfile(extension, rules, stringRegexes, singleLineCommentRegex);

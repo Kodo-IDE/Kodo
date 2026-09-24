@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -297,7 +297,7 @@ internal static class UpdateService
         var remoteParts = ParseVersionParts(remote);
         var localParts = ParseVersionParts(local);
         if (remoteParts is null || localParts is null)
-            return !string.Equals(remote, local, StringComparison.OrdinalIgnoreCase);
+            return false;
         for (var i = 0; i < Math.Max(remoteParts.Length, localParts.Length); i++)
         {
             var r = i < remoteParts.Length ? remoteParts[i] : 0;

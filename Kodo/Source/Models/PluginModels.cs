@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;

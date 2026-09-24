@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;

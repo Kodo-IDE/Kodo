@@ -1,3 +1,5 @@
+// Licensed under GPL v3.0
+
 using System;
 using System.Collections.Generic;
 using System.IO;

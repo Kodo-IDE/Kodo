@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 #pragma warning disable CA1416
 using Avalonia.Threading;
 using Avalonia.Controls;
@@ -927,9 +927,9 @@ public partial class MainWindow
         {
             var na = NormalizeFilePath(a);
             var nb = NormalizeFilePath(b);
-            return string.Equals(na, nb, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(na, nb, FileSystemPaths.Comparison);
         }
-        catch { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
+        catch { return string.Equals(a, b, FileSystemPaths.Comparison); }
     }
 
     private static string FixCorruptedPath(string p)
@@ -3938,9 +3938,13 @@ internal static class LspProtocol
         var name = headerLine[..idx].Trim();
         if (!name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)) return false;
         var value = headerLine[(idx + 1)..].Trim();
-        var digits = 0;
-        while (digits < value.Length && char.IsDigit(value[digits])) digits++;
-        return digits > 0 && int.TryParse(value.Substring(0, digits), out length);
+        if (value.Length == 0) return false;
+        var semi = value.IndexOf(';');
+        if (semi >= 0) value = value[..semi].Trim();
+        if (value.Length == 0) return false;
+        foreach (var c in value)
+            if (!char.IsDigit(c)) return false;
+        return int.TryParse(value, out length) && length >= 0;
     }
 
     public static JsonElement? ParseMessage(string json, out int? id, out string? method)

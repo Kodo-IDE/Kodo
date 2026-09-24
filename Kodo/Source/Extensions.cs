@@ -1,4 +1,4 @@
-// Licensed under GPL-v3.0
+// Licensed under GPL v3.0
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -565,16 +565,19 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         {
             if (baseExt.PluginFolderPath is not null)
             {
-                var destPath = Path.Combine(baseExt.PluginFolderPath, baseExt.LanguagePluginAssemblyFileName);
-                if (!File.Exists(destPath))
+                var destPath = Path.GetFullPath(Path.Combine(baseExt.PluginFolderPath, baseExt.LanguagePluginAssemblyFileName));
+                if (FileSystemPaths.IsPrefixOf(destPath, Path.GetFullPath(baseExt.PluginFolderPath)))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
-                    var entry = GetKoxEntry(archive, baseExt.LanguagePluginAssemblyFileName)!;
-                    using var entryStream = entry.Open();
-                    using var destStream = File.Create(destPath);
-                    entryStream.CopyTo(destStream);
+                    if (!File.Exists(destPath))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+                        var entry = GetKoxEntry(archive, baseExt.LanguagePluginAssemblyFileName)!;
+                        using var entryStream = entry.Open();
+                        using var destStream = File.Create(destPath);
+                        entryStream.CopyTo(destStream);
+                    }
+                    baseExt.LanguagePluginFolderPath = baseExt.PluginFolderPath;
                 }
-                baseExt.LanguagePluginFolderPath = baseExt.PluginFolderPath;
             }
             else
             {
@@ -1201,6 +1204,9 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             ? TryGetFileNameFromUrl(marketplaceExtension.DownloadUrl)
             : marketplaceExtension.FileName;
 
+        fileName = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(fileName))
+            fileName = $"{marketplaceExtension.Id}.kox";
         return Path.Combine(ExtensionsFolderPath, fileName);
     }
 
