@@ -836,6 +836,8 @@ internal static class HotfixStaging
         {
             using var response = await client.GetAsync(candidate.AssetDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
+            if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidDataException("Hotfix download redirected away from HTTPS.");
 
             var totalBytes = response.Content.Headers.ContentLength ?? candidate.AssetSizeBytes;
             await using var httpStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);

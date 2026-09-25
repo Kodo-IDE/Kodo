@@ -358,17 +358,22 @@ internal static class Program
             return 3;
         }
 
+        var updateDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
+        CleanupOrphanedLinuxWorkDirs(Path.Combine(updateDir, "linux-full"), tx.TransactionId);
+
         Log($"Linux tarball transaction {tx.TransactionId} installer={tx.InstallerPath} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
 
         await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
         await Task.Delay(800).ConfigureAwait(false);
 
-        var updateDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
         var result = Kodo.HotfixShared.HotfixShared.InstallTarballUpdate(new Kodo.HotfixShared.TarballInstallRequest
         {
             TarballPath = tx.InstallerPath,
             TargetDir = installRoot,
-            WorkRoot = Path.Combine(updateDir, "linux-full"),
+            // Per-transaction work root: staging/backup dir names inside are
+            // deterministic, so concurrent updaters for different installs
+            // must not share a root.
+            WorkRoot = Path.Combine(updateDir, "linux-full", tx.TransactionId),
             KodoExeName = Path.GetFileName(tx.KodoExePath),
             KodoUpdaterName = "KodoUpdater",
         }, Log);
@@ -389,6 +394,35 @@ internal static class Program
 
         Log("Linux tarball update orchestration complete");
         return 0;
+    }
+
+    private static void CleanupOrphanedLinuxWorkDirs(string linuxFullRoot, string currentTransactionId)
+    {
+        // Per-transaction work dirs orphaned by a killed updater (or a restore
+        // failure whose transaction was later discarded) would otherwise
+        // accumulate. Only removes dirs older than 48h and never the current
+        // transaction's dir: anything that old cannot belong to a live
+        // operation (full-release transactions themselves go stale at 24h).
+        try
+        {
+            if (!Directory.Exists(linuxFullRoot)) return;
+            foreach (var dir in Directory.GetDirectories(linuxFullRoot))
+            {
+                try
+                {
+                    if (string.Equals(Path.GetFileName(dir), currentTransactionId, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var info = new DirectoryInfo(dir);
+                    if (DateTime.UtcNow - info.LastWriteTimeUtc > TimeSpan.FromHours(48))
+                    {
+                        Directory.Delete(dir, recursive: true);
+                        Log($"Removed orphaned tarball work dir: {dir}");
+                    }
+                }
+                catch (Exception ex) { Log($"Orphaned work dir cleanup failed for {dir}: {ex.Message}"); }
+            }
+        }
+        catch (Exception ex) { Log($"Orphaned work dir scan failed: {ex.Message}"); }
     }
 
     private static async Task WaitForKodoExitAsync(int kodoPid, string kodoExePath)
