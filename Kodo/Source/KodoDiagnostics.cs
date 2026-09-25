@@ -294,6 +294,7 @@ internal static class KodoDiagnostics
         sb.Append("Source: ").AppendLine(source);
         sb.Append("Terminating: ").AppendLine(isTerminating ? "Yes" : "No");
         sb.Append("Version: ").AppendLine(AppVersion);
+        sb.Append("Hotfix: ").AppendLine(UpdateService.InstalledHotfixDisplay());
         sb.Append("OS: ").AppendLine(OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
@@ -314,7 +315,8 @@ internal static class KodoDiagnostics
         var summary = new StringBuilder();
         summary.Append("Time: ").Append(timestamp)
                .Append("  |  Source: ").Append(source)
-               .Append("  |  Version: ").Append(AppVersion);
+               .Append("  |  Version: ").Append(AppVersion)
+               .Append("  |  Hotfix: ").Append(UpdateService.InstalledHotfixDisplay());
 
         if (!string.IsNullOrWhiteSpace(operation))
             summary.Append("  |  Operation: ").Append(operation);

@@ -16,9 +16,9 @@
     <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
 
-    <!-- Phase 0 Linux: no hardcoded RID. Pass at publish time:
-         dotnet publish -r win-x64 / -r linux-x64 / -r linux-arm64.
-         A hardcoded win-x64 here silently cross-targets Windows on Linux hosts. -->
+    <!-- Declare supported targets for restore/build tooling without selecting
+         a default RID. Each release publish still passes its explicit RID. -->
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
 
     <PublishSingleFile>true</PublishSingleFile>

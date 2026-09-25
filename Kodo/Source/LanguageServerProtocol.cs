@@ -45,6 +45,8 @@ internal sealed class LspClient : IDisposable
     }
 
     private readonly StringBuilder _stderrBuffer = new();
+    private int _stderrLoggedChars;
+    private int _stderrTruncationLogged;
     private bool _disposed;
     private bool _shutdownRequested;
     private string _shutdownReason = "";
@@ -54,7 +56,11 @@ internal sealed class LspClient : IDisposable
         get
         {
             lock (_writeGate)
-                return _transportError is null && _process is not null && !_process.HasExited;
+            {
+                if (_transportError is not null || _process is null) return false;
+                try { return !_process.HasExited; }
+                catch { return false; }
+            }
         }
     }
     public bool IsInitialized { get; private set; }
@@ -106,6 +112,7 @@ internal sealed class LspClient : IDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_writeGate)
         {
             if (_transportError is not null) throw _transportError;
@@ -156,10 +163,11 @@ internal sealed class LspClient : IDisposable
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!_process.Start())
                 throw new InvalidOperationException($"Failed to start LSP '{_config.Command}'");
         }
-        catch (Exception ex) when (ex is not IOException)
+        catch (Exception ex) when (ex is not IOException and not OperationCanceledException)
         {
             KodoDiagnostics.LogDebug($"LSP start failed for '{_config.Command}'", ex);
             throw new FileNotFoundException($"Language server '{_config.Command}' could not be started. Check that it is installed and available on PATH.", ex);
@@ -171,6 +179,12 @@ internal sealed class LspClient : IDisposable
         _stderrLoop = Task.Run(() => StderrLoopAsync(_process.StandardError, _cts.Token), _cts.Token);
 
         await Task.Yield();
+        if (cancellationToken.IsCancellationRequested)
+        {
+            var canceled = new OperationCanceledException(cancellationToken);
+            TerminateTransport(canceled);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
         KodoDiagnostics.LogDebug($"LSP '{_config.Command}' started pid={_process.Id} args=[{string.Join(" ", _config.Arguments)}] cwd={psi.WorkingDirectory}");
     }
 
@@ -255,7 +269,7 @@ internal sealed class LspClient : IDisposable
 
             await SendNotificationAsync("initialized", new Dictionary<string, object?>(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
             IsInitialized = true;
-            KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialized. Server caps: {ServerCapabilities?.GetRawText() ?? "<none>"}");
+            KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialized. Server caps: {LspProtocol.Preview(ServerCapabilities?.GetRawText() ?? "<none>")}");
             return result;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || cancellationToken.IsCancellationRequested)
@@ -575,7 +589,7 @@ internal sealed class LspClient : IDisposable
         string? method = null;
         try
         {
-            var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             root = doc.RootElement.Clone();
             if (root.Value.TryGetProperty("id", out var idEl) && idEl.ValueKind != JsonValueKind.Null)
             {
@@ -586,7 +600,7 @@ internal sealed class LspClient : IDisposable
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.LogDebug($"LSP invalid JSON: {json}", ex);
+            KodoDiagnostics.LogDebug($"LSP invalid JSON: {LspProtocol.Preview(json)}", ex);
             return;
         }
         if (id.HasValue && method is null)
@@ -623,12 +637,12 @@ internal sealed class LspClient : IDisposable
                     var reqText = root.Value.GetRawText();
                     KodoDiagnostics.LogDebug($"LSP workspace/configuration request: {reqText.Substring(0, Math.Min(500, reqText.Length))}");
                     result = HandleWorkspaceConfiguration(root.Value);
-                    try { KodoDiagnostics.LogDebug($"LSP workspace/configuration response: {JsonSerializer.Serialize(result).Substring(0, Math.Min(500, JsonSerializer.Serialize(result).Length))}"); } catch { }
+                    try { KodoDiagnostics.LogDebug($"LSP workspace/configuration response: {LspProtocol.Preview(JsonSerializer.Serialize(result), 500)}"); } catch { }
                 }
                 else if (method == "window/showMessage" || method == "window/logMessage")
                 {
                     if (root.Value.TryGetProperty("params", out var p2))
-                        KodoDiagnostics.LogDebug($"LSP {method}: {p2.GetRawText()}");
+                        KodoDiagnostics.LogDebug($"LSP {method}: {LspProtocol.Preview(p2.GetRawText())}");
                 }
                 _ = SendResponseAsync(id.Value, result);
             }
@@ -760,7 +774,11 @@ internal sealed class LspClient : IDisposable
                 var text = new string(buf, 0, read);
                 lock (_stderrBuffer) { _stderrBuffer.Append(text); if (_stderrBuffer.Length > 8192) _stderrBuffer.Remove(0, _stderrBuffer.Length - 8192); }
                 OnStderr?.Invoke(text);
-                KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}]: {text.Trim()}");
+                var loggedChars = Interlocked.Add(ref _stderrLoggedChars, text.Length);
+                if (loggedChars <= 8192)
+                    KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}]: {LspProtocol.Preview(text.Trim(), 1000)}");
+                else if (loggedChars - text.Length < 8192 && Interlocked.Exchange(ref _stderrTruncationLogged, 1) == 0)
+                    KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}] logging truncated after 8192 characters.");
             }
         }
         catch (OperationCanceledException) { }
@@ -2491,7 +2509,7 @@ public partial class MainWindow
         }
         if (first.TryGetProperty("command", out var cmd))
         {
-            KodoDiagnostics.LogDebug($"LSP codeAction is command: {cmd.GetRawText()}");
+            KodoDiagnostics.LogDebug($"LSP codeAction is command: {LspProtocol.Preview(cmd.GetRawText())}");
             string? commandText = null;
             JsonElement? commandArgs = null;
             if (cmd.ValueKind == JsonValueKind.String)
@@ -3120,10 +3138,15 @@ internal static class LspInstallationManager
         var exe = GetManagedExecutablePath(cfg, settings);
         if (File.Exists(exe)) return exe;
         var dir = GetProviderDir(cfg, settings);
-        if (!Directory.Exists(dir)) return null;
+        return FindExecutableInDirectory(dir, Path.GetFileName(exe));
+    }
+
+    internal static string? FindExecutableInDirectory(string dir, string expectedFileName)
+    {
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir) || string.IsNullOrWhiteSpace(expectedFileName)) return null;
         try
         {
-            var targetName = Path.GetFileName(exe);
+            var targetName = Path.GetFileName(expectedFileName);
             var targetWithoutExt = Path.GetFileNameWithoutExtension(targetName);
             var candidates = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
                 .Where(f => {
@@ -3136,6 +3159,76 @@ internal static class LspInstallationManager
             return candidates.FirstOrDefault();
         }
         catch { return null; }
+    }
+
+    internal static async Task PromoteStagedDirectoryAsync(string stagingDir, string providerDir, CancellationToken ct = default)
+    {
+        if (!Directory.Exists(stagingDir))
+            throw new DirectoryNotFoundException($"Staged language-server directory was not found: {stagingDir}");
+
+        var parent = Path.GetDirectoryName(Path.GetFullPath(providerDir));
+        if (string.IsNullOrWhiteSpace(parent))
+            throw new InvalidOperationException("Managed language-server install directory has no parent.");
+        Directory.CreateDirectory(parent);
+
+        var backupDir = providerDir + ".previous-" + Guid.NewGuid().ToString("N");
+        var movedPrevious = false;
+        if (Directory.Exists(providerDir))
+        {
+            const int maxAttempts = 5;
+            for (var attempt = 0; ; attempt++)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    Directory.Move(providerDir, backupDir);
+                    movedPrevious = true;
+                    break;
+                }
+                catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < maxAttempts - 1)
+                {
+                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
+                }
+            }
+        }
+
+        try
+        {
+            const int maxPromotionAttempts = 5;
+            for (var attempt = 0; ; attempt++)
+            {
+                ct.ThrowIfCancellationRequested();
+                try
+                {
+                    Directory.Move(stagingDir, providerDir);
+                    break;
+                }
+                catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException) && attempt < maxPromotionAttempts - 1)
+                {
+                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception promotionError)
+        {
+            if (movedPrevious)
+            {
+                try { Directory.Move(backupDir, providerDir); }
+                catch (Exception restoreError)
+                {
+                    throw new IOException(
+                        $"Could not activate the new language server or restore the previous one. The previous installation is preserved at '{backupDir}'.",
+                        new AggregateException(promotionError, restoreError));
+                }
+            }
+            throw;
+        }
+
+        if (movedPrevious)
+        {
+            try { Directory.Delete(backupDir, recursive: true); }
+            catch (Exception ex) { KodoDiagnostics.LogDebug($"Old LSP installation retained at {backupDir}", ex); }
+        }
     }
 
     private static readonly ConcurrentDictionary<string, (bool ok, string? version, string? error)> VersionProbeCache = new(StringComparer.OrdinalIgnoreCase);
@@ -3320,37 +3413,21 @@ internal static class LspInstallationManager
                 return new(InstallResultKind.Failed, $"npm install failed (exit {proc.ExitCode}): {stderr.Trim()}", null);
             }
             var stagedExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
-                .FirstOrDefault(f => Path.GetFileNameWithoutExtension(f).Equals(pkg, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(f).Equals(cfg.Command, StringComparison.OrdinalIgnoreCase));
-            if (stagedExe == null && !Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories).Any())
+                .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), Path.GetFileName(GetManagedExecutablePath(cfg, settings)))
+                    || Path.GetFileNameWithoutExtension(f).Equals(Path.GetFileNameWithoutExtension(GetManagedExecutablePath(cfg, settings)), StringComparison.OrdinalIgnoreCase));
+            if (stagedExe == null)
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
-                return new(InstallResultKind.Failed, "npm install produced no files", null);
-            }
-            const int maxRetries = 5;
-            for (int attempt = 0; attempt < maxRetries; attempt++)
-            {
-                try
-                {
-                    if (Directory.Exists(providerDir)) Directory.Delete(providerDir, true);
-                    break;
-                }
-                catch (IOException) when (attempt < maxRetries - 1)
-                {
-                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
-                }
-                catch (UnauthorizedAccessException) when (attempt < maxRetries - 1)
-                {
-                    await Task.Delay(300 * (attempt + 1), ct).ConfigureAwait(false);
-                }
+                return new(InstallResultKind.Failed, "npm install did not produce the configured language-server executable", null);
             }
             try
             {
-                Directory.Move(stagingDir, providerDir);
+                await PromoteStagedDirectoryAsync(stagingDir, providerDir, ct).ConfigureAwait(false);
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
                 try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
-                return new(InstallResultKind.Failed, $"Failed to finalize installation (directory locked or in use): {ex.Message}", null);
+                return new(InstallResultKind.Failed, $"Failed to finalize installation; the previous provider was preserved where possible: {ex.Message}", null);
             }
             progress?.Report($"Installed {pkg}");
             return new(InstallResultKind.Success, $"Installed {pkg} via npm", providerDir);
@@ -3425,13 +3502,14 @@ internal static class LspInstallationManager
         if (string.IsNullOrWhiteSpace(url)) return new(InstallResultKind.NotInstallable, "No download URL", null);
         if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             return new(InstallResultKind.Failed, "Download URL must be HTTPS", null);
+        if (string.IsNullOrWhiteSpace(cfg.Sha256))
+            return new(InstallResultKind.NotInstallable, "SHA-256 checksum required for verification – not provided", null);
 
         progress?.Report($"Downloading {cfg.EffectiveProviderId}...");
         KodoDiagnostics.LogDebug($"LSP download {url}");
         var providerDir = GetProviderDir(cfg, settings);
         var stagingDir = providerDir + ".staging-" + Guid.NewGuid().ToString("N");
         var tempFile = Path.Combine(Path.GetTempPath(), $"kodo-lsp-{SanitizeProviderId(cfg.EffectiveProviderId)}-{Guid.NewGuid():N}.tmp");
-        Directory.CreateDirectory(stagingDir);
         try
         {
             using var resp = await Http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
@@ -3441,11 +3519,7 @@ internal static class LspInstallationManager
                 return new(InstallResultKind.Failed, $"Download failed: {(int)resp.StatusCode} {resp.ReasonPhrase}", null);
             await using var netStream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
             await using var fileStream = new FileStream(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-            IncrementalHash? hasher = null;
-            if (!string.IsNullOrWhiteSpace(cfg.Sha256))
-                hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            else
-                return new(InstallResultKind.NotInstallable, "SHA-256 checksum required for verification – not provided", null);
+            using var hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[81920];
             long totalRead = 0;
             var contentLength = resp.Content.Headers.ContentLength;
@@ -3453,7 +3527,7 @@ internal static class LspInstallationManager
             while ((read = await netStream.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
             {
                 await fileStream.WriteAsync(buffer, 0, read, ct).ConfigureAwait(false);
-                hasher?.AppendData(buffer, 0, read);
+                hasher.AppendData(buffer, 0, read);
                 totalRead += read;
                 if (contentLength.HasValue && contentLength.Value > 0)
                     progress?.Report($"Downloading {cfg.EffectiveProviderId}... {totalRead * 100 / contentLength.Value}%");
@@ -3461,7 +3535,7 @@ internal static class LspInstallationManager
             await fileStream.FlushAsync(ct).ConfigureAwait(false);
             fileStream.Close();
 
-            var hash = hasher!.GetHashAndReset();
+            var hash = hasher.GetHashAndReset();
             var hex = Convert.ToHexString(hash).ToLowerInvariant();
             var expected = cfg.Sha256!.Trim().ToLowerInvariant().Replace(" ", "").Replace("0x", "");
             if (!hex.Equals(expected, StringComparison.Ordinal))
@@ -3472,6 +3546,7 @@ internal static class LspInstallationManager
             }
 
             progress?.Report($"Installing {cfg.EffectiveProviderId}...");
+            Directory.CreateDirectory(stagingDir);
             bool isZip = url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || IsZipFile(tempFile);
             bool isTarGz = url.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || url.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase) || IsTarGzFile(tempFile);
             if (isZip)
@@ -3494,34 +3569,21 @@ internal static class LspInstallationManager
                 try { Directory.Delete(stagingDir, true); } catch { }
                 return new(InstallResultKind.Failed, "Archive extracted no files", null);
             }
-            var foundExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
-                .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), Path.GetFileName(GetManagedExecutablePath(cfg, settings))));
+            var foundExe = FindExecutableInDirectory(stagingDir, Path.GetFileName(GetManagedExecutablePath(cfg, settings)));
             if (foundExe == null)
             {
-                if (!Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories).Any())
-                {
-                    try { Directory.Delete(stagingDir, true); } catch { }
-                    return new(InstallResultKind.Failed, "Extracted archive contains no executable", null);
-                }
+                try { Directory.Delete(stagingDir, true); } catch { }
+                return new(InstallResultKind.Failed, "Extracted archive does not contain the configured language-server executable", null);
             }
             try { File.Delete(tempFile); } catch { }
             try
             {
-                if (Directory.Exists(providerDir)) Directory.Delete(providerDir, true);
+                await PromoteStagedDirectoryAsync(stagingDir, providerDir, ct).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
-                return new(InstallResultKind.Failed, $"Failed to clean old installation: {ex.Message}", null);
-            }
-            try
-            {
-                Directory.Move(stagingDir, providerDir);
-            }
-            catch (Exception ex)
-            {
-                try { Directory.Delete(stagingDir, true); } catch { }
-                return new(InstallResultKind.Failed, $"Failed to finalize installation: {ex.Message}", null);
+                return new(InstallResultKind.Failed, $"Failed to finalize installation; the previous provider was preserved where possible: {ex.Message}", null);
             }
             progress?.Report($"Installed {cfg.EffectiveProviderId}");
             KodoDiagnostics.LogDebug($"LSP installed {cfg.EffectiveProviderId} to {providerDir}");
@@ -3888,6 +3950,13 @@ internal static class LspProtocol
 {
     public const string JsonRpcVersion = "2.0";
 
+    public static string Preview(string? text, int maxLength = 800)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? string.Empty;
+        if (maxLength <= 0) return "...";
+        return text.Length <= maxLength ? text : text[..maxLength] + "...";
+    }
+
     public static string CreateRequest(int id, string method, object? @params)
     {
         var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -3953,7 +4022,7 @@ internal static class LspProtocol
         method = null;
         try
         {
-            var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
             if (root.TryGetProperty("id", out var idEl) && idEl.ValueKind != JsonValueKind.Null)
             {

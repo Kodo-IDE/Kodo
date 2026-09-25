@@ -39,6 +39,29 @@ internal static class HotfixVersion
     public static string CurrentBaseVersion =>
         NormalizeBaseVersion(KodoDiagnostics.AppVersion) ?? FallbackBaseVersion;
 
+    // Cumulative-release floor: the hotfix level already baked into the
+    // installed files (hotfix-build.json beside the app binary). Fresh installs
+    // of a cumulative package start here instead of HF0, so they never replay
+    // the historical hotfix chain. Returns 0 when no usable stamp exists.
+    // Never throws. Pass appBaseDirOverride in tests; production passes null
+    // to read from the running installation directory.
+    public static int GetShippedHotfixLevel(string? appBaseDirOverride, string baseVersion)
+    {
+        try
+        {
+            var dir = string.IsNullOrWhiteSpace(appBaseDirOverride)
+                ? AppContext.BaseDirectory
+                : appBaseDirOverride;
+            return Shared.TryGetShippedHotfixLevel(dir, baseVersion, out var level)
+                ? Math.Max(0, level)
+                : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
     public static string Format(string baseVersion, int hotfixLevel) =>
         $"{NormalizeBaseVersion(baseVersion) ?? baseVersion?.Trim()} HF{Math.Max(0, hotfixLevel)}";
 
@@ -125,12 +148,17 @@ internal sealed class HotfixState
     [JsonPropertyName("lastKnownGoodHotfix")]
     public int LastKnownGoodHotfix { get; set; }
 
-    public static HotfixState Default() => new()
+    public static HotfixState Default(string? appBaseDirOverride = null)
     {
-        BaseVersion = HotfixVersion.CurrentBaseVersion,
-        HotfixLevel = 0,
-        LastKnownGoodHotfix = 0,
-    };
+        var baseVersion = HotfixVersion.CurrentBaseVersion;
+        var shipped = HotfixVersion.GetShippedHotfixLevel(appBaseDirOverride, baseVersion);
+        return new()
+        {
+            BaseVersion = baseVersion,
+            HotfixLevel = shipped,
+            LastKnownGoodHotfix = shipped,
+        };
+    }
 }
 
 internal sealed class HotfixManifest
@@ -164,6 +192,11 @@ internal sealed class HotfixFileEntry
 
     [JsonPropertyName("sha256")]
     public string Sha256 { get; set; } = "";
+
+    // Optional: when true, Apply/Rollback ensure +x on Unix. Managed DLLs
+    // leave this false; native binaries (Kodo, KodoUpdater) set it.
+    [JsonPropertyName("executable")]
+    public bool Executable { get; set; }
 }
 
 // Phase 2: a discovered hotfix release. Enough info for a future phase to
@@ -297,6 +330,13 @@ internal static class HotfixValidator
             if (seg == "." || seg == "..") return false;
             if (seg == "~") return false;
             if (seg.EndsWith(':')) return false;
+            // A colon anywhere enables NTFS alternate data streams
+            // ("file:stream") on Windows; payload names must be plain files.
+            if (seg.Contains(':')) return false;
+            // Windows strips trailing dots/spaces, so "file " and "file" would
+            // land on the same file while hashing as different names.
+            if (seg.EndsWith('.') || seg.EndsWith(' ')) return false;
+            if (IsWindowsReservedDeviceName(seg)) return false;
             foreach (var c in Path.GetInvalidPathChars())
                 if (seg.Contains(c)) return false;
         }
@@ -304,6 +344,19 @@ internal static class HotfixValidator
         // Catch ".." that survives mixed separators or trailing dots/spaces.
         if (p.Contains("..", StringComparison.Ordinal)) return false;
         return true;
+    }
+
+    // Bare Windows device names (CON, NUL, COM1, ...) address devices rather
+    // than files. Names with a real extension (e.g. "nul.txt") are ordinary
+    // files and stay allowed.
+    private static bool IsWindowsReservedDeviceName(string segment)
+    {
+        var name = segment.TrimEnd('.', ' ').ToUpperInvariant();
+        if (name is "CON" or "PRN" or "AUX" or "NUL") return true;
+        if (name.Length == 4 && (name.StartsWith("COM", StringComparison.Ordinal) ||
+            name.StartsWith("LPT", StringComparison.Ordinal)) &&
+            name[3] is >= '1' and <= '9') return true;
+        return false;
     }
 
     private static string NormalizeEntryPath(string path) =>
@@ -325,7 +378,7 @@ internal static class HotfixStateStore
 
     public static string DefaultPath => Path.Combine(UpdateService.UpdateRoot, StateFileName);
 
-    public static bool TryLoad(string? path, out HotfixState? state, out string? error)
+    public static bool TryLoad(string? path, out HotfixState? state, out string? error, string? appBaseDirOverride = null)
     {
         state = null;
         error = null;
@@ -335,7 +388,7 @@ internal static class HotfixStateStore
         {
             if (!File.Exists(file))
             {
-                state = HotfixState.Default();
+                state = HotfixState.Default(appBaseDirOverride);
                 return true;
             }
 
@@ -388,11 +441,11 @@ internal static class HotfixStateStore
         }
     }
 
-    public static HotfixState LoadOrDefault(string? path = null)
+    public static HotfixState LoadOrDefault(string? path = null, string? appBaseDirOverride = null)
     {
-        if (TryLoad(path, out var state, out _) && state is not null)
+        if (TryLoad(path, out var state, out _, appBaseDirOverride) && state is not null)
             return state;
-        return HotfixState.Default();
+        return HotfixState.Default(appBaseDirOverride);
     }
 
     public static string? ValidateState(HotfixState? state)
@@ -430,11 +483,8 @@ internal static class HotfixStateStore
             throw new ArgumentException(validationError, nameof(state));
 
         var file = string.IsNullOrWhiteSpace(path) ? DefaultPath : path;
-        var dir = Path.GetDirectoryName(Path.GetFullPath(file));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-
-        // Atomic-ish save: write temp file then move over the target,
-        // mirroring UpdateService.CreateUpdateTransaction.
+        // Write a unique, flushed temporary file before atomically replacing
+        // the current state so a stale temp file cannot block recovery.
         var payload = JsonSerializer.Serialize(
             new HotfixState
             {
@@ -442,9 +492,144 @@ internal static class HotfixStateStore
                 HotfixLevel = state.HotfixLevel,
                 LastKnownGoodHotfix = state.LastKnownGoodHotfix,
             });
-        var tmp = file + ".tmp";
-        File.WriteAllText(tmp, payload);
-        File.Move(tmp, file, overwrite: true);
+        Shared.WriteTextAtomically(file, payload);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Part 4b: Installed-file reconciliation (drift detection and repair)
+// ---------------------------------------------------------------------------
+
+// Detects the case where the persisted hotfix level no longer matches the
+// files on disk — typically reinstalling an older package over a cumulative
+// install (per-user state survives installers). Without this, Kodo would
+// silently claim e.g. HF3 while HF0 files are installed, and the updater
+// would never offer the missing HF3 again.
+//
+// Sources of expected hashes, in priority order:
+//   1. The shipped stamp's "files" list (stamp v2), retained on first sight.
+//   2. The manifest of the last confirmed hotfix for this base+level.
+// Both live under the per-user update root, which installers do not replace,
+// so they survive the reinstall that causes the drift.
+//
+// On mismatch the state is clamped to HF0 (never to a guessed level) and the
+// retained data is discarded; discovery then offers the newest cumulative
+// hotfix, which repairs the installation in one apply. Never throws.
+internal static class HotfixFileReconciler
+{
+    internal const string RetainedDirName = "confirmed-manifests";
+
+    internal static string RetainedDir(string updateRoot) =>
+        Path.Combine(updateRoot ?? "", RetainedDirName);
+
+    internal static string RetainedPath(string updateRoot, string baseVersion, int hotfixLevel)
+    {
+        var safeBase = HotfixVersion.NormalizeBaseVersion(baseVersion) ?? "unknown";
+        foreach (var c in Path.GetInvalidFileNameChars()) safeBase = safeBase.Replace(c, '_');
+        return Path.Combine(RetainedDir(updateRoot), $"{safeBase}-{Math.Max(0, hotfixLevel)}.json");
+    }
+
+    internal static void RetainManifest(string updateRoot, string baseVersion, int hotfixLevel, string manifestJson)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(manifestJson)) return;
+            if (!Shared.TryParseManifest(manifestJson, out var manifest, out _) || manifest is null) return;
+            if (manifest.Files is null || manifest.Files.Count == 0) return;
+            Shared.WriteTextAtomically(RetainedPath(updateRoot, baseVersion, hotfixLevel), manifestJson);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Could not retain confirmed hotfix manifest: {ex.Message}");
+        }
+    }
+
+    internal static void RetainStampFiles(
+        string updateRoot, string baseVersion, int hotfixLevel,
+        List<Kodo.HotfixShared.HotfixPackageFile>? files)
+    {
+        try
+        {
+            if (files is null || files.Count == 0) return;
+            // Reuse the manifest shape so verification needs only one reader.
+            using var ms = new MemoryStream();
+            using (var w = new System.Text.Json.Utf8JsonWriter(ms))
+            {
+                w.WriteStartObject();
+                w.WriteNumber("schemaVersion", 1);
+                w.WriteString("product", "Kodo");
+                w.WriteString("baseVersion", baseVersion);
+                w.WriteNumber("hotfix", hotfixLevel);
+                w.WriteNumber("minimumHotfix", 0);
+                w.WriteString("platform", HotfixDiscovery.GetCurrentPlatformRid());
+                w.WriteStartArray("files");
+                foreach (var f in files)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("path", f.Path);
+                    w.WriteString("sha256", f.Sha256);
+                    w.WriteEndObject();
+                }
+                w.WriteEndArray();
+                w.WriteEndObject();
+            }
+            Shared.WriteTextAtomically(
+                RetainedPath(updateRoot, baseVersion, hotfixLevel),
+                System.Text.Encoding.UTF8.GetString(ms.ToArray()));
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Could not retain shipped hotfix file list: {ex.Message}");
+        }
+    }
+
+    internal static void ClearRetained(string updateRoot)
+    {
+        try
+        {
+            var dir = RetainedDir(updateRoot);
+            if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Could not clear retained hotfix manifests: {ex.Message}");
+        }
+    }
+
+    // Verifies the installed files against the retained manifest for
+    // (baseVersion, hotfixLevel). Returns true when they match OR when there
+    // is nothing trustworthy to check against (no retained data, or the level
+    // claimed is HF0). Returns false only on a proven mismatch.
+    internal static bool InstalledFilesMatch(
+        string updateRoot, string targetDir, string baseVersion, int hotfixLevel)
+    {
+        try
+        {
+            if (hotfixLevel <= 0) return true;
+            var retainedPath = RetainedPath(updateRoot, baseVersion, hotfixLevel);
+            if (!File.Exists(retainedPath)) return true;
+            string manifestJson;
+            try { manifestJson = File.ReadAllText(retainedPath); }
+            catch { return true; }
+            if (!Shared.TryParseManifest(manifestJson, out var manifest, out _) || manifest is null) return true;
+            if (!Shared.AreSameBaseVersion(manifest.BaseVersion, baseVersion) || manifest.Hotfix != hotfixLevel)
+                return true;
+            if (manifest.Files is null || manifest.Files.Count == 0) return true;
+            var targetRoot = Path.GetFullPath(targetDir);
+            foreach (var file in manifest.Files)
+            {
+                string dest;
+                try { dest = Path.GetFullPath(Path.Combine(targetRoot, file.Path.Trim())); }
+                catch { return false; }
+                if (!Shared.IsInsideDirectory(dest, targetRoot)) return false;
+                if (!Shared.VerifyFileSha256(dest, file.Sha256)) return false;
+            }
+            return true;
+        }
+        catch
+        {
+            return true;
+        }
     }
 }
 
@@ -505,11 +690,13 @@ internal static class HotfixDiscovery
         foreach (var asset in assets)
         {
             if (asset is null) continue;
-            if (string.IsNullOrWhiteSpace(asset.Name)) continue;
-            if (string.IsNullOrWhiteSpace(asset.BrowserDownloadUrl)) continue;
-            if (asset.Name.Contains("hotfix", StringComparison.OrdinalIgnoreCase) &&
-                asset.Name.Contains(rid, StringComparison.OrdinalIgnoreCase))
-                return asset;
+            if (string.IsNullOrWhiteSpace(asset.Name) || asset.Size <= 0) continue;
+            if (!asset.Name.Contains("hotfix", StringComparison.OrdinalIgnoreCase) ||
+                !asset.Name.EndsWith($"-{rid}.zip", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var downloadUri) ||
+                !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) continue;
+            return asset;
         }
         return null;
     }
@@ -764,6 +951,8 @@ internal static class HotfixStaging
                 return Fail($"Base version mismatch: package is '{manifest.BaseVersion}', installed is '{installedBaseVersion}'. Staged package discarded.");
             if (manifest.Hotfix <= installedHotfixLevel)
                 return Fail($"Hotfix HF{manifest.Hotfix} is not newer than installed HF{installedHotfixLevel}. Staged package discarded.");
+            if (installedHotfixLevel < manifest.MinimumHotfix)
+                return Fail($"Hotfix requires HF{manifest.MinimumHotfix} or newer; installed HF{installedHotfixLevel}. Staged package discarded.");
             if (!string.Equals(manifest.Platform.Trim(), rid, StringComparison.OrdinalIgnoreCase))
                 return Fail($"Platform mismatch: package is '{manifest.Platform}', this installation is '{rid}'. Staged package discarded.");
 
@@ -779,6 +968,8 @@ internal static class HotfixStaging
                 if (string.Equals(name, HotfixPackaging.ManifestEntryName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!HotfixValidator.IsSafeRelativePath(name))
                     return Fail($"Unsafe path in package: '{entry.FullName}'. Staged package discarded.");
+                if (zipFiles.ContainsKey(name))
+                    return Fail($"Duplicate file in package: '{entry.FullName}'. Staged package discarded.");
                 zipFiles[name] = entry;
             }
 
@@ -875,9 +1066,7 @@ internal static class HotfixStaging
                 PlatformRid = manifest.Platform.Trim(),
             };
             var txPath = Path.Combine(stageDir, "transaction.json");
-            var tmp = txPath + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(tx, TxJsonOptions));
-            File.Move(tmp, txPath, overwrite: true);
+            Shared.WriteTextAtomically(txPath, JsonSerializer.Serialize(tx, TxJsonOptions));
             KodoDiagnostics.LogDebug($"Hotfix staged: {stageDir}");
             KodoDiagnostics.LogDebug($"Hotfix transaction created: {txPath}");
             return txPath;
@@ -897,6 +1086,7 @@ internal static class HotfixStaging
             allowed.Add(NormalizeEntryName(f.Path));
 
         using var zip = new ZipArchive(File.OpenRead(packagePath), ZipArchiveMode.Read);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in zip.Entries)
         {
             if (entry.FullName.EndsWith('/')) continue;
@@ -904,6 +1094,8 @@ internal static class HotfixStaging
             if (string.Equals(name, HotfixPackaging.ManifestEntryName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!allowed.Contains(name))
                 throw new InvalidDataException($"Unexpected file in package: '{entry.FullName}'.");
+            if (!seen.Add(name))
+                throw new InvalidDataException($"Duplicate file in package: '{entry.FullName}'.");
             if (!HotfixValidator.IsSafeRelativePath(name))
                 throw new InvalidDataException($"Unsafe path in package: '{entry.FullName}'.");
             var dest = Path.GetFullPath(Path.Combine(payloadRoot, name));
@@ -961,6 +1153,8 @@ internal static class HotfixStaging
             return new PrepareResult { AlreadyInstalled = true };
         }
 
+        EnsureTargetWritable(targetDir);
+
         // Loop prevention: a hotfix that repeatedly fails startup is blocked.
         if (Shared.IsBlocked(updateRoot, candidate.BaseVersion, candidate.HotfixLevel))
         {
@@ -1000,6 +1194,22 @@ internal static class HotfixStaging
         }
         catch { }
         return new PrepareResult { TransactionPath = txPath, Transaction = tx };
+    }
+
+    internal static void EnsureTargetWritable(string targetDir)
+    {
+        if (string.IsNullOrWhiteSpace(targetDir) || !Directory.Exists(targetDir))
+            throw new DirectoryNotFoundException("Kodo install directory was not found.");
+        var probe = Path.Combine(targetDir, $".kodo-hotfix-write-check-{Guid.NewGuid():N}");
+        try
+        {
+            using (new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            throw new UnauthorizedAccessException("This Kodo installation is not writable by the current user. Hotfixes are unavailable for protected or package-managed installs; use the package manager or install Kodo in a user-writable directory.", ex);
+        }
+        finally { try { if (File.Exists(probe)) File.Delete(probe); } catch { } }
     }
 
     private static string FormatBytes(long bytes)
@@ -1088,6 +1298,15 @@ internal static class HotfixRecovery
             string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.AwaitingConfirmation, StringComparison.OrdinalIgnoreCase);
         if (!needsConfirmation) return;
 
+        if (!Shared.ValidateTransactionPaths(tx, txPath, updateRoot, targetDir, out var pathError))
+        {
+            await WriteBackAsync(txPath, Shared.MarkFailed(rawJson, pathError ?? "Transaction paths are invalid.")).ConfigureAwait(false);
+            DeleteStageDir(txPath, updateRoot);
+            result.Closed.Add(tx.TransactionId);
+            KodoDiagnostics.LogDebug($"Hotfix transaction {tx.TransactionId} rejected during confirmation: {pathError}");
+            return;
+        }
+
         // A hotfix line for an older base is obsolete (a full release moved on):
         // close it out without touching state.
         if (!Shared.AreSameBaseVersion(tx.BaseVersion, currentBase))
@@ -1096,6 +1315,22 @@ internal static class HotfixRecovery
             DeleteStageDir(txPath, updateRoot);
             result.Closed.Add(tx.TransactionId);
             KodoDiagnostics.LogDebug($"Hotfix transaction {tx.TransactionId} closed: base version changed.");
+            return;
+        }
+
+        // A newer hotfix has been installed since this transaction was staged
+        // (cumulative reinstall over it, or a later hotfix applied first): the
+        // transaction is superseded. Close it without touching files or state
+        // so confirmation can never roll a newer installation back.
+        var installedState = HotfixStateStore.LoadOrDefault(
+            Path.Combine(updateRoot, HotfixStateStore.StateFileName), targetDir);
+        if (HotfixVersion.AreSameBaseVersion(installedState.BaseVersion, tx.BaseVersion) &&
+            installedState.HotfixLevel > tx.HotfixLevel)
+        {
+            await WriteBackAsync(txPath, Shared.MarkFailed(rawJson, $"Superseded by HF{installedState.HotfixLevel}.")).ConfigureAwait(false);
+            DeleteStageDir(txPath, updateRoot);
+            result.Closed.Add(tx.TransactionId);
+            KodoDiagnostics.LogDebug($"Hotfix transaction {tx.TransactionId} closed: superseded by HF{installedState.HotfixLevel}.");
             return;
         }
 
@@ -1118,10 +1353,13 @@ internal static class HotfixRecovery
             return;
         }
 
-        if (!Shared.TryParseManifest(manifestJson, out var manifest, out _) || manifest is null)
+        var manifestIsValid = Shared.ValidateManifest(manifestJson, tx.BaseVersion, tx.HotfixLevel - 1,
+            HotfixDiscovery.GetCurrentPlatformRid(), out var manifestError);
+        if (!manifestIsValid || !Shared.TryParseManifest(manifestJson, out var manifest, out _) || manifest is null ||
+            manifest.Hotfix != tx.HotfixLevel || !string.Equals(manifest.Platform, tx.PlatformRid, StringComparison.OrdinalIgnoreCase))
         {
             result.NeedsRollbackTxPath ??= txPath;
-            KodoDiagnostics.LogDebug("Hotfix confirmation failed: manifest malformed; rollback required.");
+            KodoDiagnostics.LogDebug($"Hotfix confirmation failed: manifest invalid or inconsistent with transaction ({manifestError}); rollback required.");
             return;
         }
 
@@ -1151,7 +1389,7 @@ internal static class HotfixRecovery
         var statePath = Path.Combine(updateRoot, HotfixStateStore.StateFileName);
         try
         {
-            var state = HotfixStateStore.LoadOrDefault(statePath);
+            var state = HotfixStateStore.LoadOrDefault(statePath, targetDir);
             if (!HotfixVersion.AreSameBaseVersion(state.BaseVersion, tx.BaseVersion))
                 state.BaseVersion = tx.BaseVersion;
             state.HotfixLevel = Math.Max(state.HotfixLevel, tx.HotfixLevel);
@@ -1168,22 +1406,26 @@ internal static class HotfixRecovery
         await WriteBackAsync(txPath, Shared.MarkConfirmed(rawJson, DateTime.UtcNow)).ConfigureAwait(false);
         KodoDiagnostics.LogDebug("Hotfix startup confirmed");
         KodoDiagnostics.LogDebug($"Hotfix committed: {HotfixVersion.Format(tx.BaseVersion, tx.HotfixLevel)}");
+        // Retain the confirmed manifest under the per-user update root (which
+        // installers do not replace) so a later reinstall of an older package
+        // can be detected and repaired instead of silently keeping a stale HF
+        // level. Written before the staging data is deleted.
+        HotfixFileReconciler.RetainManifest(updateRoot, tx.BaseVersion, tx.HotfixLevel, manifestJson);
         DeleteStageDir(txPath, updateRoot);
         result.Confirmed.Add(tx.TransactionId);
     }
 
-    private static async Task WriteBackAsync(string txPath, string json)
+    private static Task WriteBackAsync(string txPath, string json)
     {
         try
         {
-            var tmp = txPath + ".tmp";
-            await File.WriteAllTextAsync(tmp, json).ConfigureAwait(false);
-            File.Move(tmp, txPath, overwrite: true);
+            Shared.WriteTextAtomically(txPath, json);
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug($"Hotfix transaction write-back failed: {ex.Message}");
         }
+        return Task.CompletedTask;
     }
 
     internal static void DeleteStageDir(string txPath, string updateRoot)

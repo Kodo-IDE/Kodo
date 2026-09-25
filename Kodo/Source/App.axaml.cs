@@ -148,7 +148,9 @@ public partial class App : Application
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
                 var bg = UpdateService.IsAutoUpdateInBackgroundEnabledInSettings();
-                await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
+                var fullUpdate = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
+                if (fullUpdate is null)
+                    await UpdateService.CheckAndHandleHotfixAsync(installInBackground: bg);
             }
             catch (Exception ex)
             {

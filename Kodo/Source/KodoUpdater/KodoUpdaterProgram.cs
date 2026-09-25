@@ -8,6 +8,7 @@ namespace KodoUpdater;
 
 internal static class Program
 {
+    private static string? _trustedInstallRoot;
     private const int PidWaitTimeoutSeconds = 60;
     private const int InstallerTimeoutMinutes = 15;
     private const int StaleTransactionHours = 24;
@@ -28,6 +29,19 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        var forwardedInstallRoot = Array.FindIndex(args, a => string.Equals(a, "--install-root", StringComparison.OrdinalIgnoreCase));
+        if (forwardedInstallRoot >= 0 && forwardedInstallRoot + 1 < args.Length)
+        {
+            _trustedInstallRoot = Path.GetFullPath(args[forwardedInstallRoot + 1]);
+            args = args.Where((_, i) => i != forwardedInstallRoot && i != forwardedInstallRoot + 1).ToArray();
+        }
+        else
+        {
+            var localUpdate = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update"));
+            var self = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(self) || !Kodo.HotfixShared.HotfixShared.IsInsideDirectory(Path.GetFullPath(self), localUpdate))
+                _trustedInstallRoot = Path.GetFullPath(AppContext.BaseDirectory);
+        }
         Log($"KodoUpdater start args=[{string.Join(" ", args)}] pid={Environment.ProcessId}");
 
         try
@@ -51,6 +65,8 @@ internal static class Program
                         File.Copy(selfPath, tempCopy, overwrite: true);
                         Log($"Relocating self to temp: {selfPath} -> {tempCopy}");
                         var psi = new ProcessStartInfo { FileName = tempCopy, UseShellExecute = false, CreateNoWindow = true };
+                        psi.ArgumentList.Add("--install-root");
+                        psi.ArgumentList.Add(appDir);
                         foreach (var a in args) psi.ArgumentList.Add(a);
                         var p = Process.Start(psi);
                         Log($"Relaunched from temp PID {p?.Id}, exiting original");
@@ -176,6 +192,19 @@ internal static class Program
             return 7;
         }
 
+        var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath));
+        if (string.IsNullOrWhiteSpace(installRoot))
+        {
+            Log("Update transaction does not identify a valid installation directory.");
+            return 7;
+        }
+        using var installGuard = InstallUpdateGuard.TryAcquire(installRoot);
+        if (installGuard is null)
+        {
+            Log($"Another updater operation is already modifying installation '{installRoot}'. Exiting.");
+            return 3;
+        }
+
         Log($"Transaction {tx.TransactionId} pid={tx.KodoPid} installer={tx.InstallerPath} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
 
         await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
@@ -212,6 +241,10 @@ internal static class Program
 
         if (OperatingSystem.IsLinux())
         {
+            // Managed archive installs update automatically (tarball swap);
+            // anything else (AppImage, .deb, foreign layouts) stays manual.
+            if (IsManagedTarballTransaction(tx))
+                return await RunLinuxTarballTransactionAsync(tx, transactionPath).ConfigureAwait(false);
             Log($"Linux manual update: staged={tx.InstallerPath}. " + LinuxManualBlurb(tx.InstallerPath));
             TryDelete(transactionPath);
             return 0;
@@ -282,6 +315,79 @@ internal static class Program
         RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
 
         Log("Update orchestration complete");
+        return 0;
+    }
+
+    // --- Linux managed-tarball full updates (parity with the Windows installer flow) ---
+
+    private static bool IsManagedTarballTransaction(UpdateTransaction tx)
+    {
+        try
+        {
+            if (tx is null || string.IsNullOrWhiteSpace(tx.InstallerPath) || string.IsNullOrWhiteSpace(tx.KodoExePath))
+                return false;
+            var asset = tx.AssetName ?? Path.GetFileName(tx.InstallerPath) ?? "";
+            if (!asset.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) &&
+                !asset.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
+                return false;
+            var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath));
+            if (string.IsNullOrWhiteSpace(installRoot) || !Directory.Exists(installRoot)) return false;
+            if (!File.Exists(Path.Combine(installRoot, Kodo.HotfixShared.HotfixShared.ManagedInstallMarkerFileName)))
+                return false;
+            // The tarball always ships both binaries; at least the updater
+            // must be present for a managed install.
+            var updaterPresent = File.Exists(Path.Combine(installRoot, "KodoUpdater")) ||
+                File.Exists(Path.Combine(installRoot, "kodoUpdater"));
+            if (!updaterPresent) return false;
+            return Kodo.HotfixShared.HotfixShared.IsWritableDirectory(installRoot);
+        }
+        catch (Exception ex)
+        {
+            Log($"Managed-install check failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static async Task<int> RunLinuxTarballTransactionAsync(UpdateTransaction tx, string transactionPath)
+    {
+        var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath))!;
+        using var installGuard = InstallUpdateGuard.TryAcquire(installRoot);
+        if (installGuard is null)
+        {
+            Log($"Another updater operation is already modifying installation '{installRoot}'. Exiting.");
+            return 3;
+        }
+
+        Log($"Linux tarball transaction {tx.TransactionId} installer={tx.InstallerPath} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
+
+        await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
+        await Task.Delay(800).ConfigureAwait(false);
+
+        var updateDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
+        var result = Kodo.HotfixShared.HotfixShared.InstallTarballUpdate(new Kodo.HotfixShared.TarballInstallRequest
+        {
+            TarballPath = tx.InstallerPath,
+            TargetDir = installRoot,
+            WorkRoot = Path.Combine(updateDir, "linux-full"),
+            KodoExeName = Path.GetFileName(tx.KodoExePath),
+            KodoUpdaterName = "KodoUpdater",
+        }, Log);
+
+        if (!result.Success)
+        {
+            Log($"Linux tarball installation failed: {result.Error} – transaction retained for diagnostics.");
+            await MarkTxFailedAsync(transactionPath, result.Error ?? "tarball installation failed").ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(result.RetainedBackupDir))
+                Log($"Previous install retained at {result.RetainedBackupDir}; re-extract the tarball manually to recover.");
+            return 40;
+        }
+
+        TryDelete(transactionPath);
+        TryDeleteIfInStaging(tx.InstallerPath);
+
+        RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
+
+        Log("Linux tarball update orchestration complete");
         return 0;
     }
 
@@ -364,7 +470,26 @@ internal static class Program
             Log($"Restarting Kodo: {target}");
             try
             {
-                Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
+                if (OperatingSystem.IsWindows())
+                {
+                    Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
+                }
+                else
+                {
+                    // On Unix launch the binary directly (no shell/xdg-open
+                    // involvement) with the install dir as working directory.
+                    // Best effort: ensure it is executable first so a hotfix
+                    // that replaced the binary can never leave it unstartable.
+                    if (!Kodo.HotfixShared.HotfixShared.EnsureExecutable(target))
+                        Log($"Warning: could not ensure executable permission on {target}; attempting restart anyway.");
+                    var installDir = Path.GetDirectoryName(Path.GetFullPath(target));
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = target,
+                        UseShellExecute = false,
+                        WorkingDirectory = string.IsNullOrWhiteSpace(installDir) ? AppContext.BaseDirectory : installDir,
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -413,16 +538,38 @@ internal static class Program
             return 23;
         }
 
-        // Terminal states never re-apply; unconfirmed states restart Kodo so it
-        // can confirm on boot. Transaction + backup are always retained.
+        string? txPathError = null;
+        if (string.IsNullOrWhiteSpace(_trustedInstallRoot) ||
+            !Kodo.HotfixShared.HotfixShared.ValidateTransactionPaths(tx, transactionPath, expectedDir, _trustedInstallRoot!, out txPathError))
+        {
+            Log($"Hotfix transaction path validation failed: {txPathError ?? "install root is unknown"}");
+            return 23;
+        }
+
+        using var installGuard = InstallUpdateGuard.TryAcquire(tx.TargetDir);
+        if (installGuard is null)
+        {
+            Log($"Another updater operation is already modifying installation '{tx.TargetDir}'. Exiting.");
+            return 3;
+        }
+
+        // Terminal states never re-apply. If an earlier updater died after
+        // applying files, supervise the confirmation retry too so a failed
+        // startup still rolls back automatically.
         if (!string.Equals(tx.Status, Kodo.HotfixShared.HotfixTransactionStatus.Staged, StringComparison.OrdinalIgnoreCase))
         {
             if (string.Equals(tx.Status, Kodo.HotfixShared.HotfixTransactionStatus.AwaitingConfirmation, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(tx.Status, Kodo.HotfixShared.HotfixTransactionStatus.Applied, StringComparison.OrdinalIgnoreCase))
             {
-                Log($"Hotfix transaction {tx.TransactionId} is {tx.Status} – restarting Kodo for startup confirmation.");
-                RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
-                return 0;
+                if (!tx.RestartAfterUpdate)
+                {
+                    Log($"Hotfix transaction {tx.TransactionId} is {tx.Status}; restart was disabled, leaving startup confirmation to the user.");
+                    return 0;
+                }
+                Log($"Hotfix transaction {tx.TransactionId} is {tx.Status} – supervising startup confirmation retry.");
+                var existingProcess = FindRunningKodoProcess(tx.KodoExePath);
+                var confirmationProcess = existingProcess ?? StartKodoForConfirmation(tx);
+                return await SuperviseHotfixConfirmationAsync(tx, transactionPath, expectedDir, confirmationProcess).ConfigureAwait(false);
             }
             Log($"Hotfix transaction {tx.TransactionId} already {tx.Status} – nothing to do.");
             return 0;
@@ -453,7 +600,28 @@ internal static class Program
 
         // Guard before touching anything: a retried/stale transaction must not
         // downgrade an already-newer install.
-        var (liveBase, liveLevel, _) = ReadLiveHotfixState(stateFilePath);
+        var (liveBase, liveLevel, liveLastKnownGood) = ReadLiveHotfixState(stateFilePath);
+        // Cumulative installs bake hotfixes into the files on disk. Treat the
+        // shipped stamp as a floor so a stale staged transaction can never
+        // downgrade a cumulative install (e.g. HF2 staged, then the user
+        // reinstalls cumulative HF3, then the updater runs).
+        if (Kodo.HotfixShared.HotfixShared.TryGetShippedHotfixLevel(tx.TargetDir, tx.BaseVersion, out var shippedLevel) &&
+            (string.IsNullOrWhiteSpace(liveBase) ||
+             Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion)) &&
+            shippedLevel > liveLevel)
+        {
+            liveBase = tx.BaseVersion;
+            liveLevel = shippedLevel;
+            liveLastKnownGood = Math.Max(liveLastKnownGood, shippedLevel);
+            Log($"Shipped hotfix floor is HF{shippedLevel}; stale state ignored.");
+        }
+        if (!string.IsNullOrWhiteSpace(liveBase) &&
+            !Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion))
+        {
+            Log($"Hotfix base {tx.BaseVersion} no longer matches installed base {liveBase}; transaction discarded.");
+            await MarkTxFailedAsync(transactionPath, "Installed base version changed before apply.").ConfigureAwait(false);
+            return 25;
+        }
         if (Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) && tx.HotfixLevel <= liveLevel)
         {
             Log($"Hotfix HF{tx.HotfixLevel} not newer than installed HF{liveLevel} – discarding without changes.");
@@ -469,13 +637,24 @@ internal static class Program
             StateFilePath = stateFilePath,
             ExpectedBaseVersion = tx.BaseVersion,
             InstalledHotfixLevel = Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) ? liveLevel : -1,
+            PreviousLastKnownGood = Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) ? Math.Max(0, liveLastKnownGood) : 0,
+            ExpectedHotfixLevel = tx.HotfixLevel,
             ExpectedPlatformRid = tx.PlatformRid,
+            // This callback runs only after every original file and the complete
+            // backup index are durable, immediately before the first replace.
+            BeforeReplace = () =>
+            {
+                var awaitingJson = Kodo.HotfixShared.HotfixShared.MarkAwaitingConfirmation(
+                    rawJson, DateTime.UtcNow.AddSeconds(ConfirmationTimeoutSeconds), Math.Max(0, liveLastKnownGood));
+                Kodo.HotfixShared.HotfixShared.WriteTextAtomically(transactionPath, awaitingJson);
+                rawJson = awaitingJson;
+            },
         }, Log);
 
         if (!result.Success)
         {
-            Log($"Hotfix application failed: {result.Error} – installation untouched, transaction retained for diagnostics.");
-            return 26;
+            Log($"Hotfix application failed: {result.Error} – attempting recovery from the staged backup.");
+            return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "apply failed", 26).ConfigureAwait(false);
         }
 
         foreach (var f in result.ReplacedFiles)
@@ -483,23 +662,8 @@ internal static class Program
 
         Log("Hotfix application completed");
 
-        // Phase 4: files copied is NOT success yet. Record last-known-good,
-        // require startup confirmation, and supervise the restarted Kodo.
-        var (_, _, liveLastKnownGood) = ReadLiveHotfixState(stateFilePath);
-        var awaitingJson = Kodo.HotfixShared.HotfixShared.MarkAwaitingConfirmation(
-            rawJson, DateTime.UtcNow.AddSeconds(ConfirmationTimeoutSeconds), liveLastKnownGood);
-        try
-        {
-            var tmp = transactionPath + ".tmp";
-            await File.WriteAllTextAsync(tmp, awaitingJson).ConfigureAwait(false);
-            File.Move(tmp, transactionPath, overwrite: true);
-            Log("Hotfix transaction marked awaitingConfirmation (retained with backup for rollback).");
-        }
-        catch (Exception ex)
-        {
-            Log($"Failed to mark hotfix transaction awaitingConfirmation: {ex.Message}");
-            return 26;
-        }
+        // Files copied is NOT success yet; Kodo must start and confirm hashes.
+        Log("Hotfix transaction marked awaitingConfirmation (retained with backup for rollback).");
 
         CleanupHotfixPartials(expectedDir);
 
@@ -509,27 +673,50 @@ internal static class Program
             return 0;
         }
 
-        var kodoTarget = Kodo.HotfixShared.HotfixShared.ResolveRestartTarget(tx.KodoExePath);
-        Process? kodoProcess = null;
-        if (!string.IsNullOrWhiteSpace(kodoTarget) && File.Exists(kodoTarget))
-        {
-            Log($"Starting Kodo for confirmation: {kodoTarget}");
-            try
-            {
-                kodoProcess = Process.Start(new ProcessStartInfo { FileName = kodoTarget, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                Log($"Failed to start Kodo for confirmation: {ex}");
-            }
-        }
-        else
-        {
-            Log($"Kodo exe not found for confirmation restart: {tx.KodoExePath}");
-        }
+        var kodoProcess = StartKodoForConfirmation(tx);
         Log("Kodo restarted");
 
         return await SuperviseHotfixConfirmationAsync(tx, transactionPath, expectedDir, kodoProcess).ConfigureAwait(false);
+    }
+
+    private static Process? StartKodoForConfirmation(Kodo.HotfixShared.HotfixTransaction tx)
+    {
+        var target = Kodo.HotfixShared.HotfixShared.ResolveRestartTarget(tx.KodoExePath);
+        if (string.IsNullOrWhiteSpace(target) || !File.Exists(target))
+        {
+            Log($"Kodo exe not found for confirmation restart: {tx.KodoExePath}");
+            return null;
+        }
+        Log($"Starting Kodo for confirmation: {target}");
+        try { return Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true }); }
+        catch (Exception ex)
+        {
+            Log($"Failed to start Kodo for confirmation: {ex}");
+            return null;
+        }
+    }
+
+    private static Process? FindRunningKodoProcess(string kodoExePath)
+    {
+        var target = Kodo.HotfixShared.HotfixShared.ResolveRestartTarget(kodoExePath);
+        if (string.IsNullOrWhiteSpace(target)) return null;
+        string fullTarget;
+        try { fullTarget = Path.GetFullPath(target); }
+        catch { return null; }
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (process.HasExited) { process.Dispose(); continue; }
+                var processPath = process.MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(processPath) &&
+                    string.Equals(Path.GetFullPath(processPath), fullTarget, PathComparison))
+                    return process;
+            }
+            catch { }
+            process.Dispose();
+        }
+        return null;
     }
 
     private static string ReadTxStatus(string transactionPath)
@@ -679,9 +866,7 @@ internal static class Program
         {
             var rolledBack = Kodo.HotfixShared.HotfixShared.MarkRolledBack(
                 await File.ReadAllTextAsync(transactionPath).ConfigureAwait(false), DateTime.UtcNow);
-            var tmp = transactionPath + ".tmp";
-            await File.WriteAllTextAsync(tmp, rolledBack).ConfigureAwait(false);
-            File.Move(tmp, transactionPath, overwrite: true);
+            Kodo.HotfixShared.HotfixShared.WriteTextAtomically(transactionPath, rolledBack);
         }
         catch (Exception ex)
         {
@@ -706,9 +891,7 @@ internal static class Program
         {
             var failed = Kodo.HotfixShared.HotfixShared.MarkFailed(
                 await File.ReadAllTextAsync(transactionPath).ConfigureAwait(false), reason);
-            var tmp = transactionPath + ".tmp";
-            await File.WriteAllTextAsync(tmp, failed).ConfigureAwait(false);
-            File.Move(tmp, transactionPath, overwrite: true);
+            Kodo.HotfixShared.HotfixShared.WriteTextAtomically(transactionPath, failed);
         }
         catch (Exception ex)
         {
@@ -792,6 +975,13 @@ internal static class Program
         }
 
         var expectedDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
+        string? txPathError = null;
+        if (string.IsNullOrWhiteSpace(_trustedInstallRoot) ||
+            !Kodo.HotfixShared.HotfixShared.ValidateTransactionPaths(tx, transactionPath, expectedDir, _trustedInstallRoot!, out txPathError))
+        {
+            Log($"Rollback transaction path validation failed: {txPathError ?? "install root is unknown"}");
+            return 33;
+        }
         try
         {
             if (!IsInsideDirectory(Path.GetFullPath(transactionPath), Path.GetFullPath(expectedDir)))
@@ -804,6 +994,13 @@ internal static class Program
         {
             Log($"Rollback path validation failed: {ex.Message}");
             return 33;
+        }
+
+        using var installGuard = InstallUpdateGuard.TryAcquire(tx.TargetDir);
+        if (installGuard is null)
+        {
+            Log($"Another updater operation is already modifying installation '{tx.TargetDir}'. Exiting.");
+            return 3;
         }
 
         var status = tx.Status ?? "";

@@ -25,6 +25,9 @@
     <UseAppHost>true</UseAppHost>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>
+    <!-- Base version baked into the generated hotfix-build.json stamp
+         (strips pre-release suffixes: 2.1.0-DEV -> 2.1.0). -->
+    <HotfixStampBaseVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '-.*$', ''))</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
@@ -50,6 +53,7 @@
   <ItemGroup>
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
+    <InternalsVisibleTo Include="Kodo.Hotfix.Tests" />
   </ItemGroup>
 
   <Target Name="RemovePdbFilesFromPublish"
@@ -60,5 +64,27 @@
     </ItemGroup>
 
     <Delete Files="@(PdbFiles)" />
+  </Target>
+
+  <!-- hotfix-build.json is GENERATED, never a source file: hotfixes are
+       pushed by devs through release tooling, and no user should ever need
+       to create it. Every build writes the HF0 default (base from Version);
+       release tooling overwrites the publish-dir copy with the real level.
+       The Link metadata keeps it at the output/publish root. -->
+  <Target Name="GenerateHotfixBuildStamp"
+          BeforeTargets="AssignTargetPaths"
+          Condition="'$(HotfixBuildStampGenerated)' != 'true'">
+    <WriteLinesToFile File="$(IntermediateOutputPath)hotfix-build.json"
+                      Lines='{"baseVersion":"$(HotfixStampBaseVersion)","hotfixLevel":0}'
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(IntermediateOutputPath)hotfix-build.json" CopyToOutputDirectory="PreserveNewest">
+        <Link>hotfix-build.json</Link>
+      </None>
+    </ItemGroup>
+    <PropertyGroup>
+      <HotfixBuildStampGenerated>true</HotfixBuildStampGenerated>
+    </PropertyGroup>
   </Target>
 </Project>

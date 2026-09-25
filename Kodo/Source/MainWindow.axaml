@@ -6451,14 +6451,22 @@
                                                        xml:space="preserve"><Run Foreground="{Binding MutedTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
                                         </StackPanel>
                                     </StackPanel>
-                                    <TextBlock Grid.Column="1"
-                                               x:Name="AboutVersionText"
-                                               FontSize="13"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Right"
-                                               PointerPressed="AboutVersionText_OnPointerPressed"
-                                               Text="{Binding CurrentAppVersionDisplay}" />
+                                     <StackPanel Grid.Column="1"
+                                                 Spacing="2"
+                                                 VerticalAlignment="Center"
+                                                 HorizontalAlignment="Right">
+                                         <TextBlock x:Name="AboutVersionText"
+                                                    FontSize="13"
+                                                    Foreground="{Binding MutedTextBrush}"
+                                                    HorizontalAlignment="Right"
+                                                    PointerPressed="AboutVersionText_OnPointerPressed"
+                                                    Text="{Binding CurrentAppVersionDisplay}" />
+                                         <TextBlock FontSize="11"
+                                                    Foreground="{Binding MutedTextBrush}"
+                                                    HorizontalAlignment="Right"
+                                                    Opacity="0.8"
+                                                    Text="{Binding CurrentHotfixDisplay}" />
+                                     </StackPanel>
                                 </Grid>
 
                                 <TextBlock Foreground="{Binding MutedTextBrush}"

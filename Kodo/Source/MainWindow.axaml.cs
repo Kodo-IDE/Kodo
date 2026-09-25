@@ -2238,6 +2238,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string CurrentAppVersionDisplay => CurrentAppVersion;
 
+    public string CurrentHotfixDisplay => UpdateService.InstalledHotfixDisplay();
+
     private bool _updateBannerDismissed;
     private bool _extensionUpdateBannerDismissed;
 
@@ -6270,6 +6272,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             IsCheckingForUpdatesManually = false;
+            OnPropertyChanged(nameof(CurrentHotfixDisplay));
         }
     }
 
@@ -7086,6 +7089,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
+        sb.Append("Hotfix: ").AppendLine(UpdateService.InstalledHotfixDisplay());
         sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)

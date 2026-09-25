@@ -98,13 +98,118 @@ internal static class UpdateService
 
     // --- Phase 2: hotfix discovery (identify only; no download/apply) ---
 
-    internal static (string BaseVersion, int HotfixLevel) ResolveInstalledHotfix()
+    internal static (string BaseVersion, int HotfixLevel) ResolveInstalledHotfix(
+        string? currentBaseOverride = null,
+        string? statePathOverride = null,
+        string? appBaseDirOverride = null)
     {
-        var currentBase = HotfixVersion.CurrentBaseVersion;
-        var state = HotfixStateStore.LoadOrDefault();
+        var currentBase = currentBaseOverride ?? HotfixVersion.CurrentBaseVersion;
+        var state = HotfixStateStore.LoadOrDefault(statePathOverride, appBaseDirOverride);
+        var stateFile = string.IsNullOrWhiteSpace(statePathOverride) ? HotfixStateStore.DefaultPath : statePathOverride;
+        string updateRoot;
+        try { updateRoot = Path.GetDirectoryName(Path.GetFullPath(stateFile)) ?? UpdateRoot; }
+        catch { updateRoot = UpdateRoot; }
+        var targetDir = string.IsNullOrWhiteSpace(appBaseDirOverride) ? AppContext.BaseDirectory : appBaseDirOverride;
         if (!HotfixVersion.AreSameBaseVersion(state.BaseVersion, currentBase))
-            return (currentBase, 0);
-        return (HotfixVersion.NormalizeBaseVersion(state.BaseVersion) ?? currentBase, Math.Max(0, state.HotfixLevel));
+        {
+            // Hotfix state lives under the per-user update directory, which a
+            // full release does not replace. Rebase it before staging a hotfix
+            // for the new app version so KodoUpdater does not mistake the old
+            // release's state for a base-version mismatch.
+            //
+            // A cumulative installer already contains hotfixes for the new base,
+            // so the rebased level starts at the shipped floor, not HF0.
+            // Retained manifests belong to the old base and are discarded.
+            var shipped = HotfixVersion.GetShippedHotfixLevel(appBaseDirOverride, currentBase);
+            state.BaseVersion = currentBase;
+            state.HotfixLevel = shipped;
+            state.LastKnownGoodHotfix = shipped;
+            HotfixFileReconciler.ClearRetained(updateRoot);
+            try
+            {
+                HotfixStateStore.Save(state, statePathOverride);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Could not reset hotfix state for the current base version", ex);
+                return ("", 0);
+            }
+            return (currentBase, shipped);
+        }
+        // Cumulative packages bake hotfixes into the installed files. The
+        // effective level is the max of the persisted state and the shipped
+        // stamp: a fresh cumulative install has no state file yet (floor
+        // applies), and reinstalling a cumulative package over an older
+        // hotfixed install must not report a stale lower level.
+        var shippedFloor = HotfixVersion.GetShippedHotfixLevel(appBaseDirOverride, currentBase);
+        var normalizedBase = HotfixVersion.NormalizeBaseVersion(state.BaseVersion) ?? currentBase;
+        var effectiveLevel = Math.Max(Math.Max(0, state.HotfixLevel), shippedFloor);
+        var freshSeed = !File.Exists(stateFile);
+        // When the shipped floor dominates (fresh cumulative seed or adopt on
+        // reinstall-newer), retain the stamp's file list so later drift has
+        // something trustworthy to check against.
+        if ((shippedFloor > state.HotfixLevel || freshSeed) &&
+            Shared.TryGetShippedStamp(targetDir, currentBase, out var stampLevel, out var stampFiles) &&
+            stampLevel == shippedFloor && stampFiles is not null && stampFiles.Count > 0)
+        {
+            HotfixFileReconciler.RetainStampFiles(updateRoot, normalizedBase, shippedFloor, stampFiles);
+        }
+        // Reconcile the claimed level against the files on disk. A reinstall
+        // of an older package leaves persisted state (and the install-dir
+        // stamp) behind; without this check Kodo would silently claim a level
+        // whose files are gone, and the updater would never offer it again.
+        if (effectiveLevel > 0 &&
+            !HotfixFileReconciler.InstalledFilesMatch(updateRoot, targetDir, normalizedBase, effectiveLevel))
+        {
+            KodoDiagnostics.LogDebug(
+                $"Installed files do not match the retained HF{effectiveLevel} manifest; clamping hotfix state to HF0 so the updater can repair the installation.");
+            state.BaseVersion = normalizedBase;
+            state.HotfixLevel = 0;
+            state.LastKnownGoodHotfix = 0;
+            HotfixFileReconciler.ClearRetained(updateRoot);
+            try
+            {
+                HotfixStateStore.Save(state, statePathOverride);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Could not persist reconciled hotfix level", ex);
+            }
+            return (normalizedBase, 0);
+        }
+        if (effectiveLevel != state.HotfixLevel || freshSeed)
+        {
+            state.BaseVersion = normalizedBase;
+            state.HotfixLevel = effectiveLevel;
+            state.LastKnownGoodHotfix = Math.Max(state.LastKnownGoodHotfix, effectiveLevel);
+            try
+            {
+                HotfixStateStore.Save(state, statePathOverride);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Could not persist merged hotfix level", ex);
+            }
+        }
+        return (normalizedBase, effectiveLevel);
+    }
+
+    // Display string for logs, diagnostic reports, and Settings/About, e.g.
+    // "Hotfix 3" (or "Hotfix 0" when nothing is applied). Shares
+    // ResolveInstalledHotfix's side-effect profile (idempotent state merge);
+    // never throws — falls back to "Hotfix 0". Overrides exist for tests so
+    // they never touch the real per-user state.
+    internal static string InstalledHotfixDisplay(
+        string? currentBaseOverride = null,
+        string? statePathOverride = null,
+        string? appBaseDirOverride = null)
+    {
+        try
+        {
+            var (_, level) = ResolveInstalledHotfix(currentBaseOverride, statePathOverride, appBaseDirOverride);
+            return $"Hotfix {Math.Max(0, level)}";
+        }
+        catch { return "Hotfix 0"; }
     }
 
     internal static async Task<GitHubRelease[]?> FetchGitHubReleasesAsync(CancellationToken ct = default)
@@ -177,6 +282,37 @@ internal static class UpdateService
         return UpdateCheckResult.Create(null, hotfix);
     }
 
+    public static async Task<HotfixCandidate?> CheckAndHandleHotfixAsync(
+        bool installInBackground = false,
+        CancellationToken ct = default)
+    {
+        var hotfix = await CheckForHotfixAsync(ct).ConfigureAwait(false);
+        if (hotfix is null) return null;
+        // When background installation is enabled, download/verify/stage up
+        // front so the dialog opens ready ("Restart & Update"), mirroring the
+        // full-release background flow. The user still chooses when to apply:
+        // nothing is installed silently.
+        if (installInBackground)
+        {
+            try
+            {
+                var prepared = await HotfixStaging.PrepareAsync(hotfix, progress: null, ct).ConfigureAwait(false);
+                if (!prepared.AlreadyInstalled && prepared.TransactionPath is not null)
+                {
+                    UpdateDialog.ShowForHotfix(hotfix, prepared.TransactionPath);
+                    return hotfix;
+                }
+                if (prepared.AlreadyInstalled) return null;
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Background hotfix staging failed; showing manual dialog", ex);
+            }
+        }
+        UpdateDialog.ShowForHotfix(hotfix);
+        return hotfix;
+    }
+
     // --- Phase 3: hotfix application (download/verify/stage here; KodoUpdater applies) ---
 
     internal static HttpClient SharedHttpClient => Http;
@@ -209,6 +345,8 @@ internal static class UpdateService
     private static GitHubAsset? PickInstallerAsset(GitHubAsset[]? assets)
     {
         if (assets is null || assets.Length == 0) return null;
+        assets = assets.Where(IsValidReleaseAsset).ToArray();
+        if (assets.Length == 0) return null;
         if (OperatingSystem.IsLinux())
         {
             var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
@@ -234,6 +372,15 @@ internal static class UpdateService
         return assets.FirstOrDefault(a => a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
     }
 
+    internal static bool IsValidReleaseAsset(GitHubAsset? asset)
+    {
+        if (asset is null || string.IsNullOrWhiteSpace(asset.Name) || asset.Size <= 0 ||
+            !Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var uri))
+            return false;
+        return uri.Scheme == Uri.UriSchemeHttps &&
+            string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static async Task<string?> TryResolveAssetChecksumAsync(GitHubAsset[]? assets, string assetName, CancellationToken ct)
     {
         try
@@ -245,10 +392,11 @@ internal static class UpdateService
                 a.Name.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
                 a.Name.Equals("CHECKSUMS", StringComparison.OrdinalIgnoreCase) ||
                 a.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase));
-            if (checksumAsset is null || string.IsNullOrWhiteSpace(checksumAsset.BrowserDownloadUrl))
+            if (checksumAsset is null || !IsValidReleaseAsset(checksumAsset))
                 return null;
             using var response = await Http.GetAsync(checksumAsset.BrowserDownloadUrl, ct).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode) return null;
+            if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps) return null;
             var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
             if (bytes.Length == 0 || bytes.Length > 1024 * 1024) return null;
             var text = System.Text.Encoding.UTF8.GetString(bytes);
@@ -290,6 +438,19 @@ internal static class UpdateService
     {
         var actual = ComputeFileSha256(path);
         return actual is not null && string.Equals(actual, expectedHex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
+    }
+
+    internal static bool IsCachedInstallerValid(string path, UpdateInfo update)
+    {
+        try
+        {
+            if (!File.Exists(path) || string.IsNullOrWhiteSpace(update.Sha256)) return false;
+            var length = new FileInfo(path).Length;
+            if (length < 1024 * 1024) return false;
+            if (update.AssetSizeBytes > 0 && length != update.AssetSizeBytes) return false;
+            return VerifyFileSha256(path, update.Sha256);
+        }
+        catch { return false; }
     }
 
     internal static bool IsNewerVersion(string remote, string local)
@@ -348,7 +509,32 @@ internal static class UpdateService
     internal static string StagingRoot => Path.Combine(UpdateRoot, "staging");
     internal static string TransactionDir => Path.Combine(UpdateRoot, "transactions");
 
-    internal static bool IsLinuxNotifyOnly => OperatingSystem.IsLinux();
+    internal static bool IsLinuxNotifyOnly => OperatingSystem.IsLinux() && !IsManagedLinuxInstall();
+
+    // Managed Linux archive installs (our tarball: marker present, updater
+    // beside the app, user-writable) update automatically like Windows.
+    // AppImage mounts, root-owned .deb installs, and foreign layouts stay on
+    // the download-notify path. The override exists for tests.
+    internal static bool IsManagedLinuxInstall(string? appBaseDirOverride = null)
+    {
+        if (!OperatingSystem.IsLinux()) return false;
+        try
+        {
+            var dir = string.IsNullOrWhiteSpace(appBaseDirOverride) ? AppContext.BaseDirectory : appBaseDirOverride;
+            if (!File.Exists(Path.Combine(dir, Shared.ManagedInstallMarkerFileName))) return false;
+            if (!File.Exists(Path.Combine(dir, "KodoUpdater")) && !File.Exists(Path.Combine(dir, "kodoUpdater")))
+                return false;
+            return Shared.IsWritableDirectory(dir);
+        }
+        catch { return false; }
+    }
+
+    // Only tarballs can be applied automatically; a managed install offered
+    // a .deb/AppImage still goes through the manual dialog.
+    internal static bool IsLinuxAutoInstallAsset(string? assetName) =>
+        !string.IsNullOrWhiteSpace(assetName) &&
+        (assetName!.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+         assetName.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase));
 
     internal static void OpenFolderInFileManager(string path)
     {
@@ -452,19 +638,25 @@ internal static class UpdateService
         Directory.CreateDirectory(versionDir);
 
         var safeName = SanitizeFileName(update.AssetName);
+        if (!Uri.TryCreate(update.AssetDownloadUrl, UriKind.Absolute, out var downloadUri) ||
+            downloadUri.Scheme != Uri.UriSchemeHttps ||
+            !string.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Update asset URL must be an HTTPS GitHub release URL.");
         if (OperatingSystem.IsWindows() && !safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) safeName += ".exe";
         var finalPath = Path.Combine(versionDir, safeName);
         var partialPath = finalPath + ".partial";
 
-        if (File.Exists(finalPath) && new FileInfo(finalPath).Length > 1024 * 1024)
+        if (IsCachedInstallerValid(finalPath, update))
         {
-            KodoDiagnostics.LogDebug($"Update installer already staged: {finalPath}");
+            KodoDiagnostics.LogDebug($"Update installer already staged and verified: {finalPath}");
             try { if (File.Exists(partialPath)) File.Delete(partialPath); } catch { }
             return finalPath;
         }
 
         using var response = await Http.GetAsync(update.AssetDownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidDataException("Update download redirected away from HTTPS.");
 
         var totalBytes = response.Content.Headers.ContentLength ?? update.AssetSizeBytes;
         await using var httpStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
@@ -495,6 +687,11 @@ internal static class UpdateService
         var partialInfo = new FileInfo(partialPath);
         if (!partialInfo.Exists || partialInfo.Length < 1024 * 1024)
             throw new InvalidDataException($"Download incomplete or too small ({partialInfo.Length} bytes): {partialPath}");
+        if (update.AssetSizeBytes > 0 && partialInfo.Length != update.AssetSizeBytes)
+        {
+            try { File.Delete(partialPath); } catch { }
+            throw new InvalidDataException($"Update download size mismatch for {update.AssetName}. Expected {update.AssetSizeBytes} bytes, got {partialInfo.Length}.");
+        }
 
         if (hasher is not null)
         {
@@ -560,9 +757,7 @@ internal static class UpdateService
 
         var txPath = Path.Combine(TransactionDir, $"{transactionId}.json");
         var json = JsonSerializer.Serialize(tx, TransactionJsonOptions);
-        var tmp = txPath + ".tmp";
-        File.WriteAllText(tmp, json);
-        File.Move(tmp, txPath);
+        Shared.WriteTextAtomically(txPath, json);
         KodoDiagnostics.LogDebug($"Update transaction created {txPath} pid={tx.KodoPid}");
         return txPath;
     }
@@ -710,10 +905,17 @@ internal sealed class UpdateDialog : Window
     private bool _isDownloading;
     private bool _isReady;
 
+    // Full-release dialog flow: automatic ("Restart & Update") except on
+    // Linux installs that cannot self-apply (unmanaged install, or a
+    // non-tarball asset), which stay on the manual ("Show in Folder") flow.
+    private readonly bool _linuxManualOnly;
+
     public UpdateDialog(UpdateInfo update, string? stagedInstallerPath = null)
     {
         _update = update;
         _stagedInstallerPath = stagedInstallerPath;
+        _linuxManualOnly = UpdateService.IsLinuxNotifyOnly ||
+            (OperatingSystem.IsLinux() && !UpdateService.IsLinuxAutoInstallAsset(update.AssetName));
         _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
 
@@ -742,7 +944,7 @@ internal sealed class UpdateDialog : Window
         _statusText = new TextBlock
         {
             Text = stagedInstallerPath is not null && File.Exists(stagedInstallerPath)
-                ? (UpdateService.IsLinuxNotifyOnly
+                ? (_linuxManualOnly
                     ? UpdateService.LinuxReadyBlurb(stagedInstallerPath)
                     : "Update downloaded and ready to install. Choose Restart & Update when you're ready.")
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
@@ -759,7 +961,7 @@ internal sealed class UpdateDialog : Window
         _primaryButton = new Button
         {
             Content = stagedInstallerPath is not null
-                ? (UpdateService.IsLinuxNotifyOnly ? "Show in Folder" : "Restart & Update")
+                ? (_linuxManualOnly ? "Show in Folder" : "Restart & Update")
                 : "Download Update",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(20, 8),
@@ -886,7 +1088,7 @@ internal sealed class UpdateDialog : Window
         }
         if (_isReady && _stagedInstallerPath is not null && File.Exists(_stagedInstallerPath))
         {
-            if (UpdateService.IsLinuxNotifyOnly)
+            if (_linuxManualOnly)
             {
                 UpdateService.OpenFolderInFileManager(_stagedInstallerPath);
                 _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
@@ -937,7 +1139,7 @@ internal sealed class UpdateDialog : Window
             _isDownloading = false;
             _isReady = true;
             _progressBar.IsVisible = false;
-            if (UpdateService.IsLinuxNotifyOnly)
+            if (_linuxManualOnly)
             {
                 _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
                 _primaryButton.Content = "Show in Folder";
@@ -1039,9 +1241,11 @@ internal sealed class UpdateDialog : Window
         catch (Exception ex)
         {
             _isDownloading = false;
-            _statusText.Text = ex is InvalidDataException
-                ? "The hotfix failed verification and was discarded. The current installation is untouched."
-                : "The hotfix couldn't be downloaded. Check your connection and try again.";
+            _statusText.Text = ex is UnauthorizedAccessException
+                ? ex.Message
+                : ex is InvalidDataException
+                    ? "The hotfix failed verification and was discarded. The current installation is untouched."
+                    : "The hotfix couldn't be downloaded. Check your connection and try again.";
             _primaryButton.Content = "Retry";
             _primaryButton.IsEnabled = true;
             _laterButton.IsEnabled = true;
@@ -1187,7 +1391,16 @@ internal sealed class AppUpdateScheduler
     private async Task OnTickAsync()
     {
         if (!_isEnabled() || _isManualCheckInProgress()) return;
-        try { await UpdateService.CheckAndHandleUpdateAsync(installInBackground: _installInBackground()).ConfigureAwait(true); }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("Periodic app update check failed", ex); }
+        try
+        {
+            // Full releases take precedence; only check the hotfix channel when
+            // no full release was offered, mirroring the startup background
+            // check. Hotfixes were previously startup-only and never rechecked
+            // on this timer.
+            var full = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: _installInBackground()).ConfigureAwait(true);
+            if (full is null)
+                await UpdateService.CheckAndHandleHotfixAsync(installInBackground: _installInBackground()).ConfigureAwait(true);
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("Periodic update check failed", ex); }
     }
 }
