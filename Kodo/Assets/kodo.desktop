@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Kodo
+GenericName=Code Editor
+Comment=A fast, lightweight code editor. No accounts. No ads. Free forever.
+Exec=Kodo %F
+Icon=kodo-logo
+Terminal=false
+Categories=Development;TextEditor;IDE;
+Keywords=code;editor;development;ide;
+StartupWMClass=Kodo
+StartupNotify=true
