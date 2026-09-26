@@ -933,8 +933,6 @@ public partial class MainWindow
             {
                 await src.CopyToAsync(dst, ct).ConfigureAwait(false);
             }
-            // A raw FileStream creates the destination with the default umask,
-            // so a copied .sh/.py/binary would lose its executable bit on Unix.
             if (!OperatingSystem.IsWindows())
             {
                 try { File.SetUnixFileMode(destinationFile, File.GetUnixFileMode(file)); }
@@ -999,9 +997,6 @@ public partial class MainWindow
 
                 foreach (var (binary, args) in fileManagers)
                 {
-                    // "which" is not guaranteed to exist (minimal images, busybox
-                    // without debianutils). Without this guard the Win32Exception
-                    // escapes the loop and aborts the remaining candidates.
                     if (!IsExecutableOnPath(binary)) continue;
 
                     Process.Start(new ProcessStartInfo
@@ -1017,8 +1012,6 @@ public partial class MainWindow
             var fallbackDir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
             if (OperatingSystem.IsLinux())
             {
-                // UseShellExecute=true is a bare execvp on Unix, so passing a
-                // directory fails with EACCES. xdg-open is the portal-correct way.
                 Process.Start(new ProcessStartInfo { FileName = "xdg-open", Arguments = $"\"{fallbackDir}\"", UseShellExecute = false });
                 return;
             }
@@ -1439,17 +1432,11 @@ public partial class MainWindow
         {
             if (_clipboardIsCut)
             {
-                // The move itself can copy a whole tree across filesystems, so it
-                // must not run on the UI thread. Deliberately no ConfigureAwait(false):
-                // RetargetTabPaths below raises bindings and touches the editor.
                 var cutSource = _clipboardItemPath;
                 await Task.Run(() =>
                 {
                     if (_clipboardItemIsDirectory)
                     {
-                        // Directory.Move is a bare rename(2) on Unix and fails with
-                        // EXDEV when source and destination live on different
-                        // filesystems (the usual ~/proj -> /mnt/data layout).
                         Shared.MoveOrCopyDirectory(cutSource, destPath);
                     }
                     else

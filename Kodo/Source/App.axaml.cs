@@ -88,9 +88,6 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 
-    // Phase 4: confirm a freshly applied hotfix only after Kodo has reached a
-    // reliable startup point. Fire-and-forget and infallible by design — a
-    // confirmation failure must never break startup.
     private static void DeferHotfixConfirmation()
     {
         _ = Task.Run(async () =>

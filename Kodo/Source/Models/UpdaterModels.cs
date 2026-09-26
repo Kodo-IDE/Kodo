@@ -33,8 +33,6 @@ internal enum UpdateKind
     Hotfix,
 }
 
-// Phase 2: combined update-check outcome. A newer full release always takes
-// precedence over hotfixes for an older base version.
 internal sealed record UpdateCheckResult(
     UpdateKind Kind,
     UpdateInfo? FullRelease,

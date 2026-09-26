@@ -38,8 +38,6 @@ public static class ExternalLanguageToolRunner
         if (enabled.Count == 0) return [];
 
         var results = new List<ExternalToolDiagnostic>();
-        // One snapshot of the document serves every enabled tool instead of
-        // writing the whole buffer to a fresh temp file per tool.
         var temporaryFile = CreateTemporarySource(filePath, documentText);
         try
         {

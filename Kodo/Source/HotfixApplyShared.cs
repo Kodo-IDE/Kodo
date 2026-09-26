@@ -1,16 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-//
-// Shared hotfix-apply core, compiled into BOTH the Kodo app and KodoUpdater.
-//
-// Constraints for this file (it ships in the trimmed, single-file updater):
-//   - BCL only. No Kodo.*, Avalonia, or other project references.
-//   - No reflection-based JSON (System.Text.Json source-gen is per-assembly).
-//     All JSON I/O here uses JsonDocument / Utf8JsonWriter (trim-safe).
-//   - No environment assumptions: every path is passed in by the caller.
-//
-// Kodo-side staging (HotfixStaging) uses the Phase 1/2 models + validator for
-// rich pre-stage verification. The updater re-verifies with this file's
-// self-contained checks before touching the installation, then calls Apply.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -72,10 +60,6 @@ internal sealed class HotfixPackageFile
     public string Path { get; set; } = "";
     public string Sha256 { get; set; } = "";
 
-    // Optional. When true, Apply/Rollback ensure the file is executable on
-    // Unix after writing it (Linux hotfix payloads replacing native binaries
-    // such as Kodo/KodoUpdater). Absent/false preserves historical behavior.
-    // Ignored on Windows. Old packages omit it; old code ignores it.
     public bool Executable { get; set; }
 }
 
@@ -151,9 +135,6 @@ internal sealed class TarballInstallResult
     public bool Success { get; set; }
     public string? Error { get; set; }
 
-    // Set ONLY when the swap failed AND the restore failed: the previous
-    // install retained here for manual recovery. Null in every other
-    // outcome (success cleans up; restored failures need nothing kept).
     public string? RetainedBackupDir { get; set; }
 
     public static TarballInstallResult Fail(string error, string? retainedBackupDir = null) =>
@@ -242,8 +223,6 @@ internal static class HotfixShared
         return error is null;
     }
 
-    // --- Manifest parsing (JsonDocument: trim-safe) ---
-
     public static bool TryParseManifest(string json, out HotfixPackageManifest? manifest, out string? error)
     {
         manifest = null;
@@ -325,8 +304,6 @@ internal static class HotfixShared
         }
         return 0;
     }
-
-    // --- Transaction parsing / status flip (JsonDocument round-trip: trim-safe) ---
 
     public static bool TryParseTransaction(string json, out HotfixTransaction? tx, out string? error)
     {
@@ -513,8 +490,6 @@ internal static class HotfixShared
         else w.WriteString(extra.Name, extra.Value);
     }
 
-    // --- Apply ---
-
     public static HotfixApplyResult Apply(HotfixApplyRequest request, Action<string>? log = null)
     {
         if (request is null) return HotfixApplyResult.Fail("Apply request is missing.");
@@ -538,7 +513,6 @@ internal static class HotfixShared
         var targetRoot = Path.GetFullPath(request.TargetDir);
         var payloadRoot = Path.GetFullPath(request.PayloadDir);
 
-        // Phase 1: verify EVERYTHING before copying anything.
         var planned = new List<(HotfixPackageFile Entry, string PayloadPath, string DestPath)>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in manifest.Files)
@@ -573,9 +547,6 @@ internal static class HotfixShared
         }
         if (planned.Count == 0) return HotfixApplyResult.Fail("Manifest lists no files.");
 
-        // Phase 2: back up replaced files (retained until confirmed for rollback).
-        // Idempotent: if a previous (interrupted) run already backed everything
-        // up, reuse it so a retry never snapshots half-applied files as "good".
         var result = new HotfixApplyResult { Success = true };
         var backupRecords = new List<(string Rel, bool Existed)>();
         try
@@ -610,7 +581,6 @@ internal static class HotfixShared
                     }
                     else
                     {
-                        // Recorded so rollback can remove it.
                         backupRecords.Add((rel, false));
                         result.CreatedFiles.Add(rel);
                         Log($"New file (no backup): {rel}");
@@ -630,7 +600,6 @@ internal static class HotfixShared
             return HotfixApplyResult.Fail($"Recovery state could not be persisted before replacement: {ex.GetType().Name}: {ex.Message}. Installation untouched.");
         }
 
-        // Phase 3: copy payload over the installation (never execute package files).
         try
         {
             foreach (var (entry, payload, dest) in planned)
@@ -657,8 +626,6 @@ internal static class HotfixShared
                 : $"File replacement failed: {ex.GetType().Name}: {ex.Message}. Automatic rollback failed: {rollback.Error}");
         }
 
-        // Phase 4: update hotfix state. hotfixLevel advances, but
-        // lastKnownGoodHotfix is preserved until startup confirmation commits it.
         try
         {
             var preserved = ReadLastKnownGood(request.StateFilePath, manifest.BaseVersion, manifest.Hotfix);
@@ -681,8 +648,6 @@ internal static class HotfixShared
         Log("Hotfix application completed");
         return result;
     }
-
-    // --- Rollback (Phase 4) ---
 
     public static HotfixRollbackResult Rollback(HotfixRollbackRequest request, Action<string>? log = null)
     {
@@ -750,8 +715,6 @@ internal static class HotfixShared
             return HotfixRollbackResult.Fail($"Rollback failed: {ex.GetType().Name}: {ex.Message}.");
         }
 
-        // Backups are deliberately retained for diagnostics; confirmation-time
-        // cleanup removes them (see HotfixRecovery).
         Log("Rollback completed");
         return result;
     }
@@ -894,8 +857,6 @@ internal static class HotfixShared
 
     public static bool IsStale(DateTime createdAtUtc, DateTime nowUtc, double staleHours = 24) =>
         createdAtUtc != DateTime.MinValue && createdAtUtc.ToUniversalTime() < nowUtc.ToUniversalTime().AddHours(-staleHours);
-
-    // --- Failure tracker (loop prevention): hotfix-failures.json in update root ---
 
     public static int RecordFailure(string updateRoot, string baseVersion, int hotfixLevel)
     {
@@ -1046,8 +1007,6 @@ internal static class HotfixShared
         return kodoExePath;
     }
 
-    // --- Self-contained primitives (mirrors Kodo-side helpers; no shared deps) ---
-
     internal static string? NormalizeBaseVersion(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
@@ -1107,11 +1066,7 @@ internal static class HotfixShared
             if (seg.Length == 0) return false;
             if (seg == "." || seg == ".." || seg == "~") return false;
             if (seg.EndsWith(':')) return false;
-            // A colon anywhere enables NTFS alternate data streams
-            // ("file:stream") on Windows; payload names must be plain files.
             if (seg.Contains(':')) return false;
-            // Windows strips trailing dots/spaces, so "file " and "file" would
-            // land on the same file while hashing as different names.
             if (seg.EndsWith('.') || seg.EndsWith(' ')) return false;
             if (IsWindowsReservedDeviceName(seg)) return false;
         }
@@ -1119,9 +1074,6 @@ internal static class HotfixShared
         return true;
     }
 
-    // Bare Windows device names (CON, NUL, COM1, ...) address devices rather
-    // than files. Names with a real extension (e.g. "nul.txt") are ordinary
-    // files and stay allowed.
     private static bool IsWindowsReservedDeviceName(string segment)
     {
         var name = segment.TrimEnd('.', ' ').ToUpperInvariant();
@@ -1195,13 +1147,6 @@ internal static class HotfixShared
         return Convert.ToHexString(hasher.GetCurrentHash()).ToLowerInvariant();
     }
 
-    // --- Linux managed-tarball full updates (parity with the Windows installer flow) ---
-    //
-    // A user-writable archive install (marker file present) can be updated
-    // automatically: the verified tarball is extracted to staging, validated,
-    // then swapped into place with the previous install kept as a
-    // same-operation backup. Anything else on Linux (AppImage, .deb, foreign
-    // layouts) stays on the manual path and never reaches here.
     public const string ManagedInstallMarkerFileName = ".kodo-managed-install";
 
     public static TarballInstallResult InstallTarballUpdate(TarballInstallRequest request, Action<string>? log = null)
@@ -1228,8 +1173,6 @@ internal static class HotfixShared
         }
         catch (Exception ex) { return TarballInstallResult.Fail($"Invalid install paths: {ex.GetType().Name}."); }
 
-        // Fail closed before touching anything: managed marker, writable
-        // target (and parent, for the rename swap), no symlink games.
         if (!File.Exists(Path.Combine(targetRoot, ManagedInstallMarkerFileName)))
             return TarballInstallResult.Fail("Target is not a managed Kodo archive install (marker missing). Installation untouched.");
         if (!IsWritableDirectory(targetRoot))
@@ -1279,8 +1222,6 @@ internal static class HotfixShared
             Directory.CreateDirectory(stageDir);
             Directory.CreateDirectory(backupDir);
 
-            // 1. Extract (tar preserves Unix modes; the binaries get an
-            // explicit chmod below regardless of archive metadata).
             try
             {
                 using var fs = File.OpenRead(tarball);
@@ -1294,7 +1235,6 @@ internal static class HotfixShared
                 return TarballInstallResult.Fail($"Tarball cannot be extracted: {ex.GetType().Name}: {ex.Message}. Installation untouched.");
             }
 
-            // 2. Validate the staged tree (our tarballs nest under kodo/).
             var stagedRoot = Directory.Exists(Path.Combine(stageDir, "kodo"))
                 ? Path.Combine(stageDir, "kodo")
                 : stageDir;
@@ -1306,7 +1246,6 @@ internal static class HotfixShared
                 return TarballInstallResult.Fail("Staged tarball does not contain a complete Kodo installation. Installation untouched.");
             }
 
-            // 3. Swap with same-operation backup (rename; copy fallback).
             try
             {
                 MoveOrCopyDirectory(targetRoot, previousDir);
@@ -1326,7 +1265,6 @@ internal static class HotfixShared
                 return FailRestored($"New files could not be put in place: {ex.GetType().Name}: {ex.Message}.");
             }
 
-            // 4. Explicit +x on both binaries (never rely on modes alone).
             if (!EnsureExecutable(Path.Combine(targetRoot, kodoName)) ||
                 !EnsureExecutable(Path.Combine(targetRoot, updaterName)))
             {
@@ -1366,7 +1304,6 @@ internal static class HotfixShared
         }
         catch (IOException)
         {
-            // Cross-filesystem (or similar): copy, then remove the source.
             CopyDirectoryRecursive(source, dest);
             Directory.Delete(source, recursive: true);
         }
@@ -1397,11 +1334,6 @@ internal static class HotfixShared
         try { EnsureExecutable(Path.Combine(targetRoot, updaterName)); } catch { }
     }
 
-    // Ensures a manifest-flagged executable stays runnable on Unix after an
-    // apply or rollback. Managed payload DLLs never need this; native
-    // binaries (Kodo, KodoUpdater) do. No-op on Windows. Returns false
-    // instead of throwing so callers fail loudly (triggering rollback)
-    // rather than reporting a success whose binary cannot start.
     internal static bool EnsureExecutable(string path)
     {
         try
@@ -1418,22 +1350,6 @@ internal static class HotfixShared
         }
     }
 
-    // --- Cumulative-release stamp (fresh installs start at the shipped level) ---
-    //
-    // Release tooling bakes hotfix-build.json into the publish directory, so
-    // every installer/tarball carries the hotfix level its files already
-    // contain. A fresh install therefore starts at e.g. 2.1.0 HF3 instead of
-    // HF0 and never replays the HF1..HF3 chain through the updater.
-    //
-    // The stamp is a floor, never a ceiling: callers take
-    // max(persistedLevel, shippedLevel) when the base versions match, and
-    // ignore the stamp entirely when they do not. Never throws.
-    //
-    // Since stamp v2 the file may also carry "files" (relative path plus
-    // SHA-256, hashed from the publish directory at stamp time). Kodo retains
-    // that list and reconciles it against the installed files, so reinstalling
-    // an older package over a cumulative install is detected and repaired
-    // instead of silently claiming a hotfix level whose files are gone.
     public const string ShippedStampFileName = "hotfix-build.json";
 
     public const int MaxStampBytes = 65536;

@@ -1,11 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-//
-// Consolidated Kodo-side hotfix system (Phases 1-4): versioning, models,
-// validation, state, discovery, packaging, staging, and startup confirmation.
-//
-// NOTE: HotfixApplyShared.cs intentionally stays a separate file. It is linked
-// into the trimmed, single-file KodoUpdater exe and must remain BCL-only with
-// no Kodo.* dependencies; merging it here would break the updater build.
 
 using Kodo.HotfixShared;
 using Shared = Kodo.HotfixShared.HotfixShared;
@@ -23,15 +16,6 @@ using System.Threading.Tasks;
 
 namespace Kodo;
 
-// ---------------------------------------------------------------------------
-// Part 1: Versioning (was HotfixVersion.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 1: keeps full-release versioning separate from hotfix numbering.
-// A hotfix update is only valid on the same base version line:
-//   Local  2.1.0 HF0  + Remote 2.1.0 HF1 -> update available
-//   Local  2.1.0 HF2  + Remote 2.1.0 HF1 -> ignore (remote older)
-//   Local  2.1.0 HF2  + Remote 2.2.0 HF0 -> full release, not a hotfix
 internal static class HotfixVersion
 {
     public const string FallbackBaseVersion = "2.1.0";
@@ -39,12 +23,6 @@ internal static class HotfixVersion
     public static string CurrentBaseVersion =>
         NormalizeBaseVersion(KodoDiagnostics.AppVersion) ?? FallbackBaseVersion;
 
-    // Cumulative-release floor: the hotfix level already baked into the
-    // installed files (hotfix-build.json beside the app binary). Fresh installs
-    // of a cumulative package start here instead of HF0, so they never replay
-    // the historical hotfix chain. Returns 0 when no usable stamp exists.
-    // Never throws. Pass appBaseDirOverride in tests; production passes null
-    // to read from the running installation directory.
     public static int GetShippedHotfixLevel(string? appBaseDirOverride, string baseVersion)
     {
         try
@@ -128,12 +106,6 @@ internal static class HotfixVersion
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 2: Models (was Models/HotfixModels.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 1 hotfix foundation: state + manifest models only.
-// No download/apply/rollback logic lives here.
 internal sealed class HotfixState
 {
     [JsonPropertyName("baseVersion")]
@@ -142,9 +114,6 @@ internal sealed class HotfixState
     [JsonPropertyName("hotfixLevel")]
     public int HotfixLevel { get; set; }
 
-    // Phase 4: last hotfix level confirmed by a successful startup.
-    // hotfixLevel may run ahead while a hotfix is applied-but-unconfirmed;
-    // lastKnownGoodHotfix only advances on confirmation and is the rollback target.
     [JsonPropertyName("lastKnownGoodHotfix")]
     public int LastKnownGoodHotfix { get; set; }
 
@@ -193,14 +162,10 @@ internal sealed class HotfixFileEntry
     [JsonPropertyName("sha256")]
     public string Sha256 { get; set; } = "";
 
-    // Optional: when true, Apply/Rollback ensure +x on Unix. Managed DLLs
-    // leave this false; native binaries (Kodo, KodoUpdater) set it.
     [JsonPropertyName("executable")]
     public bool Executable { get; set; }
 }
 
-// Phase 2: a discovered hotfix release. Enough info for a future phase to
-// download it. Discovery only — nothing here downloads or installs anything.
 internal sealed record HotfixCandidate(
     string BaseVersion,
     int HotfixLevel,
@@ -212,20 +177,11 @@ internal sealed record HotfixCandidate(
     long AssetSizeBytes,
     string? Sha256 = null);
 
-// ---------------------------------------------------------------------------
-// Part 3: Manifest validation (was HotfixValidator.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 1: inspects a hotfix manifest WITHOUT applying anything.
-// No downloads, no file replacement, no rollback, no signatures
-// (the existing updater only verifies SHA-256 checksums; there is
-// no signing infrastructure to reuse yet).
 internal static class HotfixValidator
 {
     public const int SupportedSchemaVersion = 1;
     public const string ExpectedProduct = "Kodo";
 
-    // Mirrors RuntimeIdentifiers in Kodo.csproj.
     private static readonly HashSet<string> KnownPlatforms = new(StringComparer.OrdinalIgnoreCase)
     {
         "win-x64",
@@ -316,13 +272,11 @@ internal static class HotfixValidator
         if (p.Length == 0) return false;
         if (p.Length > 260) return false;
 
-        // No absolute paths (covers C:\, \\server, /etc, \foo on all OSes).
         if (Path.IsPathRooted(p)) return false;
         if (p.StartsWith('/') || p.StartsWith('\\')) return false;
         if (p.Length >= 2 && p[1] == ':') return false;
         if (p.StartsWith("\\\\", StringComparison.Ordinal)) return false;
 
-        // No drive separators, no traversal segments, no empty segments.
         var segments = p.Split('/', '\\');
         foreach (var seg in segments)
         {
@@ -330,25 +284,17 @@ internal static class HotfixValidator
             if (seg == "." || seg == "..") return false;
             if (seg == "~") return false;
             if (seg.EndsWith(':')) return false;
-            // A colon anywhere enables NTFS alternate data streams
-            // ("file:stream") on Windows; payload names must be plain files.
             if (seg.Contains(':')) return false;
-            // Windows strips trailing dots/spaces, so "file " and "file" would
-            // land on the same file while hashing as different names.
             if (seg.EndsWith('.') || seg.EndsWith(' ')) return false;
             if (IsWindowsReservedDeviceName(seg)) return false;
             foreach (var c in Path.GetInvalidPathChars())
                 if (seg.Contains(c)) return false;
         }
 
-        // Catch ".." that survives mixed separators or trailing dots/spaces.
         if (p.Contains("..", StringComparison.Ordinal)) return false;
         return true;
     }
 
-    // Bare Windows device names (CON, NUL, COM1, ...) address devices rather
-    // than files. Names with a real extension (e.g. "nul.txt") are ordinary
-    // files and stay allowed.
     private static bool IsWindowsReservedDeviceName(string segment)
     {
         var name = segment.TrimEnd('.', ' ').ToUpperInvariant();
@@ -363,13 +309,6 @@ internal static class HotfixValidator
         path.Trim().Replace('\\', '/');
 }
 
-// ---------------------------------------------------------------------------
-// Part 4: State persistence (was HotfixStateStore.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 1: persists the installed hotfix level alongside updater data.
-// Default location: %LocalAppData%/Kodo/update/hotfix-state.json (UpdateService.UpdateRoot).
-// Never throws from load paths: missing file -> HF0, malformed -> rejected, not a crash.
 internal static class HotfixStateStore
 {
     public const string StateFileName = "hotfix-state.json";
@@ -426,8 +365,6 @@ internal static class HotfixStateStore
             parsed.BaseVersion = HotfixVersion.NormalizeBaseVersion(parsed.BaseVersion)!;
             if (!HasLastKnownGood(json))
             {
-                // Legacy state file (Phases 1-3): whatever is installed has been
-                // running, so treat it as the last known good level.
                 parsed.LastKnownGoodHotfix = parsed.HotfixLevel;
             }
             state = parsed;
@@ -483,8 +420,6 @@ internal static class HotfixStateStore
             throw new ArgumentException(validationError, nameof(state));
 
         var file = string.IsNullOrWhiteSpace(path) ? DefaultPath : path;
-        // Write a unique, flushed temporary file before atomically replacing
-        // the current state so a stale temp file cannot block recovery.
         var payload = JsonSerializer.Serialize(
             new HotfixState
             {
@@ -496,25 +431,6 @@ internal static class HotfixStateStore
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 4b: Installed-file reconciliation (drift detection and repair)
-// ---------------------------------------------------------------------------
-
-// Detects the case where the persisted hotfix level no longer matches the
-// files on disk — typically reinstalling an older package over a cumulative
-// install (per-user state survives installers). Without this, Kodo would
-// silently claim e.g. HF3 while HF0 files are installed, and the updater
-// would never offer the missing HF3 again.
-//
-// Sources of expected hashes, in priority order:
-//   1. The shipped stamp's "files" list (stamp v2), retained on first sight.
-//   2. The manifest of the last confirmed hotfix for this base+level.
-// Both live under the per-user update root, which installers do not replace,
-// so they survive the reinstall that causes the drift.
-//
-// On mismatch the state is clamped to HF0 (never to a guessed level) and the
-// retained data is discarded; discovery then offers the newest cumulative
-// hotfix, which repairs the installation in one apply. Never throws.
 internal static class HotfixFileReconciler
 {
     internal const string RetainedDirName = "confirmed-manifests";
@@ -551,7 +467,6 @@ internal static class HotfixFileReconciler
         try
         {
             if (files is null || files.Count == 0) return;
-            // Reuse the manifest shape so verification needs only one reader.
             using var ms = new MemoryStream();
             using (var w = new System.Text.Json.Utf8JsonWriter(ms))
             {
@@ -596,10 +511,6 @@ internal static class HotfixFileReconciler
         }
     }
 
-    // Verifies the installed files against the retained manifest for
-    // (baseVersion, hotfixLevel). Returns true when they match OR when there
-    // is nothing trustworthy to check against (no retained data, or the level
-    // claimed is HF0). Returns false only on a proven mismatch.
     internal static bool InstalledFilesMatch(
         string updateRoot, string targetDir, string baseVersion, int hotfixLevel)
     {
@@ -633,22 +544,6 @@ internal static class HotfixFileReconciler
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 5: Discovery (was HotfixDiscovery.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 2: hotfix discovery through GitHub Releases.
-//
-// Hotfix releases use tags like "hotfix/2.1.0/3" (base version + hotfix level).
-// Platform is determined per asset: a hotfix package asset must contain both
-// "hotfix" and the platform RID in its name, e.g.
-// "Kodo-hotfix-2.1.0-3-win-x64.zip".
-//
-// This class is pure (no network): it selects candidates from release data so
-// it can be unit-tested with mocked releases. Network fetching lives in
-// UpdateService, which reuses the existing updater HTTP infrastructure.
-//
-// Discovery only — no downloading, applying, rollback, or health checks.
 internal static class HotfixDiscovery
 {
     public const string TagPrefix = "hotfix";
@@ -751,14 +646,6 @@ internal static class HotfixDiscovery
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 6: Packaging (was HotfixPackaging.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 3: hotfix package creation/inspection on the Kodo side.
-// A package is a zip containing "manifest.json" at the root plus the payload
-// files listed in the manifest. Used by tests to build packages; production
-// packages arrive via GitHub Release assets (HotfixDiscovery).
 internal static class HotfixPackaging
 {
     public const string ManifestEntryName = "manifest.json";
@@ -798,22 +685,12 @@ internal static class HotfixPackaging
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 7: Download, verification, staging (was HotfixStaging.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 3 Kodo side: Discover → Download → Verify → Stage → (updater applies).
-// Kodo never replaces its own files while running; application happens in
-// KodoUpdater after Kodo exits. Nothing is copied into the installation
-// until every verification check succeeds.
 internal static class HotfixStaging
 {
     internal static string HotfixRoot => Path.Combine(UpdateService.UpdateRoot, "hotfix");
     internal static string DownloadsRoot => Path.Combine(HotfixRoot, "downloads");
 
     private static readonly JsonSerializerOptions TxJsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
-
-    // --- Download ---
 
     internal static async Task<string> DownloadAsync(
         HttpClient client,
@@ -876,8 +753,6 @@ internal static class HotfixStaging
             throw;
         }
     }
-
-    // --- Verification (nothing reaches the install dir until this passes) ---
 
     internal sealed class VerifyResult
     {
@@ -965,7 +840,7 @@ internal static class HotfixStaging
             var zipFiles = new Dictionary<string, ZipArchiveEntry>(StringComparer.OrdinalIgnoreCase);
             foreach (var entry in zip.Entries)
             {
-                if (entry.FullName.EndsWith('/')) continue; // directory entry
+                if (entry.FullName.EndsWith('/')) continue;
                 var name = NormalizeEntryName(entry.FullName);
                 if (string.Equals(name, HotfixPackaging.ManifestEntryName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!HotfixValidator.IsSafeRelativePath(name))
@@ -1018,8 +893,6 @@ internal static class HotfixStaging
             hasher.AppendData(buffer, 0, read);
         return Convert.ToHexString(hasher.GetCurrentHash()).ToLowerInvariant();
     }
-
-    // --- Staging ---
 
     internal static string StageVerifiedPackage(
         string packagePath,
@@ -1108,8 +981,6 @@ internal static class HotfixStaging
         }
     }
 
-    // --- Orchestration ---
-
     internal sealed class PrepareResult
     {
         public bool AlreadyInstalled { get; set; }
@@ -1157,7 +1028,6 @@ internal static class HotfixStaging
 
         EnsureTargetWritable(targetDir);
 
-        // Loop prevention: a hotfix that repeatedly fails startup is blocked.
         if (Shared.IsBlocked(updateRoot, candidate.BaseVersion, candidate.HotfixLevel))
         {
             var failures = Shared.FailureCount(updateRoot, candidate.BaseVersion, candidate.HotfixLevel);
@@ -1192,7 +1062,7 @@ internal static class HotfixStaging
         try
         {
             if (Shared.TryParseTransaction(await File.ReadAllTextAsync(txPath, ct).ConfigureAwait(false), out tx, out _))
-            { /* parsed for caller convenience */ }
+            { }
         }
         catch { }
         return new PrepareResult { TransactionPath = txPath, Transaction = tx };
@@ -1221,20 +1091,6 @@ internal static class HotfixStaging
     }
 }
 
-// ---------------------------------------------------------------------------
-// Part 8: Startup confirmation (was HotfixRecovery.cs)
-// ---------------------------------------------------------------------------
-
-// Phase 4 Kodo side: startup confirmation and commit.
-//
-// Flow: updater applies files -> marks awaitingConfirmation -> restarts Kodo.
-// Kodo reaches a reliable startup point (App startup, deferred) and calls
-// ConfirmStartupAsync: if the installed files still match the hotfix manifest,
-// the hotfix is committed (state lastKnownGood advances, backups and staging
-// data are cleaned up). If files do not match, Kodo reports the transaction
-// path so the caller can hand off to KodoUpdater --rollback and exit.
-//
-// Never throws: confirmation must never break startup.
 internal static class HotfixRecovery
 {
     internal sealed class ConfirmResult
@@ -1309,8 +1165,6 @@ internal static class HotfixRecovery
             return;
         }
 
-        // A hotfix line for an older base is obsolete (a full release moved on):
-        // close it out without touching state.
         if (!Shared.AreSameBaseVersion(tx.BaseVersion, currentBase))
         {
             await WriteBackAsync(txPath, Shared.MarkFailed(rawJson, $"Base version changed (tx {tx.BaseVersion}, app {currentBase}).")).ConfigureAwait(false);
@@ -1320,10 +1174,6 @@ internal static class HotfixRecovery
             return;
         }
 
-        // A newer hotfix has been installed since this transaction was staged
-        // (cumulative reinstall over it, or a later hotfix applied first): the
-        // transaction is superseded. Close it without touching files or state
-        // so confirmation can never roll a newer installation back.
         var installedState = HotfixStateStore.LoadOrDefault(
             Path.Combine(updateRoot, HotfixStateStore.StateFileName), targetDir);
         if (HotfixVersion.AreSameBaseVersion(installedState.BaseVersion, tx.BaseVersion) &&
@@ -1365,9 +1215,6 @@ internal static class HotfixRecovery
             return;
         }
 
-        // The process is alive, but that alone is not confirmation: the files
-        // on disk must still match the manifest (catches updater interruption
-        // mid-copy and disk corruption).
         var targetRoot = Path.GetFullPath(targetDir);
         foreach (var file in manifest.Files)
         {
@@ -1387,7 +1234,6 @@ internal static class HotfixRecovery
             }
         }
 
-        // Commit: advance lastKnownGood, mark confirmed, clear failures, clean up.
         var statePath = Path.Combine(updateRoot, HotfixStateStore.StateFileName);
         try
         {
@@ -1408,10 +1254,6 @@ internal static class HotfixRecovery
         await WriteBackAsync(txPath, Shared.MarkConfirmed(rawJson, DateTime.UtcNow)).ConfigureAwait(false);
         KodoDiagnostics.LogDebug("Hotfix startup confirmed");
         KodoDiagnostics.LogDebug($"Hotfix committed: {HotfixVersion.Format(tx.BaseVersion, tx.HotfixLevel)}");
-        // Retain the confirmed manifest under the per-user update root (which
-        // installers do not replace) so a later reinstall of an older package
-        // can be detected and repaired instead of silently keeping a stale HF
-        // level. Written before the staging data is deleted.
         HotfixFileReconciler.RetainManifest(updateRoot, tx.BaseVersion, tx.HotfixLevel, manifestJson);
         DeleteStageDir(txPath, updateRoot);
         result.Confirmed.Add(tx.TransactionId);

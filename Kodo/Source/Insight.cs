@@ -21,10 +21,6 @@ public sealed class InsightEngine
 {
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(FileSystemPaths.Comparer);
 
-    // ScanDocument already walks the language extension's symbol analyser over
-    // the whole document; GetSuggestions used to run it a second time for the
-    // same text on the same call. Keep the declaration names so the second
-    // (arbitrary, extension-provided) pass is not repeated per keystroke.
     private readonly Dictionary<string, string[]> _declarationNamesByFile = new(FileSystemPaths.Comparer);
 
     private const string NotCompoundOrArrow = @"(?<![=!<>+\-*/%&|^~])=(?![=>])";
@@ -687,7 +683,6 @@ public sealed class InsightEngine
         for (var i = 0; i < maskedLines.Length; i++) { brace[i] = cb; paren[i] = cp; bracket[i] = ck; cb += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}'); cp += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')'); ck += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']'); }
     }
 
-
     public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null)
     {
         var spans = new List<DeadCodeSpan>();
@@ -876,9 +871,6 @@ public sealed class InsightEngine
     public IReadOnlyCollection<string> GetVariables(string fileKey) =>
         _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
 
-    // Reuses the symbol analysis ScanDocument already performed for this file.
-    // Falls back to a fresh analysis when GetSuggestions is reached without a
-    // prior scan for the same file key.
     private IReadOnlyList<string> GetDeclarationNames(string fileKey, string documentText, LangRulesAdapter rules)
     {
         if (_declarationNamesByFile.TryGetValue(fileKey, out var cached)) return cached;
@@ -889,8 +881,6 @@ public sealed class InsightEngine
                 names.Add(symbol.Name);
         return names;
     }
-
-
 
     private static bool IsConditionalTerminator(string[] masked, int terminatorIndex)
     {

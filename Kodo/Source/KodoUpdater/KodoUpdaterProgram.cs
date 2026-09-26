@@ -84,7 +84,6 @@ internal static class Program
             return 2;
         }
 
-        // Phase 4 manual recovery: roll back a failed hotfix without touching DLLs by hand.
         if (string.Equals(args[0].Trim(), "--rollback", StringComparison.OrdinalIgnoreCase))
         {
             var idOrPath = args.Length > 1 ? string.Join(" ", args.Skip(1)).Trim().Trim('"') : "";
@@ -241,8 +240,6 @@ internal static class Program
 
         if (OperatingSystem.IsLinux())
         {
-            // Managed archive installs update automatically (tarball swap);
-            // anything else (AppImage, .deb, foreign layouts) stays manual.
             if (IsManagedTarballTransaction(tx))
                 return await RunLinuxTarballTransactionAsync(tx, transactionPath).ConfigureAwait(false);
             Log($"Linux manual update: staged={tx.InstallerPath}. " + LinuxManualBlurb(tx.InstallerPath));
@@ -318,8 +315,6 @@ internal static class Program
         return 0;
     }
 
-    // --- Linux managed-tarball full updates (parity with the Windows installer flow) ---
-
     private static bool IsManagedTarballTransaction(UpdateTransaction tx)
     {
         try
@@ -334,8 +329,6 @@ internal static class Program
             if (string.IsNullOrWhiteSpace(installRoot) || !Directory.Exists(installRoot)) return false;
             if (!File.Exists(Path.Combine(installRoot, Kodo.HotfixShared.HotfixShared.ManagedInstallMarkerFileName)))
                 return false;
-            // The tarball always ships both binaries; at least the updater
-            // must be present for a managed install.
             var updaterPresent = File.Exists(Path.Combine(installRoot, "KodoUpdater")) ||
                 File.Exists(Path.Combine(installRoot, "kodoUpdater"));
             if (!updaterPresent) return false;
@@ -370,9 +363,6 @@ internal static class Program
         {
             TarballPath = tx.InstallerPath,
             TargetDir = installRoot,
-            // Per-transaction work root: staging/backup dir names inside are
-            // deterministic, so concurrent updaters for different installs
-            // must not share a root.
             WorkRoot = Path.Combine(updateDir, "linux-full", tx.TransactionId),
             KodoExeName = Path.GetFileName(tx.KodoExePath),
             KodoUpdaterName = "KodoUpdater",
@@ -398,11 +388,6 @@ internal static class Program
 
     private static void CleanupOrphanedLinuxWorkDirs(string linuxFullRoot, string currentTransactionId)
     {
-        // Per-transaction work dirs orphaned by a killed updater (or a restore
-        // failure whose transaction was later discarded) would otherwise
-        // accumulate. Only removes dirs older than 48h and never the current
-        // transaction's dir: anything that old cannot belong to a live
-        // operation (full-release transactions themselves go stale at 24h).
         try
         {
             if (!Directory.Exists(linuxFullRoot)) return;
@@ -510,10 +495,6 @@ internal static class Program
                 }
                 else
                 {
-                    // On Unix launch the binary directly (no shell/xdg-open
-                    // involvement) with the install dir as working directory.
-                    // Best effort: ensure it is executable first so a hotfix
-                    // that replaced the binary can never leave it unstartable.
                     if (!Kodo.HotfixShared.HotfixShared.EnsureExecutable(target))
                         Log($"Warning: could not ensure executable permission on {target}; attempting restart anyway.");
                     var installDir = Path.GetDirectoryName(Path.GetFullPath(target));
@@ -535,8 +516,6 @@ internal static class Program
             Log($"Kodo exe not found for restart: {kodoExePath}");
         }
     }
-
-    // --- Phase 3: hotfix application (file copy only; never executes package files) ---
 
     private static async Task<int> RunHotfixTransactionAsync(string transactionPath, string rawJson)
     {
@@ -587,9 +566,6 @@ internal static class Program
             return 3;
         }
 
-        // Terminal states never re-apply. If an earlier updater died after
-        // applying files, supervise the confirmation retry too so a failed
-        // startup still rolls back automatically.
         if (!string.Equals(tx.Status, Kodo.HotfixShared.HotfixTransactionStatus.Staged, StringComparison.OrdinalIgnoreCase))
         {
             if (string.Equals(tx.Status, Kodo.HotfixShared.HotfixTransactionStatus.AwaitingConfirmation, StringComparison.OrdinalIgnoreCase) ||
@@ -632,13 +608,7 @@ internal static class Program
 
         var stateFilePath = Path.Combine(expectedDir, "hotfix-state.json");
 
-        // Guard before touching anything: a retried/stale transaction must not
-        // downgrade an already-newer install.
         var (liveBase, liveLevel, liveLastKnownGood) = ReadLiveHotfixState(stateFilePath);
-        // Cumulative installs bake hotfixes into the files on disk. Treat the
-        // shipped stamp as a floor so a stale staged transaction can never
-        // downgrade a cumulative install (e.g. HF2 staged, then the user
-        // reinstalls cumulative HF3, then the updater runs).
         if (Kodo.HotfixShared.HotfixShared.TryGetShippedHotfixLevel(tx.TargetDir, tx.BaseVersion, out var shippedLevel) &&
             (string.IsNullOrWhiteSpace(liveBase) ||
              Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion)) &&
@@ -674,8 +644,6 @@ internal static class Program
             PreviousLastKnownGood = Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) ? Math.Max(0, liveLastKnownGood) : 0,
             ExpectedHotfixLevel = tx.HotfixLevel,
             ExpectedPlatformRid = tx.PlatformRid,
-            // This callback runs only after every original file and the complete
-            // backup index are durable, immediately before the first replace.
             BeforeReplace = () =>
             {
                 var awaitingJson = Kodo.HotfixShared.HotfixShared.MarkAwaitingConfirmation(
@@ -696,7 +664,6 @@ internal static class Program
 
         Log("Hotfix application completed");
 
-        // Files copied is NOT success yet; Kodo must start and confirm hashes.
         Log("Hotfix transaction marked awaitingConfirmation (retained with backup for rollback).");
 
         CleanupHotfixPartials(expectedDir);
@@ -729,10 +696,6 @@ internal static class Program
                 return Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
             }
 
-            // Mirror RestartKodo: on Unix the binary has to be launched directly
-            // and must carry the exec bit. A hotfix that replaced Kodo without
-            // one would otherwise fail to start here, be reported as a failed
-            // confirmation, and roll back a perfectly good hotfix.
             if (!Kodo.HotfixShared.HotfixShared.EnsureExecutable(target))
                 Log($"Warning: could not ensure executable permission on {target}; attempting start anyway.");
             var installDir = Path.GetDirectoryName(Path.GetFullPath(target));
@@ -881,8 +844,6 @@ internal static class Program
             return 32;
         }
 
-        // Restore target: live last-known-good when it belongs to this base
-        // line, otherwise the snapshot recorded at stage time.
         var stateFilePath = Path.Combine(expectedDir, "hotfix-state.json");
         var (liveBase, _, liveLastKnownGood) = ReadLiveHotfixState(stateFilePath);
         var restoreLevel = Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) && liveLastKnownGood >= 0
@@ -932,8 +893,6 @@ internal static class Program
             Log($"Hotfix marked failed: HF{tx.HotfixLevel} failed {failures} times and will no longer be offered.");
         Log("Rollback completed");
 
-        // Exit after restarting the known-good install; do NOT supervise again
-        // (that would risk an update loop — see failure tracker).
         RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
         Log("Kodo restarted");
         return rollbackExitCode;
@@ -952,8 +911,6 @@ internal static class Program
             Log($"Failed to mark transaction failed: {ex.Message}");
         }
     }
-
-    // --- Phase 4 manual recovery: KodoUpdater --rollback <transaction-id-or-path> ---
 
     private static async Task<int> RunManualRollbackAsync(string idOrPath)
     {
@@ -1220,16 +1177,6 @@ internal static class Program
         try { Debug.WriteLine(line); } catch { }
     }
 
-    // Single-instance guard that is safe to dispose after awaits.
-    //
-    // Named mutexes are thread-affine: ReleaseMutex must run on the thread that
-    // acquired ownership, and Main awaits with ConfigureAwait(false), so the
-    // finally routinely runs on a different threadpool thread. Releasing there
-    // throws ApplicationException ("unsynchronized block of code"), which in the
-    // trimmed single-file build surfaced as a fatal crash instead of the
-    // intended exit code. This guard only releases on the acquiring thread and
-    // otherwise just disposes; process exit drops the rest. The guard only needs
-    // to live as long as this one-shot process.
     private sealed class UpdaterMutex : IDisposable
     {
         private readonly Mutex _mutex;
@@ -1261,7 +1208,6 @@ internal static class Program
             }
             catch (AbandonedMutexException)
             {
-                // Previous owner died without releasing; we now own it.
                 owns = true;
             }
             catch

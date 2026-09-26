@@ -1,32 +1,21 @@
 <!-- Licensed under the GNU GPL-v3.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Target-platform aware: Exe by default; WinExe only when targeting Windows.
-         WinExe is a Windows concept and breaks Linux apphost expectations.
-         NOTE: $(OS) describes the build HOST, not the target RID, so cross-publishing
-         from Windows to Linux must not leak Windows settings. Check RuntimeIdentifier. -->
     <OutputType>Exe</OutputType>
     <OutputType Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">WinExe</OutputType>
     <OutputType Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <!-- app.manifest is Windows-target-only (assemblyIdentity/supportedOS/dpiAwareness). -->
     <ApplicationManifest Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">app.manifest</ApplicationManifest>
     <ApplicationManifest Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <!-- Disable Avalonia's build-time telemetry task. It can fail builds when
-         the per-user BuildServices log is locked or not writable. -->
     <UsedAvaloniaProducts></UsedAvaloniaProducts>
-    <!-- .ico is Windows-target-only. Linux packaging uses kodo-logo.png + .desktop file. -->
     <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\Assets\kodo_logo.ico</ApplicationIcon>
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\Assets\kodo_logo.ico</ApplicationIcon>
-    <!-- Phase 0 Linux: publish-time RIDs, e.g. dotnet publish with linux-x64 self contained true -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>
-    <!-- Base version baked into the generated hotfix-build.json stamp
-         (strips pre-release suffixes: 2.1.0-DEV -> 2.1.0). -->
     <HotfixStampBaseVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '-.*$', ''))</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
@@ -53,7 +42,6 @@
   <ItemGroup>
     <Compile Remove="KodoUpdater\**\*.cs" />
     <None Remove="KodoUpdater\**\*.cs" />
-    <InternalsVisibleTo Include="Kodo.Hotfix.Tests" />
   </ItemGroup>
 
   <Target Name="RemovePdbFilesFromPublish" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
@@ -64,11 +52,6 @@
     <Delete Files="@(PdbFiles)" />
   </Target>
 
-  <!-- hotfix-build.json is GENERATED, never a source file: hotfixes are
-       pushed by devs through release tooling, and no user should ever need
-       to create it. Every build writes the HF0 default (base from Version);
-       release tooling overwrites the publish-dir copy with the real level.
-       The Link metadata keeps it at the output/publish root. -->
   <Target Name="GenerateHotfixBuildStamp" BeforeTargets="AssignTargetPaths" Condition="'$(HotfixBuildStampGenerated)' != 'true'">
     <WriteLinesToFile File="$(IntermediateOutputPath)hotfix-build.json" Lines="{&quot;baseVersion&quot;:&quot;$(HotfixStampBaseVersion)&quot;,&quot;hotfixLevel&quot;:0}" Overwrite="true" WriteOnlyWhenDifferent="true" />
     <ItemGroup>

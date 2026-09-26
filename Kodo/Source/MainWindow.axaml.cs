@@ -8318,8 +8318,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    // Runs the checkers off the UI thread: each tool writes the whole
-                    // document to a temp file and starts a child process.
                     externalDiagnostics = await Task.Run(
                         () => ExternalLanguageToolRunner.AnalyzeAsync(
                             languageExtension,

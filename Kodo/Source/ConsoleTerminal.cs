@@ -1143,9 +1143,6 @@ public sealed class ConsoleTerminal : Control
         catch (Exception ex) { Console.WriteLine($"[Terminal] Paste failed: {ex.Message}"); return; }
         if (string.IsNullOrEmpty(text)) return;
 
-        // ConPTY renders a bare CR as a line break. A Unix PTY does not: the tty
-        // line discipline only translates NL on output, so a pasted block has to
-        // keep its LF or every line overwrites the previous one.
         text = OperatingSystem.IsWindows()
             ? text.Replace("\r\n", "\r").Replace("\n", "\r")
             : text.Replace("\r\n", "\n");

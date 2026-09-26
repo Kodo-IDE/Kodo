@@ -12,12 +12,9 @@
     <AssemblyName>KodoUpdater</AssemblyName>
     <RootNamespace>KodoUpdater</RootNamespace>
 
-    <!-- Windows-target-only icon: $(OS) is the build host, not the target RID. -->
     <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\..\Assets\kodo_logo.ico</ApplicationIcon>
 
-    <!-- Declare supported targets for restore/build tooling without selecting
-         a default RID. Each release publish still passes its explicit RID. -->
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
 
@@ -29,11 +26,9 @@
     <Optimize>true</Optimize>
     <DebugType>None</DebugType>
     <DebugSymbols>false</DebugSymbols>
-    <!-- One-shot helper: no Avalonia, minimal deps -->
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Shared hotfix-apply core (BCL-only, trim-safe; also compiled into Kodo). -->
     <Compile Include="..\HotfixApplyShared.cs" Link="HotfixApplyShared.cs" />
   </ItemGroup>
 

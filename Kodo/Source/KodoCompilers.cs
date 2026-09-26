@@ -2467,9 +2467,6 @@ public partial class MainWindow
         var fileArg = !string.IsNullOrWhiteSpace(quotedFile) && !alreadyHasFileArg ? $" {quotedFile}" : string.Empty;
         if (ext is ".bat" or ".cmd")
         {
-            // cmd.exe only exists on Windows. Batch syntax has no POSIX equivalent,
-            // so on Unix invoke the script through a shell instead of failing with
-            // "cmd.exe could not be started - install it via your package manager".
             if (!OperatingSystem.IsWindows())
                 return (TryFindOnPath("sh") ?? "sh", $"{quotedPath}{extra}{fileArg}");
             return ("cmd.exe", $"/c {quotedPath}{extra}{fileArg}");
@@ -2663,8 +2660,6 @@ public partial class MainWindow
         if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase) || exeName.Equals("go", StringComparison.Ordinal))
         {
             var goFileName = OperatingSystem.IsWindows() ? "go.exe" : "go";
-            // SpecialFolder.ProgramFiles is "" on Linux, so Path.Combine would
-            // produce the relative "Go/bin/go" and probe it against Kodo's CWD.
             if (OperatingSystem.IsWindows())
             {
                 foreach (var programFiles in new[]

@@ -1308,9 +1308,6 @@ public partial class MainWindow
         }
 
         var isLargeFileForLsp = content.Length > 120_000;
-        // Hop off the UI thread before resolving/starting the server. Task.Yield()
-        // reposts to the captured SynchronizationContext (the UI thread), which
-        // would drag Process.Start, PATH scans and JSON parsing back onto it.
         await Task.Delay(isLargeFileForLsp ? 500 : 0).ConfigureAwait(false);
 
         var settings = BuildLspResolverSettings();
@@ -1681,12 +1678,6 @@ public partial class MainWindow
                 var normPath = NormalizeFilePath(filePath);
                 if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
                 _lspDiagnostics[normPath] = diagnostics;
-                // "version" is optional in the LSP spec and most servers omit it.
-                // Stamping the version we last sent keeps the UI-refresh staleness
-                // guard below meaningful: without this, a server that versioned one
-                // publish and then stopped would leave a frozen value behind while
-                // _lspDocumentVersions keeps climbing, and every later publish would
-                // be discarded as stale - freezing the highlighters for that file.
                 if (publishVersion.HasValue)
                     _lspDiagnosticVersions[normPath] = publishVersion.Value;
                 else
@@ -1920,10 +1911,6 @@ public partial class MainWindow
     private static (int line, int character) OffsetToLspPosition(string text, int offset)
     {
         offset = Math.Clamp(offset, 0, text.Length);
-        // Binary search the line-start index instead of rescanning from the
-        // beginning: this runs on the UI thread before the first await for
-        // completion, hover, references, quick fix, rename and go-to-definition,
-        // so a linear walk cost O(offset) on every keystroke in a large file.
         var starts = GetLspLineStarts(text);
         var lo = 0;
         var hi = starts.Length - 1;
@@ -2565,16 +2552,115 @@ public partial class MainWindow
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             var labels = actions.Select(action => action.TryGetProperty("title", out var title) ? title.GetString() ?? "Untitled code action" : "Untitled code action").ToArray();
-            var list = new ListBox { ItemsSource = labels, MinHeight = 220, MinWidth = 520 };
-            var apply = new Button { Content = "Apply", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Avalonia.Thickness(0, 8, 0, 0) };
-            var cancel = new Button { Content = "Cancel", HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Margin = new Avalonia.Thickness(8, 8, 0, 0) };
-            var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right, Children = { cancel, apply } };
-            var panel = new StackPanel { Margin = new Avalonia.Thickness(12), Children = { new TextBlock { Text = "Select a code action", FontWeight = Avalonia.Media.FontWeight.Bold }, list, buttons } };
-            var window = new Window { Title = "LSP Code Actions", Width = 620, Height = 380, Content = panel, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-            apply.Click += (_, _) => { selected = list.SelectedIndex; window.Close(); };
-            cancel.Click += (_, _) => window.Close();
-            list.DoubleTapped += (_, _) => { selected = list.SelectedIndex; window.Close(); };
+            var list = new ListBox
+            {
+                ItemsSource = labels,
+                Background = Avalonia.Media.Brushes.Transparent,
+                BorderThickness = new Avalonia.Thickness(0),
+                Padding = new Avalonia.Thickness(0, 4, 0, 0),
+                Foreground = PrimaryTextBrush,
+            };
+
+            var headerRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 3,
+                        Height = 16,
+                        Background = AccentBrush,
+                        CornerRadius = new Avalonia.CornerRadius(2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = "Select a code action",
+                        FontSize = 13,
+                        FontWeight = Avalonia.Media.FontWeight.SemiBold,
+                        Foreground = PrimaryTextBrush,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
+            };
+
+            var headerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Avalonia.Thickness(0, 6)
+            };
+
+            var footerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Avalonia.Thickness(0, 6)
+            };
+
+            var listBorder = new Border
+            {
+                Background = WindowBackgroundBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Avalonia.Thickness(1),
+                CornerRadius = new Avalonia.CornerRadius(8),
+                Padding = new Avalonia.Thickness(10),
+                Child = list
+            };
+
+            Window? window = null;
+            var buttonRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Children =
+                {
+                    CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, () => window!.Close()),
+                    CreateDialogButton("Apply", AccentBrush, AccentBrush, AccentForegroundBrush, () => { selected = list.SelectedIndex; window!.Close(); })
+                }
+            };
+
+            var panel = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto"),
+                Children = { headerRow, headerDivider, listBorder, footerDivider, buttonRow }
+            };
+            Grid.SetRow(listBorder, 2);
+            Grid.SetRow(footerDivider, 3);
+            Grid.SetRow(buttonRow, 4);
+
+            var outer = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Avalonia.Thickness(1),
+                CornerRadius = new Avalonia.CornerRadius(12),
+                Padding = new Avalonia.Thickness(16),
+                Margin = new Avalonia.Thickness(16),
+                Child = panel
+            };
+
+            window = new Window
+            {
+                Title = "Kodo - LSP Code Actions",
+                Width = 620,
+                Height = 380,
+                MinWidth = 520,
+                MinHeight = 220,
+                CanResize = true,
+                ShowInTaskbar = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = WindowBackgroundBrush,
+                Content = outer,
+            };
+            list.DoubleTapped += (_, _) => { selected = list.SelectedIndex; window!.Close(); };
             list.SelectedIndex = 0;
+            window.Opened += (_, _) => list.Focus();
             await window.ShowDialog(this);
         });
         return selected >= 0 && selected < actions.Count ? actions[selected] : default;
@@ -4049,11 +4135,6 @@ internal static class LspRuntimeDetector
 {
     public sealed record RuntimeInfo(bool Found, string? Version, string? RawOutput, string? Error);
 
-    // Resolve runs on every didChange (300ms-3s while typing) and each run
-    // spawns "<runtime> --version". The result cannot change within a session
-    // for any practical purpose, so keep it briefly instead of paying a process
-    // spawn per keystroke. The short TTL still notices a runtime installed while
-    // Kodo is open.
     private static readonly TimeSpan DetectCacheTtl = TimeSpan.FromSeconds(30);
     private static readonly ConcurrentDictionary<string, (DateTime stamp, RuntimeInfo info)> DetectCache = new(StringComparer.Ordinal);
 

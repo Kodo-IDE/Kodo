@@ -4,9 +4,6 @@ using System.Text;
 
 namespace KodoUpdater;
 
-// Serializes updater operations that target the same Kodo installation, even
-// when they were launched for different staged transaction IDs. A dedicated
-// thread owns the mutex so async continuations can release it safely.
 internal sealed class InstallUpdateGuard : IDisposable
 {
     private readonly Mutex _mutex;

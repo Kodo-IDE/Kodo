@@ -1117,8 +1117,122 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         AddSymbols(result.Value, "");
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            var list = new ListBox { ItemsSource = symbols.Select(s => s.Label).ToArray(), MinHeight = 300, MinWidth = 420 };
-            var window = new Window { Title = "Document Symbols", Width = 560, Height = 420, Content = list, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            var list = new ListBox
+            {
+                ItemsSource = symbols.Select(s => s.Label).ToArray(),
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0, 4, 0, 0),
+                Foreground = PrimaryTextBrush,
+            };
+
+            var headerRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new Border
+                    {
+                        Width = 3,
+                        Height = 16,
+                        Background = AccentBrush,
+                        CornerRadius = new CornerRadius(2),
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = "Document Symbols",
+                        FontSize = 13,
+                        FontWeight = FontWeight.SemiBold,
+                        Foreground = PrimaryTextBrush,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                }
+            };
+
+            var headerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 6)
+            };
+
+            var footerDivider = new Border
+            {
+                Height = 1,
+                Background = SurfaceBorderBrush,
+                Opacity = 0.9,
+                Margin = new Thickness(0, 6)
+            };
+
+            var listBorder = new Border
+            {
+                Background = WindowBackgroundBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10),
+                Child = list
+            };
+
+            var hintText = new TextBlock
+            {
+                Text = "Double-click a symbol to jump to it.",
+                FontSize = 11,
+                Foreground = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Opacity = 0.85
+            };
+
+            Window? window = null;
+            var buttonRow = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 10,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Children =
+                {
+                    CreateDialogButton("Close", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush, () => window!.Close())
+                }
+            };
+
+            var panel = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,Auto,*,Auto,Auto,Auto"),
+                Children = { headerRow, headerDivider, listBorder, hintText, footerDivider, buttonRow }
+            };
+            Grid.SetRow(listBorder, 2);
+            Grid.SetRow(hintText, 3);
+            Grid.SetRow(footerDivider, 4);
+            Grid.SetRow(buttonRow, 5);
+
+            var outer = new Border
+            {
+                Background = CardBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(12),
+                Padding = new Thickness(16),
+                Margin = new Thickness(16),
+                Child = panel
+            };
+
+            window = new Window
+            {
+                Title = "Kodo - Document Symbols",
+                Width = 560,
+                Height = 420,
+                MinWidth = 420,
+                MinHeight = 300,
+                CanResize = true,
+                ShowInTaskbar = false,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = WindowBackgroundBrush,
+                Content = outer,
+            };
+
             list.DoubleTapped += async (_, _) =>
             {
                 if (list.SelectedIndex < 0 || list.SelectedIndex >= symbols.Count) return;
@@ -1129,6 +1243,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
                 EditorTextBox.TextArea.Caret.BringCaretToView();
                 EditorTextBox.Focus();
             };
+            window.Opened += (_, _) => list.Focus();
             await window.ShowDialog(this);
         });
     }

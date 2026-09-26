@@ -638,7 +638,6 @@ public partial class MainWindow
             })
             .ToList();
 
-        // Do Less: group once, avoid O(groups*results) nested Where
         var groupedResults = _searchResults.GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
         foreach (var group in grouped)
         {
@@ -834,7 +833,6 @@ public partial class MainWindow
     private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null, int depth = 0)
     {
         visited ??= new HashSet<string>(FileSystemPaths.Comparer);
-        // Symlink-heavy projects can otherwise recurse forever (a -> b -> a).
         if (depth > 64) return;
         try
         {
