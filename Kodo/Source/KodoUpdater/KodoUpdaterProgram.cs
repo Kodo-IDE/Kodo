@@ -1,4 +1,4 @@
-// Licensed under GPL v3.0
+// Licensed under the GNU GPL-v3.0
 
 using System.Diagnostics;
 using System.Text.Json;

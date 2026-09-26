@@ -1,4 +1,4 @@
-// Licensed under GPL v3.0
+// Licensed under the GNU GPL-v3.0
 namespace Kodo;
 
 public sealed record LangRuleToken(string Kind, string Text, int Start, int Length, string Scope, string Color);

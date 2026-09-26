@@ -1,4 +1,4 @@
-// Licensed under GPL v3.0
+// Licensed under the GNU GPL-v3.0
 //
 // Consolidated Kodo-side hotfix system (Phases 1-4): versioning, models,
 // validation, state, discovery, packaging, staging, and startup confirmation.

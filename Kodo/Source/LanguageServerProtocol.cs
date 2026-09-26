@@ -1,4 +1,4 @@
-// Licensed under GPL v3.0
+// Licensed under the GNU GPL-v3.0
 #pragma warning disable CA1416
 using Avalonia.Threading;
 using Avalonia.Controls;

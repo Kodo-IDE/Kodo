@@ -1,4 +1,4 @@
-// Licensed under GPL v3.0
+// Licensed under the GNU GPL-v3.0
 //
 // Shared hotfix-apply core, compiled into BOTH the Kodo app and KodoUpdater.
 //
