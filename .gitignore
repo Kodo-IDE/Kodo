@@ -1,6 +1,5 @@
 **/bin/
 **/obj/
-Kodo/Tests/
 .vscode/
 .vs/
 *.user
