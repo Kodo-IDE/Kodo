@@ -1,5 +1,7 @@
 **/bin/
 **/obj/
+# Tests live outside this repo (see Kodo-Tests) and must never be committed.
+Kodo/Tests/
 .vscode/
 .vs/
 *.user
@@ -8,3 +10,5 @@ Kodo/Kodo.sln
 Kodo/Source/Source.sln
 Kodo/Source/Assets/
 *.binlog
+# Local keys and signing credentials
+**/KEYS.cs
