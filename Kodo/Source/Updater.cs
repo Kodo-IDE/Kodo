@@ -767,6 +767,15 @@ internal static class UpdateService
         var updaterPath = ResolveUpdaterPath();
         var exeDir = AppContext.BaseDirectory;
 
+        try
+        {
+            // A hotfix may have replaced KodoUpdater without the exec bit; the
+            // relocation is the only launch path, so make it runnable first.
+            if (!Shared.EnsureExecutable(updaterPath))
+                KodoDiagnostics.LogDebug($"Could not ensure executable permission on {updaterPath}");
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"EnsureExecutable failed for {updaterPath}", ex); }
+
         var psi = new ProcessStartInfo
         {
             FileName = updaterPath,
@@ -789,7 +798,10 @@ internal static class UpdateService
                 UseShellExecute = true,
                 WorkingDirectory = exeDir,
             };
-            Process.Start(fallback);
+            // The shell fallback is the last resort: never let it throw out of
+            // here, otherwise Kodo stays running with a staged update.
+            try { Process.Start(fallback); }
+            catch (Exception ex) { KodoDiagnostics.LogDebug($"KodoUpdater shell fallback failed: {ex.Message}"); }
         }
 
         KodoDiagnostics.LogDebug($"KodoUpdater launched for {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
@@ -841,7 +853,8 @@ internal static class UpdateService
                 UseShellExecute = true,
                 WorkingDirectory = exeDir,
             };
-            Process.Start(fallback);
+            try { Process.Start(fallback); }
+            catch (Exception ex) { KodoDiagnostics.LogDebug($"KodoUpdater rollback shell fallback failed: {ex.Message}"); }
         }
 
         KodoDiagnostics.LogDebug($"KodoUpdater launched for rollback of {transactionPath} – exiting Kodo PID {Environment.ProcessId}");

@@ -221,7 +221,10 @@ public partial class MainWindow
         SetThemeBrushesCore(themeName);
         RaiseMany(nameof(WindowBackgroundBrush), nameof(TopBarBrush), nameof(SidebarBrush), nameof(ButtonBrush), nameof(ButtonHoverBrush), nameof(EditorBackgroundBrush), nameof(CardBrush), nameof(PrimaryTextBrush), nameof(MutedTextBrush), nameof(SurfaceBorderBrush), nameof(HasThemeAccent), nameof(IsAccentKodo), nameof(IsAccentTheme), nameof(ThemeAccentPreviewBrush), nameof(IsSystemThemeActive), nameof(IsDarkThemeActive), nameof(IsLightThemeActive));
         RefreshSystemThemePreview();
-        ApplyAccentOverride(); ApplyThemeToEditor(); SaveSettings(); RefreshState(fullRefresh: true); RefreshExtensionTheme();
+        // ApplyAccentOverride already re-themes the editor; calling it again here
+        // would do a second full TextView invalidate + redraw for one action.
+        ApplyAccentOverride();
+        SaveSettings(); RefreshState(fullRefresh: true); RefreshExtensionTheme();
     }
 
     private void ApplyAccentOverride()

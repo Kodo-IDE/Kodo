@@ -21,6 +21,12 @@ public sealed class InsightEngine
 {
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(FileSystemPaths.Comparer);
 
+    // ScanDocument already walks the language extension's symbol analyser over
+    // the whole document; GetSuggestions used to run it a second time for the
+    // same text on the same call. Keep the declaration names so the second
+    // (arbitrary, extension-provided) pass is not repeated per keystroke.
+    private readonly Dictionary<string, string[]> _declarationNamesByFile = new(FileSystemPaths.Comparer);
+
     private const string NotCompoundOrArrow = @"(?<![=!<>+\-*/%&|^~])=(?![=>])";
 
     private static readonly Regex TypedOrKeywordDeclaration = new(
@@ -578,13 +584,23 @@ public sealed class InsightEngine
             return;
 
         var variables = new HashSet<string>(StringComparer.Ordinal);
+        var declarationNames = Array.Empty<string>();
         if (languageExtension?.LangRules is { } generated)
         {
             foreach (var name in generated.GetVariableLikeNames(documentText))
                 variables.Add(name);
-            foreach (var symbol in generated.AnalyzeSymbols(documentText))
-                if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
+            var symbols = generated.AnalyzeSymbols(documentText);
+            if (symbols.Count > 0)
+            {
+                var names = new List<string>(symbols.Count);
+                foreach (var symbol in symbols)
+                {
+                    if (!symbol.IsDeclaration || string.IsNullOrWhiteSpace(symbol.Name)) continue;
+                    names.Add(symbol.Name);
                     variables.Add(symbol.Name);
+                }
+                declarationNames = names.ToArray();
+            }
         }
         if (!string.IsNullOrEmpty(documentText))
         {
@@ -622,9 +638,14 @@ public sealed class InsightEngine
         }
 
         _variablesByFile[fileKey] = variables;
+        _declarationNamesByFile[fileKey] = declarationNames;
     }
 
-    public void ForgetFile(string fileKey) => _variablesByFile.Remove(fileKey);
+    public void ForgetFile(string fileKey)
+    {
+        _variablesByFile.Remove(fileKey);
+        _declarationNamesByFile.Remove(fileKey);
+    }
 
     private static readonly Regex KeywordFunctionDeclaration = new(
         @"\b(?:function|def|fn|func|sub|proc)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
@@ -854,6 +875,20 @@ public sealed class InsightEngine
 
     public IReadOnlyCollection<string> GetVariables(string fileKey) =>
         _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
+
+    // Reuses the symbol analysis ScanDocument already performed for this file.
+    // Falls back to a fresh analysis when GetSuggestions is reached without a
+    // prior scan for the same file key.
+    private IReadOnlyList<string> GetDeclarationNames(string fileKey, string documentText, LangRulesAdapter rules)
+    {
+        if (_declarationNamesByFile.TryGetValue(fileKey, out var cached)) return cached;
+        var symbols = rules.AnalyzeSymbols(documentText);
+        var names = new List<string>(symbols.Count);
+        foreach (var symbol in symbols)
+            if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
+                names.Add(symbol.Name);
+        return names;
+    }
 
 
 
@@ -1106,9 +1141,7 @@ public sealed class InsightEngine
             if (languageExtension.LangRules is { } generated)
             {
                 AddCandidates(generated.GetCompletions(prefix, documentText), InsightKind.Keyword);
-                AddCandidates(generated.AnalyzeSymbols(documentText)
-                    .Where(s => s.IsDeclaration)
-                    .Select(s => s.Name), InsightKind.Variable);
+                AddCandidates(GetDeclarationNames(fileKey, documentText, generated), InsightKind.Variable);
             }
             AddCandidates(languageExtension.Functions, InsightKind.Function);
             AddCandidates(languageExtension.Properties, InsightKind.Property);

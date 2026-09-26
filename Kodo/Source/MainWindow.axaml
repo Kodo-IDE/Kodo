@@ -3451,7 +3451,7 @@
                                      DoubleTapped="SearchResultsListBox_OnDoubleTapped"
                                      SelectionChanged="SearchResultsListBox_OnSelectionChanged">
                                 <ListBox.ItemTemplate>
-                                    <DataTemplate DataType="kodoModels:SearchDisplayItem" x:CompileBindings="True">
+                                    <DataTemplate x:DataType="kodoModels:SearchDisplayItem" x:CompileBindings="True">
                                         <Border Background="Transparent">
                                             <Panel>
                                             

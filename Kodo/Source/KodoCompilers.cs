@@ -2466,7 +2466,14 @@ public partial class MainWindow
         var alreadyHasFileArg = !string.IsNullOrWhiteSpace(expandedExtra) && !string.IsNullOrWhiteSpace(quotedFile) && expandedExtra.Contains(quotedFile, StringComparison.Ordinal);
         var fileArg = !string.IsNullOrWhiteSpace(quotedFile) && !alreadyHasFileArg ? $" {quotedFile}" : string.Empty;
         if (ext is ".bat" or ".cmd")
+        {
+            // cmd.exe only exists on Windows. Batch syntax has no POSIX equivalent,
+            // so on Unix invoke the script through a shell instead of failing with
+            // "cmd.exe could not be started - install it via your package manager".
+            if (!OperatingSystem.IsWindows())
+                return (TryFindOnPath("sh") ?? "sh", $"{quotedPath}{extra}{fileArg}");
             return ("cmd.exe", $"/c {quotedPath}{extra}{fileArg}");
+        }
         if (ext is ".ps1")
         {
             if (!OperatingSystem.IsWindows())
@@ -2474,7 +2481,7 @@ public partial class MainWindow
             return ("powershell.exe", $"-ExecutionPolicy Bypass -File {quotedPath}{extra}{fileArg}");
         }
         if (ext is ".sh")
-            return ("bash", $"{quotedPath}{extra}{fileArg}");
+            return (TryFindOnPath("bash") ?? "sh", $"{quotedPath}{extra}{fileArg}");
         if (ext is ".py" or ".pyw")
         {
             if (!OperatingSystem.IsWindows())
@@ -2655,17 +2662,29 @@ public partial class MainWindow
 
         if (exeName.Equals("go.exe", StringComparison.OrdinalIgnoreCase) || exeName.Equals("go", StringComparison.Ordinal))
         {
-            var goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
-            if (File.Exists(goPath)) return goPath;
-            goPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
-            if (File.Exists(goPath)) return goPath;
-            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", OperatingSystem.IsWindows() ? "go.exe" : "go");
-            if (File.Exists(localGo)) return localGo;
-            if (!OperatingSystem.IsWindows())
+            var goFileName = OperatingSystem.IsWindows() ? "go.exe" : "go";
+            // SpecialFolder.ProgramFiles is "" on Linux, so Path.Combine would
+            // produce the relative "Go/bin/go" and probe it against Kodo's CWD.
+            if (OperatingSystem.IsWindows())
+            {
+                foreach (var programFiles in new[]
+                         {
+                             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                         })
+                {
+                    if (string.IsNullOrWhiteSpace(programFiles)) continue;
+                    var goPath = Path.Combine(programFiles, "Go", "bin", goFileName);
+                    if (File.Exists(goPath)) return goPath;
+                }
+            }
+            else
             {
                 foreach (var unixGo in new[] { "/usr/local/go/bin/go", "/usr/local/bin/go", "/usr/bin/go" })
                     if (File.Exists(unixGo)) return unixGo;
             }
+            var localGo = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Go", "bin", goFileName);
+            if (File.Exists(localGo)) return localGo;
         }
 
         return TryFindOnPath(exeName) ?? TryFindOnPath(toolName);

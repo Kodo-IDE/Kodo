@@ -722,7 +722,27 @@ internal static class Program
             return null;
         }
         Log($"Starting Kodo for confirmation: {target}");
-        try { return Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true }); }
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return Process.Start(new ProcessStartInfo { FileName = target, UseShellExecute = true });
+            }
+
+            // Mirror RestartKodo: on Unix the binary has to be launched directly
+            // and must carry the exec bit. A hotfix that replaced Kodo without
+            // one would otherwise fail to start here, be reported as a failed
+            // confirmation, and roll back a perfectly good hotfix.
+            if (!Kodo.HotfixShared.HotfixShared.EnsureExecutable(target))
+                Log($"Warning: could not ensure executable permission on {target}; attempting start anyway.");
+            var installDir = Path.GetDirectoryName(Path.GetFullPath(target));
+            return Process.Start(new ProcessStartInfo
+            {
+                FileName = target,
+                UseShellExecute = false,
+                WorkingDirectory = string.IsNullOrWhiteSpace(installDir) ? AppContext.BaseDirectory : installDir,
+            });
+        }
         catch (Exception ex)
         {
             Log($"Failed to start Kodo for confirmation: {ex}");

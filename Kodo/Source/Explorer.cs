@@ -22,6 +22,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Kodo.Models;
+using Shared = Kodo.HotfixShared.HotfixShared;
 
 namespace Kodo;
 
@@ -927,9 +928,18 @@ public partial class MainWindow
         {
             ct.ThrowIfCancellationRequested();
             var destinationFile = Path.Combine(destinationDirectory, Path.GetFileName(file));
-            await using var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-            await using var dst = new FileStream(destinationFile, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true);
-            await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+            await using (var src = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true))
+            await using (var dst = new FileStream(destinationFile, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await src.CopyToAsync(dst, ct).ConfigureAwait(false);
+            }
+            // A raw FileStream creates the destination with the default umask,
+            // so a copied .sh/.py/binary would lose its executable bit on Unix.
+            if (!OperatingSystem.IsWindows())
+            {
+                try { File.SetUnixFileMode(destinationFile, File.GetUnixFileMode(file)); }
+                catch (Exception ex) { KodoDiagnostics.LogDebug($"Could not preserve permissions on {destinationFile}", ex); }
+            }
         }
         foreach (var directory in Directory.GetDirectories(sourceDirectory))
         {
@@ -989,15 +999,10 @@ public partial class MainWindow
 
                 foreach (var (binary, args) in fileManagers)
                 {
-                    var which = Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "which",
-                        Arguments = binary,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true
-                    });
-                    which?.WaitForExit();
-                    if (which?.ExitCode != 0) continue;
+                    // "which" is not guaranteed to exist (minimal images, busybox
+                    // without debianutils). Without this guard the Win32Exception
+                    // escapes the loop and aborts the remaining candidates.
+                    if (!IsExecutableOnPath(binary)) continue;
 
                     Process.Start(new ProcessStartInfo
                     {
@@ -1010,6 +1015,14 @@ public partial class MainWindow
             }
 
             var fallbackDir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
+            if (OperatingSystem.IsLinux())
+            {
+                // UseShellExecute=true is a bare execvp on Unix, so passing a
+                // directory fails with EACCES. xdg-open is the portal-correct way.
+                Process.Start(new ProcessStartInfo { FileName = "xdg-open", Arguments = $"\"{fallbackDir}\"", UseShellExecute = false });
+                return;
+            }
+
             Process.Start(new ProcessStartInfo { FileName = fallbackDir, UseShellExecute = true });
         }
         catch (Exception ex)
@@ -1017,6 +1030,28 @@ public partial class MainWindow
             ExtensionsStatusText = $"Could not open path: {ex.Message}";
             await ShowWarningDialogAsync("Open in system explorer", ex);
         }
+    }
+
+    private static bool IsExecutableOnPath(string name)
+    {
+        try
+        {
+            var pathVar = Environment.GetEnvironmentVariable("PATH");
+            if (string.IsNullOrEmpty(pathVar)) return false;
+            foreach (var raw in pathVar.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var dir = raw.Trim().Trim('"');
+                    if (dir.Length == 0) continue;
+                    var candidate = Path.Combine(dir, name);
+                    if (File.Exists(candidate)) return true;
+                }
+                catch { }
+            }
+            return false;
+        }
+        catch { return false; }
     }
 
     private async Task RefreshExplorerTreeAsync()
@@ -1404,10 +1439,29 @@ public partial class MainWindow
         {
             if (_clipboardIsCut)
             {
-                if (_clipboardItemIsDirectory)
-                    Directory.Move(_clipboardItemPath, destPath);
-                else
-                    File.Move(_clipboardItemPath, destPath);
+                // The move itself can copy a whole tree across filesystems, so it
+                // must not run on the UI thread. Deliberately no ConfigureAwait(false):
+                // RetargetTabPaths below raises bindings and touches the editor.
+                var cutSource = _clipboardItemPath;
+                await Task.Run(() =>
+                {
+                    if (_clipboardItemIsDirectory)
+                    {
+                        // Directory.Move is a bare rename(2) on Unix and fails with
+                        // EXDEV when source and destination live on different
+                        // filesystems (the usual ~/proj -> /mnt/data layout).
+                        Shared.MoveOrCopyDirectory(cutSource, destPath);
+                    }
+                    else
+                    {
+                        try { File.Move(cutSource, destPath); }
+                        catch (IOException)
+                        {
+                            File.Copy(cutSource, destPath, overwrite: false);
+                            File.Delete(cutSource);
+                        }
+                    }
+                });
 
                 RetargetTabPaths(_clipboardItemPath, destPath, _clipboardItemIsDirectory);
                 _clipboardItemPath = null;

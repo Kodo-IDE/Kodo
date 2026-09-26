@@ -34,28 +34,36 @@ public static class ExternalLanguageToolRunner
         if (extension?.ExternalTools is not { Count: > 0 } tools || string.IsNullOrWhiteSpace(documentText))
             return [];
 
+        var enabled = tools.Where(t => t.Enabled && !string.IsNullOrWhiteSpace(t.Command)).ToList();
+        if (enabled.Count == 0) return [];
+
         var results = new List<ExternalToolDiagnostic>();
-        foreach (var tool in tools.Where(t => t.Enabled && !string.IsNullOrWhiteSpace(t.Command)))
+        // One snapshot of the document serves every enabled tool instead of
+        // writing the whole buffer to a fresh temp file per tool.
+        var temporaryFile = CreateTemporarySource(filePath, documentText);
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var temporaryFile = CreateTemporarySource(filePath, documentText);
-            try
+            foreach (var tool in enabled)
             {
-                var projectFile = FindProjectFile(filePath, tool.ProjectFiles);
-                if (tool.RequiresProject && projectFile is null)
-                    continue;
-                var output = await RunToolAsync(tool, temporaryFile, filePath, projectFile, cancellationToken).ConfigureAwait(false);
-                results.AddRange(ParseOutput(output, tool, documentText, filePath, projectFile));
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    var projectFile = FindProjectFile(filePath, tool.ProjectFiles);
+                    if (tool.RequiresProject && projectFile is null)
+                        continue;
+                    var output = await RunToolAsync(tool, temporaryFile, filePath, projectFile, cancellationToken).ConfigureAwait(false);
+                    results.AddRange(ParseOutput(output, tool, documentText, filePath, projectFile));
+                }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"External checker '{tool.Id}' failed for '{filePath ?? "<untitled>"}'.", ex);
+                }
             }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug($"External checker '{tool.Id}' failed for '{filePath ?? "<untitled>"}'.", ex);
-            }
-            finally
-            {
-                try { if (File.Exists(temporaryFile)) File.Delete(temporaryFile); } catch { }
-            }
+        }
+        finally
+        {
+            try { if (File.Exists(temporaryFile)) File.Delete(temporaryFile); } catch { }
         }
         return results;
     }

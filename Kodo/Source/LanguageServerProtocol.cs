@@ -1082,7 +1082,7 @@ public partial class MainWindow
             LspPreferManaged = _lspPreferManaged,
             LspPreferSystem = _lspPreferSystem,
             LspInstallDir = _lspInstallDir,
-            LspExecutableOverrides = new Dictionary<string, string>(_lspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
+            LspExecutableOverrides = new Dictionary<string, string>(LspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
             LspDisabledLanguages = new Dictionary<string, bool>(_lspDisabledLanguages, StringComparer.OrdinalIgnoreCase),
             LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase)
         };
@@ -1308,15 +1308,10 @@ public partial class MainWindow
         }
 
         var isLargeFileForLsp = content.Length > 120_000;
-        if (isLargeFileForLsp)
-        {
-            try { await Task.Delay(500).ConfigureAwait(false); } catch { }
-            await Task.Yield();
-        }
-        else
-        {
-            await Task.Yield();
-        }
+        // Hop off the UI thread before resolving/starting the server. Task.Yield()
+        // reposts to the captured SynchronizationContext (the UI thread), which
+        // would drag Process.Start, PATH scans and JSON parsing back onto it.
+        await Task.Delay(isLargeFileForLsp ? 500 : 0).ConfigureAwait(false);
 
         var settings = BuildLspResolverSettings();
         var resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);
@@ -1686,8 +1681,24 @@ public partial class MainWindow
                 var normPath = NormalizeFilePath(filePath);
                 if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
                 _lspDiagnostics[normPath] = diagnostics;
+                // "version" is optional in the LSP spec and most servers omit it.
+                // Stamping the version we last sent keeps the UI-refresh staleness
+                // guard below meaningful: without this, a server that versioned one
+                // publish and then stopped would leave a frozen value behind while
+                // _lspDocumentVersions keeps climbing, and every later publish would
+                // be discarded as stale - freezing the highlighters for that file.
                 if (publishVersion.HasValue)
                     _lspDiagnosticVersions[normPath] = publishVersion.Value;
+                else
+                {
+                    lock (_lspOpenLock)
+                    {
+                        var sent = _lspDocumentVersions.TryGetValue(normPath, out var sv0) ||
+                                   _lspDocumentVersions.TryGetValue(filePath, out sv0);
+                        if (sent) _lspDiagnosticVersions[normPath] = sv0;
+                        else _lspDiagnosticVersions.Remove(normPath);
+                    }
+                }
                 refreshKey = normPath;
                 if (!_lspDiagnosticRefreshPending.Add(refreshKey)) return;
             }
@@ -1909,22 +1920,20 @@ public partial class MainWindow
     private static (int line, int character) OffsetToLspPosition(string text, int offset)
     {
         offset = Math.Clamp(offset, 0, text.Length);
-        var line = 0;
-        var lineStart = 0;
-        for (var i = 0; i < offset; i++)
+        // Binary search the line-start index instead of rescanning from the
+        // beginning: this runs on the UI thread before the first await for
+        // completion, hover, references, quick fix, rename and go-to-definition,
+        // so a linear walk cost O(offset) on every keystroke in a large file.
+        var starts = GetLspLineStarts(text);
+        var lo = 0;
+        var hi = starts.Length - 1;
+        while (lo < hi)
         {
-            if (text[i] == '\r')
-            {
-                if (i + 1 < text.Length && text[i + 1] == '\n')
-                {
-                    if (i + 1 < offset) { line++; lineStart = i + 2; i++; }
-                }
-                else { line++; lineStart = i + 1; }
-            }
-            else if (text[i] == '\n') { line++; lineStart = i + 1; }
+            var mid = lo + ((hi - lo + 1) >> 1);
+            if (starts[mid] <= offset) lo = mid;
+            else hi = mid - 1;
         }
-        var character = offset - lineStart;
-        return (line, character);
+        return (lo, offset - starts[lo]);
     }
 
     private async Task<IReadOnlyList<InsightSuggestion>> GetLspCompletionSuggestionsAsync(string? filePath, int offset, string text, string prefix, CancellationToken ct = default)
@@ -4040,10 +4049,29 @@ internal static class LspRuntimeDetector
 {
     public sealed record RuntimeInfo(bool Found, string? Version, string? RawOutput, string? Error);
 
+    // Resolve runs on every didChange (300ms-3s while typing) and each run
+    // spawns "<runtime> --version". The result cannot change within a session
+    // for any practical purpose, so keep it briefly instead of paying a process
+    // spawn per keystroke. The short TTL still notices a runtime installed while
+    // Kodo is open.
+    private static readonly TimeSpan DetectCacheTtl = TimeSpan.FromSeconds(30);
+    private static readonly ConcurrentDictionary<string, (DateTime stamp, RuntimeInfo info)> DetectCache = new(StringComparer.Ordinal);
+
     public static async Task<RuntimeInfo> DetectAsync(string runtime, string? minVersion, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(runtime)) return new(true, null, null, null);
         runtime = runtime.Trim().ToLowerInvariant();
+        var cacheKey = runtime + "\0" + (minVersion ?? string.Empty);
+        var now = DateTime.UtcNow;
+        if (DetectCache.TryGetValue(cacheKey, out var cached) && now - cached.stamp < DetectCacheTtl)
+            return cached.info;
+        var info = await DetectCoreAsync(runtime, minVersion, ct).ConfigureAwait(false);
+        DetectCache[cacheKey] = (now, info);
+        return info;
+    }
+
+    private static async Task<RuntimeInfo> DetectCoreAsync(string runtime, string? minVersion, CancellationToken ct)
+    {
         string[] exes;
         string args;
         switch (runtime)

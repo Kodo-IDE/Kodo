@@ -5046,7 +5046,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LspPreferManaged = _lspPreferManaged,
             LspPreferSystem = _lspPreferSystem,
             LspInstallDir = _lspInstallDir,
-            LspExecutableOverrides = new Dictionary<string, string>(_lspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
+            LspExecutableOverrides = new Dictionary<string, string>(LspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
             LspDisabledLanguages = new Dictionary<string, bool>(_lspDisabledLanguages, StringComparer.OrdinalIgnoreCase),
             LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase)
         };
@@ -5434,7 +5434,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var newPath = file?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(newPath)) return false;
 
-            var duplicateTab = OpenTabs.FirstOrDefault(t => !t.IsUntitled && t.Path is not null && t.Path.Equals(newPath, StringComparison.OrdinalIgnoreCase) && t != ActiveEditorTab);
+            var duplicateTab = OpenTabs.FirstOrDefault(t => !t.IsUntitled && t.Path is not null && FileSystemPaths.Equals(t.Path, newPath) && t != ActiveEditorTab);
             if (duplicateTab is not null)
             {
                 ExtensionsStatusText = $"Save failed: \"{Path.GetFileName(newPath)}\" is already open in another tab.";
@@ -8318,10 +8318,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    externalDiagnostics = await ExternalLanguageToolRunner.AnalyzeAsync(
-                        languageExtension,
-                        _currentFilePath,
-                        text,
+                    // Runs the checkers off the UI thread: each tool writes the whole
+                    // document to a temp file and starts a child process.
+                    externalDiagnostics = await Task.Run(
+                        () => ExternalLanguageToolRunner.AnalyzeAsync(
+                            languageExtension,
+                            _currentFilePath,
+                            text,
+                            scanToken),
                         scanToken);
                     KodoDiagnostics.LogDebug($"External diagnostics: extension={languageExtension?.Id ?? "<none>"}, tools={languageExtension?.ExternalTools.Count ?? 0}, results={externalDiagnostics.Count}");
                 }
@@ -8674,6 +8678,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Dispatcher.UIThread.Post(() => RefreshMarketplaceConnectivityState());
 
     private TutorialStep CurrentTutorialStep => TutorialSteps[TutorialStepIndex];
+
+    public Dictionary<string, string> LspExecutableOverrides => _lspExecutableOverrides;
+
+    public Dictionary<string, string> LspExecutableOverrides1 => _lspExecutableOverrides;
 
     private void OnTutorialStepChanged()
     {
