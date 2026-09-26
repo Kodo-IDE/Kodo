@@ -148,7 +148,11 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
 {
     private IReadOnlyList<(int Offset, int Length, IBrush Brush)> _tokens = Array.Empty<(int, int, IBrush)>();
     public KnownLayer Layer => KnownLayer.Background;
-    public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens) => _tokens = tokens;
+    public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens)
+    {
+        Avalonia.Threading.Dispatcher.UIThread.VerifyAccess();
+        _tokens = tokens;
+    }
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
         if (_tokens.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;

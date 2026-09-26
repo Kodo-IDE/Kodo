@@ -724,7 +724,7 @@ public partial class MainWindow
         var result = await GetLspSemanticTokensAsync(filePath).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return;
         var values = data.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Select(v => v.GetInt32()).ToArray();
-        var tokens = new List<(int Offset, int Length, IBrush Brush)>();
+        var tokens = new List<(int Offset, int Length, Color Color)>();
         var line = 0; var character = 0;
         var legend = GetLspSemanticTokenTypes(filePath);
         var palette = new[] { "#569CD6", "#4EC9B0", "#DCDCAA", "#C586C0", "#CE9178", "#9CDCFE", "#B5CEA8", "#D7BA7D" };
@@ -750,13 +750,15 @@ public partial class MainWindow
                     "comment" => 7,
                     _ => Math.Abs(values[i + 3]) % palette.Length
                 };
-                tokens.Add((offset, Math.Min(length, text.Length - offset), new SolidColorBrush(Color.Parse(palette[paletteIndex]), 0.18)));
+                tokens.Add((offset, Math.Min(length, text.Length - offset), Color.Parse(palette[paletteIndex])));
             }
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
-            _lspSemanticTokenRenderer.SetTokens(tokens);
+            _lspSemanticTokenRenderer.SetTokens(tokens
+                .Select(token => (token.Offset, token.Length, (IBrush)new SolidColorBrush(token.Color, 0.18)))
+                .ToArray());
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         });
     }
