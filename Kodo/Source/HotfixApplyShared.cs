@@ -1012,6 +1012,8 @@ internal static class HotfixShared
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var core = raw.Trim();
         if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
+        var isBeta = core.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        if (isBeta) core = core[..^5];
         var dash = core.IndexOf('-');
         if (dash >= 0) core = core[..dash];
         var plus = core.IndexOf('+');
@@ -1024,7 +1026,7 @@ internal static class HotfixShared
             foreach (var c in s) if (!char.IsDigit(c)) return null;
             if (!int.TryParse(s, out _)) return null;
         }
-        return core;
+        return isBeta ? core + "-BETA" : core;
     }
 
     internal static bool AreSameBaseVersion(string? a, string? b)
@@ -1032,8 +1034,11 @@ internal static class HotfixShared
         var na = NormalizeBaseVersion(a);
         var nb = NormalizeBaseVersion(b);
         if (na is null || nb is null) return false;
-        var pa = na.Split('.');
-        var pb = nb.Split('.');
+        var betaA = na.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        var betaB = nb.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        if (betaA != betaB) return false;
+        var pa = na.Replace("-BETA", "", StringComparison.OrdinalIgnoreCase).Split('.');
+        var pb = nb.Replace("-BETA", "", StringComparison.OrdinalIgnoreCase).Split('.');
         var max = Math.Max(pa.Length, pb.Length);
         for (var i = 0; i < max; i++)
         {

@@ -6245,14 +6245,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var installInBackground = IsAutoUpdateAppInBackgroundEnabled;
             var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground, found =>
             {
-                CheckForUpdatesStatusText = installInBackground
+                CheckForUpdatesStatusText = UpdateService.IsBetaVersionTag(found.Version)
+                    ? $"Optional unstable beta {found.Version} is available."
+                    : installInBackground
                     ? $"Kodo {found.Version} found - installing in the background…"
                     : $"Kodo {found.Version} is available.";
-            });
+            }, includeBeta: true);
 
             if (update is null)
             {
-                var hotfix = await UpdateService.CheckForHotfixAsync();
+                var hotfix = await UpdateService.CheckForHotfixAsync(includeBeta: true);
                 if (hotfix is not null)
                 {
                     var installed = UpdateService.ResolveInstalledHotfix();
@@ -6292,7 +6294,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false);
+            var update = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: false, includeBeta: true);
             if (update is null)
             {
                 if (HasLatestRelease && IsNewerVersionAvailable && !string.IsNullOrWhiteSpace(LatestReleaseUrl))

@@ -139,15 +139,20 @@ public partial class App : Application
         {
             try
             {
-                if (!UpdateService.IsAutoUpdateEnabledInSettings())
-                    return;
-
                 await Task.Delay(TimeSpan.FromSeconds(4));
 
+                var autoUpdatesEnabled = UpdateService.IsAutoUpdateEnabledInSettings();
                 var bg = UpdateService.IsAutoUpdateInBackgroundEnabledInSettings();
-                var fullUpdate = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
-                if (fullUpdate is null)
-                    await UpdateService.CheckAndHandleHotfixAsync(installInBackground: bg);
+                if (autoUpdatesEnabled)
+                {
+                    var fullUpdate = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: bg);
+                    if (fullUpdate is not null) return;
+                }
+
+                // Stable hotfixes are required security/correctness fixes and
+                // are checked even when optional full-version updates are off.
+                // Beta hotfixes are filtered out in the background path.
+                await UpdateService.CheckAndHandleHotfixAsync(installInBackground: true);
             }
             catch (Exception ex)
             {

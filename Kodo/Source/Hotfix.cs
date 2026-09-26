@@ -54,8 +54,11 @@ internal static class HotfixVersion
         var na = NormalizeBaseVersion(a);
         var nb = NormalizeBaseVersion(b);
         if (na is null || nb is null) return false;
-        var pa = na.Split('.');
-        var pb = nb.Split('.');
+        var betaA = na.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        var betaB = nb.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        if (betaA != betaB) return false;
+        var pa = na.Replace("-BETA", "", StringComparison.OrdinalIgnoreCase).Split('.');
+        var pb = nb.Replace("-BETA", "", StringComparison.OrdinalIgnoreCase).Split('.');
         var max = Math.Max(pa.Length, pb.Length);
         for (var i = 0; i < max; i++)
         {
@@ -87,6 +90,8 @@ internal static class HotfixVersion
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var core = raw.Trim();
         if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
+        var isBeta = core.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        if (isBeta) core = core[..^5];
         var dash = core.IndexOf('-');
         if (dash >= 0) core = core[..dash];
         var plus = core.IndexOf('+');
@@ -102,7 +107,7 @@ internal static class HotfixVersion
                 if (!char.IsDigit(c)) return null;
             if (!int.TryParse(s, out _)) return null;
         }
-        return core;
+        return isBeta ? core + "-BETA" : core;
     }
 }
 
@@ -175,7 +180,8 @@ internal sealed record HotfixCandidate(
     string AssetName,
     string AssetDownloadUrl,
     long AssetSizeBytes,
-    string? Sha256 = null);
+    string? Sha256 = null,
+    string? ChecksumDownloadUrl = null);
 
 internal static class HotfixValidator
 {
@@ -546,8 +552,6 @@ internal static class HotfixFileReconciler
 
 internal static class HotfixDiscovery
 {
-    public const string TagPrefix = "hotfix";
-
     internal const string FallbackReleaseNotesUrl = "https://github.com/Kodo-IDE/Kodo/releases";
 
     public static bool IsHotfixTag(string? tag) =>
@@ -559,11 +563,14 @@ internal static class HotfixDiscovery
         hotfixLevel = 0;
         if (string.IsNullOrWhiteSpace(tag)) return false;
         var parts = tag.Trim().Split('/');
-        if (parts.Length != 3) return false;
-        if (!string.Equals(parts[0].Trim(), TagPrefix, StringComparison.OrdinalIgnoreCase)) return false;
-        var normalizedBase = HotfixVersion.NormalizeBaseVersion(parts[1]);
+        if (parts.Length != 2 || !parts[1].StartsWith("hotfix", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!System.Text.RegularExpressions.Regex.IsMatch(
+            parts[0].Trim(), @"^[vV]?\d+(?:\.\d+)+(?:-BETA)?$",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)) return false;
+        var normalizedBase = HotfixVersion.NormalizeBaseVersion(parts[0]);
         if (normalizedBase is null) return false;
-        if (!int.TryParse(parts[2].Trim(), out var level) || level < 1) return false;
+        var number = parts[1][6..];
+        if (number.Length == 0 || number.Any(c => !char.IsAsciiDigit(c)) || !int.TryParse(number, out var level) || level < 1) return false;
         baseVersion = normalizedBase;
         hotfixLevel = level;
         return true;
@@ -578,7 +585,7 @@ internal static class HotfixDiscovery
         return "win-x64";
     }
 
-    internal static GitHubAsset? PickHotfixAsset(GitHubAsset[]? assets, string platformRid)
+    internal static GitHubAsset? PickHotfixAsset(GitHubAsset[]? assets, string platformRid, string baseVersion, int hotfixLevel)
     {
         if (assets is null || assets.Length == 0 || string.IsNullOrWhiteSpace(platformRid)) return null;
         var rid = platformRid.Trim();
@@ -586,8 +593,15 @@ internal static class HotfixDiscovery
         {
             if (asset is null) continue;
             if (string.IsNullOrWhiteSpace(asset.Name) || asset.Size <= 0) continue;
-            if (!asset.Name.Contains("hotfix", StringComparison.OrdinalIgnoreCase) ||
-                !asset.Name.EndsWith($"-{rid}.zip", StringComparison.OrdinalIgnoreCase)) continue;
+            var safeVersion = (HotfixVersion.NormalizeBaseVersion(baseVersion) ?? "").TrimStart('v', 'V');
+            var expectedName = rid switch
+            {
+                "win-x64" => $"Kodo-Windows-v{safeVersion}-Hotfix{hotfixLevel}.zip",
+                "linux-x64" => $"Kodo-Linux-x64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
+                "linux-arm64" => $"Kodo-Linux-arm64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
+                _ => ""
+            };
+            if (expectedName.Length == 0 || !string.Equals(asset.Name, expectedName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var downloadUri) ||
                 !string.Equals(downloadUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) continue;
@@ -613,12 +627,20 @@ internal static class HotfixDiscovery
         {
             if (release is null) continue;
             if (string.IsNullOrWhiteSpace(release.TagName)) continue;
-            if (release.Draft || release.Prerelease) continue;
             if (!TryParseHotfixTag(release.TagName, out var baseVersion, out var level)) continue;
+            // GitHub may mark beta hotfix releases as prereleases. They remain
+            // discoverable for explicit opt-in, but are never auto-applied.
+            if (release.Draft || (release.Prerelease && !baseVersion!.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase))) continue;
             if (!HotfixVersion.AreSameBaseVersion(baseVersion, installedBase)) continue;
             if (level <= installedHotfixLevel) continue;
-            var asset = PickHotfixAsset(release.Assets, rid);
+            var asset = PickHotfixAsset(release.Assets, rid, baseVersion!, level);
             if (asset is null) continue;
+            var checksumAsset = release.Assets?.FirstOrDefault(a => a is not null &&
+                string.Equals(a.Name, asset.Name + ".sha256", StringComparison.OrdinalIgnoreCase));
+            if (checksumAsset is null || checksumAsset.Size <= 0 ||
+                !Uri.TryCreate(checksumAsset.BrowserDownloadUrl, UriKind.Absolute, out var checksumUri) ||
+                !string.Equals(checksumUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(checksumUri.Host, "github.com", StringComparison.OrdinalIgnoreCase)) continue;
             found.Add(new HotfixCandidate(
                 BaseVersion: baseVersion!,
                 HotfixLevel: level,
@@ -628,7 +650,8 @@ internal static class HotfixDiscovery
                 AssetName: asset.Name,
                 AssetDownloadUrl: asset.BrowserDownloadUrl,
                 AssetSizeBytes: asset.Size,
-                Sha256: null));
+                Sha256: null,
+                ChecksumDownloadUrl: checksumAsset.BrowserDownloadUrl));
         }
 
         found.Sort((a, b) => a.HotfixLevel.CompareTo(b.HotfixLevel));
@@ -741,6 +764,28 @@ internal static class HotfixStaging
                 throw new InvalidDataException($"Hotfix download produced an empty file: {partialPath}");
             if (candidate.AssetSizeBytes > 0 && partialInfo.Length != candidate.AssetSizeBytes)
                 throw new InvalidDataException($"Hotfix download incomplete: expected {candidate.AssetSizeBytes} bytes, got {partialInfo.Length}.");
+
+            if (!string.IsNullOrWhiteSpace(candidate.ChecksumDownloadUrl))
+            {
+                if (!Uri.TryCreate(candidate.ChecksumDownloadUrl, UriKind.Absolute, out var checksumUri) ||
+                    checksumUri.Scheme != Uri.UriSchemeHttps || !string.Equals(checksumUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Hotfix checksum URL is not a trusted HTTPS GitHub release URL.");
+                using var checksumResponse = await client.GetAsync(candidate.ChecksumDownloadUrl, ct).ConfigureAwait(false);
+                checksumResponse.EnsureSuccessStatusCode();
+                if (checksumResponse.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+                    throw new InvalidDataException("Hotfix checksum download redirected away from HTTPS.");
+                var checksumText = await checksumResponse.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                var expectedHash = checksumText.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (!HotfixValidator.IsValidSha256(expectedHash))
+                    throw new InvalidDataException("Hotfix checksum sidecar is malformed.");
+                using var packageStream = File.OpenRead(partialPath);
+                var actualHash = ComputeStreamSha256(packageStream);
+                if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("Hotfix package SHA-256 does not match its release checksum.");
+            }
+            else if (!string.IsNullOrWhiteSpace(candidate.AssetName) && candidate.Sha256 is not null &&
+                     !UpdateService.VerifyFileSha256(partialPath, candidate.Sha256))
+                throw new InvalidDataException("Hotfix package SHA-256 does not match the release metadata.");
 
             try { if (File.Exists(destPath)) File.Delete(destPath); } catch { }
             File.Move(partialPath, destPath);
@@ -882,6 +927,48 @@ internal static class HotfixStaging
 
     internal static string NormalizeEntryName(string? name) =>
         (name ?? "").Trim().Replace('\\', '/').Trim('/');
+
+    // Linux hotfixes use the documented tar.gz distribution format. Convert
+    // regular-file entries to the engine's canonical ZIP representation only
+    // after rejecting links, special files, unsafe paths, and duplicates.
+    internal static string NormalizeArchiveForInstaller(string packagePath, string platformRid)
+    {
+        if (!string.Equals(platformRid, "linux-x64", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(platformRid, "linux-arm64", StringComparison.OrdinalIgnoreCase)) return packagePath;
+        if (!packagePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return packagePath;
+        var normalizedPath = packagePath + ".normalized.zip";
+        if (File.Exists(normalizedPath)) File.Delete(normalizedPath);
+        try
+        {
+            using var source = File.OpenRead(packagePath);
+            using var gzip = new System.IO.Compression.GZipStream(source, CompressionMode.Decompress);
+            using var reader = new System.Formats.Tar.TarReader(gzip);
+            using var output = File.Create(normalizedPath);
+            using var zip = new ZipArchive(output, ZipArchiveMode.Create);
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            System.Formats.Tar.TarEntry? item;
+            while ((item = reader.GetNextEntry(copyData: true)) is not null)
+            {
+                var name = NormalizeEntryName(item.Name);
+                while (name.StartsWith("./", StringComparison.Ordinal)) name = name[2..];
+                if (string.IsNullOrEmpty(name)) continue;
+                if (!HotfixValidator.IsSafeRelativePath(name) || !seen.Add(name))
+                    throw new InvalidDataException($"Unsafe or duplicate tar entry: '{item.Name}'.");
+                if (item.EntryType == System.Formats.Tar.TarEntryType.Directory) continue;
+                if (item.EntryType is not (System.Formats.Tar.TarEntryType.RegularFile or System.Formats.Tar.TarEntryType.V7RegularFile))
+                    throw new InvalidDataException($"Unsupported tar entry type for '{item.Name}'.");
+                var entry = zip.CreateEntry(name, CompressionLevel.Optimal);
+                using var target = entry.Open();
+                item.DataStream?.CopyTo(target);
+            }
+            return normalizedPath;
+        }
+        catch
+        {
+            try { if (File.Exists(normalizedPath)) File.Delete(normalizedPath); } catch { }
+            throw;
+        }
+    }
 
     private static string ComputeStreamSha256(Stream stream)
     {
@@ -1045,14 +1132,15 @@ internal static class HotfixStaging
         await DownloadAsync(client, candidate, downloadPath, progress, ct).ConfigureAwait(false);
 
         var rid = HotfixDiscovery.GetCurrentPlatformRid();
-        var verify = VerifyPackage(downloadPath, installedBase, installedLevel, rid);
+        var normalizedPackagePath = NormalizeArchiveForInstaller(downloadPath, rid);
+        var verify = VerifyPackage(normalizedPackagePath, installedBase, installedLevel, rid);
         if (!verify.Ok || verify.Manifest is null || verify.ManifestJson is null)
             throw new InvalidDataException(verify.Error ?? "Hotfix verification failed.");
 
         var kodoExeName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
         var kodoExePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, kodoExeName);
         var txPath = StageVerifiedPackage(
-            downloadPath, verify.ManifestJson, verify.Manifest,
+            normalizedPackagePath, verify.ManifestJson, verify.Manifest,
             hotfixRoot, targetDir, kodoExePath,
             kodoPidOverride ?? Environment.ProcessId, restartAfterUpdate: true,
             previousHotfixLevel: installedLevel,

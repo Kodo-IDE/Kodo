@@ -84,4 +84,7 @@ internal sealed class GitHubAsset
 
     [JsonPropertyName("size")]
     public long Size { get; set; }
+
+    [JsonPropertyName("digest")]
+    public string? Digest { get; set; }
 }

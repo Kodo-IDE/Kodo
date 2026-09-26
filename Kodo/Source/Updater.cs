@@ -39,12 +39,12 @@ internal static class UpdateService
         return client;
     }
 
-    public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default)
+    public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default, bool includeBeta = false)
     {
         LastIncompatibleReason = null;
         var fromLatest = await TryCheckLatestAsync(ct).ConfigureAwait(false);
         if (fromLatest is not null) return fromLatest;
-        return await TryCheckReleasesListAsync(ct).ConfigureAwait(false);
+        return await TryCheckReleasesListAsync(ct, includeBeta).ConfigureAwait(false);
     }
 
     private static async Task<UpdateInfo?> TryCheckLatestAsync(CancellationToken ct)
@@ -67,7 +67,7 @@ internal static class UpdateService
         catch { return null; }
     }
 
-    private static async Task<UpdateInfo?> TryCheckReleasesListAsync(CancellationToken ct)
+    private static async Task<UpdateInfo?> TryCheckReleasesListAsync(CancellationToken ct, bool includeBeta = false)
     {
         try
         {
@@ -79,8 +79,9 @@ internal static class UpdateService
             foreach (var release in releases)
             {
                 if (release is null || string.IsNullOrWhiteSpace(release.TagName)) continue;
-                if (release.Draft || release.Prerelease) continue;
                 if (HotfixDiscovery.IsHotfixTag(release.TagName)) continue;
+                var beta = IsBetaVersionTag(release.TagName);
+                if (release.Draft || (release.Prerelease && !beta) || (beta && !includeBeta)) continue;
                 if (!IsNewerVersion(release.TagName, KodoDiagnostics.AppVersion)) continue;
                 var asset = PickInstallerAsset(release.Assets);
                 if (asset is null) continue;
@@ -93,6 +94,9 @@ internal static class UpdateService
     }
 
     internal static string? LastIncompatibleReason { get; private set; }
+
+    internal static bool IsBetaVersionTag(string? tag) =>
+        HotfixVersion.NormalizeBaseVersion(tag)?.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
 
     internal static (string BaseVersion, int HotfixLevel) ResolveInstalledHotfix(
         string? currentBaseOverride = null,
@@ -191,7 +195,7 @@ internal static class UpdateService
         return await JsonSerializer.DeserializeAsync<GitHubRelease[]>(stream, JsonOptions, ct).ConfigureAwait(false);
     }
 
-    public static async Task<HotfixCandidate?> CheckForHotfixAsync(CancellationToken ct = default)
+    public static async Task<HotfixCandidate?> CheckForHotfixAsync(CancellationToken ct = default, bool includeBeta = false)
     {
         KodoDiagnostics.LogDebug("Hotfix check started");
         var (installedBase, installedLevel) = ResolveInstalledHotfix();
@@ -210,7 +214,9 @@ internal static class UpdateService
         }
         if (releases is null) return null;
 
-        var compatible = HotfixDiscovery.FindCompatibleHotfixes(releases, installedBase, installedLevel);
+        var compatible = HotfixDiscovery.FindCompatibleHotfixes(releases, installedBase, installedLevel)
+            .Where(candidate => includeBeta || !IsBetaVersionTag(candidate.BaseVersion))
+            .ToArray();
         foreach (var c in compatible)
             KodoDiagnostics.LogDebug($"Found compatible hotfix: HF{c.HotfixLevel} ({c.TagName})");
 
@@ -254,18 +260,24 @@ internal static class UpdateService
 
     public static async Task<HotfixCandidate?> CheckAndHandleHotfixAsync(
         bool installInBackground = false,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool includeBeta = false)
     {
-        var hotfix = await CheckForHotfixAsync(ct).ConfigureAwait(false);
+        var hotfix = await CheckForHotfixAsync(ct, includeBeta).ConfigureAwait(false);
         if (hotfix is null) return null;
-        if (installInBackground)
+        var isBetaHotfix = HotfixVersion.NormalizeBaseVersion(hotfix.BaseVersion)?
+            .EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
+        if (installInBackground && !isBetaHotfix)
         {
             try
             {
                 var prepared = await HotfixStaging.PrepareAsync(hotfix, progress: null, ct).ConfigureAwait(false);
                 if (!prepared.AlreadyInstalled && prepared.TransactionPath is not null)
                 {
-                    UpdateDialog.ShowForHotfix(hotfix, prepared.TransactionPath);
+                    // Stable hotfixes are mandatory and follow the enabled
+                    // background-update preference. Beta hotfixes never enter
+                    // this path and always require an explicit user action.
+                    LaunchUpdaterAndExit(prepared.TransactionPath);
                     return hotfix;
                 }
                 if (prepared.AlreadyInstalled) return null;
@@ -351,32 +363,34 @@ internal static class UpdateService
         {
             if (assets is null || assets.Length == 0 || string.IsNullOrWhiteSpace(assetName))
                 return null;
-            var checksumAsset = assets.FirstOrDefault(a =>
+            var checksumAssets = assets.Where(a =>
                 a.Name.Equals("SHA256SUMS", StringComparison.OrdinalIgnoreCase) ||
                 a.Name.Equals("checksums.txt", StringComparison.OrdinalIgnoreCase) ||
                 a.Name.Equals("CHECKSUMS", StringComparison.OrdinalIgnoreCase) ||
-                a.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase));
-            if (checksumAsset is null || !IsValidReleaseAsset(checksumAsset))
-                return null;
-            using var response = await Http.GetAsync(checksumAsset.BrowserDownloadUrl, ct).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode) return null;
-            if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps) return null;
-            var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-            if (bytes.Length == 0 || bytes.Length > 1024 * 1024) return null;
-            var text = System.Text.Encoding.UTF8.GetString(bytes);
-            foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                a.Name.EndsWith(".sha256", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(a => string.Equals(a.Name, assetName + ".sha256", StringComparison.OrdinalIgnoreCase));
+            foreach (var checksumAsset in checksumAssets)
             {
-                var line = rawLine.Trim();
-                if (line.StartsWith('#')) continue;
-                var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2) continue;
-                var hash = parts[0].Trim().TrimStart('*');
-                var file = parts[^1].Trim().TrimStart('*');
-                file = file.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                file = Path.GetFileName(file);
-                if (hash.Length != 64 || !hash.All(Uri.IsHexDigit)) continue;
-                if (string.Equals(file, assetName, StringComparison.OrdinalIgnoreCase))
-                    return hash.ToLowerInvariant();
+                if (!IsValidReleaseAsset(checksumAsset)) continue;
+                using var response = await Http.GetAsync(checksumAsset.BrowserDownloadUrl, ct).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode || response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps) continue;
+                var bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+                if (bytes.Length == 0 || bytes.Length > 1024 * 1024) continue;
+                var text = System.Text.Encoding.UTF8.GetString(bytes);
+                foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var line = rawLine.Trim();
+                    if (line.StartsWith('#')) continue;
+                    var parts = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 2) continue;
+                    var hash = parts[0].Trim().TrimStart('*');
+                    var file = parts[^1].Trim().TrimStart('*');
+                    file = file.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                    file = Path.GetFileName(file);
+                    if (hash.Length == 64 && hash.All(Uri.IsHexDigit) &&
+                        string.Equals(file, assetName, StringComparison.OrdinalIgnoreCase))
+                        return hash.ToLowerInvariant();
+                }
             }
             return null;
         }
@@ -429,7 +443,9 @@ internal static class UpdateService
             var l = i < localParts.Length ? localParts[i] : 0;
             if (r != l) return r > l;
         }
-        return false;
+        // A stable release supersedes the beta with the same numeric version;
+        // a beta never supersedes a stable build at that version.
+        return !IsBetaVersionTag(remote) && IsBetaVersionTag(local);
     }
 
     private static int[]? ParseVersionParts(string tag)
@@ -821,14 +837,16 @@ internal static class UpdateService
     public static async Task<UpdateInfo?> CheckAndHandleUpdateAsync(
         bool installInBackground,
         Action<UpdateInfo>? onUpdateFound = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool includeBeta = false)
     {
         CleanupStaleArtifacts();
-        var update = await CheckForUpdateAsync(ct).ConfigureAwait(false);
+        var update = await CheckForUpdateAsync(ct, includeBeta).ConfigureAwait(false);
         if (update is null) return null;
         onUpdateFound?.Invoke(update);
 
-        if (installInBackground)
+        var isBeta = IsBetaVersionTag(update.Version);
+        if (installInBackground && !isBeta)
         {
             try
             {
@@ -876,6 +894,7 @@ internal sealed class UpdateDialog : Window
         _stagedInstallerPath = stagedInstallerPath;
         _linuxManualOnly = UpdateService.IsLinuxNotifyOnly ||
             (OperatingSystem.IsLinux() && !UpdateService.IsLinuxAutoInstallAsset(update.AssetName));
+        var isBeta = UpdateService.IsBetaVersionTag(update.Version);
         _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
 
@@ -903,7 +922,9 @@ internal sealed class UpdateDialog : Window
 
         _statusText = new TextBlock
         {
-            Text = stagedInstallerPath is not null && File.Exists(stagedInstallerPath)
+            Text = isBeta
+                ? "This is an unstable beta release. It is entirely optional and will only be downloaded if you choose Download Update."
+                : stagedInstallerPath is not null && File.Exists(stagedInstallerPath)
                 ? (_linuxManualOnly
                     ? UpdateService.LinuxReadyBlurb(stagedInstallerPath)
                     : "Update downloaded and ready to install. Choose Restart & Update when you're ready.")
@@ -976,6 +997,8 @@ internal sealed class UpdateDialog : Window
         _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
         var display = HotfixVersion.Format(hotfix.BaseVersion, hotfix.HotfixLevel);
+        var isBeta = HotfixVersion.NormalizeBaseVersion(hotfix.BaseVersion)?
+            .EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
 
         Title = "Kodo - Hotfix Available";
         Width = 460;
@@ -1001,7 +1024,9 @@ internal sealed class UpdateDialog : Window
 
         _statusText = new TextBlock
         {
-            Text = stagedTxPath is not null && File.Exists(stagedTxPath)
+            Text = isBeta
+                ? $"This hotfix is for the unstable Kodo {hotfix.BaseVersion} beta. Beta updates are optional and will only be installed if you choose Download Hotfix."
+                : stagedTxPath is not null && File.Exists(stagedTxPath)
                 ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
                 : $"A hotfix for Kodo {hotfix.BaseVersion} is available (HF{hotfix.HotfixLevel}). Download now to get the latest fixes.",
             FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
