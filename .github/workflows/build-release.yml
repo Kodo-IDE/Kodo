@@ -20,6 +20,7 @@ jobs:
         with:
           repository: Kodo-IDE/Kodo-Development
           path: dev
+          token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v4
@@ -53,6 +54,7 @@ jobs:
         with:
           repository: Kodo-IDE/Kodo-Development
           path: dev
+          token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v4
