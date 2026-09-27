@@ -181,7 +181,8 @@ internal sealed record HotfixCandidate(
     string AssetDownloadUrl,
     long AssetSizeBytes,
     string? Sha256 = null,
-    string? ChecksumDownloadUrl = null);
+    string? ChecksumDownloadUrl = null,
+    bool RequiresManualPackageInstall = false);
 
 internal static class HotfixValidator
 {
@@ -585,7 +586,7 @@ internal static class HotfixDiscovery
         return "win-x64";
     }
 
-    internal static GitHubAsset? PickHotfixAsset(GitHubAsset[]? assets, string platformRid, string baseVersion, int hotfixLevel)
+    internal static GitHubAsset? PickHotfixAsset(GitHubAsset[]? assets, string platformRid, string baseVersion, int hotfixLevel, string? installKind = null)
     {
         if (assets is null || assets.Length == 0 || string.IsNullOrWhiteSpace(platformRid)) return null;
         var rid = platformRid.Trim();
@@ -594,12 +595,17 @@ internal static class HotfixDiscovery
             if (asset is null) continue;
             if (string.IsNullOrWhiteSpace(asset.Name) || asset.Size <= 0) continue;
             var safeVersion = (HotfixVersion.NormalizeBaseVersion(baseVersion) ?? "").TrimStart('v', 'V');
-            var expectedName = rid switch
+            var expectedName = installKind?.ToLowerInvariant() switch
+            {
+                "appimage" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-v{safeVersion}-Hotfix{hotfixLevel}.AppImage",
+                "deb" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-v{safeVersion}-Hotfix{hotfixLevel}.deb",
+                _ => rid switch
             {
                 "win-x64" => $"Kodo-Windows-v{safeVersion}-Hotfix{hotfixLevel}.zip",
                 "linux-x64" => $"Kodo-Linux-x64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
                 "linux-arm64" => $"Kodo-Linux-arm64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
                 _ => ""
+            }
             };
             if (expectedName.Length == 0 || !string.Equals(asset.Name, expectedName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var downloadUri) ||
@@ -614,7 +620,8 @@ internal static class HotfixDiscovery
         IEnumerable<GitHubRelease>? releases,
         string installedBaseVersion,
         int installedHotfixLevel,
-        string? platformRid = null)
+        string? platformRid = null,
+        string? installKind = null)
     {
         var found = new List<HotfixCandidate>();
         var installedBase = HotfixVersion.NormalizeBaseVersion(installedBaseVersion);
@@ -633,7 +640,7 @@ internal static class HotfixDiscovery
             if (release.Draft || (release.Prerelease && !baseVersion!.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase))) continue;
             if (!HotfixVersion.AreSameBaseVersion(baseVersion, installedBase)) continue;
             if (level <= installedHotfixLevel) continue;
-            var asset = PickHotfixAsset(release.Assets, rid, baseVersion!, level);
+            var asset = PickHotfixAsset(release.Assets, rid, baseVersion!, level, installKind);
             if (asset is null) continue;
             var checksumAsset = release.Assets?.FirstOrDefault(a => a is not null &&
                 string.Equals(a.Name, asset.Name + ".sha256", StringComparison.OrdinalIgnoreCase));
@@ -651,7 +658,8 @@ internal static class HotfixDiscovery
                 AssetDownloadUrl: asset.BrowserDownloadUrl,
                 AssetSizeBytes: asset.Size,
                 Sha256: null,
-                ChecksumDownloadUrl: checksumAsset.BrowserDownloadUrl));
+                ChecksumDownloadUrl: checksumAsset.BrowserDownloadUrl,
+                RequiresManualPackageInstall: asset.Name.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase) || asset.Name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)));
         }
 
         found.Sort((a, b) => a.HotfixLevel.CompareTo(b.HotfixLevel));
@@ -712,6 +720,23 @@ internal static class HotfixStaging
 {
     internal static string HotfixRoot => Path.Combine(UpdateService.UpdateRoot, "hotfix");
     internal static string DownloadsRoot => Path.Combine(HotfixRoot, "downloads");
+
+    internal static string GetLinuxInstallKind()
+    {
+        if (!OperatingSystem.IsLinux()) return "managed";
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("APPIMAGE")) || AppContext.BaseDirectory.Contains(".mount_", StringComparison.Ordinal)) return "appimage";
+        try
+        {
+            var dpkgList = "/var/lib/dpkg/info/kodo.list";
+            if (File.Exists(dpkgList))
+            {
+                var basePath = Path.GetFullPath(AppContext.BaseDirectory);
+                if (File.ReadLines(dpkgList).Any(line => line.StartsWith(basePath, StringComparison.Ordinal))) return "deb";
+            }
+        }
+        catch { }
+        return "managed";
+    }
 
     private static readonly JsonSerializerOptions TxJsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -1073,6 +1098,7 @@ internal static class HotfixStaging
         public bool AlreadyInstalled { get; set; }
         public string? TransactionPath { get; set; }
         public HotfixTransaction? Transaction { get; set; }
+        public string? ManualPackagePath { get; set; }
     }
 
     internal static async Task<PrepareResult> PrepareAsync(
@@ -1111,6 +1137,20 @@ internal static class HotfixStaging
         {
             KodoDiagnostics.LogDebug($"Hotfix {candidate.TagName} already installed (installed: {HotfixVersion.Format(installedBase, installedLevel)}); skipping download.");
             return new PrepareResult { AlreadyInstalled = true };
+        }
+
+        if (candidate.RequiresManualPackageInstall)
+        {
+            var packageDirectory = Path.Combine(hotfixRoot, "downloads");
+            var manualSafeTag = candidate.TagName.Trim().Replace('/', '-').Replace('\\', '-');
+            foreach (var c in Path.GetInvalidFileNameChars()) manualSafeTag = manualSafeTag.Replace(c, '_');
+            var packagePath = Path.Combine(packageDirectory, manualSafeTag, Path.GetFileName(candidate.AssetName));
+            await DownloadAsync(httpClient ?? UpdateService.SharedHttpClient, candidate, packagePath, progress, ct).ConfigureAwait(false);
+            if (OperatingSystem.IsLinux() && candidate.AssetName.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase))
+            {
+                try { File.SetUnixFileMode(packagePath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute); } catch { }
+            }
+            return new PrepareResult { ManualPackagePath = packagePath };
         }
 
         EnsureTargetWritable(targetDir);

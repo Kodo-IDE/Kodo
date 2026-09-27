@@ -1,0 +1,56 @@
+# Licensed under GPL-v3.0
+name: Linux distro builds
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  linux-build:
+    name: Build on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: Ubuntu 24.04 LTS
+            image: ubuntu:24.04
+          - distro: Linux Mint 22
+            image: linuxmintd/mint22-amd64:latest
+          - distro: Fedora 44
+            image: fedora:44
+    steps:
+      - name: Install native build dependencies
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl libicu-dev libssl-dev fontconfig
+          else
+            dnf install -y ca-certificates curl libicu openssl-libs fontconfig
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build Kodo and updater
+        shell: bash
+        run: |
+          dotnet build Kodo/Source/Kodo.csproj -c Release --nologo
+          dotnet build Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release --nologo
+
+      - name: Publish Linux x64
+        shell: bash
+        run: |
+          dotnet publish Kodo/Source/Kodo.csproj -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "$RUNNER_TEMP/kodo"
+          dotnet publish Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release -r linux-x64 --self-contained true \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "$RUNNER_TEMP/updater"

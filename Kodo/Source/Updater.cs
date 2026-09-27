@@ -214,7 +214,8 @@ internal static class UpdateService
         }
         if (releases is null) return null;
 
-        var compatible = HotfixDiscovery.FindCompatibleHotfixes(releases, installedBase, installedLevel)
+        var compatible = HotfixDiscovery.FindCompatibleHotfixes(releases, installedBase, installedLevel,
+                installKind: HotfixStaging.GetLinuxInstallKind())
             .Where(candidate => includeBeta || !IsBetaVersionTag(candidate.BaseVersion))
             .ToArray();
         foreach (var c in compatible)
@@ -267,7 +268,7 @@ internal static class UpdateService
         if (hotfix is null) return null;
         var isBetaHotfix = HotfixVersion.NormalizeBaseVersion(hotfix.BaseVersion)?
             .EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
-        if (installInBackground && !isBetaHotfix)
+        if (installInBackground && !isBetaHotfix && !hotfix.RequiresManualPackageInstall)
         {
             try
             {
@@ -877,6 +878,7 @@ internal sealed class UpdateDialog : Window
     private string? _stagedInstallerPath;
     private readonly HotfixCandidate? _hotfix;
     private string? _stagedHotfixTxPath;
+    private string? _stagedManualHotfixPackagePath;
     private readonly bool _isHotfixMode;
     private readonly TextBlock _statusText;
     private readonly ProgressBar _progressBar;
@@ -994,13 +996,14 @@ internal sealed class UpdateDialog : Window
         _hotfix = hotfix;
         _isHotfixMode = true;
         _stagedHotfixTxPath = stagedTxPath;
+        var manualPackage = hotfix.RequiresManualPackageInstall;
         _palette = ThemeResolver.GetCurrentPalette();
         (_accentColor, _accentForeground) = AccentResolver.GetCurrentAccent();
         var display = HotfixVersion.Format(hotfix.BaseVersion, hotfix.HotfixLevel);
         var isBeta = HotfixVersion.NormalizeBaseVersion(hotfix.BaseVersion)?
             .EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
 
-        Title = "Kodo - Hotfix Available";
+        Title = "Kodo - Critical Hotfix Available";
         Width = 460;
         SizeToContent = SizeToContent.Height;
         CanResize = false;
@@ -1016,7 +1019,7 @@ internal sealed class UpdateDialog : Window
         };
         var titleText = new TextBlock
         {
-            Text = $"Kodo {display} hotfix is available",
+            Text = $"Critical Kodo {display} hotfix is available",
             FontSize = 16, FontWeight = Avalonia.Media.FontWeight.SemiBold,
             Foreground = new SolidColorBrush(_palette.Text), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
         };
@@ -1025,10 +1028,16 @@ internal sealed class UpdateDialog : Window
         _statusText = new TextBlock
         {
             Text = isBeta
-                ? $"This hotfix is for the unstable Kodo {hotfix.BaseVersion} beta. Beta updates are optional and will only be installed if you choose Download Hotfix."
+                ? manualPackage
+                    ? $"This is an optional hotfix for the unstable Kodo {hotfix.BaseVersion} beta. Download the rebuilt package only if you choose to use this beta; then install it using the instructions below."
+                    : $"This hotfix is for the unstable Kodo {hotfix.BaseVersion} beta. Beta updates are optional and will only be installed if you choose Download Hotfix."
+                : manualPackage
+                ? hotfix.AssetName.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
+                    ? $"This critical hotfix fixes an important issue. Download the rebuilt Debian package, then install it with your software manager or `sudo apt install ./<package>.deb`."
+                    : "This critical hotfix fixes an important issue. Download the rebuilt AppImage, then replace your current AppImage with the downloaded file."
                 : stagedTxPath is not null && File.Exists(stagedTxPath)
                 ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
-                : $"A hotfix for Kodo {hotfix.BaseVersion} is available (HF{hotfix.HotfixLevel}). Download now to get the latest fixes.",
+                : $"A critical hotfix for Kodo {hotfix.BaseVersion} is available (HF{hotfix.HotfixLevel}) and fixes an important issue. Download it now.",
             FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
         };
         var notesLink = new TextBlock { Text = "View release notes", FontSize = 12, Foreground = new SolidColorBrush(_accentColor), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
@@ -1041,7 +1050,7 @@ internal sealed class UpdateDialog : Window
 
         _primaryButton = new Button
         {
-            Content = stagedTxPath is not null ? "Restart & Update" : "Download Hotfix",
+            Content = manualPackage ? "Download Full Package" : stagedTxPath is not null ? "Restart & Update" : "Download Hotfix",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
@@ -1157,6 +1166,14 @@ internal sealed class UpdateDialog : Window
     private async Task OnHotfixPrimaryClickAsync()
     {
         if (_hotfix is null) return;
+        if (_stagedManualHotfixPackagePath is not null && File.Exists(_stagedManualHotfixPackagePath))
+        {
+            UpdateService.OpenFolderInFileManager(_stagedManualHotfixPackagePath);
+            _statusText.Text = _hotfix.AssetName.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
+                ? "Install the downloaded Debian package with your software manager or `sudo apt install ./<package>.deb`, then relaunch Kodo."
+                : "Replace your current AppImage with the downloaded file, keep it executable, then relaunch Kodo. This full package includes the critical hotfix.";
+            return;
+        }
         if (_isReady && _stagedHotfixTxPath is not null && File.Exists(_stagedHotfixTxPath))
         {
             _canClose = false;
@@ -1202,6 +1219,19 @@ internal sealed class UpdateDialog : Window
         try
         {
             var prepared = await HotfixStaging.PrepareAsync(_hotfix, progress);
+            if (prepared.ManualPackagePath is not null)
+            {
+                _stagedManualHotfixPackagePath = prepared.ManualPackagePath;
+                _isDownloading = false;
+                _isReady = true;
+                _progressBar.IsVisible = false;
+                _statusText.Text = "Critical hotfix package downloaded and checksum verified. Open its folder to install it.";
+                _primaryButton.Content = "Show in Folder";
+                _primaryButton.IsEnabled = true;
+                _laterButton.IsEnabled = true;
+                _canClose = true;
+                return;
+            }
             if (prepared.AlreadyInstalled || prepared.TransactionPath is null)
             {
                 _statusText.Text = "This hotfix is already installed.";
