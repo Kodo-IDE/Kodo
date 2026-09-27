@@ -1,0 +1,87 @@
+# Licensed under GPL-v3.0
+name: Build Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout selected Kodo ref
+        uses: actions/checkout@v4
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v4
+        with:
+          repository: Kodo-IDE/Kodo-Development
+          path: dev
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Inno Setup 6
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
+
+      - name: Upload Windows installer and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kodo-Windows-release
+          path: ${{ runner.temp }}/kodo-release/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux packages
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout selected Kodo ref
+        uses: actions/checkout@v4
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v4
+        with:
+          repository: Kodo-IDE/Kodo-Development
+          path: dev
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Linux package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl libicu-dev libssl-dev fontconfig dpkg
+
+      - name: Install appimagetool
+        run: |
+          curl -L --fail --retry 3 \
+            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Build Linux x64 and ARM64 packages
+        env:
+          KODO_ROOT: ${{ github.workspace }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: bash dev/Release-Scripts/build-linux-release.sh "${RUNNER_TEMP}/kodo-release"
+
+      - name: Upload Linux archives, AppImages, Debian packages, and checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kodo-Linux-release
+          path: ${{ runner.temp }}/kodo-release/
+          if-no-files-found: error
+          retention-days: 30
