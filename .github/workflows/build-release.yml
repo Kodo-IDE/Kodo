@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout selected Kodo ref
         uses: actions/checkout@v4
+        with:
+          path: Kodo
 
       - name: Checkout release tooling
         uses: actions/checkout@v4
@@ -32,7 +34,7 @@ jobs:
 
       - name: Build Windows installer
         shell: pwsh
-        run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
+        run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE/Kodo" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
 
       - name: Upload Windows installer and checksum
         uses: actions/upload-artifact@v4
@@ -48,6 +50,8 @@ jobs:
     steps:
       - name: Checkout selected Kodo ref
         uses: actions/checkout@v4
+        with:
+          path: Kodo
 
       - name: Checkout release tooling
         uses: actions/checkout@v4
@@ -76,7 +80,7 @@ jobs:
 
       - name: Build Linux x64 and ARM64 packages
         env:
-          KODO_ROOT: ${{ github.workspace }}
+          KODO_ROOT: ${{ github.workspace }}/Kodo
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: bash dev/Release-Scripts/build-linux-release.sh "${RUNNER_TEMP}/kodo-release"
 
