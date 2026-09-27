@@ -1,96 +1,94 @@
 # Licensed under GPL-v3.0
-name: CI
+name: Builds
 
 on:
   push:
     branches: [main, master]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  windows:
+    name: Build on Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish Kodo
+        run: dotnet publish Kodo/Source/Kodo.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/Kodo-windows-x64
+
+      - name: Publish KodoUpdater
+        run: dotnet publish Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/KodoUpdater-windows-x64
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kodo-windows-x64
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Build on ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
-
+        include:
+          - distro: Ubuntu 24.04 LTS
+            id: ubuntu-24.04
+            image: ubuntu:24.04
+          - distro: Linux Mint 22
+            id: linux-mint-22
+            image: linuxmintd/mint22-amd64:latest
+          - distro: Fedora 44
+            id: fedora-44
+            image: fedora:44
     steps:
-      - name: Checkout
+      - name: Install native build dependencies
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl libicu-dev libssl-dev fontconfig
+          else
+            dnf install -y ca-certificates curl libicu openssl-libs fontconfig
+          fi
+
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Setup .NET 10 SDK
+      - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
 
-      - name: Install Linux native deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libicu-dev libssl-dev fontconfig
+      - name: Publish Kodo
+        shell: bash
+        run: dotnet publish Kodo/Source/Kodo.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "artifacts/Kodo-${{ matrix.id }}"
 
-      - name: Build Kodo
-        run: dotnet build Kodo/Source/Kodo.csproj -c Release --nologo
+      - name: Publish KodoUpdater
+        shell: bash
+        run: dotnet publish Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o "artifacts/KodoUpdater-${{ matrix.id }}"
 
-      - name: Build KodoUpdater
-        run: dotnet build Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release --nologo
+      - name: Archive Linux build preserving executable permissions
+        shell: bash
+        run: tar -czf "Kodo-${{ matrix.id }}.tar.gz" -C artifacts .
 
-      # NOTE: the hotfix test suite lives outside this repo (Kodo-Tests, never
-      # committed by policy), so CI does not run it. Run it locally by
-      # temporarily restoring Kodo-Tests/KodoRepoTests to Kodo/Tests
-      # (git-ignored) and running:
-      #   dotnet test Kodo/Tests/Kodo.Hotfix.Tests/Kodo.Hotfix.Tests.csproj -c Release
-
-  linux-packages:
-    name: Linux release packages
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Checkout release tooling
-        uses: actions/checkout@v4
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
         with:
-          repository: Kodo-IDE/Kodo-Development
-          path: dev
-
-      - name: Setup .NET 10 SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Install Linux native dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libicu-dev libssl-dev fontconfig dpkg
-
-      - name: Install appimagetool
-        if: runner.os == 'Linux'
-        run: |
-          curl -L --fail --retry 3 \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
-            -o "$RUNNER_TEMP/appimagetool"
-          chmod +x "$RUNNER_TEMP/appimagetool"
-          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
-
-      - name: Build Linux archives for x64 and ARM64
-        env:
-          KODO_ROOT: ${{ github.workspace }}
-          APPIMAGE_EXTRACT_AND_RUN: 1
-        run: bash dev/scripts/build-linux-release.sh "${RUNNER_TEMP}/kodo-linux-dist" "2.1.0-BETA"
-
-      - name: Verify archive contents and executable bits
-        run: |
-          for rid in linux-x64 linux-arm64; do
-            archive="${RUNNER_TEMP}/kodo-linux-dist/Kodo-2.1.0-BETA-${rid}.tar.gz"
-            tar -tzf "$archive" | grep -Fxq 'kodo/Kodo'
-            tar -tzf "$archive" | grep -Fxq 'kodo/KodoUpdater'
-            tar -tzf "$archive" | grep -Fxq 'kodo/kodo.desktop'
-            tar -tzf "$archive" | grep -Fxq 'kodo/kodo-logo.png'
-            tar -tzf "$archive" | grep -Fxq 'kodo/hotfix-build.json'
-            tar -tzf "$archive" | grep -Fxq 'kodo/.kodo-managed-install'
-            tar -tvzf "$archive" | awk '$1 ~ /x/ && $NF == "kodo/Kodo" { app=1 } $1 ~ /x/ && $NF == "kodo/KodoUpdater" { updater=1 } END { exit !(app && updater) }'
-          done
+          name: Kodo-${{ matrix.id }}
+          path: Kodo-${{ matrix.id }}.tar.gz
+          if-no-files-found: error
+          retention-days: 30
