@@ -196,8 +196,7 @@ public partial class MainWindow
         }
         else if (diagnosticMessage is not null)
         {
-            ToolTip.SetTip(textView, diagnosticMessage);
-            ToolTip.SetShowDelay(textView, 400);
+            ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             DiagnosticPopup.PlacementTarget = textView;
 
