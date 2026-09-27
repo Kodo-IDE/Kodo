@@ -1,4 +1,4 @@
-// Licensed under the GNU GPL-v3.0
+﻿// Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -14,7 +14,6 @@ using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -139,6 +138,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsThemeName = string.Empty;
     private bool _lspEnabled = true;
+    private bool _lspCompletionEnabled = true;
+    private bool _lspHoverEnabled = true;
+    private bool _lspSignatureHelpEnabled = true;
+    private bool _lspInlayHintsEnabled = true;
+    private bool _lspFoldingEnabled = true;
+    private bool _lspDocumentHighlightsEnabled = true;
+    private bool _lspDiagnosticsEnabled = true;
+    private bool _lspSemanticHighlightingEnabled;
+    private long _lspCompletionSettingsRevision;
     private bool _lspAutoInstall;
     private bool _lspPreferManaged = true;
     private bool _lspPreferSystem = true;
@@ -743,7 +751,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_errorHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_findHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspHighlightRenderer);
-        EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspInlayHintRenderer);
+        EditorTextBox.TextArea.TextView.ElementGenerators.Add(_lspInlayHintRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_lspSemanticTokenRenderer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_rainbowBracketColorizer);
         EditorTextBox.TextArea.TextView.LineTransformers.Add(_interpolatedStringColorizer);
@@ -778,8 +786,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
         {
             HideDiagnosticPopup();
-            _lspRefreshDebounceTimer.Stop();
-            _lspRefreshDebounceTimer.Start();
+            RestartLspPresentationDebounceTimer();
             QueueRefreshState();
             try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
             Dispatcher.UIThread.Post(() =>
@@ -849,8 +856,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
         _isAutoUpdateExtensionsInBackgroundEnabled = settings.AutoUpdateExtensionsInBackgroundEnabled;
         _isAutoUpdateAppEnabled = settings.AutoUpdateAppEnabled;
-        _isAutoUpdateAppInBackgroundEnabled = settings.AutoUpdateAppInBackgroundEnabled;
+        IsAutoUpdateAppInBackgroundEnabled1 = settings.AutoUpdateAppInBackgroundEnabled;
         _lspEnabled = settings.LspEnabled;
+        _lspCompletionEnabled = settings.LspCompletionEnabled;
+        _lspHoverEnabled = settings.LspHoverEnabled;
+        _lspSignatureHelpEnabled = settings.LspSignatureHelpEnabled;
+        _lspInlayHintsEnabled = settings.LspInlayHintsEnabled;
+        _lspFoldingEnabled = settings.LspFoldingEnabled;
+        _lspDocumentHighlightsEnabled = settings.LspDocumentHighlightsEnabled;
+        _lspDiagnosticsEnabled = settings.LspDiagnosticsEnabled;
+        _lspSemanticHighlightingEnabled = settings.LspSemanticHighlightingEnabled;
         _lspAutoInstall = settings.LspAutoInstall;
         _lspPreferManaged = settings.LspPreferManaged;
         _lspPreferSystem = settings.LspPreferSystem;
@@ -1700,6 +1715,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.Options.ConvertTabsToSpaces = InsertSpaces;
         EditorTextBox.FontSize = EditorFontSize;
         _indentGuideRenderer.TabSize = TabSize;
+        _indentGuideRenderer.InvalidateCache();
         _markdownColorizer.TabSize = TabSize;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
@@ -1710,6 +1726,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (EditorTextBox is null)
             return;
 
+        _indentGuideRenderer.InvalidateCache();
         RefreshRunBuildState();
 
         if (string.IsNullOrWhiteSpace(_currentFilePath))
@@ -2877,7 +2894,158 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool LspEnabled
     {
         get => _lspEnabled;
-        set { if (_lspEnabled == value) return; _lspEnabled = value; OnPropertyChanged(); SaveSettings(); }
+        set
+        {
+            if (_lspEnabled == value) return;
+            _lspEnabled = value;
+            _lspCompletionSettingsRevision++;
+            OnPropertyChanged();
+            if (value)
+            {
+                var path = _currentFilePath;
+                if (!string.IsNullOrWhiteSpace(path) && EditorTextBox?.Document is not null && ResolveLspExtensionForFile(path) is not null)
+                    QueueLspDidChange(path);
+                QueueLspPresentationRefresh();
+            }
+            else
+            {
+                _lspDidChangeTimer.Stop();
+                _lspRefreshDebounceTimer.Stop();
+                lock (_lspHoverLock) _lspHoverCts?.Cancel();
+                _ = LspShutdownAllAsync();
+                lock (_lspDiagnosticsLock)
+                {
+                    _lspDiagnostics.Clear();
+                    _lspDiagnosticVersions.Clear();
+                    _lspDiagnosticRefreshPending.Clear();
+                }
+                ClearLspHoverTooltip();
+                _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                _lspHighlightRenderer.Clear();
+                _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+                ClearLspSignatureHelpTooltip();
+                EditorTextBox?.TextArea?.TextView?.Redraw();
+                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+                _ = UpdateErrorHighlightingAsync();
+            }
+            QueueInsightRefresh();
+            SaveSettings();
+        }
+    }
+    public bool LspCompletionEnabled
+    {
+        get => _lspCompletionEnabled;
+        set { if (_lspCompletionEnabled == value) return; _lspCompletionEnabled = value; _lspCompletionSettingsRevision++; OnPropertyChanged(); QueueInsightRefresh(); SaveSettings(); }
+    }
+    public bool LspHoverEnabled
+    {
+        get => _lspHoverEnabled;
+        set
+        {
+            if (_lspHoverEnabled == value) return;
+            _lspHoverEnabled = value;
+            OnPropertyChanged();
+            if (!value) lock (_lspHoverLock) _lspHoverCts?.Cancel();
+            if (!value) ClearLspHoverTooltip();
+            SaveSettings();
+        }
+    }
+    public bool LspSignatureHelpEnabled
+    {
+        get => _lspSignatureHelpEnabled;
+        set
+        {
+            if (_lspSignatureHelpEnabled == value) return;
+            _lspSignatureHelpEnabled = value;
+            OnPropertyChanged();
+            if (value) _ = UpdateLspSignatureHelpAsync();
+            else ClearLspSignatureHelpTooltip();
+            SaveSettings();
+        }
+    }
+    public bool LspInlayHintsEnabled
+    {
+        get => _lspInlayHintsEnabled;
+        set
+        {
+            if (_lspInlayHintsEnabled == value) return;
+            _lspInlayHintsEnabled = value;
+            OnPropertyChanged();
+            if (value) QueueLspPresentationRefresh();
+            else { _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>()); EditorTextBox?.TextArea?.TextView?.Redraw(); }
+            SaveSettings();
+        }
+    }
+    public bool LspFoldingEnabled
+    {
+        get => _lspFoldingEnabled;
+        set
+        {
+            if (_lspFoldingEnabled == value) return;
+            _lspFoldingEnabled = value;
+            OnPropertyChanged();
+            if (value) QueueLspPresentationRefresh();
+            else _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+            SaveSettings();
+        }
+    }
+    public bool LspDocumentHighlightsEnabled
+    {
+        get => _lspDocumentHighlightsEnabled;
+        set
+        {
+            if (_lspDocumentHighlightsEnabled == value) return;
+            _lspDocumentHighlightsEnabled = value;
+            OnPropertyChanged();
+            if (value) QueueLspPresentationRefresh();
+            else { _lspHighlightRenderer.Clear(); EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background); }
+            SaveSettings();
+        }
+    }
+    public bool LspDiagnosticsEnabled
+    {
+        get => _lspDiagnosticsEnabled;
+        set
+        {
+            if (_lspDiagnosticsEnabled == value) return;
+            _lspDiagnosticsEnabled = value;
+            OnPropertyChanged();
+            if (!value)
+            {
+                lock (_lspDiagnosticsLock)
+                {
+                    _lspDiagnostics.Clear();
+                    _lspDiagnosticVersions.Clear();
+                    _lspDiagnosticRefreshPending.Clear();
+                }
+                _ = UpdateErrorHighlightingAsync();
+                foreach (var tab in OpenTabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path)))
+                    UpdateInactiveTabDiagnosticsForFile(tab.Path);
+            }
+            else if (!string.IsNullOrWhiteSpace(_currentFilePath) && EditorTextBox?.Document is not null)
+            {
+                QueueLspDidChange(_currentFilePath);
+            }
+            SaveSettings();
+        }
+    }
+    public bool LspSemanticHighlightingEnabled
+    {
+        get => _lspSemanticHighlightingEnabled;
+        set
+        {
+            if (_lspSemanticHighlightingEnabled == value) return;
+            _lspSemanticHighlightingEnabled = value;
+            OnPropertyChanged();
+            if (value) QueueLspPresentationRefresh();
+            else
+            {
+                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            }
+            SaveSettings();
+        }
     }
     public bool LspAutoInstall
     {
@@ -3210,11 +3378,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsAutoUpdateAppInBackgroundEnabled
     {
-        get => _isAutoUpdateAppInBackgroundEnabled;
+        get => IsAutoUpdateAppInBackgroundEnabled1;
         set
         {
-            if (_isAutoUpdateAppInBackgroundEnabled == value) return;
-            _isAutoUpdateAppInBackgroundEnabled = value;
+            if (IsAutoUpdateAppInBackgroundEnabled1 == value) return;
+            IsAutoUpdateAppInBackgroundEnabled1 = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(AutoUpdateAppStatusText));
             SaveSettings();
@@ -5042,6 +5210,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CustomBuildScripts = new Dictionary<string, string>(_customBuildScripts, StringComparer.OrdinalIgnoreCase),
             CustomKeybinds = BuildCustomKeybindsSnapshot(),
             LspEnabled = _lspEnabled,
+            LspCompletionEnabled = _lspCompletionEnabled,
+            LspHoverEnabled = _lspHoverEnabled,
+            LspSignatureHelpEnabled = _lspSignatureHelpEnabled,
+            LspInlayHintsEnabled = _lspInlayHintsEnabled,
+            LspFoldingEnabled = _lspFoldingEnabled,
+            LspDocumentHighlightsEnabled = _lspDocumentHighlightsEnabled,
+            LspDiagnosticsEnabled = _lspDiagnosticsEnabled,
+            LspSemanticHighlightingEnabled = _lspSemanticHighlightingEnabled,
             LspAutoInstall = _lspAutoInstall,
             LspPreferManaged = _lspPreferManaged,
             LspPreferSystem = _lspPreferSystem,
@@ -8682,6 +8858,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public Dictionary<string, string> LspExecutableOverrides => _lspExecutableOverrides;
 
     public Dictionary<string, string> LspExecutableOverrides1 => _lspExecutableOverrides;
+
+    public bool IsAutoUpdateAppInBackgroundEnabled1 { get => _isAutoUpdateAppInBackgroundEnabled; set => _isAutoUpdateAppInBackgroundEnabled = value; }
 
     private void OnTutorialStepChanged()
     {

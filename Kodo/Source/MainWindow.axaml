@@ -1813,7 +1813,7 @@
                             HorizontalOffset="0"
                             VerticalOffset="0"
                             IsLightDismissEnabled="False"
-                            WindowManagerAddShadowHint="True">
+                            WindowManagerAddShadowHint="False">
                         <Border x:Name="DiagnosticPopupHitBorder"
                                 Background="Transparent"
                                 Padding="12"
@@ -1826,8 +1826,7 @@
                                     CornerRadius="12"
                                     Padding="16"
                                     MaxWidth="460"
-                                    MaxHeight="260"
-                                    BoxShadow="0 12 28 0 #55000000, 0 2 8 0 #33000000">
+                                    MaxHeight="260">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <SelectableTextBlock x:Name="DiagnosticPopupText"
@@ -5783,6 +5782,87 @@
                                              Padding="8,6"
                                              FontSize="13"
                                              PlaceholderText=".cs,.cpp" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid x:Name="SectionHeaderLsp" Tag="lsp" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="LANGUAGE SERVERS" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
+                        </Grid>
+
+                        <Border x:Name="LspSettingsCard"
+                                Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="24"
+                                Tag="lsp">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Language Servers" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding LspEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Enable language server features" />
+                                <StackPanel Spacing="10" Margin="24,0,0,0" IsVisible="{Binding LspEnabled}">
+                                    <TextBlock Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Language servers provide code completion, diagnostics, navigation, and other language-aware editor features." />
+                                    <StackPanel Spacing="10">
+                                    <CheckBox IsChecked="{Binding LspDiagnosticsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show diagnostics and error highlighting" />
+                                    <CheckBox IsChecked="{Binding LspCompletionEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show completion suggestions" />
+                                    <CheckBox IsChecked="{Binding LspHoverEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show hover documentation" />
+                                    <CheckBox IsChecked="{Binding LspSignatureHelpEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show signature help" />
+                                    <CheckBox IsChecked="{Binding LspInlayHintsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show inlay hints" />
+                                    <CheckBox IsChecked="{Binding LspFoldingEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Enable code folding" />
+                                    <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Highlight references to the symbol under the caret" />
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Semantic highlighting" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="11"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Adds extra syntax colors using language server information. This optional feature is off by default." />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Automatically install missing servers" />
+                                    <TextBlock Margin="24,-8,0,0"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="When enabled, Kodo installs missing servers in its data folder. Servers already installed on your system remain available when this is off." />
                                 </StackPanel>
                             </StackPanel>
                         </Border>

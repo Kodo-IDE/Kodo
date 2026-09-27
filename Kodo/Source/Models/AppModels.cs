@@ -23,6 +23,7 @@ internal sealed class AppSettings
     public bool InsightCodeSuggestionsEnabled { get; set; } = true;
     public bool InsightDeadCodeEnabled { get; set; } = true;
     public bool InsightErrorDetectionEnabled { get; set; } = true;
+    public bool LspSemanticHighlightingEnabled { get; set; }
     public string InsightBlacklistExtensions { get; set; } = ".txt,.md";
     public string InsightErrorDeadCodeBlacklistExtensions { get; set; } = string.Empty;
 
@@ -78,6 +79,13 @@ internal sealed class AppSettings
     public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
 
     public bool LspEnabled { get; set; } = true;
+    public bool LspCompletionEnabled { get; set; } = true;
+    public bool LspHoverEnabled { get; set; } = true;
+    public bool LspSignatureHelpEnabled { get; set; } = true;
+    public bool LspInlayHintsEnabled { get; set; } = true;
+    public bool LspFoldingEnabled { get; set; } = true;
+    public bool LspDocumentHighlightsEnabled { get; set; } = true;
+    public bool LspDiagnosticsEnabled { get; set; } = true;
     public bool LspAutoInstall { get; set; } = false;
     public bool LspPreferManaged { get; set; } = true;
     public bool LspPreferSystem { get; set; } = true;

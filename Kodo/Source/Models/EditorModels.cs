@@ -7,8 +7,8 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Globalization;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
@@ -106,41 +106,68 @@ internal sealed class SpanOverlapIndex
     }
 }
 
-public sealed class LspInlayHintRenderer : IBackgroundRenderer
+public sealed class LspInlayHintRenderer : VisualLineElementGenerator
 {
-    private const int FormattedTextCacheLimit = 256;
     private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
-    private readonly Dictionary<string, FormattedText> _formattedTextCache = new();
     private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
-    public KnownLayer Layer => KnownLayer.Text;
+
     public void SetHints(IReadOnlyList<(int Offset, string Label)> hints)
     {
-        _hints = hints;
-        _formattedTextCache.Clear();
-    }
-    public void Draw(TextView textView, DrawingContext drawingContext)
-    {
-        if (_hints.Count == 0 || !textView.VisualLinesValid || textView.Document is null) return;
-        var visualLines = textView.VisualLines;
-        if (visualLines.Count == 0) return;
-        var viewStart = visualLines[0].FirstDocumentLine.Offset;
-        var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
-        var textLength = textView.Document.TextLength;
-        foreach (var hint in _hints)
+        var normalized = new List<(int Offset, string Label)>(hints.Count);
+        foreach (var hint in hints)
         {
-            var offset = Math.Clamp(hint.Offset, 0, textLength);
-            if (offset < viewStart || offset > viewEnd) continue;
-            var line = textView.Document.GetLineByOffset(offset);
-            var column = Math.Clamp(offset - line.Offset + 1, 1, line.Length + 1);
-            var pos = textView.GetVisualPosition(new TextViewPosition(line.LineNumber, column), VisualYPosition.LineBottom);
-            if (!_formattedTextCache.TryGetValue(hint.Label, out var formatted))
-            {
-                if (_formattedTextCache.Count >= FormattedTextCacheLimit) _formattedTextCache.Clear();
-                formatted = new FormattedText($"  {hint.Label}", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 11, HintBrush);
-                _formattedTextCache[hint.Label] = formatted;
-            }
-            drawingContext.DrawText(formatted, new Point(pos.X + 3, pos.Y));
+            if (string.IsNullOrWhiteSpace(hint.Label)) continue;
+            var label = hint.Label.Trim();
+            if (normalized.Count > 0 && normalized[^1].Offset == hint.Offset)
+                normalized[^1] = (hint.Offset, $"{normalized[^1].Label}, {label}");
+            else
+                normalized.Add((hint.Offset, label));
         }
+        _hints = normalized.ToArray();
+    }
+
+    public override int GetFirstInterestedOffset(int startOffset)
+    {
+        var low = 0;
+        var high = _hints.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (_hints[middle].Offset < startOffset) low = middle + 1;
+            else high = middle;
+        }
+        return low < _hints.Count ? _hints[low].Offset : -1;
+    }
+
+    public override VisualLineElement ConstructElement(int offset)
+    {
+        var low = 0;
+        var high = _hints.Count - 1;
+        var label = string.Empty;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var hint = _hints[middle];
+            if (hint.Offset == offset)
+            {
+                label = hint.Label;
+                break;
+            }
+            if (hint.Offset < offset) low = middle + 1;
+            else high = middle - 1;
+        }
+        var content = new Border
+        {
+            Padding = new Thickness(3, 0),
+            Child = new TextBlock
+            {
+                Text = label,
+                Foreground = HintBrush,
+                FontSize = 11,
+                FontStyle = FontStyle.Italic
+            }
+        };
+        return new InlineObjectElement(0, content);
     }
 }
 
@@ -161,8 +188,17 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
         var viewStart = visualLines[0].FirstDocumentLine.Offset;
         var viewEnd = visualLines[^1].LastDocumentLine.EndOffset;
         var textLength = textView.Document.TextLength;
-        foreach (var token in _tokens)
+        var low = 0;
+        var high = _tokens.Count;
+        while (low < high)
         {
+            var middle = low + (high - low) / 2;
+            if ((long)_tokens[middle].Offset + _tokens[middle].Length <= viewStart) low = middle + 1;
+            else high = middle;
+        }
+        for (var index = low; index < _tokens.Count && _tokens[index].Offset <= viewEnd; index++)
+        {
+            var token = _tokens[index];
             if (token.Offset >= textLength) continue;
             var start = Math.Max(0, token.Offset);
             var end = Math.Min(token.Offset + token.Length, textLength);
@@ -210,13 +246,10 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     private Pen? _cachedPen;
     private IBrush? _cachedBrush;
     private readonly Dictionary<int, int> _depthCache = new();
-    private int _cachedVersion = -1;
-    private int _cachedLineCount = -1;
     private int _cachedTabSize = -1;
 
     public void InvalidateCache()
     {
-        _cachedVersion = -1;
         _depthCache.Clear();
     }
 
@@ -236,7 +269,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         if (document is null || document.LineCount == 0)
             return;
 
-        if (!textView.VisualLines.Any())
+        if (textView.VisualLines.Count == 0)
             return;
 
         var scrollX = textView.ScrollOffset.X;
@@ -246,6 +279,11 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         var originX = textView.GetVisualPosition(
             new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
             VisualYPosition.LineTop).X - scrollX;
+        if (double.IsNaN(originX) || double.IsInfinity(originX)) return;
+        var pixelsPerIndentLevel = TabSize * spaceWidth;
+        if (pixelsPerIndentLevel <= 0) return;
+        var firstVisibleLevel = Math.Max(1, (int)(textView.ScrollOffset.X / pixelsPerIndentLevel) - 1);
+        var visibleLevelCount = Math.Min(128, (int)Math.Ceiling(textView.Bounds.Width / pixelsPerIndentLevel) + 3);
 
         if (_cachedPen is null || !ReferenceEquals(_cachedBrush, GuideBrush) || _cachedTabSize != TabSize)
         {
@@ -255,43 +293,45 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         }
         var pen = _cachedPen;
 
-        var docVersion = document.TextLength ^ document.LineCount ^ TabSize;
-        if (docVersion != _cachedVersion || document.LineCount != _cachedLineCount)
-        {
-            if (_depthCache.Count > 400)
-                _depthCache.Clear();
-            _cachedVersion = docVersion;
-            _cachedLineCount = document.LineCount;
-        }
+        if (_depthCache.Count > 400)
+            _depthCache.Clear();
 
         foreach (var visualLine in textView.VisualLines)
         {
             var lineNumber = visualLine.FirstDocumentLine.LineNumber;
+            var lineText = document.GetText(document.GetLineByNumber(lineNumber));
             int depth;
             if (!_depthCache.TryGetValue(lineNumber, out depth))
             {
-                depth = GetVisibleLineDepth(document, lineNumber);
+                depth = GetVisibleLineDepth(document, lineNumber, lineText);
                 _depthCache[lineNumber] = depth;
             }
             if (depth <= 0) continue;
 
             var top = visualLine.VisualTop - scrollY;
             var bottom = top + visualLine.Height;
+            var indentColumns = GetIndentColumns(lineText);
 
-            for (var level = 1; level <= depth; level++)
+            var finalLevel = Math.Min(depth, firstVisibleLevel + visibleLevelCount - 1);
+            for (var level = firstVisibleLevel; level <= finalLevel; level++)
             {
-                var x = originX + (level * TabSize - 1) * spaceWidth;
-                if (x < 0 || x > textView.Bounds.Width) continue;
+                var indentBoundary = level * TabSize;
+                var x = originX + indentBoundary * spaceWidth;
+                if (indentColumns >= indentBoundary && TryGetIndentCharacterColumn(lineText, indentBoundary, out var characterColumn))
+                {
+                    x = textView.GetVisualPosition(
+                        new AvaloniaEdit.TextViewPosition(lineNumber, characterColumn + 1),
+                        VisualYPosition.LineTop).X - scrollX;
+                }
+                if (double.IsNaN(x) || double.IsInfinity(x) || x < 0 || x > textView.Bounds.Width) continue;
 
                 drawingContext.DrawLine(pen, new Point(x, top), new Point(x, bottom));
             }
         }
     }
 
-    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber)
+    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber, string text)
     {
-        var docLine = document.GetLineByNumber(lineNumber);
-        var text = document.GetText(docLine);
         if (!string.IsNullOrWhiteSpace(text))
             return GetIndentColumns(text) / TabSize;
 
@@ -334,6 +374,29 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             else break;
         }
         return columns;
+    }
+
+    private bool TryGetIndentCharacterColumn(string lineText, int targetIndentColumn, out int characterColumn)
+    {
+        var columns = 0;
+        for (var index = 0; index < lineText.Length; index++)
+        {
+            var ch = lineText[index];
+            if (ch == ' ')
+                columns++;
+            else if (ch == '\t')
+                columns += TabSize - (columns % TabSize);
+            else
+                break;
+
+            if (columns == targetIndentColumn)
+            {
+                characterColumn = index + 1;
+                return true;
+            }
+        }
+        characterColumn = 0;
+        return false;
     }
 }
 

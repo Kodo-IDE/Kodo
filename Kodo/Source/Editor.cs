@@ -145,6 +145,53 @@ public partial class MainWindow
     private string? _pendingDiagnosticMessage;
     private double _pendingDiagnosticOffsetX;
     private double _pendingDiagnosticOffsetY;
+    private string? _lspSignatureHelpTooltip;
+    private string? _lspHoverTooltip;
+
+    private void QueueLspPresentationRefresh()
+    {
+        _lspDocumentRefreshPending = true;
+        if (IsActive)
+            RestartLspPresentationDebounceTimer();
+    }
+
+    private void RestartLspPresentationDebounceTimer()
+    {
+        if (!LspEnabled)
+        {
+            _lspRefreshDebounceTimer.Stop();
+            return;
+        }
+        var length = EditorTextBox?.Document?.TextLength ?? 0;
+        _lspRefreshDebounceTimer.Interval = length switch
+        {
+            > 500_000 => TimeSpan.FromMilliseconds(1800),
+            > 250_000 => TimeSpan.FromMilliseconds(1300),
+            > 120_000 => TimeSpan.FromMilliseconds(900),
+            > 80_000 => TimeSpan.FromMilliseconds(600),
+            _ => TimeSpan.FromMilliseconds(250)
+        };
+        _lspRefreshDebounceTimer.Stop();
+        _lspRefreshDebounceTimer.Start();
+    }
+
+    private void ClearLspSignatureHelpTooltip()
+    {
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (textView is not null && _lspSignatureHelpTooltip is not null &&
+            Equals(ToolTip.GetTip(textView), _lspSignatureHelpTooltip))
+            ToolTip.SetTip(textView, null);
+        _lspSignatureHelpTooltip = null;
+    }
+
+    private void ClearLspHoverTooltip()
+    {
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (textView is not null && _lspHoverTooltip is not null &&
+            Equals(ToolTip.GetTip(textView), _lspHoverTooltip))
+            ToolTip.SetTip(textView, null);
+        _lspHoverTooltip = null;
+    }
 
     private void HideDiagnosticPopup()
     {
@@ -238,7 +285,7 @@ public partial class MainWindow
             ToolTip.SetShowDelay(textView, 450);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
-        else if (!nowOverLink && diagnosticMessage is null && ResolveLspExtensionForFile(_currentFilePath) is not null && EditorTextBox?.Document is not null)
+        else if (LspHoverEnabled && !nowOverLink && diagnosticMessage is null && ResolveLspExtensionForFile(_currentFilePath) is not null && EditorTextBox?.Document is not null)
         {
             _diagnosticPopupShowTimer.Stop();
             _pendingDiagnosticMessage = null;
@@ -302,8 +349,9 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP hover response len={hoverInfo.Length} for {hoverPath}");
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (hoverCts.IsCancellationRequested) return;
+                        if (hoverCts.IsCancellationRequested || !LspEnabled || !LspHoverEnabled) return;
                         if (DiagnosticPopup.IsOpen) return;
+                        _lspHoverTooltip = hoverInfo;
                         ToolTip.SetTip(hoverView, hoverInfo);
                         ToolTip.SetShowDelay(hoverView, 450);
                         KodoDiagnostics.LogDebug($"LSP hover UI displayed for {hoverPath}");
@@ -539,8 +587,16 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
             QueueLspDidChange(_currentFilePath);
         _lspHighlightRenderer.Clear();
-        _lspRefreshDebounceTimer.Stop();
-        _lspRefreshDebounceTimer.Start();
+        _indentGuideRenderer.InvalidateCache();
+        RestartLspPresentationDebounceTimer();
+        if (largeLspDocument)
+        {
+            CloseCompletionWindow();
+            if (_deadCodeHighlightRenderer.Spans.Count > 0)
+                ClearDeadCodeHighlighting();
+            if (_errorHighlightRenderer.Spans.Count > 0)
+                ClearErrorHighlighting();
+        }
 
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
@@ -553,7 +609,8 @@ public partial class MainWindow
         QueueRefreshState(fullRefresh: !largeLspDocument);
         if (!largeLspDocument) QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
-        QueueInsightRefresh();
+        if (!largeLspDocument)
+            QueueInsightRefresh();
         if (IsFindInFileSearchMode && IsSearchPanelVisible)
         {
             _findHighlightDebounceTimer.Stop();
@@ -563,20 +620,34 @@ public partial class MainWindow
 
     private async Task UpdateLspSignatureHelpAsync()
     {
+        if (!LspSignatureHelpEnabled)
+        {
+            ClearLspSignatureHelpTooltip();
+            return;
+        }
         if (IsLargeLspDocument(200_000)) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
         var result = await GetLspSignatureHelpAsync(filePath, EditorTextBox.TextArea.Caret.Offset, text).ConfigureAwait(false);
-        if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("signatures", out var signatures) || signatures.ValueKind != JsonValueKind.Array || signatures.GetArrayLength() == 0) return;
+        if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("signatures", out var signatures) || signatures.ValueKind != JsonValueKind.Array || signatures.GetArrayLength() == 0)
+        {
+            await Dispatcher.UIThread.InvokeAsync(ClearLspSignatureHelpTooltip);
+            return;
+        }
         var signature = signatures[0];
         var label = signature.TryGetProperty("label", out var labelEl) ? labelEl.GetString() : null;
-        if (string.IsNullOrWhiteSpace(label)) return;
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            await Dispatcher.UIThread.InvokeAsync(ClearLspSignatureHelpTooltip);
+            return;
+        }
         var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
-            ToolTip.SetTip(EditorTextBox.TextArea.TextView, string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}");
+            if (!LspEnabled || !LspSignatureHelpEnabled || EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            _lspSignatureHelpTooltip = string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}";
+            ToolTip.SetTip(EditorTextBox.TextArea.TextView, _lspSignatureHelpTooltip);
             ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
         });
     }
@@ -588,7 +659,7 @@ public partial class MainWindow
     private async void LspRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _lspRefreshDebounceTimer.Stop();
-        if (!IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath) || _lspRefreshRunning) return;
+        if (!LspEnabled || !IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath) || _lspRefreshRunning) return;
         var configuration = ResolveLspConfigurationForFile(_currentFilePath);
         if (configuration is null) return;
         var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), configuration);
@@ -600,13 +671,20 @@ public partial class MainWindow
         _lspRefreshRunning = true;
         try
         {
-            var requests = new List<Task> { UpdateLspSignatureHelpAsync() };
+            var requests = new List<Task>();
+            if (LspSignatureHelpEnabled)
+                requests.Add(UpdateLspSignatureHelpAsync());
             if (refreshDocument)
             {
-                requests.Add(UpdateLspFoldingAsync());
-                requests.Add(UpdateLspInlayHintsAsync());
-                requests.Add(UpdateLspSemanticTokensAsync());
+                if (LspFoldingEnabled)
+                    requests.Add(UpdateLspFoldingAsync());
+                if (LspInlayHintsEnabled)
+                    requests.Add(UpdateLspInlayHintsAsync());
+                if (LspSemanticHighlightingEnabled)
+                    requests.Add(UpdateLspSemanticTokensAsync());
             }
+            if (LspDocumentHighlightsEnabled)
+                requests.Add(UpdateLspDocumentHighlightsAsync());
             await Task.WhenAll(requests);
             if (revision == _insightDocVersion && FileSystemPaths.Equals(path, _currentFilePath))
             {
@@ -625,6 +703,11 @@ public partial class MainWindow
 
     private async Task UpdateLspFoldingAsync()
     {
+        _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+        if (!LspFoldingEnabled)
+        {
+            return;
+        }
         if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         if (_lspFoldingManager is null || string.IsNullOrWhiteSpace(_currentFilePath) || EditorTextBox?.Document is null) return;
         var filePath = _currentFilePath;
@@ -645,13 +728,19 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (!LspEnabled || !LspFoldingEnabled || EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspFoldingManager.UpdateFoldings(foldings.OrderBy(f => f.StartOffset), 0);
         });
     }
 
     private async Task UpdateLspDocumentHighlightsAsync()
     {
+        _lspHighlightRenderer.Clear();
+        EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        if (!LspDocumentHighlightsEnabled)
+        {
+            return;
+        }
         if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
@@ -669,7 +758,7 @@ public partial class MainWindow
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (!LspEnabled || !LspDocumentHighlightsEnabled || EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspHighlightRenderer.Clear();
             foreach (var match in matches) _lspHighlightRenderer.AddMatch(match.Offset, match.Length);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
@@ -678,8 +767,16 @@ public partial class MainWindow
 
     private async Task UpdateLspInlayHintsAsync()
     {
-        if (IsLargeLspDocument()) return;
+        if (!LspEnabled || !LspInlayHintsEnabled)
+        {
+            _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+            EditorTextBox?.TextArea?.TextView?.Redraw();
+            return;
+        }
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+        EditorTextBox.TextArea.TextView.Redraw();
+        if (IsLargeLspDocument()) return;
         var filePath = _currentFilePath;
         var text = EditorTextBox.Document.Text;
         var result = await GetLspInlayHintsAsync(filePath, text).ConfigureAwait(false);
@@ -691,11 +788,12 @@ public partial class MainWindow
             var label = item.TryGetProperty("label", out var labelEl) ? ReadInlayHintLabel(labelEl) : null;
             if (!string.IsNullOrWhiteSpace(label)) hints.Add((OffsetFromLspPosition(text, line.GetInt32(), character.GetInt32()), label!));
         }
+        hints.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            if (!LspEnabled || !LspInlayHintsEnabled || EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
             _lspInlayHintRenderer.SetHints(hints);
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+            EditorTextBox.TextArea.TextView.Redraw();
         });
     }
 
@@ -716,6 +814,14 @@ public partial class MainWindow
 
     private async Task UpdateLspSemanticTokensAsync()
     {
+        if (!LspEnabled || !LspSemanticHighlightingEnabled)
+        {
+            _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+            EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            return;
+        }
+        _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+        EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
         if (IsLargeLspDocument()) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return;
         var filePath = _currentFilePath;
@@ -726,7 +832,11 @@ public partial class MainWindow
         var tokens = new List<(int Offset, int Length, Color Color)>();
         var line = 0; var character = 0;
         var legend = GetLspSemanticTokenTypes(filePath);
-        var palette = new[] { "#569CD6", "#4EC9B0", "#DCDCAA", "#C586C0", "#CE9178", "#9CDCFE", "#B5CEA8", "#D7BA7D" };
+        var palette = new[]
+        {
+            Color.Parse("#569CD6"), Color.Parse("#4EC9B0"), Color.Parse("#DCDCAA"), Color.Parse("#C586C0"),
+            Color.Parse("#CE9178"), Color.Parse("#9CDCFE"), Color.Parse("#B5CEA8"), Color.Parse("#D7BA7D")
+        };
         for (var i = 0; i + 4 < values.Length; i += 5)
         {
             line += values[i];
@@ -747,17 +857,22 @@ public partial class MainWindow
                     "string" or "regexp" => 5,
                     "number" => 6,
                     "comment" => 7,
-                    _ => Math.Abs(values[i + 3]) % palette.Length
+                    _ => ((values[i + 3] % palette.Length) + palette.Length) % palette.Length
                 };
-                tokens.Add((offset, Math.Min(length, text.Length - offset), Color.Parse(palette[paletteIndex])));
+                tokens.Add((offset, Math.Min(length, text.Length - offset), palette[paletteIndex]));
             }
         }
+        tokens.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
-            _lspSemanticTokenRenderer.SetTokens(tokens
-                .Select(token => (token.Offset, token.Length, (IBrush)new SolidColorBrush(token.Color, 0.18)))
-                .ToArray());
+            if (!LspEnabled || !LspSemanticHighlightingEnabled || EditorTextBox?.Document is null || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal)) return;
+            var brushes = new Dictionary<Color, IBrush>();
+            _lspSemanticTokenRenderer.SetTokens(tokens.Select(token =>
+            {
+                if (!brushes.TryGetValue(token.Color, out var brush))
+                    brushes[token.Color] = brush = new SolidColorBrush(token.Color, 0.18);
+                return (token.Offset, token.Length, brush);
+            }).ToArray());
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         });
     }
@@ -1251,6 +1366,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
     private async void EditorSignatureHelpMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (!LspEnabled || !LspSignatureHelpEnabled) return;
         if (EditorTextBox?.Document is null) return;
         var text = EditorTextBox.Document.Text;
         var result = await GetLspSignatureHelpAsync(_currentFilePath, EditorTextBox.TextArea.Caret.Offset, text).ConfigureAwait(false);
@@ -1296,6 +1412,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
     private async Task UpdateInsightAsync()
     {
+        var lspCompletionSettingsRevision = _lspCompletionSettingsRevision;
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
         {
             CloseCompletionWindow();
@@ -1373,7 +1490,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var scanVersion = _insightDocVersion;
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var hasConfiguredLspForCompletion = lspForFile?.HasLsp == true;
-        var isLspPrimaryForCompletion = hasConfiguredLspForCompletion && lspForFile!.HasLsp && ResolveLspConfigurationForFile(_currentFilePath) is { } cfgForCompletion && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForCompletion) is { IsInitialized: true };
+        var isLspPrimaryForCompletion = LspEnabled && LspCompletionEnabled && hasConfiguredLspForCompletion && lspForFile!.HasLsp && ResolveLspConfigurationForFile(_currentFilePath) is { } cfgForCompletion && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForCompletion) is { IsInitialized: true };
 
         List<InsightSuggestion> suggestions;
         if (isLspPrimaryForCompletion)
@@ -1393,6 +1510,8 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         try
         {
             var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix);
+            if (!LspEnabled || !LspCompletionEnabled || lspCompletionSettingsRevision != _lspCompletionSettingsRevision)
+                lspSuggestions = Array.Empty<InsightSuggestion>();
             if (lspSuggestions.Count > 0)
             {
                 var seen = new HashSet<string>(suggestions.Select(s => s.Text), StringComparer.OrdinalIgnoreCase);
@@ -1410,7 +1529,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP completion merge failed", ex); }
 
-        if (scanVersion != _insightDocVersion) return;
+        if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
         if (EditorTextBox?.TextArea is null) return;
         if (fileKey != "untitled" && !FileSystemPaths.Equals(_currentFilePath, fileKey)) return;
 
