@@ -372,7 +372,7 @@ public partial class MainWindow
                 {
                     if (IsBinaryContent(path))
                         return (System.Text.Encoding.UTF8, true);
-                    return (DetectFileEncoding(path), false);
+                    return (SearchEngine.DetectFileEncoding(path), false);
                 });
 
                 isCorrupted = corrupted;

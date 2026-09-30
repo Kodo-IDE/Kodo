@@ -142,7 +142,7 @@ public partial class MainWindow
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
         if (_currentFolderPath is null) return;
 
-        var relativePath = GetRelativePathOrName(_currentFolderPath, item.FullPath);
+        var relativePath = SearchEngine.GetRelativePathOrName(_currentFolderPath, item.FullPath);
         if (!string.IsNullOrEmpty(relativePath))
         {
             SearchIncludeFilter = item.IsDirectory
@@ -248,7 +248,7 @@ public partial class MainWindow
         var searchIndex = 0;
         while (searchIndex <= text.Length)
         {
-            var m = FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            var m = SearchEngine.FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
             if (m.Offset < 0) break;
             count++;
             searchIndex = m.Offset + m.Length;
@@ -753,7 +753,7 @@ public partial class MainWindow
                 results = await Task.Run(() =>
                 {
                     var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-                    return SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token);
+                    return SearchEngine.SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token);
                 }, token);
             }
             else
@@ -825,109 +825,9 @@ public partial class MainWindow
         rules.IncludeFilterSnapshot = includeFilter ?? "";
         rules.ExcludeFilterSnapshot = excludeFilter ?? "";
         var files = new List<string>();
-        EnumerateProjectFiles(root, files, rules);
+        SearchEngine.EnumerateProjectFiles(root, files, rules);
         _searchFileCache = (files, rules);
         return _searchFileCache.Value;
-    }
-
-    private static void EnumerateProjectFiles(string root, List<string> files, SearchIgnoreRules ignoreRules, HashSet<string>? visited = null, int depth = 0)
-    {
-        visited ??= new HashSet<string>(FileSystemPaths.Comparer);
-        if (depth > 64) return;
-        try
-        {
-            var normalized = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
-            if (!visited.Add(normalized))
-                return;
-
-            foreach (var dir in Directory.GetDirectories(root))
-            {
-                if (ignoreRules.ShouldSkipDirectory(dir)) continue;
-                try
-                {
-                    var real = new DirectoryInfo(dir).ResolveLinkTarget(returnFinalTarget: true)?.FullName
-                        ?? Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar);
-                    if (!visited.Add(real))
-                        continue;
-                }
-                catch { continue; }
-                EnumerateProjectFiles(dir, files, ignoreRules, visited, depth + 1);
-            }
-            foreach (var file in Directory.GetFiles(root))
-            {
-                if (ignoreRules.ShouldSkipFile(file)) continue;
-                files.Add(file);
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    private static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
-    {
-        Regex? regex = null;
-        if (useRegex)
-        {
-            try
-            {
-                var options = matchCase ? RegexOptions.None : RegexOptions.IgnoreCase;
-                regex = new Regex(query, options | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
-            }
-            catch
-            {
-                return new List<SearchResultItem>();
-            }
-        }
-
-        var scoredResults = new List<(SearchResultItem Item, int Score)>();
-        foreach (var file in files)
-        {
-            token.ThrowIfCancellationRequested();
-            var name = Path.GetFileName(file);
-
-            if (regex is not null)
-            {
-                Match match;
-                try { match = regex.Match(name); }
-                catch (RegexMatchTimeoutException) { continue; }
-                if (!match.Success) continue;
-
-                var matchIndices = new List<int>();
-                foreach (Group g in match.Groups)
-                    foreach (Capture c in g.Captures)
-                        for (var i = 0; i < c.Length; i++)
-                            matchIndices.Add(c.Index + i);
-
-                scoredResults.Add((new SearchResultItem
-                {
-                    Path = file,
-                    DisplayName = name,
-                    RelativePath = GetRelativePathOrName(root, file),
-                    Icon = FileTreeItem.GetFileIcon(name),
-                    MatchedIndices = matchIndices,
-                    Score = match.Index == 0 ? 2000 : 1000,
-                }, match.Index == 0 ? 2000 : 1000));
-            }
-            else
-            {
-                var (score, indices) = FuzzyMatch.Match(query, name, matchCase);
-                if (score < 0) continue;
-
-                scoredResults.Add((new SearchResultItem
-                {
-                    Path = file,
-                    DisplayName = name,
-                    RelativePath = GetRelativePathOrName(root, file),
-                    Icon = FileTreeItem.GetFileIcon(name),
-                    MatchedIndices = indices,
-                    Score = score,
-                }, score));
-            }
-        }
-
-        scoredResults.Sort((a, b) => b.Score.CompareTo(a.Score));
-        return scoredResults.Select(r => r.Item).ToList();
     }
 
     private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
@@ -991,7 +891,7 @@ public partial class MainWindow
                     else
                     {
                         matched = line.Contains(query, comparison);
-                        if (matched && wholeWord && !LineContainsWholeWord(line, query, comparison))
+                        if (matched && wholeWord && !SearchEngine.LineContainsWholeWord(line, query, comparison))
                             matched = false;
                     }
 
@@ -1001,9 +901,9 @@ public partial class MainWindow
                     {
                         Path = file,
                         DisplayName = Path.GetFileName(file),
-                        RelativePath = GetRelativePathOrName(root, file),
+                        RelativePath = SearchEngine.GetRelativePathOrName(root, file),
                         LineNumber = lineNumber,
-                        PreviewText = $"{lineNumber}: {TrimSearchPreview(line)}",
+                        PreviewText = $"{lineNumber}: {SearchEngine.TrimSearchPreview(line)}",
                         Icon = FileTreeItem.GetFileIcon(file),
                         MatchedPreviewIndices = matchIndices is not null ? matchIndices.ToArray() : System.Array.Empty<int>(),
                     });
@@ -1021,51 +921,6 @@ public partial class MainWindow
         return (results, truncated);
     }
 
-    private static bool LineContainsWholeWord(string line, string needle, StringComparison comparison)
-    {
-        var idx = 0;
-        while (idx <= line.Length - needle.Length)
-        {
-            idx = line.IndexOf(needle, idx, comparison);
-            if (idx < 0) return false;
-            if (IsWholeWordMatch(line, idx, needle.Length))
-                return true;
-            idx += Math.Max(1, needle.Length);
-        }
-        return false;
-    }
-
-    private static string TrimSearchPreview(string line)
-    {
-        var trimmed = line.Trim();
-        return trimmed.Length <= 140 ? trimmed : trimmed[..140];
-    }
-
-    private static System.Text.Encoding DetectFileEncoding(string path)
-    {
-        try
-        {
-            Span<byte> bom = stackalloc byte[4];
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var read = fs.Read(bom);
-
-            if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
-                return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
-            if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
-                return System.Text.Encoding.Unicode;
-            if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
-                return System.Text.Encoding.BigEndianUnicode;
-            if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
-                return System.Text.Encoding.UTF32;
-
-            return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        }
-        catch
-        {
-            return System.Text.Encoding.UTF8;
-        }
-    }
-
     private void FindNextButton_OnClick(object? sender, RoutedEventArgs e) =>
         FindInEditor(forward: true);
 
@@ -1081,7 +936,7 @@ public partial class MainWindow
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
-        var match = FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
+        var match = SearchEngine.FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
         if (match.Offset < 0)
             return;
 
@@ -1111,7 +966,7 @@ FindInEditor(forward: true);
         var replacement = ReplaceText ?? string.Empty;
         var regex = BuildFindRegex();
 
-        var matches = EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex).ToList();
+        var matches = SearchEngine.EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex).ToList();
 
         if (matches.Count == 0)
             return;
@@ -1166,16 +1021,16 @@ FindInEditor(forward: true);
         (int Offset, int Length) match;
         if (forward)
         {
-            match = FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            match = SearchEngine.FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
             if (match.Offset < 0)
-                match = FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+                match = SearchEngine.FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
         }
         else
         {
             var searchTo = Math.Max(0, caretOffset - 1);
-            match = FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+            match = SearchEngine.FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
             if (match.Offset < 0)
-                match = FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+                match = SearchEngine.FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
         }
 
         if (match.Offset < 0) return;
@@ -1193,78 +1048,6 @@ FindInEditor(forward: true);
             UpdateFindStatusText();
         }
     }
-
-    private static (int Offset, int Length) FindNextMatch(string text, string needle, int startIndex, bool forward, StringComparison comparison, bool wholeWord, Regex? regex = null)
-    {
-        if (regex is not null)
-        {
-            if (forward)
-            {
-                var searchFrom = Math.Max(0, startIndex);
-                while (searchFrom <= text.Length)
-                {
-                    var m = regex.Match(text, searchFrom);
-                    if (!m.Success) return (-1, 0);
-                    if (!wholeWord || IsWholeWordMatch(text, m.Index, m.Length))
-                        return (m.Index, m.Length);
-                    searchFrom = m.Index + Math.Max(1, m.Length);
-                }
-                return (-1, 0);
-            }
-            else
-            {
-                (int Offset, int Length) last = (-1, 0);
-                foreach (Match m in regex.Matches(text))
-                {
-                    if (m.Index > startIndex) break;
-                    if (wholeWord && !IsWholeWordMatch(text, m.Index, m.Length)) continue;
-                    last = (m.Index, m.Length);
-                }
-                return last;
-            }
-        }
-
-        if (string.IsNullOrEmpty(needle))
-            return (-1, 0);
-
-        if (forward)
-        {
-            var index = Math.Max(0, startIndex);
-            while (index <= text.Length - needle.Length)
-            {
-                index = text.IndexOf(needle, index, comparison);
-                if (index < 0) return (-1, 0);
-                if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
-                    return (index, needle.Length);
-                index += Math.Max(1, needle.Length);
-            }
-
-            return (-1, 0);
-        }
-
-        var searchTo = Math.Min(Math.Max(0, startIndex), text.Length - 1);
-        while (searchTo >= 0)
-        {
-            var index = text.LastIndexOf(needle, searchTo, comparison);
-            if (index < 0) return (-1, 0);
-            if (!wholeWord || IsWholeWordMatch(text, index, needle.Length))
-                return (index, needle.Length);
-            searchTo = index - 1;
-        }
-
-        return (-1, 0);
-    }
-
-    private static bool IsWholeWordMatch(string text, int index, int length)
-    {
-        static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
-
-        var beforeOk = index == 0 || !IsWordChar(text[index - 1]);
-        var afterIndex = index + length;
-        var afterOk = afterIndex >= text.Length || !IsWordChar(text[afterIndex]);
-        return beforeOk && afterOk;
-    }
-    private static IEnumerable<(int Offset, int Length)> EnumerateFindMatches(string text, string needle, StringComparison cmp, bool wholeWord, Regex? regex) { var idx = 0; while (idx <= text.Length) { var m = FindNextMatch(text, needle, idx, true, cmp, wholeWord, regex); if (m.Offset < 0) yield break; yield return m; idx = m.Offset + Math.Max(1, m.Length); } }
 
     private void UpdateFindHighlights()
     {
@@ -1300,7 +1083,7 @@ FindInEditor(forward: true);
             Task.Run(() =>
             {
                 var matches = new List<(int Offset, int Length)>();
-                foreach (var m in EnumerateFindMatches(textCopy, findCopy, compCopy, wholeCopy, regexCopy))
+                foreach (var m in SearchEngine.EnumerateFindMatches(textCopy, findCopy, compCopy, wholeCopy, regexCopy))
                     matches.Add(m);
                 return matches;
             }).ContinueWith(t =>
@@ -1330,7 +1113,7 @@ FindInEditor(forward: true);
         _findHighlightRenderer.Clear();
         _findMatchOffsets.Clear();
         _currentFindMatchIndex = -1;
-        foreach (var m in EnumerateFindMatches(snapshotText, snapshotFind, comparison, wholeWord, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
+        foreach (var m in SearchEngine.EnumerateFindMatches(snapshotText, snapshotFind, comparison, wholeWord, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
 
         if (_findMatchOffsets.Count > 0)
         {

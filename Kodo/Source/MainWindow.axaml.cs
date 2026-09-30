@@ -5450,7 +5450,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         {
                             if (IsBinaryContent(path))
                                 return (System.Text.Encoding.UTF8, true);
-                            return (DetectFileEncoding(path), false);
+                            return (SearchEngine.DetectFileEncoding(path), false);
                         }).ConfigureAwait(false);
 
                         string content;
@@ -6274,7 +6274,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         var encToUse = tab.Encoding ?? _currentFileEncoding;
                         if (encToUse == System.Text.Encoding.UTF8 && File.Exists(tab.Path))
                         {
-                            try { encToUse = DetectFileEncoding(tab.Path); } catch { }
+                            try { encToUse = SearchEngine.DetectFileEncoding(tab.Path); } catch { }
                         }
                         await File.WriteAllTextAsync(tab.Path, textToSave, encToUse);
                         tab.Content = textToSave;
@@ -7761,19 +7761,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             ExtensionsStatusText = $"Rename failed: {ex.Message}";
             await ShowWarningDialogAsync("Rename file", ex);
-        }
-    }
-
-    private static string GetRelativePathOrName(string root, string path)
-    {
-        try
-        {
-            var rel = Path.GetRelativePath(root, path);
-            return string.IsNullOrEmpty(rel) ? Path.GetFileName(path) : rel;
-        }
-        catch
-        {
-            return path;
         }
     }
 
