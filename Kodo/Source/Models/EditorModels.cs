@@ -234,6 +234,8 @@ internal enum UnsavedTabAction
 
 public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 {
+    private const int MaxDepthCacheEntries = 2048;
+
     public KnownLayer Layer => KnownLayer.Background;
 
     public int TabSize { get; set; } = 4;
@@ -243,15 +245,14 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     public IBrush GuideBrush { get; set; } = new SolidColorBrush(Color.Parse("#808080"), 0.4);
 
     private static readonly DashStyle GuideDashStyle = new([2, 2], 0);
+
     private Pen? _cachedPen;
     private IBrush? _cachedBrush;
-    private readonly Dictionary<int, int> _depthCache = new();
-    private int _cachedTabSize = -1;
 
-    public void InvalidateCache()
-    {
-        _depthCache.Clear();
-    }
+    private readonly Dictionary<int, int> _depthCache = new();
+    private ITextSourceVersion? _depthCacheVersion;
+    private AvaloniaEdit.Document.TextDocument? _depthCacheDocument;
+    private int _depthCacheTabSize = -1;
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
@@ -269,70 +270,106 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         if (document is null || document.LineCount == 0)
             return;
 
-        if (textView.VisualLines.Count == 0)
+        var visualLines = textView.VisualLines;
+        var lineCount = visualLines.Count;
+        if (lineCount == 0)
             return;
 
         var scrollX = textView.ScrollOffset.X;
         var scrollY = textView.ScrollOffset.Y;
 
-        var refLine = textView.VisualLines[0].FirstDocumentLine;
+        var refLine = visualLines[0].FirstDocumentLine;
         var originX = textView.GetVisualPosition(
             new AvaloniaEdit.TextViewPosition(refLine.LineNumber, 1),
             VisualYPosition.LineTop).X - scrollX;
-        if (double.IsNaN(originX) || double.IsInfinity(originX)) return;
-        var pixelsPerIndentLevel = TabSize * spaceWidth;
-        if (pixelsPerIndentLevel <= 0) return;
-        var firstVisibleLevel = Math.Max(1, (int)(textView.ScrollOffset.X / pixelsPerIndentLevel) - 1);
-        var visibleLevelCount = Math.Min(128, (int)Math.Ceiling(textView.Bounds.Width / pixelsPerIndentLevel) + 3);
+        if (double.IsNaN(originX) || double.IsInfinity(originX))
+            return;
 
-        if (_cachedPen is null || !ReferenceEquals(_cachedBrush, GuideBrush) || _cachedTabSize != TabSize)
+        var viewportWidth = textView.Bounds.Width;
+        SyncDepthCache(document);
+
+        var geometry = new StreamGeometry();
+        var drew = false;
+        using (var context = geometry.Open())
+        {
+            for (var i = 0; i < lineCount; i++)
+            {
+                var visualLine = visualLines[i];
+                var depth = GetVisibleLineDepth(document, visualLine.FirstDocumentLine.LineNumber);
+                if (depth <= 0) continue;
+
+                var top = visualLine.VisualTop - scrollY;
+                var bottom = top + visualLine.Height;
+                if (bottom <= top) continue;
+
+                for (var level = 1; level <= depth; level++)
+                {
+                    var x = originX + (level * TabSize - 1) * spaceWidth;
+                    if (double.IsNaN(x) || double.IsInfinity(x)) continue;
+                    if (x < 0 || x > viewportWidth) continue;
+
+                    context.BeginFigure(new Point(x, top), false);
+                    context.LineTo(new Point(x, bottom), true);
+                    context.EndFigure(false);
+                    drew = true;
+                }
+            }
+        }
+
+        if (!drew) return;
+        var pen = ResolvePen();
+        if (pen is not null)
+            drawingContext.DrawGeometry(null, pen, geometry);
+    }
+
+    private Pen? ResolvePen()
+    {
+        if (_cachedPen is null || !ReferenceEquals(_cachedBrush, GuideBrush))
         {
             _cachedBrush = GuideBrush;
-            _cachedTabSize = TabSize;
             _cachedPen = new Pen(GuideBrush, 1, GuideDashStyle);
         }
-        var pen = _cachedPen;
+        return _cachedPen;
+    }
 
-        if (_depthCache.Count > 400)
-            _depthCache.Clear();
-
-        foreach (var visualLine in textView.VisualLines)
+    private void SyncDepthCache(AvaloniaEdit.Document.TextDocument document)
+    {
+        if (!ReferenceEquals(_depthCacheDocument, document) || _depthCacheTabSize != TabSize)
         {
-            var lineNumber = visualLine.FirstDocumentLine.LineNumber;
-            var lineText = document.GetText(document.GetLineByNumber(lineNumber));
-            int depth;
-            if (!_depthCache.TryGetValue(lineNumber, out depth))
-            {
-                depth = GetVisibleLineDepth(document, lineNumber, lineText);
-                _depthCache[lineNumber] = depth;
-            }
-            if (depth <= 0) continue;
+            _depthCache.Clear();
+            _depthCacheDocument = document;
+            _depthCacheVersion = null;
+            _depthCacheTabSize = TabSize;
+            return;
+        }
 
-            var top = visualLine.VisualTop - scrollY;
-            var bottom = top + visualLine.Height;
-            var indentColumns = GetIndentColumns(lineText);
+        if (_depthCacheVersion is null)
+        {
+            _depthCacheVersion = document.Version;
+            return;
+        }
 
-            var finalLevel = Math.Min(depth, firstVisibleLevel + visibleLevelCount - 1);
-            for (var level = firstVisibleLevel; level <= finalLevel; level++)
-            {
-                var indentBoundary = level * TabSize;
-                var x = originX + indentBoundary * spaceWidth;
-                if (indentColumns >= indentBoundary && TryGetIndentCharacterColumn(lineText, indentBoundary, out var characterColumn))
-                {
-                    x = textView.GetVisualPosition(
-                        new AvaloniaEdit.TextViewPosition(lineNumber, characterColumn + 1),
-                        VisualYPosition.LineTop).X - scrollX;
-                }
-                if (double.IsNaN(x) || double.IsInfinity(x) || x < 0 || x > textView.Bounds.Width) continue;
-
-                drawingContext.DrawLine(pen, new Point(x, top), new Point(x, bottom));
-            }
+        if (_depthCacheVersion.CompareAge(document.Version) < 0)
+        {
+            _depthCache.Clear();
+            _depthCacheVersion = document.Version;
         }
     }
 
-    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber, string text)
+    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber)
     {
-        if (!string.IsNullOrWhiteSpace(text))
+        if (_depthCache.TryGetValue(lineNumber, out var cached)) return cached;
+        var depth = ComputeVisibleLineDepth(document, lineNumber);
+        if (_depthCache.Count >= MaxDepthCacheEntries) _depthCache.Clear();
+        _depthCache[lineNumber] = depth;
+        return depth;
+    }
+
+    private int ComputeVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber)
+    {
+        var docLine = document.GetLineByNumber(lineNumber);
+        var text = document.GetTextAsMemory(docLine.Offset, docLine.Length).Span;
+        if (!text.IsWhiteSpace())
             return GetIndentColumns(text) / TabSize;
 
         const int maxLookAround = 32;
@@ -340,23 +377,19 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         for (var a = lineNumber - 1; a >= 1 && lineNumber - a <= maxLookAround; a--)
         {
             var aboveLine = document.GetLineByNumber(a);
-            var aboveText = document.GetText(aboveLine);
-            if (!string.IsNullOrWhiteSpace(aboveText))
-            {
-                above = GetIndentColumns(aboveText) / TabSize;
-                break;
-            }
+            var aboveText = document.GetTextAsMemory(aboveLine.Offset, aboveLine.Length).Span;
+            if (aboveText.IsWhiteSpace()) continue;
+            above = GetIndentColumns(aboveText) / TabSize;
+            break;
         }
         var below = 0;
         for (var b = lineNumber + 1; b <= document.LineCount && b - lineNumber <= maxLookAround; b++)
         {
             var belowLine = document.GetLineByNumber(b);
-            var belowText = document.GetText(belowLine);
-            if (!string.IsNullOrWhiteSpace(belowText))
-            {
-                below = GetIndentColumns(belowText) / TabSize;
-                break;
-            }
+            var belowText = document.GetTextAsMemory(belowLine.Offset, belowLine.Length).Span;
+            if (belowText.IsWhiteSpace()) continue;
+            below = GetIndentColumns(belowText) / TabSize;
+            break;
         }
         if (above == 0 && below == 0) return 0;
         if (above == 0) return below;
@@ -364,7 +397,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         return Math.Min(above, below);
     }
 
-    private int GetIndentColumns(string lineText)
+    private int GetIndentColumns(ReadOnlySpan<char> lineText)
     {
         var columns = 0;
         foreach (var ch in lineText)
@@ -374,29 +407,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             else break;
         }
         return columns;
-    }
-
-    private bool TryGetIndentCharacterColumn(string lineText, int targetIndentColumn, out int characterColumn)
-    {
-        var columns = 0;
-        for (var index = 0; index < lineText.Length; index++)
-        {
-            var ch = lineText[index];
-            if (ch == ' ')
-                columns++;
-            else if (ch == '\t')
-                columns += TabSize - (columns % TabSize);
-            else
-                break;
-
-            if (columns == targetIndentColumn)
-            {
-                characterColumn = index + 1;
-                return true;
-            }
-        }
-        characterColumn = 0;
-        return false;
     }
 }
 

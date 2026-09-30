@@ -585,7 +585,7 @@ internal static class Program
             return 0;
         }
 
-        Log($"Hotfix transaction {tx.TransactionId} base={tx.BaseVersion} HF{tx.HotfixLevel} platform={tx.PlatformRid} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
+        Log($"Hotfix transaction {tx.TransactionId} version={Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} platform={tx.PlatformRid} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
 
         await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
         await Task.Delay(800).ConfigureAwait(false);
@@ -617,7 +617,7 @@ internal static class Program
             liveBase = tx.BaseVersion;
             liveLevel = shippedLevel;
             liveLastKnownGood = Math.Max(liveLastKnownGood, shippedLevel);
-            Log($"Shipped hotfix floor is HF{shippedLevel}; stale state ignored.");
+            Log($"Shipped hotfix floor is {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, shippedLevel)}; stale state ignored.");
         }
         if (!string.IsNullOrWhiteSpace(liveBase) &&
             !Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion))
@@ -628,7 +628,7 @@ internal static class Program
         }
         if (Kodo.HotfixShared.HotfixShared.AreSameBaseVersion(liveBase, tx.BaseVersion) && tx.HotfixLevel <= liveLevel)
         {
-            Log($"Hotfix HF{tx.HotfixLevel} not newer than installed HF{liveLevel} – discarding without changes.");
+            Log($"Hotfix {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} not newer than installed {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, liveLevel)} - discarding without changes.");
             return 25;
         }
 
@@ -890,7 +890,7 @@ internal static class Program
 
         var failures = Kodo.HotfixShared.HotfixShared.RecordFailure(expectedDir, tx.BaseVersion, tx.HotfixLevel);
         if (failures >= Kodo.HotfixShared.HotfixFailurePolicy.MaxAttempts)
-            Log($"Hotfix marked failed: HF{tx.HotfixLevel} failed {failures} times and will no longer be offered.");
+            Log($"Hotfix marked failed: {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} failed {failures} times and will no longer be offered.");
         Log("Rollback completed");
 
         RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
@@ -1025,7 +1025,7 @@ internal static class Program
             return 33;
         }
 
-        Log($"Manual rollback of hotfix transaction {tx.TransactionId} base={tx.BaseVersion} HF{tx.HotfixLevel}");
+        Log($"Manual rollback of hotfix transaction {tx.TransactionId} version={Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)}");
         await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
         if (IsKodoRunning(tx.KodoExePath))
         {

@@ -592,11 +592,39 @@
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="CornerRadius" Value="6" />
         </Style>
-        <Style Selector="ListBox.searchresults ListBoxItem:selected /template/ ContentPresenter">
+                <Style Selector="ListBox.searchresults ListBoxItem:selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="CornerRadius" Value="6" />
         </Style>
+
+        <Style Selector="ListBox.codeactions">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="MaxHeight" Value="340" />
+        </Style>
+        <Style Selector="ListBox.codeactions ListBoxItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+        </Style>
+        <Style Selector="ListBox.codeactions ListBoxItem:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="ListBox.codeactions ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="CornerRadius" Value="6" />
+        </Style>
+        <Style Selector="ListBox.codeactions ListBoxItem:disabled /template/ ContentPresenter">
+            <Setter Property="Opacity" Value="0.55" />
+        </Style>
+
+
         <Style Selector="ListBox.searchresults Button.groupheader">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -6535,18 +6563,13 @@
                                                  Spacing="2"
                                                  VerticalAlignment="Center"
                                                  HorizontalAlignment="Right">
-                                         <TextBlock x:Name="AboutVersionText"
+                                          <TextBlock x:Name="AboutVersionText"
                                                     FontSize="13"
                                                     Foreground="{Binding MutedTextBrush}"
                                                     HorizontalAlignment="Right"
                                                     PointerPressed="AboutVersionText_OnPointerPressed"
                                                     Text="{Binding CurrentAppVersionDisplay}" />
-                                         <TextBlock FontSize="11"
-                                                    Foreground="{Binding MutedTextBrush}"
-                                                    HorizontalAlignment="Right"
-                                                    Opacity="0.8"
-                                                    Text="{Binding CurrentHotfixDisplay}" />
-                                     </StackPanel>
+                                      </StackPanel>
                                 </Grid>
 
                                 <TextBlock Foreground="{Binding MutedTextBrush}"

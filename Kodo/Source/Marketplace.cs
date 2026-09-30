@@ -1536,6 +1536,8 @@ public partial class MainWindow
                 ExtensionsStatusText = $"LSP check failed for {cfg.EffectiveProviderId}: {ex.Message}";
             }
         }
+        InvalidateLspResolutionCaches();
+        InvalidateDotnetProjectCache();
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
     }
 
@@ -1723,6 +1725,8 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP provider '{pid}' now has no consumers but is kept (no auto-cleanup).");
                 }
             }
+            InvalidateLspResolutionCaches();
+            InvalidateDotnetProjectCache();
             LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
 
             ExtensionsStatusText = $"{extension.Name} uninstalled.";

@@ -66,6 +66,8 @@ public sealed class DebouncedWork : IDisposable
 
 public sealed class UiStallWatchdog : IDisposable
 {
+    private const long MaxReportableGapMs = 30_000;
+
     private readonly DispatcherTimer _timer;
     private long _lastTickMs;
 
@@ -78,11 +80,13 @@ public sealed class UiStallWatchdog : IDisposable
             var now = Environment.TickCount64;
             var gap = now - _lastTickMs;
             _lastTickMs = now;
-            if (gap >= 2500)
+            if (gap >= 2500 && gap <= MaxReportableGapMs)
                 KodoDiagnostics.ReportSlowStage("UI-thread stall (no dispatch)", gap, 2500);
         };
         _timer.Start();
     }
+
+    public void Reset() => _lastTickMs = Environment.TickCount64;
 
     public void Dispose() => _timer.Stop();
 }

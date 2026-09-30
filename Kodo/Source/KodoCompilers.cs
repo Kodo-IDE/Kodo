@@ -2353,15 +2353,62 @@ public partial class MainWindow
         return null;
     }
 
+    private static readonly HashSet<string> DotnetProjectExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".csproj", ".fsproj", ".vbproj", ".sln", ".slnx"
+    };
+
+    private static readonly Dictionary<string, bool> DotnetProjectCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object DotnetProjectCacheLock = new();
+    private const int DotnetProjectCacheLimit = 64;
+
+    public void InvalidateDotnetProjectCache()
+    {
+        lock (DotnetProjectCacheLock)
+        {
+            DotnetProjectCache.Clear();
+        }
+    }
+
     private bool HasDotnetProject(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder))
+            return false;
+
+        string key;
+        try
+        {
+            key = Path.GetFullPath(folder);
+        }
+        catch
+        {
+            return false;
+        }
+
+        lock (DotnetProjectCacheLock)
+        {
+            if (DotnetProjectCache.TryGetValue(key, out var cached))
+                return cached;
+        }
+
+        var found = ScanForDotnetProject(key);
+
+        lock (DotnetProjectCacheLock)
+        {
+            if (DotnetProjectCache.Count >= DotnetProjectCacheLimit)
+                DotnetProjectCache.Clear();
+            DotnetProjectCache[key] = found;
+        }
+
+        return found;
+    }
+
+    private static bool ScanForDotnetProject(string folder)
     {
         try
         {
-            if (Directory.EnumerateFiles(folder, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
-            if (Directory.EnumerateFiles(folder, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
-            if (Directory.EnumerateFiles(folder, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
-            if (Directory.EnumerateFiles(folder, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
-            if (Directory.EnumerateFiles(folder, "*.slnx", SearchOption.TopDirectoryOnly).Any()) return true;
+            if (DirectoryHasProjectFile(folder))
+                return true;
 
             foreach (var sub in Directory.EnumerateDirectories(folder))
             {
@@ -2372,10 +2419,22 @@ public partial class MainWindow
                     name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
                     name.Equals("packages", StringComparison.OrdinalIgnoreCase))
                     continue;
-                if (Directory.EnumerateFiles(sub, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return true;
-                if (Directory.EnumerateFiles(sub, "*.fsproj", SearchOption.TopDirectoryOnly).Any()) return true;
-                if (Directory.EnumerateFiles(sub, "*.vbproj", SearchOption.TopDirectoryOnly).Any()) return true;
-                if (Directory.EnumerateFiles(sub, "*.sln", SearchOption.TopDirectoryOnly).Any()) return true;
+                if (DirectoryHasProjectFile(sub))
+                    return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static bool DirectoryHasProjectFile(string folder)
+    {
+        try
+        {
+            foreach (var entry in Directory.EnumerateFileSystemEntries(folder))
+            {
+                if (DotnetProjectExtensions.Contains(Path.GetExtension(entry)))
+                    return true;
             }
         }
         catch { }

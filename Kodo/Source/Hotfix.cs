@@ -41,7 +41,7 @@ internal static class HotfixVersion
     }
 
     public static string Format(string baseVersion, int hotfixLevel) =>
-        $"{NormalizeBaseVersion(baseVersion) ?? baseVersion?.Trim()} HF{Math.Max(0, hotfixLevel)}";
+        Shared.FormatVersion(baseVersion, hotfixLevel);
 
     public static string Format(HotfixState state) =>
         Format(state.BaseVersion, state.HotfixLevel);
@@ -85,30 +85,12 @@ internal static class HotfixVersion
         return IsHotfixUpdateAvailable(local.BaseVersion, local.HotfixLevel, remote.BaseVersion, remote.Hotfix);
     }
 
-    internal static string? NormalizeBaseVersion(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        var core = raw.Trim();
-        if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
-        var isBeta = core.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
-        if (isBeta) core = core[..^5];
-        var dash = core.IndexOf('-');
-        if (dash >= 0) core = core[..dash];
-        var plus = core.IndexOf('+');
-        if (plus >= 0) core = core[..plus];
-        core = core.Trim();
-        if (core.Length == 0) return null;
-        var segments = core.Split('.');
-        if (segments.Length == 0) return null;
-        foreach (var s in segments)
-        {
-            if (s.Length == 0) return null;
-            foreach (var c in s)
-                if (!char.IsDigit(c)) return null;
-            if (!int.TryParse(s, out _)) return null;
-        }
-        return isBeta ? core + "-BETA" : core;
-    }
+    public static string GetHotfixSuffix(int hotfixLevel) => Shared.HotfixSuffix.ToSuffix(hotfixLevel);
+
+    internal static string? NormalizeBaseVersion(string? raw) => Shared.NormalizeBaseVersion(raw);
+
+    internal static bool TryParseVersion(string? raw, out string? baseVersion, out int hotfixLevel) =>
+        Shared.TryParseVersion(raw, out baseVersion, out hotfixLevel);
 }
 
 internal sealed class HotfixState
@@ -563,15 +545,8 @@ internal static class HotfixDiscovery
         baseVersion = null;
         hotfixLevel = 0;
         if (string.IsNullOrWhiteSpace(tag)) return false;
-        var parts = tag.Trim().Split('/');
-        if (parts.Length != 2 || !parts[1].StartsWith("hotfix", StringComparison.OrdinalIgnoreCase)) return false;
-        if (!System.Text.RegularExpressions.Regex.IsMatch(
-            parts[0].Trim(), @"^[vV]?\d+(?:\.\d+)+(?:-BETA)?$",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant)) return false;
-        var normalizedBase = HotfixVersion.NormalizeBaseVersion(parts[0]);
-        if (normalizedBase is null) return false;
-        var number = parts[1][6..];
-        if (number.Length == 0 || number.Any(c => !char.IsAsciiDigit(c)) || !int.TryParse(number, out var level) || level < 1) return false;
+        if (!HotfixVersion.TryParseVersion(tag, out var normalizedBase, out var level)) return false;
+        if (level < 1) return false;
         baseVersion = normalizedBase;
         hotfixLevel = level;
         return true;
@@ -594,18 +569,18 @@ internal static class HotfixDiscovery
         {
             if (asset is null) continue;
             if (string.IsNullOrWhiteSpace(asset.Name) || asset.Size <= 0) continue;
-            var safeVersion = (HotfixVersion.NormalizeBaseVersion(baseVersion) ?? "").TrimStart('v', 'V');
+            var safeVersion = HotfixVersion.Format(baseVersion, hotfixLevel);
             var expectedName = installKind?.ToLowerInvariant() switch
             {
-                "appimage" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-v{safeVersion}-Hotfix{hotfixLevel}.AppImage",
-                "deb" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-v{safeVersion}-Hotfix{hotfixLevel}.deb",
+                "appimage" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-{safeVersion}.AppImage",
+                "deb" when rid.StartsWith("linux-", StringComparison.Ordinal) => $"Kodo-Linux-{rid[6..]}-{safeVersion}.deb",
                 _ => rid switch
-            {
-                "win-x64" => $"Kodo-Windows-v{safeVersion}-Hotfix{hotfixLevel}.zip",
-                "linux-x64" => $"Kodo-Linux-x64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
-                "linux-arm64" => $"Kodo-Linux-arm64-v{safeVersion}-Hotfix{hotfixLevel}.tar.gz",
-                _ => ""
-            }
+                {
+                    "win-x64" => $"Kodo-Windows-{safeVersion}.zip",
+                    "linux-x64" => $"Kodo-Linux-x64-{safeVersion}.tar.gz",
+                    "linux-arm64" => $"Kodo-Linux-arm64-{safeVersion}.tar.gz",
+                    _ => ""
+                }
             };
             if (expectedName.Length == 0 || !string.Equals(asset.Name, expectedName, StringComparison.OrdinalIgnoreCase)) continue;
             if (!Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var downloadUri) ||
@@ -635,8 +610,6 @@ internal static class HotfixDiscovery
             if (release is null) continue;
             if (string.IsNullOrWhiteSpace(release.TagName)) continue;
             if (!TryParseHotfixTag(release.TagName, out var baseVersion, out var level)) continue;
-            // GitHub may mark beta hotfix releases as prereleases. They remain
-            // discoverable for explicit opt-in, but are never auto-applied.
             if (release.Draft || (release.Prerelease && !baseVersion!.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase))) continue;
             if (!HotfixVersion.AreSameBaseVersion(baseVersion, installedBase)) continue;
             if (level <= installedHotfixLevel) continue;
@@ -897,9 +870,9 @@ internal static class HotfixStaging
             if (!HotfixVersion.AreSameBaseVersion(manifest.BaseVersion, installedBaseVersion))
                 return Fail($"Base version mismatch: package is '{manifest.BaseVersion}', installed is '{installedBaseVersion}'. Staged package discarded.");
             if (manifest.Hotfix <= installedHotfixLevel)
-                return Fail($"Hotfix HF{manifest.Hotfix} is not newer than installed HF{installedHotfixLevel}. Staged package discarded.");
+                return Fail($"Hotfix {HotfixVersion.Format(manifest.BaseVersion, manifest.Hotfix)} is not newer than installed {HotfixVersion.Format(installedBaseVersion, installedHotfixLevel)}. Staged package discarded.");
             if (installedHotfixLevel < manifest.MinimumHotfix)
-                return Fail($"Hotfix requires HF{manifest.MinimumHotfix} or newer; installed HF{installedHotfixLevel}. Staged package discarded.");
+                return Fail($"Hotfix requires {HotfixVersion.Format(manifest.BaseVersion, manifest.MinimumHotfix)} or newer; installed {HotfixVersion.Format(installedBaseVersion, installedHotfixLevel)}. Staged package discarded.");
             if (!string.Equals(manifest.Platform.Trim(), rid, StringComparison.OrdinalIgnoreCase))
                 return Fail($"Platform mismatch: package is '{manifest.Platform}', this installation is '{rid}'. Staged package discarded.");
 
@@ -953,9 +926,6 @@ internal static class HotfixStaging
     internal static string NormalizeEntryName(string? name) =>
         (name ?? "").Trim().Replace('\\', '/').Trim('/');
 
-    // Linux hotfixes use the documented tar.gz distribution format. Convert
-    // regular-file entries to the engine's canonical ZIP representation only
-    // after rejecting links, special files, unsafe paths, and duplicates.
     internal static string NormalizeArchiveForInstaller(string packagePath, string platformRid)
     {
         if (!string.Equals(platformRid, "linux-x64", StringComparison.OrdinalIgnoreCase) &&
@@ -1158,7 +1128,7 @@ internal static class HotfixStaging
         if (Shared.IsBlocked(updateRoot, candidate.BaseVersion, candidate.HotfixLevel))
         {
             var failures = Shared.FailureCount(updateRoot, candidate.BaseVersion, candidate.HotfixLevel);
-            KodoDiagnostics.LogDebug($"Hotfix {candidate.TagName} blocked after {failures} failed attempts; staying on last known-good HF{installedLastKnownGood}.");
+            KodoDiagnostics.LogDebug($"Hotfix {candidate.TagName} blocked after {failures} failed attempts; staying on last known-good {HotfixVersion.Format(installedBase, installedLastKnownGood)}.");
             throw new InvalidOperationException(
                 $"Hotfix {candidate.TagName} failed {failures} times and is blocked. The installation stays on the last known-good hotfix.");
         }
@@ -1307,10 +1277,11 @@ internal static class HotfixRecovery
         if (HotfixVersion.AreSameBaseVersion(installedState.BaseVersion, tx.BaseVersion) &&
             installedState.HotfixLevel > tx.HotfixLevel)
         {
-            await WriteBackAsync(txPath, Shared.MarkFailed(rawJson, $"Superseded by HF{installedState.HotfixLevel}.")).ConfigureAwait(false);
+            var superseded = HotfixVersion.Format(installedState.BaseVersion, installedState.HotfixLevel);
+            await WriteBackAsync(txPath, Shared.MarkFailed(rawJson, $"Superseded by {superseded}.")).ConfigureAwait(false);
             DeleteStageDir(txPath, updateRoot);
             result.Closed.Add(tx.TransactionId);
-            KodoDiagnostics.LogDebug($"Hotfix transaction {tx.TransactionId} closed: superseded by HF{installedState.HotfixLevel}.");
+            KodoDiagnostics.LogDebug($"Hotfix transaction {tx.TransactionId} closed: superseded by {superseded}.");
             return;
         }
 

@@ -149,9 +149,6 @@ public partial class App : Application
                     if (fullUpdate is not null) return;
                 }
 
-                // Stable hotfixes are required security/correctness fixes and
-                // are checked even when optional full-version updates are off.
-                // Beta hotfixes are filtered out in the background path.
                 await UpdateService.CheckAndHandleHotfixAsync(installInBackground: true);
             }
             catch (Exception ex)

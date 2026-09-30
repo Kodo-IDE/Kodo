@@ -16,7 +16,7 @@
     <UseAppHost>true</UseAppHost>
     <Version>2.1.0-DEV</Version>
     <InformationalVersion>v2.1.0-DEV</InformationalVersion>
-    <HotfixStampBaseVersion>$([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '-DEV$', ''))</HotfixStampBaseVersion>
+    <HotfixStampBaseVersion>$([System.Text.RegularExpressions.Regex]::Replace($([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '-DEV$', '')), '[a-zA-Z]+$', ''))</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 

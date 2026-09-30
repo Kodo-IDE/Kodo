@@ -1,4 +1,4 @@
-﻿// Licensed under the GNU GPL-v3.0
+// Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -129,6 +129,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager;
     private readonly DispatcherTimer _diagnosticPopupShowTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly UiStallWatchdog _stallWatchdog = new();
+    private bool _layoutProbeArmed;
+    private string? _layoutProbeStage;
+    private long _layoutProbeStartTimestamp;
+    private int _layoutProbeThresholdMs = 500;
+
+    private void ArmLayoutProbe(string stage, int thresholdMs = 500)
+    {
+        var editor = EditorTextBox;
+        if (editor is null || _layoutProbeArmed) return;
+        _layoutProbeArmed = true;
+        _layoutProbeStage = stage;
+        _layoutProbeThresholdMs = thresholdMs;
+        _layoutProbeStartTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        editor.LayoutUpdated += LayoutProbe_OnLayoutUpdated;
+    }
+
+    private void LayoutProbe_OnLayoutUpdated(object? sender, EventArgs e)
+    {
+        var editor = EditorTextBox;
+        if (editor is not null) editor.LayoutUpdated -= LayoutProbe_OnLayoutUpdated;
+        var stage = _layoutProbeStage;
+        var threshold = _layoutProbeThresholdMs;
+        _layoutProbeArmed = false;
+        _layoutProbeStage = null;
+        if (stage is null) return;
+        var elapsed = (long)(System.Diagnostics.Stopwatch.GetTimestamp() - _layoutProbeStartTimestamp) * 1000 / System.Diagnostics.Stopwatch.Frequency;
+        KodoDiagnostics.ReportSlowStage(stage, elapsed, threshold, $"len={editor?.Document?.TextLength ?? 0}");
+    }
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
@@ -437,6 +465,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, LoadedExtension?> _contentSniffCache =
         new(FileSystemPaths.Comparer);
     private string? _lastAppliedExtensionFingerprint;
+
+    private LoadedExtension? _appliedSyntaxExtension;
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
 
     private string _findText = string.Empty;
@@ -797,7 +827,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var caret = EditorTextBox.TextArea.Caret;
                     if (caret.Column <= 8)
                     {
-                        var sv = EditorTextBox.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
+                        var sv = EditorHorizontalScrollViewer();
                         if (sv is not null && sv.Offset.X > 10)
                             sv.Offset = new Vector(0, sv.Offset.Y);
                         else
@@ -987,6 +1017,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         ApplyEditorSettings();
         Opened += MainWindow_OnOpened;
+    Activated += (_, _) => _stallWatchdog.Reset();
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
         RefreshState(fullRefresh: true);
@@ -1703,6 +1734,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return Color.FromArgb(color.A, Darken(color.R), Darken(color.G), Darken(color.B));
     }
 
+    private ScrollViewer? _editorHorizontalScrollViewer;
+    private bool _editorHorizontalScrollViewerResolved;
+
+    private ScrollViewer? EditorHorizontalScrollViewer()
+    {
+        if (_editorHorizontalScrollViewerResolved && _editorHorizontalScrollViewer is not null)
+            return _editorHorizontalScrollViewer;
+        if (EditorTextBox is null) return null;
+        try
+        {
+            _editorHorizontalScrollViewer = EditorTextBox
+                .GetVisualDescendants()
+                .OfType<ScrollViewer>()
+                .FirstOrDefault();
+        }
+        catch { _editorHorizontalScrollViewer = null; }
+        _editorHorizontalScrollViewerResolved = true;
+        return _editorHorizontalScrollViewer;
+    }
+
     private void ApplyEditorSettings()
     {
         if (EditorTextBox is null)
@@ -1715,7 +1766,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.Options.ConvertTabsToSpaces = InsertSpaces;
         EditorTextBox.FontSize = EditorFontSize;
         _indentGuideRenderer.TabSize = TabSize;
-        _indentGuideRenderer.InvalidateCache();
         _markdownColorizer.TabSize = TabSize;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
 
@@ -1726,7 +1776,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (EditorTextBox is null)
             return;
 
-        _indentGuideRenderer.InvalidateCache();
         RefreshRunBuildState();
 
         if (string.IsNullOrWhiteSpace(_currentFilePath))
@@ -1755,7 +1804,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void UpdateCurrentDocumentPresentation()
     {
         var presentationWatch = System.Diagnostics.Stopwatch.StartNew();
+        var previewWatch = System.Diagnostics.Stopwatch.StartNew();
         var imagePreview = TryLoadImagePreview(_currentFilePath);
+        previewWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("presentation/image preview", previewWatch.ElapsedMilliseconds, 500, $"path={_currentFilePath}");
         if (!ReferenceEquals(CurrentImagePreview, imagePreview))
             ImageZoomLevel = 1.0;
         CurrentImagePreview = imagePreview;
@@ -1768,9 +1820,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        RefreshCurrentFileSyntaxHighlighting();
+        var stageWatch = System.Diagnostics.Stopwatch.StartNew();
+        RefreshCurrentFileSyntaxHighlighting(stageWatch);
         presentationWatch.Stop();
         KodoDiagnostics.ReportSlowStage("document presentation", presentationWatch.ElapsedMilliseconds, 1000, $"path={_currentFilePath}");
+    }
+
+    private void RefreshCurrentFileSyntaxHighlighting(System.Diagnostics.Stopwatch? stageWatch = null)
+    {
+        if (EditorTextBox is null)
+            return;
+
+        stageWatch ??= System.Diagnostics.Stopwatch.StartNew();
+        stageWatch.Restart();
+        RefreshRunBuildState();
+        stageWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("presentation/run build state", stageWatch.ElapsedMilliseconds, 500, $"path={_currentFilePath}");
+
+        if (string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            CurrentLanguageExtension = null;
+            ClearEditorSyntaxState();
+            _indentGuideRenderer.IsEnabled = false;
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            return;
+        }
+
+        stageWatch.Restart();
+        var langExt = GetLanguageExtension(_currentFilePath);
+        stageWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("presentation/language extension", stageWatch.ElapsedMilliseconds, 500, $"path={_currentFilePath}");
+
+        CurrentLanguageExtension = langExt;
+
+        _indentGuideRenderer.IsEnabled = langExt is not null;
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+
+        if (langExt is null)
+        {
+            ClearEditorSyntaxState();
+        }
+        else
+        {
+            stageWatch.Restart();
+            ApplySyntaxHighlighting(langExt);
+            stageWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("presentation/apply syntax", stageWatch.ElapsedMilliseconds, 500, $"path={_currentFilePath}");
+        }
     }
 
     private void ClearEditorSyntaxState()
@@ -1778,11 +1874,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (EditorTextBox is null)
             return;
 
+        _appliedSyntaxExtension = null;
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         ConfigureInterpolatedStrings(null);
         ConfigureHtmlEmbeddedHighlighting(null);
         ConfigureMarkdownHighlighting(null);
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     private CompiledSyntaxProfile? ResolveHtmlEmbeddedSyntaxProfile(string blockTag, string? typeAttribute)
@@ -1843,7 +1941,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ConfigureInterpolatedStrings(CompiledSyntaxProfile? syntaxProfile)
     {
         _interpolatedStringColorizer.UpdateSyntax(syntaxProfile);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     public bool IsSettingsPageVisible
@@ -2253,9 +2350,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasLatestRelease => LatestRelease is not null;
 
-    public string CurrentAppVersionDisplay => CurrentAppVersion;
-
-    public string CurrentHotfixDisplay => UpdateService.InstalledHotfixDisplay();
+    public string CurrentAppVersionDisplay => UpdateService.InstalledVersionDisplay();
 
     private bool _updateBannerDismissed;
     private bool _extensionUpdateBannerDismissed;
@@ -2959,7 +3054,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspSignatureHelpEnabled == value) return;
             _lspSignatureHelpEnabled = value;
             OnPropertyChanged();
-            if (value) _ = UpdateLspSignatureHelpAsync();
+            if (value) QueueLspPresentationRefresh();
             else ClearLspSignatureHelpTooltip();
             SaveSettings();
         }
@@ -4515,9 +4610,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!fullRefresh)
             return;
 
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         _pendingFullStateRefresh = false;
         RefreshWordCount();
         RefreshNonCaretState();
+        watch.Stop();
+        KodoDiagnostics.ReportSlowStage("editor state refresh", watch.ElapsedMilliseconds, 250);
     }
 
     private void RefreshCaretAndDocumentStats()
@@ -4691,8 +4789,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var spans = await Task.Run(() => _InsightEngine.FindErrors(text, ext, ResolveFenceLanguageExtension, CancellationToken.None));
-            var deadSpans = await Task.Run(() => _InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path));
+            var spans = await Task.Run(() => InsightEngine.FindErrors(text, ext, ResolveFenceLanguageExtension, CancellationToken.None));
+            var deadSpans = await Task.Run(() => InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path));
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;
@@ -5566,6 +5664,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _currentFolderPath = path;
         _searchFileCache = null;
+        InvalidateLspResolutionCaches();
+        InvalidateDotnetProjectCache();
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
         SetupProjectFolderWatcher(path);
@@ -5579,6 +5679,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DisposeProjectFolderWatcher();
         _currentFolderPath = null;
         _searchFileCache = null;
+        InvalidateLspResolutionCaches();
+        InvalidateDotnetProjectCache();
         FileTreeItems.Clear();
         IsFileExplorerVisible = false;
         RefreshState(fullRefresh: true);
@@ -5688,7 +5790,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (saveForceFull)
                     _ = LspNotifyDidChangeAsync(savingPath!, savingContent);
                 else if (savePending is { Count: > 0 })
-                    _ = LspSyncDocumentAsync(savingPath!, savingContent, savePending);
+                    _ = LspSyncDocumentAsync(savingPath!, () => savingContent, savingContent.Length, savePending);
             }
 
             RefreshState(fullRefresh: true);
@@ -5821,6 +5923,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         contentWatch.Stop();
         KodoDiagnostics.ReportSlowStage("editor content set", contentWatch.ElapsedMilliseconds, 1000, $"len={content?.Length ?? 0}");
+        ArmLayoutProbe("layout/after content set");
         QueueInsightRefresh();
     }
 
@@ -6434,7 +6537,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (hotfix is not null)
                 {
                     var installed = UpdateService.ResolveInstalledHotfix();
-                    CheckForUpdatesStatusText = $"Kodo {installed.BaseVersion} HF{hotfix.HotfixLevel} hotfix available.";
+                    CheckForUpdatesStatusText = $"Kodo {HotfixVersion.Format(installed.BaseVersion, hotfix.HotfixLevel)} hotfix available.";
                     UpdateDialog.ShowForHotfix(hotfix);
                     return;
                 }
@@ -6450,7 +6553,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             IsCheckingForUpdatesManually = false;
-            OnPropertyChanged(nameof(CurrentHotfixDisplay));
+            OnPropertyChanged(nameof(CurrentAppVersionDisplay));
         }
     }
 
@@ -7266,8 +7369,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             sb.AppendLine($"── {title} ──");
         }
 
-        sb.Append("Kodo ").AppendLine(KodoDiagnostics.AppVersion);
-        sb.Append("Hotfix: ").AppendLine(UpdateService.InstalledHotfixDisplay());
+        sb.Append("Kodo ").AppendLine(UpdateService.InstalledVersionDisplay());
         sb.Append("OS: ").AppendLine(KodoDiagnostics.OSDescription);
         sb.Append("Runtime: ").AppendLine(RuntimeInformation.FrameworkDescription);
         sb.Append("Architecture: ").Append(RuntimeInformation.ProcessArchitecture)
@@ -8447,6 +8549,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
+        _insightAnalysisCancellation.Dispose();
+        _insightAnalysisCancellation = new CancellationTokenSource();
         var scanToken = _insightAnalysisCancellation.Token;
 
         List<ErrorSpan>? rawSpans = null;
@@ -8483,7 +8587,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 else
                 {
                     rawSpans = await Task.Run(
-                        () => _InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
+                        () => InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
                         scanToken);
                     KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count} hasConfiguredLsp={hasConfiguredLsp}");
                 }
@@ -8566,13 +8670,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HideDiagnosticPopup();
         try
         {
-            var textRunsChanged = _errorTextDarkener.IsLightTheme;
             if (EditorTextBox.TextArea.TextView.VisualLinesValid)
             {
                 EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
                 EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-                if (textRunsChanged)
-                    EditorTextBox.TextArea.TextView.Redraw();
+                if (_errorTextDarkener.IsLightTheme)
+                    EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+                ArmLayoutProbe("layout/after diagnostics redraw", 400);
             }
             else
             {
@@ -8584,8 +8688,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         {
                             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
                             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-                            if (textRunsChanged)
-                                EditorTextBox.TextArea.TextView.Redraw();
+                            if (_errorTextDarkener.IsLightTheme)
+                                EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
                         }
                     }
                     catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
@@ -8860,6 +8964,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public Dictionary<string, string> LspExecutableOverrides1 => _lspExecutableOverrides;
 
     public bool IsAutoUpdateAppInBackgroundEnabled1 { get => _isAutoUpdateAppInBackgroundEnabled; set => _isAutoUpdateAppInBackgroundEnabled = value; }
+
+    public InsightEngine InsightEngine => _InsightEngine;
+
+    public InsightEngine InsightEngine1 => _InsightEngine;
 
     private void OnTutorialStepChanged()
     {

@@ -142,7 +142,7 @@ internal static class UpdateService
             !HotfixFileReconciler.InstalledFilesMatch(updateRoot, targetDir, normalizedBase, effectiveLevel))
         {
             KodoDiagnostics.LogDebug(
-                $"Installed files do not match the retained HF{effectiveLevel} manifest; clamping hotfix state to HF0 so the updater can repair the installation.");
+                $"Installed files do not match the retained {HotfixVersion.Format(normalizedBase, effectiveLevel)} manifest; clearing hotfix state so the updater can repair the installation.");
             state.BaseVersion = normalizedBase;
             state.HotfixLevel = 0;
             state.LastKnownGoodHotfix = 0;
@@ -174,17 +174,18 @@ internal static class UpdateService
         return (normalizedBase, effectiveLevel);
     }
 
-    internal static string InstalledHotfixDisplay(
+    internal static string InstalledVersionDisplay(
         string? currentBaseOverride = null,
         string? statePathOverride = null,
         string? appBaseDirOverride = null)
     {
         try
         {
-            var (_, level) = ResolveInstalledHotfix(currentBaseOverride, statePathOverride, appBaseDirOverride);
-            return $"Hotfix {Math.Max(0, level)}";
+            var (baseVersion, level) = ResolveInstalledHotfix(currentBaseOverride, statePathOverride, appBaseDirOverride);
+            var display = HotfixVersion.Format(baseVersion, level);
+            return string.IsNullOrEmpty(display) ? KodoDiagnostics.AppVersion : display;
         }
-        catch { return "Hotfix 0"; }
+        catch { return KodoDiagnostics.AppVersion; }
     }
 
     internal static async Task<GitHubRelease[]?> FetchGitHubReleasesAsync(CancellationToken ct = default)
@@ -200,7 +201,7 @@ internal static class UpdateService
         KodoDiagnostics.LogDebug("Hotfix check started");
         var (installedBase, installedLevel) = ResolveInstalledHotfix();
         KodoDiagnostics.LogDebug($"Installed base version: {installedBase}");
-        KodoDiagnostics.LogDebug($"Installed hotfix: HF{installedLevel}");
+        KodoDiagnostics.LogDebug($"Installed version: {HotfixVersion.Format(installedBase, installedLevel)}");
 
         GitHubRelease[]? releases;
         try
@@ -219,7 +220,7 @@ internal static class UpdateService
             .Where(candidate => includeBeta || !IsBetaVersionTag(candidate.BaseVersion))
             .ToArray();
         foreach (var c in compatible)
-            KodoDiagnostics.LogDebug($"Found compatible hotfix: HF{c.HotfixLevel} ({c.TagName})");
+            KodoDiagnostics.LogDebug($"Found compatible hotfix: {HotfixVersion.Format(c.BaseVersion, c.HotfixLevel)} ({c.TagName})");
 
         HotfixCandidate? selected = null;
         var blockedNewest = false;
@@ -275,9 +276,6 @@ internal static class UpdateService
                 var prepared = await HotfixStaging.PrepareAsync(hotfix, progress: null, ct).ConfigureAwait(false);
                 if (!prepared.AlreadyInstalled && prepared.TransactionPath is not null)
                 {
-                    // Stable hotfixes are mandatory and follow the enabled
-                    // background-update preference. Beta hotfixes never enter
-                    // this path and always require an explicit user action.
                     LaunchUpdaterAndExit(prepared.TransactionPath);
                     return hotfix;
                 }
@@ -434,9 +432,9 @@ internal static class UpdateService
 
     internal static bool IsNewerVersion(string remote, string local)
     {
-        var remoteParts = ParseVersionParts(remote);
-        var localParts = ParseVersionParts(local);
-        if (remoteParts is null || localParts is null)
+        if (!TryParseComparableVersion(remote, out var remoteParts, out var remoteHotfix))
+            return false;
+        if (!TryParseComparableVersion(local, out var localParts, out var localHotfix))
             return false;
         for (var i = 0; i < Math.Max(remoteParts.Length, localParts.Length); i++)
         {
@@ -444,24 +442,27 @@ internal static class UpdateService
             var l = i < localParts.Length ? localParts[i] : 0;
             if (r != l) return r > l;
         }
-        // A stable release supersedes the beta with the same numeric version;
-        // a beta never supersedes a stable build at that version.
+        if (remoteHotfix != localHotfix) return remoteHotfix > localHotfix;
         return !IsBetaVersionTag(remote) && IsBetaVersionTag(local);
     }
 
-    private static int[]? ParseVersionParts(string tag)
+    private static bool TryParseComparableVersion(string tag, out int[] parts, out int hotfixLevel)
     {
-        var core = tag.Trim();
-        if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
-        var dashIndex = core.IndexOf('-');
-        if (dashIndex >= 0) core = core[..dashIndex];
-        var plusIndex = core.IndexOf('+');
-        if (plusIndex >= 0) core = core[..plusIndex];
+        parts = Array.Empty<int>();
+        hotfixLevel = 0;
+        if (string.IsNullOrWhiteSpace(tag)) return false;
+        if (!HotfixVersion.TryParseVersion(tag, out var baseVersion, out hotfixLevel)) return false;
+        if (string.IsNullOrEmpty(baseVersion)) return false;
+        var core = baseVersion.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase)
+            ? baseVersion[..^5]
+            : baseVersion;
         var segments = core.Split('.');
-        var parts = new int[segments.Length];
+        var parsed = new int[segments.Length];
         for (var i = 0; i < segments.Length; i++)
-            if (!int.TryParse(segments[i], out parts[i])) return null;
-        return parts.Length > 0 ? parts : null;
+            if (!int.TryParse(segments[i], out parsed[i])) return false;
+        if (parsed.Length == 0) return false;
+        parts = parsed;
+        return true;
     }
 
     private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
@@ -1037,7 +1038,7 @@ internal sealed class UpdateDialog : Window
                     : "This critical hotfix fixes an important issue. Download the rebuilt AppImage, then replace your current AppImage with the downloaded file."
                 : stagedTxPath is not null && File.Exists(stagedTxPath)
                 ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
-                : $"A critical hotfix for Kodo {hotfix.BaseVersion} is available (HF{hotfix.HotfixLevel}) and fixes an important issue. Download it now.",
+                : $"A critical hotfix for Kodo {display} is available and fixes an important issue. Download it now.",
             FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
         };
         var notesLink = new TextBlock { Text = "View release notes", FontSize = 12, Foreground = new SolidColorBrush(_accentColor), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };

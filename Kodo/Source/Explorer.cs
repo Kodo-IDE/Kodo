@@ -180,6 +180,7 @@ public partial class MainWindow
         ActiveEditorTab = tab;
         _activeTabVersion++;
         _currentFilePath = tab.IsUntitled ? null : tab.Path;
+        ResetLspFoldingState();
         _hasUntitledDocument = tab.IsUntitled;
         _isDirty = tab.IsDirty;
         OnPropertyChanged(nameof(IsDocumentDirty));
@@ -813,6 +814,8 @@ public partial class MainWindow
             }
             _currentFolderPath = item.Path;
             _searchFileCache = null;
+            InvalidateLspResolutionCaches();
+            InvalidateDotnetProjectCache();
             AddRecentFolder(item.Path);
             await PopulateFileTreeAsync(item.Path);
             SetupProjectFolderWatcher(item.Path);

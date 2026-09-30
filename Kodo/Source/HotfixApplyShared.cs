@@ -503,7 +503,7 @@ internal static class HotfixShared
             manifest, request.ExpectedBaseVersion, request.InstalledHotfixLevel, request.ExpectedPlatformRid);
         if (manifestError is not null) return HotfixApplyResult.Fail(manifestError);
         if (request.ExpectedHotfixLevel > 0 && manifest.Hotfix != request.ExpectedHotfixLevel)
-            return HotfixApplyResult.Fail($"Manifest hotfix HF{manifest.Hotfix} does not match transaction HF{request.ExpectedHotfixLevel}.");
+            return HotfixApplyResult.Fail($"Manifest version {FormatVersion(manifest.BaseVersion, manifest.Hotfix)} does not match transaction {FormatVersion(request.ExpectedBaseVersion, request.ExpectedHotfixLevel)}.");
 
         if (string.IsNullOrWhiteSpace(request.PayloadDir) || !Directory.Exists(request.PayloadDir))
             return HotfixApplyResult.Fail($"Payload directory not found: {request.PayloadDir}.");
@@ -733,11 +733,11 @@ internal static class HotfixShared
         if (manifest.Hotfix < 1)
             return $"Invalid hotfix number {manifest.Hotfix} (must be >= 1).";
         if (manifest.Hotfix <= installedLevel)
-            return $"Hotfix HF{manifest.Hotfix} is not newer than installed HF{installedLevel}.";
+            return $"Hotfix {FormatVersion(manifest.BaseVersion, manifest.Hotfix)} is not newer than installed {FormatVersion(expectedBase, installedLevel)}.";
         if (manifest.MinimumHotfix < 0 || manifest.MinimumHotfix > manifest.Hotfix)
             return $"Invalid minimumHotfix {manifest.MinimumHotfix}.";
         if (installedLevel >= 0 && installedLevel < manifest.MinimumHotfix)
-            return $"Hotfix requires HF{manifest.MinimumHotfix} or newer; installed HF{installedLevel}.";
+            return $"Hotfix requires {FormatVersion(manifest.BaseVersion, manifest.MinimumHotfix)} or newer; installed {FormatVersion(expectedBase, installedLevel)}.";
         if (string.IsNullOrWhiteSpace(manifest.Platform) ||
             !string.Equals(manifest.Platform.Trim(), expectedPlatform?.Trim(), StringComparison.OrdinalIgnoreCase))
             return $"Platform mismatch: package is '{manifest.Platform}', expected '{expectedPlatform}'.";
@@ -1007,6 +1007,48 @@ internal static class HotfixShared
         return kodoExePath;
     }
 
+    internal static class HotfixSuffix
+    {
+        internal static string ToSuffix(int level)
+        {
+            if (level <= 0) return "";
+            var remaining = level;
+            var chars = new System.Text.StringBuilder();
+            while (remaining > 0)
+            {
+                var digit = (remaining - 1) % 26;
+                chars.Insert(0, (char)('a' + digit));
+                remaining = (remaining - 1) / 26;
+            }
+            return chars.ToString();
+        }
+
+        internal static bool TryParseLevel(string? suffix, out int level)
+        {
+            level = 0;
+            if (string.IsNullOrWhiteSpace(suffix)) return false;
+            var letters = suffix.Trim();
+            if (letters.Length == 0) return false;
+            var result = 0;
+            foreach (var c in letters)
+            {
+                if (!char.IsAsciiLetterLower(c) && !char.IsAsciiLetterUpper(c)) return false;
+                result = result * 26 + (char.ToLowerInvariant(c) - 'a' + 1);
+            }
+            if (result < 1) return false;
+            level = result;
+            return true;
+        }
+    }
+
+    private static void SplitHotfixSuffix(string core, out string numeric, out string suffix)
+    {
+        var split = core.Length;
+        while (split > 0 && char.IsAsciiLetter(core[split - 1])) split--;
+        numeric = core[..split];
+        suffix = core[split..];
+    }
+
     internal static string? NormalizeBaseVersion(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
@@ -1020,13 +1062,52 @@ internal static class HotfixShared
         if (plus >= 0) core = core[..plus];
         core = core.Trim();
         if (core.Length == 0) return null;
+        SplitHotfixSuffix(core, out var numeric, out var suffix);
+        core = numeric;
+        if (core.Length == 0) return null;
         foreach (var s in core.Split('.'))
         {
             if (s.Length == 0) return null;
             foreach (var c in s) if (!char.IsDigit(c)) return null;
             if (!int.TryParse(s, out _)) return null;
         }
+        if (suffix.Length > 0 && !HotfixSuffix.TryParseLevel(suffix, out _)) return null;
         return isBeta ? core + "-BETA" : core;
+    }
+
+    internal static bool TryParseVersion(string? raw, out string? baseVersion, out int hotfixLevel)
+    {
+        baseVersion = null;
+        hotfixLevel = 0;
+        if (string.IsNullOrWhiteSpace(raw)) return false;
+        var core = raw.Trim();
+        if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
+        var isBeta = core.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        if (isBeta) core = core[..^5];
+        else if (core.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase)) core = core[..^4];
+        var plus = core.IndexOf('+');
+        if (plus >= 0) core = core[..plus];
+        if (core.IndexOf('-') >= 0) return false;
+        core = core.Trim();
+        if (core.Length == 0) return false;
+        SplitHotfixSuffix(core, out var numeric, out var suffix);
+        var normalized = NormalizeBaseVersion(isBeta ? numeric + "-BETA" : numeric);
+        if (normalized is null) return false;
+        if (suffix.Length > 0)
+        {
+            if (!HotfixSuffix.TryParseLevel(suffix, out var level) || level < 1) return false;
+            hotfixLevel = level;
+        }
+        baseVersion = normalized;
+        return true;
+    }
+
+    internal static string FormatVersion(string? baseVersion, int hotfixLevel)
+    {
+        var normalized = NormalizeBaseVersion(baseVersion) ?? baseVersion?.Trim() ?? "";
+        var isBeta = normalized.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
+        var core = isBeta ? normalized[..^5] : normalized;
+        return "v" + core + HotfixSuffix.ToSuffix(hotfixLevel) + (isBeta ? "-BETA" : "");
     }
 
     internal static bool AreSameBaseVersion(string? a, string? b)

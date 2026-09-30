@@ -366,11 +366,18 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             return;
         _lastAppliedExtensionFingerprint = fingerprint;
         var applyWatch = System.Diagnostics.Stopwatch.StartNew();
+        var stageWatch = System.Diagnostics.Stopwatch.StartNew();
         _highlightingCache.Clear();
         _compiledSyntaxProfileCache.Clear();
         _contentSniffCache.Clear();
+        _appliedSyntaxExtension = null;
+        InvalidateLspResolutionCaches();
+        InvalidateDotnetProjectCache();
+        stageWatch.Restart();
         SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
+        stageWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("apply/sync collections", stageWatch.ElapsedMilliseconds, 250, $"extensions={result.Extensions.Count}");
 
         var pngExtensions = new List<LoadedExtension>();
         foreach (var ext in LoadedExtensions)
@@ -454,10 +461,18 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         OnPropertyChanged(nameof(HasThemeExtensions));
         OnPropertyChanged(nameof(GroupedThemeExtensions));
         OnPropertyChanged(nameof(HasGroupedThemeExtensions));
+        stageWatch.Restart();
         RefreshExtensionTheme();
         SyncMarketplaceInstallStates();
         SyncActivePlugins();
+        stageWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("apply/theme+marketplace+plugins", stageWatch.ElapsedMilliseconds, 250);
+
+        stageWatch.Restart();
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
+        stageWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("apply/lsp provider registry", stageWatch.ElapsedMilliseconds, 250, $"extensions={LoadedExtensions.Count}");
+
         applyWatch.Stop();
         KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
     }
@@ -1468,6 +1483,10 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     private void ApplySyntaxHighlighting(LoadedExtension ext)
     {
         if (EditorTextBox is null) return;
+
+        if (ReferenceEquals(_appliedSyntaxExtension, ext))
+            return;
+
         var syntaxWatch = System.Diagnostics.Stopwatch.StartNew();
         var syntaxProfile = ResolveCompiledSyntaxProfile(ext);
         if (!_highlightingCache.TryGetValue(ext, out var definition))
@@ -1477,11 +1496,16 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         }
         syntaxWatch.Stop();
         KodoDiagnostics.ReportSlowStage("syntax profile compile", syntaxWatch.ElapsedMilliseconds, 500, $"ext={ext.Id}");
+
+        _appliedSyntaxExtension = ext;
         EditorTextBox.SyntaxHighlighting = definition;
+        ArmLayoutProbe("layout/after syntax apply");
         ConfigureRainbowBrackets(ext);
         ConfigureInterpolatedStrings(syntaxProfile);
         ConfigureHtmlEmbeddedHighlighting(ext);
         ConfigureMarkdownHighlighting(ext);
+
+        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     private CompiledSyntaxProfile ResolveCompiledSyntaxProfile(LoadedExtension extension)
@@ -1497,13 +1521,11 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     private void ConfigureHtmlEmbeddedHighlighting(LoadedExtension? extension)
     {
         _htmlEmbeddedColorizer.UpdateSyntax(extension, ResolveHtmlEmbeddedSyntaxProfile);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     private void ConfigureMarkdownHighlighting(LoadedExtension? extension)
     {
         _markdownColorizer.UpdateSyntax(extension, ResolveFenceLanguageSyntaxProfile, ResolveInlineCodeLanguageExtension);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     private CompiledSyntaxProfile? FindLanguageSyntaxProfileForFileExtension(string extension)
@@ -1613,7 +1635,6 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     {
         var isMarkdown = KodoExtensionIds.IsMarkdown(ext?.Id);
         _rainbowBracketColorizer.UpdateSyntax(isMarkdown ? null : ext);
-        EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
     private void SetSelectedExtensionsTab(string tab)
