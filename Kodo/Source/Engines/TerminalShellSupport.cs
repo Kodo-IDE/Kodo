@@ -27,6 +27,64 @@ internal static class BrushCache
     }
 }
 
+/// <summary>
+/// Caches pens per (colour, thickness). Pens were previously allocated per
+/// underline draw, i.e. once per underlined cell per frame.
+/// </summary>
+internal static class PenCache
+{
+    private const int MaxEntries = 512;
+    private static readonly ConcurrentDictionary<(uint Color, double Thickness), Pen> _cache = new();
+
+    public static Pen Get(Color c, double thickness = 1)
+    {
+        var key = (((uint)c.A << 24) | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B, thickness);
+        return _cache.GetOrAdd(key, _ =>
+        {
+            if (_cache.Count >= MaxEntries) _cache.Clear();
+            return new Pen(BrushCache.Get(c), thickness);
+        });
+    }
+}
+
+/// <summary>
+/// Caches <see cref="FormattedText"/> per (text, foreground, weight, size).
+/// FormattedText is immutable once built and is safe to reuse across draws, so
+/// this collapses the per-frame "one FormattedText per non-blank cell"
+/// allocation - up to ~1900 objects a frame for a full 80x24 terminal - into a
+/// handful of long-lived entries.
+/// </summary>
+internal static class TerminalGlyphCache
+{
+    private const int MaxEntries = 4096;
+    private static readonly ConcurrentDictionary<(string Text, uint Color, bool Bold, double Size), FormattedText> _cache = new();
+
+    public static FormattedText Get(string text, Color foreground, bool bold, double fontSize)
+    {
+        var key = (text,
+                   ((uint)foreground.A << 24) | ((uint)foreground.R << 16) | ((uint)foreground.G << 8) | foreground.B,
+                   bold,
+                   fontSize);
+        return _cache.GetOrAdd(key, _ =>
+        {
+            if (_cache.Count >= MaxEntries) _cache.Clear();
+            return new FormattedText(
+                text,
+                System.Globalization.CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                bold ? Typefaces.Bold : Typefaces.Regular,
+                fontSize,
+                BrushCache.Get(foreground));
+        });
+    }
+}
+
+internal static class Typefaces
+{
+    public static readonly Typeface Regular = new("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Mono,Consolas,Courier New,monospace", FontStyle.Normal, FontWeight.Regular);
+    public static readonly Typeface Bold = new("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Mono,Consolas,Courier New,monospace", FontStyle.Normal, FontWeight.Bold);
+}
+
 public static class TerminalShellSupport
 {
     private const double MinPanelHeight = 120;

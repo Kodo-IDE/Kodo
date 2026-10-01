@@ -37,7 +37,11 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; private set; }
 
-    public void InvalidateCache() => _snapshot = null;
+    public void InvalidateCache()
+    {
+        _snapshot = null;
+        DocumentTextCache.Invalidate();
+    }
 
     public void UpdateSyntax(LoadedExtension? extension, Func<string, string?, CompiledSyntaxProfile?>? languageResolver)
     {
@@ -55,7 +59,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
-        if (document.TextLength > 30_000)
+        if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
@@ -69,7 +73,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         }
 
         var text = document.GetText(line.Offset, line.Length);
-        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
+        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
         var state = snapshot.GetLineState(line.LineNumber);
 
         foreach (var segment in state.Segments)

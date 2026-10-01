@@ -13,55 +13,20 @@ namespace Kodo;
 
 public static class PerformanceBudget
 {
-    public const int InteractionBudgetMs = 4;
-    public const int VisibleRenderBudgetMs = 6;
-    public const int BackgroundBudgetMs = 12;
+    /// <summary>
+    /// Above this document size, colorizers stop parsing every line and only
+    /// parse lines near the viewport.
+    /// </summary>
+    public const int ViewportCullThreshold = 30_000;
 
-    public static bool IsLargeFile(TextDocument? doc, int threshold = 80_000) => (doc?.TextLength ?? 0) > threshold;
+    /// <summary>
+    /// Above this document size, colorizers refuse to build a whole-document
+    /// parse snapshot at all.
+    /// </summary>
+    public const int SnapshotSkipThreshold = 80_000;
+
+    public static bool IsLargeFile(TextDocument? doc, int threshold = SnapshotSkipThreshold) => (doc?.TextLength ?? 0) > threshold;
     public static bool IsHugeFile(TextDocument? doc, int threshold = 250_000) => (doc?.TextLength ?? 0) > threshold;
-
-    public static bool ShouldSkipForViewport(TextView? tv, DocumentLine line, int buffer = 80)
-    {
-        if (tv == null || !tv.VisualLinesValid || tv.VisualLines.Count == 0) return false;
-        if (tv.Document?.TextLength <= 30_000) return false;
-        var first = tv.VisualLines[0].FirstDocumentLine.LineNumber;
-        var last = tv.VisualLines[tv.VisualLines.Count - 1].FirstDocumentLine.LineNumber;
-        return line.LineNumber < first - buffer || line.LineNumber > last + buffer;
-    }
-}
-
-public sealed class DebouncedWork : IDisposable
-{
-    private readonly DispatcherTimer _timer;
-    private readonly Func<CancellationToken, Task> _action;
-    private CancellationTokenSource _cts = new();
-    private readonly object _lock = new();
-
-    public DebouncedWork(TimeSpan delay, Func<CancellationToken, Task> action)
-    {
-        _action = action;
-        _timer = new DispatcherTimer { Interval = delay };
-        _timer.Tick += OnTick;
-    }
-
-    public void Trigger()
-    {
-        lock (_lock) { _cts.Cancel(); _cts.Dispose(); _cts = new CancellationTokenSource(); }
-        _timer.Stop(); _timer.Start();
-    }
-
-    public void UpdateDelay(TimeSpan delay) => _timer.Interval = delay;
-
-    private async void OnTick(object? s, EventArgs e)
-    {
-        _timer.Stop();
-        var token = _cts.Token;
-        try { await _action(token).ConfigureAwait(false); }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("DebouncedWork failed", ex); }
-    }
-
-    public void Dispose() { _timer.Stop(); _cts.Cancel(); _cts.Dispose(); }
 }
 
 public sealed class UiStallWatchdog : IDisposable
@@ -69,13 +34,14 @@ public sealed class UiStallWatchdog : IDisposable
     private const long MaxReportableGapMs = 30_000;
 
     private readonly DispatcherTimer _timer;
+    private readonly EventHandler _onTick;
     private long _lastTickMs;
 
     public UiStallWatchdog()
     {
         _lastTickMs = Environment.TickCount64;
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _timer.Tick += (_, _) =>
+        _onTick = (_, _) =>
         {
             var now = Environment.TickCount64;
             var gap = now - _lastTickMs;
@@ -83,28 +49,15 @@ public sealed class UiStallWatchdog : IDisposable
             if (gap >= 2500 && gap <= MaxReportableGapMs)
                 KodoDiagnostics.ReportSlowStage("UI-thread stall (no dispatch)", gap, 2500);
         };
+        _timer.Tick += _onTick;
         _timer.Start();
     }
 
     public void Reset() => _lastTickMs = Environment.TickCount64;
 
-    public void Dispose() => _timer.Stop();
-}
-
-public sealed class ViewportTracker
-{
-    private int _firstVisible = 1;
-    private int _lastVisible = 1;
-    private int _totalLines = 1;
-
-    public void Update(TextView tv)
+    public void Dispose()
     {
-        if (tv?.VisualLinesValid != true || tv.VisualLines.Count == 0) return;
-        _firstVisible = tv.VisualLines[0].FirstDocumentLine.LineNumber;
-        _lastVisible = tv.VisualLines[tv.VisualLines.Count - 1].FirstDocumentLine.LineNumber;
-        _totalLines = tv.Document?.LineCount ?? 1;
+        _timer.Stop();
+        _timer.Tick -= _onTick;
     }
-
-    public bool IsLineVisible(int lineNumber, int buffer = 80) => lineNumber >= _firstVisible - buffer && lineNumber <= _lastVisible + buffer;
-    public (int first, int last) VisibleRange(int buffer = 80) => (_firstVisible - buffer, _lastVisible + buffer);
 }

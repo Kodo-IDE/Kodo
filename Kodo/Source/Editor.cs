@@ -85,12 +85,16 @@ public partial class MainWindow
             OnPropertyChanged(nameof(IsWordCountVisible));
             return;
         }
-        var snapshot = EditorTextBox.Document.Text;
+        var document = EditorTextBox.Document;
         var capturedVersion = _insightDocVersion;
         var capturedPath = _currentFilePath;
         Task.Run(() =>
         {
-            if (string.IsNullOrWhiteSpace(snapshot)) return 0;
+            // Materialise the text on the worker thread. TextDocument is
+            // thread-safe for reads, and this keeps a full-file copy off the
+            // UI thread on every debounced edit.
+            var snapshot = document.Text;
+            if (string.IsNullOrWhiteSpace(snapshot)) return (0, true);
             var chars = snapshot.AsSpan();
             int wc = 0;
             bool inWord = false;
@@ -99,21 +103,21 @@ public partial class MainWindow
                 if (char.IsWhiteSpace(chars[i])) inWord = false;
                 else if (!inWord) { inWord = true; wc++; }
             }
-            return wc;
+            return (wc, false);
         }).ContinueWith(t =>
         {
             if (t.IsFaulted || t.IsCanceled) return;
-            var wc = t.Result;
+            var (wc, blank) = t.Result;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 if (capturedVersion != _insightDocVersion) return;
                 if (!FileSystemPaths.Equals(capturedPath, _currentFilePath)) return;
                 if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
-                WordCountText = wc == 0 && string.IsNullOrWhiteSpace(snapshot) ? "0 words" : $"{wc} words";
+                WordCountText = wc == 0 && blank ? "0 words" : $"{wc} words";
                 OnPropertyChanged(nameof(IsWordCountVisible));
             });
         }, TaskScheduler.Default);
-        if (string.IsNullOrWhiteSpace(snapshot))
+        if (document.TextLength == 0)
         {
             WordCountText = "0 words";
             OnPropertyChanged(nameof(IsWordCountVisible));
@@ -330,12 +334,16 @@ public partial class MainWindow
                             var l = doc.GetLineByNumber(f.Value.Line);
                             var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, doc.TextLength);
                             var ch = off >= 0 && off < doc.TextLength ? doc.GetCharAt(off) : ' ';
-                            var lineText = l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
+                            // lineText/snippet exist only to enrich the debug log
+                            // below, so skip building them unless verbose logging is on.
+                            var verbose = KodoDiagnostics.VerboseLoggingEnabled;
+                            var lineText = verbose && l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
                             var snippetFrom = Math.Max(0, off - 10);
-                            var snippet = doc.TextLength > 0 ? doc.GetText(snippetFrom, Math.Min(20, doc.TextLength - snippetFrom)).Replace("\n","\\n").Replace("\r","\\r") : "";
+                            var snippet = verbose && doc.TextLength > 0 ? doc.GetText(snippetFrom, Math.Min(20, doc.TextLength - snippetFrom)).Replace("\n","\\n").Replace("\r","\\r") : "";
                             var lspLine = f.Value.Line - 1;
                             var lspChar = Math.Max(0, off - l.Offset);
-                            KodoDiagnostics.LogDebug($"LSP hover mapping: mouse=({hoverPos.X:F1},{hoverPos.Y:F1}) TextView line={f.Value.Line} col={f.Value.Column} docOffset={off} char='{ch}' lineText='{lineText}' snippet='{snippet}'");
+                            if (verbose)
+                                KodoDiagnostics.LogDebug($"LSP hover mapping: mouse=({hoverPos.X:F1},{hoverPos.Y:F1}) TextView line={f.Value.Line} col={f.Value.Column} docOffset={off} char='{ch}' lineText='{lineText}' snippet='{snippet}'");
                             return (off, lspLine, lspChar, f.Value.Line, f.Value.Column, ch, snippet);
                         }
                         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover mapping failed: {ex.Message}"); return (-1, -1, -1, -1, -1, ' ', ""); }
@@ -349,7 +357,8 @@ public partial class MainWindow
                     var hoverChar = hoverState.Item6;
                     var hoverSnippet = hoverState.Item7;
                     if (hoverOffset < 0 || lspLine < 0) return;
-                    KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset} char='{hoverChar}' line={hoverLine} col={hoverCol} -> LSP line={lspLine} char={lspChar} snippet='{hoverSnippet}'");
+                    if (KodoDiagnostics.VerboseLoggingEnabled)
+                        KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset} char='{hoverChar}' line={hoverLine} col={hoverCol} -> LSP line={lspLine} char={lspChar} snippet='{hoverSnippet}'");
                     var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, lspLine, lspChar, hoverCts.Token).ConfigureAwait(false);
                     if (hoverCts.IsCancellationRequested) return;
                     if (string.IsNullOrWhiteSpace(hoverInfo))
@@ -1021,6 +1030,7 @@ public partial class MainWindow
         if (len > 80_000)
         {
             _rainbowBracketColorizer.InvalidateCache();
+            _interpolatedStringColorizer.InvalidateCache();
             var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
             if (!hasLsp)
             {
@@ -1028,14 +1038,11 @@ public partial class MainWindow
                 _htmlEmbeddedColorizer.InvalidateCache();
                 EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             }
-            else if (len > 120_000)
-            {
-                return;
-            }
             EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
             return;
         }
         _rainbowBracketColorizer.InvalidateCache();
+        _interpolatedStringColorizer.InvalidateCache();
         _markdownColorizer.InvalidateCache();
         _htmlEmbeddedColorizer.InvalidateCache();
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
@@ -1689,13 +1696,15 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             HideDiagnosticPopup();
             return;
         }
-        var text = EditorTextBox.Document.Text;
+        var document = EditorTextBox.Document;
         var languageExtension = CurrentLanguageExtension;
         var folderPath = _currentFolderPath;
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
 
-        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(text, languageExtension, folderPath, filePath));
+        // TextDocument is thread-safe for reads; doing the copy on the worker
+        // keeps a full-file materialisation off the UI thread.
+        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(document.Text, languageExtension, folderPath, filePath));
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.Document is null) return;

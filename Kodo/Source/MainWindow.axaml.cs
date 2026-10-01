@@ -50,7 +50,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string DefaultDiscordClientId = "1495509170756255744";
     private const string DefaultDiscordLargeImageKey = "kodo_logo";
     private const string DefaultDiscordLargeImageText = "Kodo";
-    private const string SettingsFileName = "kodosettings.json";
     private const string DiscordClientIdEnvironmentVariable = "KODO_DISCORD_CLIENT_ID";
     private const string AutoSaveSavedMessage = "Saved.";
     private const string AutoSaveSavingMessage = "Saving...";
@@ -5174,46 +5173,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _keybinds.TryGetValue(id, out var gesture) &&
         e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
 
-    private string SettingsFilePath =>
-        KodoPaths.SettingsFilePath(SettingsFileName);
+    private string SettingsFilePath => SettingsStore.FilePath;
 
     private AppSettings LoadSettings()
     {
-        try
-        {
-            if (!File.Exists(SettingsFilePath)) return new AppSettings();
+        var settings = SettingsStore.Current;
 
-            var json = File.ReadAllText(SettingsFilePath);
-
-            if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
-
-            if (json.Contains("\"CodePredictEnabled\"", StringComparison.Ordinal))
-                json = json.Replace("\"CodePredictEnabled\"", "\"InsightEnabled\"", StringComparison.Ordinal);
-
-            var opts = new JsonSerializerOptions { MaxDepth = 32 };
-            var settings = JsonSerializer.Deserialize<AppSettings>(json, opts);
-            if (settings is null) return new AppSettings();
-
-            settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
-            settings.RecentFiles = settings.RecentFiles?
-                .Where(e => !string.IsNullOrWhiteSpace(e.Path))
-                .GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.OrderByDescending(e => e.IsPinned).ThenByDescending(e => e.LastOpened).First())
-                .ToList() ?? [];
-            settings.OpenTabPaths = settings.OpenTabPaths?
-                .Where(path => !string.IsNullOrWhiteSpace(path))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList() ?? [];
-            settings.TabSize = NormalizeTabSize(settings.TabSize);
-            settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
-            settings.ExplorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
-            return settings;
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogWarning("MainWindow.LoadSettings", ex, operation: $"Failed to load settings from '{SettingsFilePath}'");
-            return new AppSettings();
-        }
+        settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
+        settings.RecentFiles = settings.RecentFiles?
+            .Where(e => !string.IsNullOrWhiteSpace(e.Path))
+            .GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(e => e.IsPinned).ThenByDescending(e => e.LastOpened).First())
+            .ToList() ?? [];
+        settings.OpenTabPaths = settings.OpenTabPaths?
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? [];
+        settings.TabSize = NormalizeTabSize(settings.TabSize);
+        settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
+        settings.ExplorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
+        return settings;
     }
 
     private void SaveSettings(bool immediate = false, bool synchronous = false)
@@ -5328,20 +5307,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void PersistSettingsSnapshot(AppSettings snapshot, bool synchronous = false)
     {
-        void WriteToDisk(AppSettings toWrite)
-        {
-            try
-            {
-                var writePath = KodoPaths.SettingsWritePath(SettingsFileName);
-                var dir = Path.GetDirectoryName(writePath);
-                if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+        // Make the new values visible to in-process readers (theme/accent
+        // resolvers) right away; the disk write below is still debounced.
+        SettingsStore.Publish(snapshot);
 
-                var tempPath = writePath + ".tmp";
-                File.WriteAllText(tempPath, JsonSerializer.Serialize(toWrite));
-                File.Move(tempPath, writePath, overwrite: true);
-            }
-            catch (Exception ex) { KodoDiagnostics.LogWarning("MainWindow.PersistSettingsSnapshot", ex, operation: $"Failed to save settings to '{SettingsFilePath}'"); }
-        }
+        void WriteToDisk(AppSettings toWrite) => SettingsStore.WriteToDisk(toWrite);
 
         if (synchronous)
         {

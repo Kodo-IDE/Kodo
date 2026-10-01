@@ -23,7 +23,6 @@ namespace Kodo;
 internal static class AccentResolver
 {
     private const string DefaultAccentHex = "#8C00FF";
-    private const string SettingsFileName = "kodosettings.json";
     public static (Color Accent, Color Foreground) GetCurrentAccent()
     {
         var hex = ResolveAccentHex();
@@ -42,18 +41,7 @@ internal static class AccentResolver
             _ => DefaultAccentHex,
         };
     }
-    private static AccentSettings LoadAccentSettings()
-    {
-        try
-        {
-            var path = KodoPaths.SettingsFilePath(SettingsFileName);
-            if (!File.Exists(path)) return new AccentSettings();
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json)) return new AccentSettings();
-            return JsonSerializer.Deserialize<AccentSettings>(json) ?? new AccentSettings();
-        }
-        catch { return new AccentSettings(); }
-    }
+    private static AccentSettings LoadAccentSettings() => SettingsStore.Accent;
     [SupportedOSPlatform("windows")]
     private static string? GetWindowsAccentColorWindows()
     {

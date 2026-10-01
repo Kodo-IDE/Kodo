@@ -88,7 +88,11 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; private set; }
 
-    public void InvalidateCache() => _snapshot = null;
+    public void InvalidateCache()
+    {
+        _snapshot = null;
+        DocumentTextCache.Invalidate();
+    }
 
     public void UpdateSyntax(LoadedExtension? extension, Func<string, CompiledSyntaxProfile?>? languageResolver, Func<string, LoadedExtension?>? inlineLanguageResolver)
     {
@@ -124,7 +128,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null)
             return;
-        if (document.TextLength > 30_000)
+        if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
@@ -138,7 +142,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         }
 
         var text = document.GetText(line.Offset, line.Length);
-        var state = (_snapshot ??= BuildSnapshot(document.Text ?? string.Empty)).GetLineState(line.LineNumber);
+        var state = (_snapshot ??= BuildSnapshot(DocumentTextCache.Get(document))).GetLineState(line.LineNumber);
 
         if (state.Delimiter is not null)
         {

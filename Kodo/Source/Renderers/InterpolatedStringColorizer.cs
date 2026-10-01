@@ -35,6 +35,12 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 
     public bool IsEnabled { get; set; }
 
+    public void InvalidateCache()
+    {
+        _snapshot = null;
+        DocumentTextCache.Invalidate();
+    }
+
     public void UpdateSyntax(CompiledSyntaxProfile? syntaxProfile)
     {
         _rules.Clear();
@@ -64,7 +70,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
-        if (document.TextLength > 30_000)
+        if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
@@ -75,12 +81,12 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
                     return;
             }
-            if (document.TextLength > 80_000)
+            if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
                 return;
         }
 
         var snapshotWatch = System.Diagnostics.Stopwatch.StartNew();
-        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
+        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
         snapshotWatch.Stop();
         KodoDiagnostics.ReportSlowStage("interpolation snapshot", snapshotWatch.ElapsedMilliseconds, 500, $"len={document.TextLength}");
         var lineState = snapshot.GetLineState(line.LineNumber);

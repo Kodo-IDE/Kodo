@@ -83,6 +83,7 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
 public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
 {
     private IReadOnlyList<(int Offset, int Length, IBrush Brush)> _tokens = Array.Empty<(int, int, IBrush)>();
+    private readonly Segment _segment = new();
     public KnownLayer Layer => KnownLayer.Background;
     public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens)
     {
@@ -114,16 +115,19 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
             if (end <= start) continue;
             if (end <= viewStart || start > viewEnd) continue;
             var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
-            geometry.AddSegment(textView, new Segment(start, end - start));
+            // Reused across tokens: AddSegment reads Offset/Length immediately,
+            // so one mutable instance avoids an allocation per visible token.
+            _segment.Offset = start;
+            _segment.Length = end - start;
+            geometry.AddSegment(textView, _segment);
             var shape = geometry.CreateGeometry();
             if (shape is not null) drawingContext.DrawGeometry(token.Brush, null, shape);
         }
     }
     private sealed class Segment : ISegment
     {
-        public Segment(int offset, int length) { Offset = offset; Length = length; }
-        public int Offset { get; }
-        public int Length { get; }
+        public int Offset { get; set; }
+        public int Length { get; set; }
         public int EndOffset => Offset + Length;
     }
 }

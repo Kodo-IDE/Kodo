@@ -910,14 +910,11 @@ public sealed class ConsoleTerminal : Control
         e.Handled = true;
     }
 
-    private static readonly Typeface TypefaceNormal = new(FontFamily, FontStyle.Normal, FontWeight.Regular);
-    private static readonly Typeface TypefaceBold = new(FontFamily, FontStyle.Normal, FontWeight.Bold);
-
     public override void Render(DrawingContext ctx)
     {
         lock (_lock)
         {
-            ctx.FillRectangle(new SolidColorBrush(DefaultBg), new Rect(Bounds.Size));
+            ctx.FillRectangle(BrushCache.Get(DefaultBg), new Rect(Bounds.Size));
 
             var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
             var scrollbackStart = _scrollback.Count - _scrollOffset;
@@ -987,15 +984,9 @@ public sealed class ConsoleTerminal : Control
                     if (!string.IsNullOrEmpty(cell.Text) && cell.Text != " " && cell.Text != WideContinuation)
                     {
                         var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
-                        var typeface = cell.Bold ? TypefaceBold : TypefaceNormal;
+                        var bold = cell.Bold;
 
-                        var ft = new FormattedText(
-                            cell.Text,
-                            System.Globalization.CultureInfo.InvariantCulture,
-                            FlowDirection.LeftToRight,
-                            typeface,
-                            FontSize,
-                            BrushCache.Get(fg));
+                        var ft = TerminalGlyphCache.Get(cell.Text, fg, bold, FontSize);
 
                         ctx.DrawText(ft, new Point(x, y));
                     }
@@ -1003,7 +994,7 @@ public sealed class ConsoleTerminal : Control
                     if (cell.Underline)
                     {
                         var fg = cell.Fg ?? DefaultFg;
-                        ctx.DrawLine(new Pen(BrushCache.Get(fg)),
+                        ctx.DrawLine(PenCache.Get(fg),
                             new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                     }
                 }
@@ -1020,16 +1011,15 @@ public sealed class ConsoleTerminal : Control
     {
         var label = $"Find: {_searchQuery}" +
                     (_searchMatches.Count > 0 ? $"   {_searchIndex + 1}/{_searchMatches.Count}" : "   no matches");
-        var ft = new FormattedText(label, System.Globalization.CultureInfo.InvariantCulture,
-            FlowDirection.LeftToRight, TypefaceNormal, FontSize, new SolidColorBrush(DefaultFg));
+        var ft = TerminalGlyphCache.Get(label, DefaultFg, false, FontSize);
 
         const int pad = 6;
         var w = ft.Width + pad * 2;
         var h = ft.Height + pad * 2;
         var rect = new Rect(Bounds.Width - w - 10, 6, w, h);
 
-        ctx.FillRectangle(new SolidColorBrush(Color.FromArgb(230, 30, 30, 30)), rect);
-        ctx.DrawRectangle(new Pen(new SolidColorBrush(Color.FromRgb(90, 90, 90))), rect);
+        ctx.FillRectangle(BrushCache.Get(Color.FromArgb(230, 30, 30, 30)), rect);
+        ctx.DrawRectangle(PenCache.Get(Color.FromRgb(90, 90, 90)), rect);
         ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
@@ -1055,7 +1045,7 @@ public sealed class ConsoleTerminal : Control
         var thumbH = Math.Max(20, trackH * _rows / (double)totalLines);
         var thumbY = (trackH - thumbH) * (1 - _scrollOffset / (double)_scrollback.Count);
 
-        var brush = new SolidColorBrush(Color.FromArgb(160, 204, 204, 204));
+        var brush = BrushCache.Get(Color.FromArgb(160, 204, 204, 204));
         ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
     }
 

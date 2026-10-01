@@ -54,200 +54,37 @@ public partial class MainWindow
 
     private sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source);
 
-    private sealed class LspResolutionCaches
-    {
-        public readonly Dictionary<string, LoadedExtension?> ExtensionsByFileExtension = new(StringComparer.OrdinalIgnoreCase);
-        public readonly Dictionary<string, LspConfiguration?> ConfigurationsByFileExtension = new(StringComparer.OrdinalIgnoreCase);
-        public readonly Dictionary<string, string> WorkspaceRootByDirectory = new(FileSystemPaths.Comparer);
-    }
+    private readonly LspFileResolver _lspFileResolver = new();
 
-    private LspResolutionCaches? _lspResolutionCaches;
-
-    private void InvalidateLspResolutionCaches() => _lspResolutionCaches = null;
-
-    private LspResolutionCaches EnsureLspResolutionCaches() =>
-        _lspResolutionCaches ??= new LspResolutionCaches();
+    private void InvalidateLspResolutionCaches() => _lspFileResolver.Invalidate();
 
     private LoadedExtension? ResolveLspExtensionForFile(string? filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath) || IsPlainTextFile(filePath) || HasNoFileExtension(filePath))
             return null;
-        return ResolveLspExtensionByFileExtension(Path.GetExtension(filePath));
+        return _lspFileResolver.ResolveExtensionByFileExtension(Path.GetExtension(filePath), LoadedExtensions);
     }
 
-    private LoadedExtension? ResolveLspExtensionByFileExtension(string ext)
-    {
-        var cache = EnsureLspResolutionCaches();
-        if (cache.ExtensionsByFileExtension.TryGetValue(ext, out var cached)) return cached;
+    private LspConfiguration? ResolveLspConfigurationForFile(string? filePath) =>
+        _lspFileResolver.ResolveConfigurationForFile(filePath, ResolveLspExtensionForFile);
 
-        List<LoadedExtension>? candidates = null;
-        foreach (var extension in LoadedExtensions)
-        {
-            if (!extension.HasLsp) continue;
-            candidates ??= new List<LoadedExtension>();
-            candidates.Add(extension);
-        }
+    private string GetWorkspaceRootForFile(string? filePath) =>
+        _lspFileResolver.GetWorkspaceRootForFile(
+            filePath,
+            _currentFolderPath,
+            ResolveLspConfigurationForFile,
+            ResolveLspExtensionForFile,
+            IsPathInsideDirectory);
 
-        LoadedExtension? match = null;
-        if (candidates is not null)
-        {
-            foreach (var candidate in candidates)
-            {
-                if (ExtensionDeclaresFileExtension(candidate, ext)) { match = candidate; break; }
-            }
-            match ??= candidates.FirstOrDefault(candidate =>
-                candidate.Extensions.Any(fe => fe.Equals(ext, StringComparison.OrdinalIgnoreCase)));
-        }
+    private static string FilePathToUri(string filePath) => LspPath.FilePathToUri(filePath);
 
-        cache.ExtensionsByFileExtension[ext] = match;
-        return match;
-    }
+    private static string NormalizeFilePath(string pathOrUri) => LspPath.NormalizeFilePath(pathOrUri);
 
-    private static bool ExtensionDeclaresFileExtension(LoadedExtension extension, string ext)
-    {
-        if (extension.Lsps.Count > 0)
-        {
-            foreach (var configuration in extension.Lsps)
-                foreach (var fileExtension in configuration.FileExtensions)
-                    if (fileExtension.Equals(ext, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-        if (extension.Lsp is { } single)
-            foreach (var fileExtension in single.FileExtensions)
-                if (fileExtension.Equals(ext, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
-    }
+    private static bool IsSameDocument(string? a, string? b) => LspPath.IsSameDocument(a, b);
 
-    private LspConfiguration? ResolveLspConfigurationForFile(string? filePath)
-    {
-        if (string.IsNullOrWhiteSpace(filePath)) return null;
-        var ext = ResolveLspExtensionForFile(filePath);
-        if (ext is null) return null;
-        var cache = EnsureLspResolutionCaches();
-        var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
-        if (cache.ConfigurationsByFileExtension.TryGetValue(fileExt, out var cached)) return cached;
+    private static string FixCorruptedPath(string p) => LspPath.FixCorruptedPath(p);
 
-        var configuration = ext.Lsp ?? ext.Lsps.FirstOrDefault();
-        foreach (var candidate in ext.Lsps)
-        {
-            var matches = false;
-            foreach (var fileExtension in candidate.FileExtensions)
-            {
-                if (!fileExtension.Equals(fileExt, StringComparison.OrdinalIgnoreCase)) continue;
-                matches = true;
-                break;
-            }
-            if (!matches) continue;
-            configuration = candidate;
-            break;
-        }
-        cache.ConfigurationsByFileExtension[fileExt] = configuration;
-        return configuration;
-    }
-
-    private string GetWorkspaceRootForFile(string? filePath)
-    {
-        if (!string.IsNullOrWhiteSpace(filePath))
-        {
-            var cache = EnsureLspResolutionCaches();
-            var directory = Path.GetDirectoryName(filePath);
-            if (string.IsNullOrWhiteSpace(directory)) return ResolveWorkspaceRootByWalking(filePath);
-            if (cache.WorkspaceRootByDirectory.TryGetValue(directory, out var cachedRoot))
-                return cachedRoot;
-            var resolved = ResolveWorkspaceRootByWalking(filePath);
-            cache.WorkspaceRootByDirectory[directory] = resolved;
-            return resolved;
-        }
-        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
-            return _currentFolderPath;
-        return Environment.CurrentDirectory;
-    }
-
-    private string ResolveWorkspaceRootByWalking(string filePath)
-    {
-        var markers = ResolveLspConfigurationForFile(filePath)?.RootMarkers ?? ResolveLspExtensionForFile(filePath)?.Lsp?.RootMarkers;
-        if (markers != null && markers.Length > 0)
-        {
-            var dir = Path.GetDirectoryName(filePath);
-            while (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
-            {
-                foreach (var m in markers)
-                    if (File.Exists(Path.Combine(dir, m)) || Directory.Exists(Path.Combine(dir, m)))
-                        return dir;
-                var parent = Path.GetDirectoryName(dir);
-                if (parent == dir) break;
-                dir = parent;
-            }
-        }
-        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && IsPathInsideDirectory(filePath, _currentFolderPath))
-            return _currentFolderPath;
-        var fileDirectory = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrWhiteSpace(fileDirectory) && Directory.Exists(fileDirectory))
-            return fileDirectory;
-        if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
-            return _currentFolderPath;
-        return Environment.CurrentDirectory;
-    }
-
-    private static string FilePathToUri(string filePath)
-    {
-        try { return new Uri(Path.GetFullPath(filePath)).AbsoluteUri; }
-        catch { try { return new Uri(filePath, UriKind.Absolute).AbsoluteUri; } catch { return filePath; } }
-    }
-
-    private static string NormalizeFilePath(string pathOrUri)
-    {
-        try
-        {
-            var p = FixCorruptedPath(FileUriToPath(pathOrUri));
-            if (Path.IsPathRooted(p))
-                return Path.GetFullPath(p).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return p.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        }
-        catch { return FixCorruptedPath(pathOrUri); }
-    }
-
-    private static bool IsSameDocument(string? a, string? b)
-    {
-        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
-        try
-        {
-            var na = NormalizeFilePath(a);
-            var nb = NormalizeFilePath(b);
-            return string.Equals(na, nb, FileSystemPaths.Comparison);
-        }
-        catch { return string.Equals(a, b, FileSystemPaths.Comparison); }
-    }
-
-    private static string FixCorruptedPath(string p)
-    {
-        if (string.IsNullOrWhiteSpace(p)) return p;
-        if (p.Contains(@":\Users\", StringComparison.OrdinalIgnoreCase) && p.Contains(@"Kodo\", StringComparison.OrdinalIgnoreCase))
-        {
-            var idx = p.IndexOf(@":\Users\", StringComparison.OrdinalIgnoreCase);
-            if (idx > 1)
-            {
-                var drive = p[idx - 1];
-                if (char.IsLetter(drive))
-                {
-                    var correct = string.Concat(drive.ToString(), @":\", p.Substring(idx + 2).TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-                    try { return Path.GetFullPath(correct); } catch { return correct; }
-                }
-            }
-        }
-        return p;
-    }
-
-    private string GetLanguageId(LspConfiguration lsp, string? filePath)
-    {
-        if (lsp.Languages.Length > 0) return lsp.Languages[0];
-        if (!string.IsNullOrWhiteSpace(filePath))
-        {
-            var ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
-            if (!string.IsNullOrWhiteSpace(ext)) return ext;
-        }
-        return "plaintext";
-    }
+    private static string GetLanguageId(LspConfiguration lsp, string? filePath) => LspPath.GetLanguageId(lsp, filePath);
 
     private void InitLspDocumentSync()
     {
@@ -833,7 +670,8 @@ public partial class MainWindow
             {
                 await client.SendNotificationAsync("textDocument/didChange", incrementalParams).ConfigureAwait(false);
                 lock (_lspOpenLock) _lspLastSyncUtc[filePath] = DateTime.UtcNow;
-                KodoDiagnostics.LogDebug($"LSP incremental didChange {uri} edits={edits.Count} ver={version}");
+                if (KodoDiagnostics.VerboseLoggingEnabled)
+                    KodoDiagnostics.LogDebug($"LSP incremental didChange {uri} edits={edits.Count} ver={version}");
                 return;
             }
             catch (Exception ex)
@@ -1020,9 +858,12 @@ public partial class MainWindow
                 refreshKey = normPath;
                 if (!_lspDiagnosticRefreshPending.Add(refreshKey)) return;
             }
-            KodoDiagnostics.LogDebug($"LSP publishDiagnostics {filePath} count={diagnostics.Count} uri={uri} version={(publishVersion?.ToString() ?? "<none>")}");
-            for (var i = 0; i < Math.Min(diagnostics.Count, 3); i++)
-                KodoDiagnostics.LogDebug($"  LSP diag {i}: [{diagnostics[i].StartLine}:{diagnostics[i].StartChar}-{diagnostics[i].EndLine}:{diagnostics[i].EndChar}] {diagnostics[i].Severity} {diagnostics[i].Message}");
+            if (KodoDiagnostics.VerboseLoggingEnabled)
+            {
+                KodoDiagnostics.LogDebug($"LSP publishDiagnostics {filePath} count={diagnostics.Count} uri={uri} version={(publishVersion?.ToString() ?? "<none>")}");
+                for (var i = 0; i < Math.Min(diagnostics.Count, 3); i++)
+                    KodoDiagnostics.LogDebug($"  LSP diag {i}: [{diagnostics[i].StartLine}:{diagnostics[i].StartChar}-{diagnostics[i].EndLine}:{diagnostics[i].EndChar}] {diagnostics[i].Severity} {diagnostics[i].Message}");
+            }
             lock (_insightAnalysisCacheLock)
             {
                 _cachedInsightAnalysisVersion = -1;
@@ -1060,57 +901,7 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP publishDiagnostics handling failed", ex); }
     }
 
-    private static string FileUriToPath(string uriOrPath)
-    {
-        if (string.IsNullOrWhiteSpace(uriOrPath)) return uriOrPath;
-        if (Path.IsPathRooted(uriOrPath) && !uriOrPath.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-        {
-            try { return Path.GetFullPath(uriOrPath); } catch { return uriOrPath; }
-        }
-        if (uriOrPath.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
-        {
-            try
-            {
-                var u = new Uri(uriOrPath, UriKind.Absolute);
-                if (u.IsFile)
-                {
-                    var local = u.LocalPath;
-                    if (local.Length >= 3 && local[0] == '/' && char.IsLetter(local[1]) && local[2] == ':')
-                        local = local.Substring(1);
-                    if (local.StartsWith(":\\", StringComparison.Ordinal) || local.StartsWith(":/", StringComparison.Ordinal) || local.StartsWith(":", StringComparison.Ordinal))
-                    {
-                        var abs = Uri.UnescapeDataString(u.AbsolutePath);
-                        abs = abs.TrimStart('/');
-                        abs = abs.Replace('/', Path.DirectorySeparatorChar);
-                        if (abs.Length >= 2 && abs[1] == ':')
-                            local = abs;
-                    }
-                    local = local.Replace('/', Path.DirectorySeparatorChar);
-                    if (Path.IsPathRooted(local))
-                        return Path.GetFullPath(local);
-                    return local;
-                }
-            }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug($"FileUriToPath: failed to parse URI '{uriOrPath}': {ex.Message}");
-            }
-            try
-            {
-                var idx = uriOrPath.IndexOf("://", StringComparison.Ordinal);
-                var part = idx >= 0 ? uriOrPath[(idx + 3)..] : uriOrPath;
-                part = Uri.UnescapeDataString(part);
-                part = part.TrimStart('/');
-                part = part.Replace('/', Path.DirectorySeparatorChar);
-                if (part.Length >= 2 && part[1] == ':')
-                    return Path.GetFullPath(part);
-                return part;
-            }
-            catch { }
-            return uriOrPath;
-        }
-        return uriOrPath;
-    }
+    private static string FileUriToPath(string uriOrPath) => LspPath.FileUriToPath(uriOrPath);
 
     private List<ErrorSpan> GetLspDiagnosticsForFile(string? filePath, string text)
     {
@@ -1154,90 +945,23 @@ public partial class MainWindow
             if (start + len > text.Length) len = Math.Max(1, text.Length - start);
             spans.Add(new ErrorSpan(start, len, d.Message.Trim(), d.Severity, d.Code ?? "", d.Source ?? "lsp"));
         }
-        if (spans.Count > 0)
+        if (KodoDiagnostics.VerboseLoggingEnabled && spans.Count > 0)
             KodoDiagnostics.LogDebug($"LSP GetDiagnosticsForFile {filePath} textLen={text.Length} raw={raw.Count} spans={spans.Count} first=[{spans[0].StartOffset}:{spans[0].Length}] {spans[0].Message}");
-        else if (raw.Count > 0)
+        else if (KodoDiagnostics.VerboseLoggingEnabled && raw.Count > 0)
             KodoDiagnostics.LogDebug($"LSP GetDiagnosticsForFile {filePath} textLen={text.Length} raw={raw.Count} spans=0 (all filtered)");
         return spans;
     }
 
-    private const int LspLineIndexCacheCapacity = 8;
-    private static readonly object LspLineIndexCacheLock = new();
-    private static readonly (string Text, Lazy<int[]> Starts)[] LspLineIndexCache = new (string, Lazy<int[]>)[LspLineIndexCacheCapacity];
-    private static int _nextLspLineIndexSlot;
-
-    private static int[] GetLspLineStarts(string text)
-    {
-        Lazy<int[]>? starts = null;
-        lock (LspLineIndexCacheLock)
-        {
-            foreach (var entry in LspLineIndexCache)
-            {
-                if (ReferenceEquals(entry.Text, text))
-                {
-                    starts = entry.Starts;
-                    break;
-                }
-            }
-            if (starts is null)
-            {
-                starts = new Lazy<int[]>(() =>
-                {
-                    var offsets = new List<int> { 0 };
-                    for (var offset = 0; offset < text.Length; offset++)
-                    {
-                        if (text[offset] == '\r')
-                        {
-                            if (offset + 1 < text.Length && text[offset + 1] == '\n') { offsets.Add(offset + 2); offset++; }
-                            else offsets.Add(offset + 1);
-                        }
-                        else if (text[offset] == '\n')
-                        {
-                            offsets.Add(offset + 1);
-                        }
-                    }
-                    return offsets.ToArray();
-                }, LazyThreadSafetyMode.ExecutionAndPublication);
-                LspLineIndexCache[_nextLspLineIndexSlot] = (text, starts);
-                _nextLspLineIndexSlot = (_nextLspLineIndexSlot + 1) % LspLineIndexCacheCapacity;
-            }
-        }
-        return starts.Value;
-    }
+    private static int[] GetLspLineStarts(string text) => LspPath.GetLineStarts(text);
 
     private static int OffsetFromLspPosition(string text, int line, int character) =>
-        OffsetFromLspPosition(GetLspLineStarts(text), text, line, character);
+        LspPath.OffsetFromLspPosition(text, line, character);
 
-    private static int OffsetFromLspPosition(int[] starts, string text, int line, int character)
-    {
-        if (line < 0) line = 0;
-        if (character < 0) character = 0;
-        if (starts.Length == 0 || line >= starts.Length) return text.Length;
-        var offset = starts[line];
-        var lineEnd = line + 1 < starts.Length ? starts[line + 1] - 1 : text.Length;
-        var lineLen = lineEnd - offset;
-        if (lineLen > 0 && lineEnd > offset && text[lineEnd - 1] == '\r')
-            lineLen--;
-        var col = Math.Min(character, Math.Max(0, lineLen));
-        if (col > 0 && col < lineLen && offset + col < text.Length && char.IsHighSurrogate(text[offset + col - 1]) && char.IsLowSurrogate(text[offset + col]))
-            col++;
-        return Math.Clamp(offset + col, 0, Math.Max(0, text.Length));
-    }
+    private static int OffsetFromLspPosition(int[] starts, string text, int line, int character) =>
+        LspPath.OffsetFromLspPosition(starts, text, line, character);
 
-    private static (int line, int character) OffsetToLspPosition(string text, int offset)
-    {
-        offset = Math.Clamp(offset, 0, text.Length);
-        var starts = GetLspLineStarts(text);
-        var lo = 0;
-        var hi = starts.Length - 1;
-        while (lo < hi)
-        {
-            var mid = lo + ((hi - lo + 1) >> 1);
-            if (starts[mid] <= offset) lo = mid;
-            else hi = mid - 1;
-        }
-        return (lo, offset - starts[lo]);
-    }
+    private static (int line, int character) OffsetToLspPosition(string text, int offset) =>
+        LspPath.OffsetToLspPosition(text, offset);
 
     private async Task<IReadOnlyList<InsightSuggestion>> GetLspCompletionSuggestionsAsync(string? filePath, int offset, string text, string prefix, CancellationToken ct = default)
     {
@@ -1289,7 +1013,7 @@ public partial class MainWindow
         var rawKind = result.Value.ValueKind;
         var isList = rawKind == JsonValueKind.Object && result.Value.TryGetProperty("items", out _);
         var isArray = rawKind == JsonValueKind.Array;
-        KodoDiagnostics.LogDebug($"LSP completion response rawKind={rawKind} isList={isList} isArray={isArray} isIncomplete={isIncomplete} for {filePath} raw={result.Value.GetRawText().Substring(0, Math.Min(800, result.Value.GetRawText().Length))}");
+        if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP completion response rawKind={rawKind} isList={isList} isArray={isArray} isIncomplete={isIncomplete} for {filePath} raw={result.Value.GetRawText().Substring(0, Math.Min(800, result.Value.GetRawText().Length))}");
 
         var items = new List<JsonElement>();
         if (result.Value.ValueKind == JsonValueKind.Array)
@@ -1413,7 +1137,7 @@ public partial class MainWindow
             var sw = System.Diagnostics.Stopwatch.StartNew();
             result = await client.SendRequestAsync("textDocument/hover", @params, cts.Token).ConfigureAwait(false);
             sw.Stop();
-            KodoDiagnostics.LogDebug($"LSP hover response raw for {filePath} offset={offset} line={line} char={character} took={sw.ElapsedMilliseconds}ms raw={(result?.GetRawText()?.Substring(0, Math.Min(600, result?.GetRawText()?.Length ?? 0)) ?? "null")}");
+            if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP hover response raw for {filePath} offset={offset} line={line} char={character} took={sw.ElapsedMilliseconds}ms raw={(result?.GetRawText()?.Substring(0, Math.Min(600, result?.GetRawText()?.Length ?? 0)) ?? "null")}");
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP hover failed for {filePath} offset={offset} line={line} char={character}", ex); return null; }
 
@@ -1422,11 +1146,11 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug($"LSP hover response empty (null) for {filePath} offset={offset} line={line} char={character}");
             return null;
         }
-        KodoDiagnostics.LogDebug($"LSP hover response received for {filePath} offset={offset} line={line} char={character} hasContents={result.Value.TryGetProperty("contents", out _)} rawLen={result.Value.GetRawText().Length}");
+        if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP hover response received for {filePath} offset={offset} line={line} char={character} hasContents={result.Value.TryGetProperty("contents", out _)} rawLen={result.Value.GetRawText().Length}");
         var root = result.Value;
         if (!root.TryGetProperty("contents", out var contents))
         {
-            KodoDiagnostics.LogDebug($"LSP hover no contents for {filePath}: {root.GetRawText().Substring(0, Math.Min(200, root.GetRawText().Length))}");
+            if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP hover no contents for {filePath}: {root.GetRawText().Substring(0, Math.Min(200, root.GetRawText().Length))}");
             return null;
         }
 
@@ -1584,7 +1308,10 @@ public partial class MainWindow
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (EditorTextBox?.Document is null) return;
-            if (!string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal))
+            // Cheap O(1) staleness reject first; only materialise the whole
+            // document for the exact comparison when lengths already agree.
+            if (EditorTextBox.Document.TextLength != text.Length ||
+                !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal))
             {
                 KodoDiagnostics.LogDebug($"LSP formatting rejected as stale for {filePath}");
                 return;

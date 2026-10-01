@@ -13,6 +13,7 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
 {
     private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));
     private readonly List<(int Offset, int Length)> _matches = new();
+    private readonly SimpleSegment _segment = new();
 
     public KnownLayer Layer => KnownLayer.Background;
 
@@ -42,7 +43,11 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
         {
             if (offset + length < viewStart || offset > viewEnd)
                 continue;
-            geoBuilder.AddSegment(textView, new SimpleSegment(offset, length));
+            // Reused instance: AddSegment reads Offset/Length immediately, so this
+            // avoids one allocation per visible match per frame.
+            _segment.Offset = offset;
+            _segment.Length = length;
+            geoBuilder.AddSegment(textView, _segment);
         }
 
         var geometry = geoBuilder.CreateGeometry();
@@ -52,14 +57,8 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
 
     private sealed class SimpleSegment : ISegment
     {
-        public SimpleSegment(int offset, int length)
-        {
-            Offset = offset;
-            Length = length;
-        }
-
-        public int Offset { get; }
-        public int Length { get; }
+        public int Offset { get; set; }
+        public int Length { get; set; }
         public int EndOffset => Offset + Length;
     }
 }

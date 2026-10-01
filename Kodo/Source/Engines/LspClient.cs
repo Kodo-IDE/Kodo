@@ -295,12 +295,15 @@ internal sealed class LspClient : IDisposable
             write = EnqueueWriteAsync(() =>
             {
                 var json = LspProtocol.CreateRequest(id, method, @params);
-                try
+                if (KodoDiagnostics.VerboseLoggingEnabled)
                 {
-                    var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
-                    KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
+                    try
+                    {
+                        var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
+                        KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
+                    }
+                    catch { }
                 }
-                catch { }
                 return json;
             }, cancellationToken);
         }
@@ -607,8 +610,11 @@ internal sealed class LspClient : IDisposable
         {
             try
             {
-                var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
-                KodoDiagnostics.LogDebug($"LSP response id={id} json={preview}");
+                if (KodoDiagnostics.VerboseLoggingEnabled)
+                {
+                    var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
+                    KodoDiagnostics.LogDebug($"LSP response id={id} json={preview}");
+                }
             }
             catch { }
             if (_pending.TryRemove(id.Value, out var tcs))
@@ -641,7 +647,8 @@ internal sealed class LspClient : IDisposable
                 }
                 else if (method == "window/showMessage" || method == "window/logMessage")
                 {
-                    if (root.Value.TryGetProperty("params", out var p2))
+                    if (KodoDiagnostics.VerboseLoggingEnabled &&
+                        root.Value.TryGetProperty("params", out var p2))
                         KodoDiagnostics.LogDebug($"LSP {method}: {LspProtocol.Preview(p2.GetRawText())}");
                 }
                 _ = SendResponseAsync(id.Value, result);
@@ -776,7 +783,10 @@ internal sealed class LspClient : IDisposable
                 OnStderr?.Invoke(text);
                 var loggedChars = Interlocked.Add(ref _stderrLoggedChars, text.Length);
                 if (loggedChars <= 8192)
-                    KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}]: {LspProtocol.Preview(text.Trim(), 1000)}");
+                {
+                    if (KodoDiagnostics.VerboseLoggingEnabled)
+                        KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}]: {LspProtocol.Preview(text.Trim(), 1000)}");
+                }
                 else if (loggedChars - text.Length < 8192 && Interlocked.Exchange(ref _stderrTruncationLogged, 1) == 0)
                     KodoDiagnostics.LogDebug($"LSP stderr [{_config.Command}] logging truncated after 8192 characters.");
             }

@@ -108,7 +108,28 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         InvalidateCache();
     }
 
-    public void InvalidateCache() => _snapshot = null;
+    private static readonly Regex BatchEchoPattern = new(
+        @"^\s*@?echo[\.:\(]?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(250));
+
+    private static readonly Regex BatchLabelPattern = new(
+        @"^\s*::",
+        RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(250));
+
+    private static readonly Regex BatchRemPattern = new(
+        @"^\s*rem\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(250));
+
+    private readonly Stack<char> _lineStack = new();
+
+    public void InvalidateCache()
+    {
+        _snapshot = null;
+        DocumentTextCache.Invalidate();
+    }
 
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
@@ -118,7 +139,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0)
             return;
-        if (document.TextLength > 30_000)
+        if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
@@ -129,25 +150,28 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
                 if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
                     return;
             }
-            if (document.TextLength > 80_000)
+            if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
                 return;
         }
 
-        var snapshot = _snapshot ??= BuildSnapshot(document.Text ?? string.Empty);
+        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
         int batchEchoContentStart = -1;
         if (_isBatch)
         {
-            var echoMatch = Regex.Match(text, @"^\s*@?echo[\.:\(]?", RegexOptions.IgnoreCase);
+            var echoMatch = BatchEchoPattern.Match(text);
             if (echoMatch.Success)
                 batchEchoContentStart = echoMatch.Length;
-            else if (Regex.IsMatch(text, @"^\s*::"))
+            else if (BatchLabelPattern.IsMatch(text))
                 return;
-            else if (Regex.IsMatch(text.TrimStart(), @"^rem\b", RegexOptions.IgnoreCase))
+            else if (BatchRemPattern.IsMatch(text))
                 return;
         }
-        var stack = new Stack<char>(lineState.BracketStack);
+        _lineStack.Clear();
+        foreach (var ch in lineState.BracketStack)
+            _lineStack.Push(ch);
+        var stack = _lineStack;
         var mode = lineState.Mode;
         var activeDelimiter = lineState.Delimiter;
 

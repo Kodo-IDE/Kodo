@@ -467,15 +467,7 @@ internal static class UpdateService
 
     private static bool ReadAutoUpdateFlag(Func<AutoUpdateSettings, bool> sel, bool fallback)
     {
-        try
-        {
-            var path = KodoPaths.SettingsFilePath("kodosettings.json");
-            if (!File.Exists(path)) return fallback;
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json)) return fallback;
-            var settings = JsonSerializer.Deserialize<AutoUpdateSettings>(json);
-            return settings is null ? fallback : sel(settings);
-        }
+        try { return sel(SettingsStore.AutoUpdate); }
         catch { return fallback; }
     }
 
