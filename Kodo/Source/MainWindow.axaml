@@ -2837,6 +2837,7 @@
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="0,0,0,1"
+                                CornerRadius="11,11,0,0"
                                 Padding="16,12">
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Orientation="Horizontal"
@@ -3084,6 +3085,7 @@
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding AccentBrush}"
                                 BorderThickness="0,1,0,0"
+                                CornerRadius="0,0,11,11"
                                 Padding="12,6"
                                 PointerPressed="StatusBar_OnPointerPressed">
                             <Grid ColumnDefinitions="*,Auto">
@@ -3344,14 +3346,6 @@
                                              VerticalAlignment="Center"
                                              Fill="{Binding AccentBrush}"
                                              IsVisible="{Binding HasTerminalSessions}" />
-                                    <Viewbox Width="12" Height="12"
-                                             VerticalAlignment="Center"
-                                             Opacity="0.85">
-                                        <Canvas Width="24" Height="24">
-                                            <Path Fill="{Binding $parent[Button].Foreground}"
-                                                  Data="M20 6a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V6ZM5 5h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 5.5 3 2.5-3 2.5-.75-.9 2-1.6-2-1.6.75-.9Zm6 4.5h3v1h-3v-1Z" />
-                                        </Canvas>
-                                    </Viewbox>
                                     <TextBlock Text="{Binding TerminalStatusBarText}" />
                                 </StackPanel>
                             </Button>
