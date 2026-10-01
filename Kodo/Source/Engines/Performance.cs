@@ -13,16 +13,8 @@ namespace Kodo;
 
 public static class PerformanceBudget
 {
-    /// <summary>
-    /// Above this document size, colorizers stop parsing every line and only
-    /// parse lines near the viewport.
-    /// </summary>
     public const int ViewportCullThreshold = 30_000;
 
-    /// <summary>
-    /// Above this document size, colorizers refuse to build a whole-document
-    /// parse snapshot at all.
-    /// </summary>
     public const int SnapshotSkipThreshold = 80_000;
 
     public static bool IsLargeFile(TextDocument? doc, int threshold = SnapshotSkipThreshold) => (doc?.TextLength ?? 0) > threshold;

@@ -115,8 +115,6 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
             if (end <= start) continue;
             if (end <= viewStart || start > viewEnd) continue;
             var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
-            // Reused across tokens: AddSegment reads Offset/Length immediately,
-            // so one mutable instance avoids an allocation per visible token.
             _segment.Offset = start;
             _segment.Length = end - start;
             geometry.AddSegment(textView, _segment);

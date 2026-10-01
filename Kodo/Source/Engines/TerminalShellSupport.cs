@@ -27,10 +27,6 @@ internal static class BrushCache
     }
 }
 
-/// <summary>
-/// Caches pens per (colour, thickness). Pens were previously allocated per
-/// underline draw, i.e. once per underlined cell per frame.
-/// </summary>
 internal static class PenCache
 {
     private const int MaxEntries = 512;
@@ -47,13 +43,6 @@ internal static class PenCache
     }
 }
 
-/// <summary>
-/// Caches <see cref="FormattedText"/> per (text, foreground, weight, size).
-/// FormattedText is immutable once built and is safe to reuse across draws, so
-/// this collapses the per-frame "one FormattedText per non-blank cell"
-/// allocation - up to ~1900 objects a frame for a full 80x24 terminal - into a
-/// handful of long-lived entries.
-/// </summary>
 internal static class TerminalGlyphCache
 {
     private const int MaxEntries = 4096;

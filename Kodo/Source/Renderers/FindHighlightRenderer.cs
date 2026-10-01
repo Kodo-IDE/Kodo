@@ -43,8 +43,6 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
         {
             if (offset + length < viewStart || offset > viewEnd)
                 continue;
-            // Reused instance: AddSegment reads Offset/Length immediately, so this
-            // avoids one allocation per visible match per frame.
             _segment.Offset = offset;
             _segment.Length = length;
             geoBuilder.AddSegment(textView, _segment);

@@ -968,12 +968,25 @@ internal static class HotfixShared
         return true;
     }
 
-    internal static string FormatVersion(string? baseVersion, int hotfixLevel)
+    internal static string ChannelSuffix(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return "";
+        var core = raw.Trim();
+        if (core.Length > 0 && (core[0] == 'v' || core[0] == 'V')) core = core[1..];
+        var plus = core.IndexOf('+');
+        if (plus >= 0) core = core[..plus];
+        if (core.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase)) return "-BETA";
+        if (core.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase)) return "-DEV";
+        return "";
+    }
+
+    internal static string FormatVersion(string? baseVersion, int hotfixLevel, string? channelSuffix = null)
     {
         var normalized = NormalizeBaseVersion(baseVersion) ?? baseVersion?.Trim() ?? "";
         var isBeta = normalized.EndsWith("-BETA", StringComparison.OrdinalIgnoreCase);
         var core = isBeta ? normalized[..^5] : normalized;
-        return "v" + core + HotfixSuffix.ToSuffix(hotfixLevel) + (isBeta ? "-BETA" : "");
+        var channel = channelSuffix ?? (isBeta ? "-BETA" : "");
+        return "v" + core + HotfixSuffix.ToSuffix(hotfixLevel) + channel;
     }
 
     internal static bool AreSameBaseVersion(string? a, string? b)

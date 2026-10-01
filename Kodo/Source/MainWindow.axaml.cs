@@ -272,9 +272,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _statusBarDiagnosticsText = "No problems";
     private string _statusBarDiagnosticsTooltip = "No problems detected";
     private bool _pendingFullStateRefresh = true;
-    private string _lastDiscordPresenceDetails = string.Empty;
-    private string _lastDiscordPresenceState = string.Empty;
-    private (string?, string?, int, string?, bool, bool, bool, bool) _lastDiscordPresenceKey;
+    private (string?, string?, int, bool, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
@@ -1942,6 +1940,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _interpolatedStringColorizer.UpdateSyntax(syntaxProfile);
     }
 
+    private static readonly string[] EditorPageVisibilityDependents =
+    [
+        nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive),
+        nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible),
+        nameof(IsTextEditorVisible)
+    ];
+
     public bool IsSettingsPageVisible
     {
         get => _isSettingsPageVisible;
@@ -1950,7 +1955,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isSettingsPageVisible == value) return;
             _isSettingsPageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
+            RaiseMany(EditorPageVisibilityDependents);
         }
     }
 
@@ -1962,7 +1967,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isExtensionsPageVisible == value) return;
             _isExtensionsPageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
+            RaiseMany(EditorPageVisibilityDependents);
         }
     }
 
@@ -1974,7 +1979,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isTutorialPageVisible == value) return;
             _isTutorialPageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
+            RaiseMany(EditorPageVisibilityDependents);
         }
     }
 
@@ -1986,7 +1991,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isWhatsNewPageVisible == value) return;
             _isWhatsNewPageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(IsTextEditorVisible));
+            RaiseMany(EditorPageVisibilityDependents);
         }
     }
 
@@ -4299,23 +4304,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
     public IBrush SystemThemePreviewBorder { get; private set; } = Brush.Parse("#2B2B2B");
 
+    private (bool home, bool imagePreview, bool documentOpen, bool untitled, string? filePath)
+        _languageDisplayCacheKey;
+    private string _cachedLanguageDisplayText = string.Empty;
+
     public string LanguageDisplayText
     {
         get
         {
-            if (IsHomePageVisible) return string.Empty;
-            if (HasImagePreview) return "Image Preview";
-            if (!HasDocumentOpen) return string.Empty;
-            if (!string.IsNullOrWhiteSpace(_currentFilePath))
+            var key = (_isHomePageVisible, HasImagePreview, HasDocumentOpen, _hasUntitledDocument, _currentFilePath);
+            if (key != _languageDisplayCacheKey)
             {
-                var ext = Path.GetExtension(_currentFilePath);
-                if (!string.IsNullOrWhiteSpace(ext))
-                    return $"{ext.ToLowerInvariant()} file";
-                var name = Path.GetFileName(_currentFilePath);
-                return string.IsNullOrWhiteSpace(name) ? "Plain Text" : $"{name} file";
+                _languageDisplayCacheKey = key;
+                _cachedLanguageDisplayText = ComputeLanguageDisplayText();
             }
-            return "Plain Text";
+
+            return _cachedLanguageDisplayText;
         }
+    }
+
+    private string ComputeLanguageDisplayText()
+    {
+        if (IsHomePageVisible) return string.Empty;
+        if (HasImagePreview) return "Image Preview";
+        if (!HasDocumentOpen) return string.Empty;
+        if (!string.IsNullOrWhiteSpace(_currentFilePath))
+        {
+            var ext = Path.GetExtension(_currentFilePath);
+            if (!string.IsNullOrWhiteSpace(ext))
+                return $"{ext.ToLowerInvariant()} file";
+            var name = Path.GetFileName(_currentFilePath);
+            return string.IsNullOrWhiteSpace(name) ? "Plain Text" : $"{name} file";
+        }
+        return "Plain Text";
     }
 
     public string EncodingDisplayText
@@ -4799,10 +4820,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch { }
     }
 
+    private static readonly string[] EditorStateRefreshProperties =
+    [
+        nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible),
+        nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive),
+        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen),
+        nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
+        nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
+        nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection),
+        nameof(StatusBarDiagnosticsText), nameof(StatusBarDiagnosticsTooltip), nameof(HasDiagnostics), nameof(ExplorerHeaderText),
+        nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText),
+        nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible),
+        nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText),
+        nameof(TerminalStatusBarText)
+    ];
+
     private void RefreshNonCaretState()
     {
         Title = BuildWindowTitle();
-        RaiseMany(nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText), nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty), nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection), nameof(StatusBarDiagnosticsText), nameof(StatusBarDiagnosticsTooltip), nameof(HasDiagnostics), nameof(ExplorerHeaderText), nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText), nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(TerminalStatusBarText));
+        RaiseMany(EditorStateRefreshProperties);
         UpdateDiscordPresence();
     }
 
@@ -4889,8 +4925,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 },
                 Timestamps = new DiscordRPC.Timestamps(_sessionStart)
             });
-            _lastDiscordPresenceDetails = details;
-            _lastDiscordPresenceState = state;
         }
         catch (Exception ex)
         {
@@ -4901,10 +4935,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private (string? filePath, string? folderPath, int tabCount,
-             string? language, bool settings, bool extensions, bool home,
+             bool untitled, bool imagePreview, bool settings, bool extensions, bool home,
              bool improved) GetDiscordPresenceKey() =>
         (_currentFilePath, _currentFolderPath, OpenTabs.Count,
-         GetDiscordLanguageLabel(), _isSettingsPageVisible, _isExtensionsPageVisible,
+         _hasUntitledDocument, HasImagePreview, _isSettingsPageVisible, _isExtensionsPageVisible,
          _isHomePageVisible, _isDiscordImprovedRpcEnabled);
 
     private string GetDiscordPresenceDetails() =>
@@ -4999,8 +5033,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         finally
         {
             _discordRpcClient = null;
-            _lastDiscordPresenceDetails = string.Empty;
-            _lastDiscordPresenceState = string.Empty;
             _lastDiscordPresenceKey = default;
         }
     }
@@ -5307,8 +5339,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void PersistSettingsSnapshot(AppSettings snapshot, bool synchronous = false)
     {
-        // Make the new values visible to in-process readers (theme/accent
-        // resolvers) right away; the disk write below is still debounced.
         SettingsStore.Publish(snapshot);
 
         void WriteToDisk(AppSettings toWrite) => SettingsStore.WriteToDisk(toWrite);

@@ -90,9 +90,6 @@ public partial class MainWindow
         var capturedPath = _currentFilePath;
         Task.Run(() =>
         {
-            // Materialise the text on the worker thread. TextDocument is
-            // thread-safe for reads, and this keeps a full-file copy off the
-            // UI thread on every debounced edit.
             var snapshot = document.Text;
             if (string.IsNullOrWhiteSpace(snapshot)) return (0, true);
             var chars = snapshot.AsSpan();
@@ -334,8 +331,6 @@ public partial class MainWindow
                             var l = doc.GetLineByNumber(f.Value.Line);
                             var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, doc.TextLength);
                             var ch = off >= 0 && off < doc.TextLength ? doc.GetCharAt(off) : ' ';
-                            // lineText/snippet exist only to enrich the debug log
-                            // below, so skip building them unless verbose logging is on.
                             var verbose = KodoDiagnostics.VerboseLoggingEnabled;
                             var lineText = verbose && l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
                             var snippetFrom = Math.Max(0, off - 10);
@@ -1702,8 +1697,6 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
 
-        // TextDocument is thread-safe for reads; doing the copy on the worker
-        // keeps a full-file materialisation off the UI thread.
         var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(document.Text, languageExtension, folderPath, filePath));
 
         if (scanVersion != _insightDocVersion) return;

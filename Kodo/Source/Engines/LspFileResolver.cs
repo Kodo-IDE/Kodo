@@ -7,18 +7,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-/// <summary>
-/// Answers "which language server serves this file?" and "what is the workspace
-/// root for this file?".
-/// </summary>
-/// <remarks>
-/// Extracted from <c>MainWindow</c>, which previously answered both inline while
-/// also owning the results. Resolution is pure with respect to the loaded
-/// extension set, so it is memoised per file extension and thrown away wholesale
-/// by <see cref="Invalidate"/> whenever extensions change. Everything the
-/// resolver cannot infer on its own - the loaded extensions and the folder the
-/// window currently has open - is passed in, so this type holds no UI state.
-/// </remarks>
 internal sealed class LspFileResolver
 {
     private sealed class Caches
@@ -34,11 +22,6 @@ internal sealed class LspFileResolver
 
     private Caches EnsureCaches() => _caches ??= new Caches();
 
-    /// <summary>
-    /// The extension providing the LSP for a file, or null if none does. The
-    /// caller is responsible for rejecting files that have no language at all
-    /// (plain text, no extension); this only matches on the extension.
-    /// </summary>
     public LoadedExtension? ResolveExtensionByFileExtension(string ext, IReadOnlyList<LoadedExtension> loadedExtensions)
     {
         var cache = EnsureCaches();
@@ -82,11 +65,6 @@ internal sealed class LspFileResolver
         return false;
     }
 
-    /// <summary>
-    /// The specific LSP configuration to use for a file. An extension can declare
-    /// several servers; the one whose declared file extensions cover this file
-    /// wins, otherwise the first configured.
-    /// </summary>
     public LspConfiguration? ResolveConfigurationForFile(
         string? filePath,
         Func<string?, LoadedExtension?> resolveExtension)
@@ -116,11 +94,6 @@ internal sealed class LspFileResolver
         return configuration;
     }
 
-    /// <summary>
-    /// Workspace root for a file: the nearest ancestor containing one of the
-    /// server's declared root markers, else the enclosing open folder, else the
-    /// file's own directory.
-    /// </summary>
     public string GetWorkspaceRootForFile(
         string? filePath,
         string? currentFolderPath,

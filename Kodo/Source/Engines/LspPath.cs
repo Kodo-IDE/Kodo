@@ -7,16 +7,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-/// <summary>
-/// Path, URI and text-position primitives for the language-server integration.
-/// </summary>
-/// <remarks>
-/// Pure and stateless apart from a small line-index cache. Every LSP server
-/// addresses documents by <c>file:</c> URI and by zero-based line/character
-/// pair, while Kodo works in local paths and absolute string offsets, so every
-/// message has to make this round trip. Keeping the conversions in one place
-/// means the UTF-16 surrogate and CRLF edge cases are handled once.
-/// </remarks>
 internal static class LspPath
 {
     public static string FilePathToUri(string filePath)
@@ -101,10 +91,6 @@ internal static class LspPath
         catch { return string.Equals(a, b, FileSystemPaths.Comparison); }
     }
 
-    /// <summary>
-    /// Repairs paths where the leading drive letter was lost, e.g.
-    /// <c>:\|Users|me|Kodo|x.cs</c>.
-    /// </summary>
     public static string FixCorruptedPath(string p)
     {
         if (string.IsNullOrWhiteSpace(p)) return p;
@@ -124,7 +110,6 @@ internal static class LspPath
         return p;
     }
 
-    /// <summary>The language id to report to the server for a document.</summary>
     public static string GetLanguageId(LspConfiguration lsp, string? filePath)
     {
         if (lsp.Languages.Length > 0) return lsp.Languages[0];
@@ -141,10 +126,6 @@ internal static class LspPath
     private static readonly (string Text, Lazy<int[]> Starts)[] LineIndexCache = new (string, Lazy<int[]>)[LineIndexCacheCapacity];
     private static int _nextLineIndexSlot;
 
-    /// <summary>
-    /// Offsets at which each line starts. Cached by string identity, so repeated
-    /// conversions against the same document text are free.
-    /// </summary>
     public static int[] GetLineStarts(string text)
     {
         Lazy<int[]>? starts = null;

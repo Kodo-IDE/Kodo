@@ -23,25 +23,32 @@ internal static class HotfixVersion
     public static string CurrentBaseVersion =>
         NormalizeBaseVersion(KodoDiagnostics.AppVersion) ?? FallbackBaseVersion;
 
+    public static int CurrentHotfixLevel =>
+        Shared.TryParseVersion(KodoDiagnostics.AppVersion, out _, out var level) ? level : 0;
+
+    public static string DisplayChannel => Shared.ChannelSuffix(KodoDiagnostics.AppVersion);
+
     public static int GetShippedHotfixLevel(string? appBaseDirOverride, string baseVersion)
     {
+        var tagLevel = CurrentHotfixLevel;
         try
         {
             var dir = string.IsNullOrWhiteSpace(appBaseDirOverride)
                 ? AppContext.BaseDirectory
                 : appBaseDirOverride;
-            return Shared.TryGetShippedHotfixLevel(dir, baseVersion, out var level)
+            var stampLevel = Shared.TryGetShippedHotfixLevel(dir, baseVersion, out var level)
                 ? Math.Max(0, level)
                 : 0;
+            return Math.Max(tagLevel, stampLevel);
         }
         catch
         {
-            return 0;
+            return tagLevel;
         }
     }
 
-    public static string Format(string baseVersion, int hotfixLevel) =>
-        Shared.FormatVersion(baseVersion, hotfixLevel);
+    public static string Format(string baseVersion, int hotfixLevel, string? channelSuffix = null) =>
+        Shared.FormatVersion(baseVersion, hotfixLevel, channelSuffix);
 
     public static string Format(HotfixState state) =>
         Format(state.BaseVersion, state.HotfixLevel);

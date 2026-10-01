@@ -182,7 +182,7 @@ internal static class UpdateService
         try
         {
             var (baseVersion, level) = ResolveInstalledHotfix(currentBaseOverride, statePathOverride, appBaseDirOverride);
-            var display = HotfixVersion.Format(baseVersion, level);
+            var display = HotfixVersion.Format(baseVersion, level, HotfixVersion.DisplayChannel);
             return string.IsNullOrEmpty(display) ? KodoDiagnostics.AppVersion : display;
         }
         catch { return KodoDiagnostics.AppVersion; }

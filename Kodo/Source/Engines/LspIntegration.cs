@@ -1308,8 +1308,6 @@ public partial class MainWindow
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (EditorTextBox?.Document is null) return;
-            // Cheap O(1) staleness reject first; only materialise the whole
-            // document for the exact comparison when lengths already agree.
             if (EditorTextBox.Document.TextLength != text.Length ||
                 !string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal))
             {

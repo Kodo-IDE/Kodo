@@ -9,12 +9,6 @@ using Kodo.Models;
 
 namespace Kodo;
 
-/// <summary>
-/// Pure search primitives: whole-word matching, file enumeration and scored
-/// filename lookup. Deliberately free of MainWindow/UI state so it can run on
-/// background threads; <see cref="MainWindow"/> owns the orchestration and the
-/// view-bound <see cref="SearchResultItem"/> presentation.
-/// </summary>
 internal static class SearchEngine
 {
     internal static string GetRelativePathOrName(string root, string path)
