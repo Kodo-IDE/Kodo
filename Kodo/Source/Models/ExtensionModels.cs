@@ -159,6 +159,10 @@ public sealed class LspConfiguration
 
     public string? RuntimeMinVersion { get; init; }
 
+    public string[] RuntimeArgs { get; init; } = [];
+
+    public string? MainClass { get; init; }
+
     public bool AllowAutoInstall { get; init; } = true;
 
     public bool AllowSystem { get; init; } = true;

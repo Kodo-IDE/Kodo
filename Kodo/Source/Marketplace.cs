@@ -1505,10 +1505,14 @@ public partial class MainWindow
                 if (res.Source == LspServerSource.RuntimeMissing)
                 {
                     installed.LspStatus = LspDependencyStatus.RuntimeMissing;
+                    var msg = res.Error ?? $"Runtime '{cfg.Runtime}' is required for {installed.Name}.";
+                    KodoDiagnostics.LogDebug($"LSP runtime missing for {installed.Id} provider {cfg.EffectiveProviderId}: {msg}");
                     await Dispatcher.UIThread.InvokeAsync(async () =>
                     {
-                        ExtensionsStatusText = res.Error ?? $"Runtime missing for {cfg.EffectiveProviderId}";
-                        await ShowWarningDialogAsync($"{installed.Name} – runtime required", new InvalidOperationException($"{res.Error}\n\nPlease install {cfg.Runtime} and restart Kodo."));
+                        ExtensionsStatusText = msg;
+                        if (!_lspMissingNotified.Add($"{installed.Id}:{cfg.EffectiveProviderId}:runtime"))
+                            return;
+                        await ShowWarningDialogAsync($"{installed.Name} – runtime required", new InvalidOperationException($"{msg}\n\nPlease install {cfg.Runtime} and restart Kodo."));
                     });
                     continue;
                 }

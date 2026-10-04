@@ -24,6 +24,8 @@ public partial class MainWindow
 
     private static readonly IBrush CachedLinkBrush = Brush.Parse("#5BA3D9");
 
+    private const string KodoAccentHex = "#8C00FF";
+
     private void ApplyThemeToEditor()
     {
         if (EditorTextBox is null) return;
@@ -84,8 +86,8 @@ public partial class MainWindow
         resources["SystemAccentColorDark3"] = DarkenColor(c, 0.45);
     }
 
-    private static Color LightenColor(Color c, double amount) => WindowsThemeHelper.Lighten(c, amount);
-    private static IBrush GetReadableForeground(Color background) => WindowsThemeHelper.GetReadableForeground(background);
+    private static Color LightenColor(Color c, double amount) => SystemThemeHelper.Lighten(c, amount);
+    private static IBrush GetReadableForeground(Color background) => SystemThemeHelper.GetReadableForeground(background);
 
     private static IBrush EnsureReadableTextBrush(IBrush candidate, params IBrush[] backgrounds)
     {
@@ -206,10 +208,15 @@ public partial class MainWindow
             _hasThemeAccent = false; _hasWindowBackground = false;
             ThemeAccentPreviewBrush = GetCachedBrush(pal["Accent"]);
         }
-        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); } catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
-        var resolvedAccent = _accentColorMode switch { "theme" => _themeAccentHex, "windows" => windowsHex, "custom" => _customAccentHex, _ => "#8C00FF" };
-        try { AccentBrush = GetCachedBrush(resolvedAccent); } catch { AccentBrush = GetCachedBrush("#8C00FF"); }
+        RefreshSystemAccentPreview();
+        var resolvedAccent = _accentColorMode switch
+        {
+            "theme" => _themeAccentHex,
+            "windows" => _systemAccentHex,
+            "custom" => _customAccentHex,
+            _ => KodoAccentHex
+        };
+        try { AccentBrush = GetCachedBrush(resolvedAccent); } catch { AccentBrush = GetCachedBrush(KodoAccentHex); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         SyncSystemAccentResources(AccentBrush);
     }
@@ -227,15 +234,11 @@ public partial class MainWindow
 
     private void ApplyAccentOverride()
     {
-        var windowsHex = GetWindowsAccentColor() ?? "#0078D4";
-        try { WindowsAccentPreviewBrush = GetCachedBrush(windowsHex); }
-        catch { WindowsAccentPreviewBrush = GetCachedBrush("#0078D4"); }
-        OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
+        RefreshSystemAccentPreview();
 
         if (_accentColorMode == "kodo")
         {
-            try { AccentBrush = GetCachedBrush("#8C00FF"); }
-            catch { AccentBrush = GetCachedBrush("#8C00FF"); }
+            AccentBrush = GetCachedBrush(KodoAccentHex);
             AccentForegroundBrush = GetAccentForeground(AccentBrush);
             SyncSystemAccentResources(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
@@ -247,12 +250,12 @@ public partial class MainWindow
         var hex = _accentColorMode switch
         {
             "theme" => _themeAccentHex,
-            "windows" => windowsHex,
+            "windows" => _systemAccentHex,
             "custom" => _customAccentHex,
-            _ => "#8C00FF"
+            _ => KodoAccentHex
         };
         try { AccentBrush = GetCachedBrush(hex); }
-        catch { AccentBrush = GetCachedBrush("#8C00FF"); }
+        catch { AccentBrush = GetCachedBrush(KodoAccentHex); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         SyncSystemAccentResources(AccentBrush);
         OnPropertyChanged(nameof(AccentBrush));
@@ -260,8 +263,21 @@ public partial class MainWindow
         ApplyThemeToEditor();
     }
 
-    private static string? GetWindowsAccentColor() => WindowsThemeHelper.GetWindowsAccentHex();
-    private static bool? GetWindowsAppsUseLightTheme() => WindowsThemeHelper.GetIsLightTheme();
+    private void RefreshSystemAccentPreview()
+    {
+        var detected = GetWindowsAccentColor();
+        _hasSystemAccent = !string.IsNullOrWhiteSpace(detected);
+        _systemAccentHex = detected ?? (_hasThemeAccent && !string.IsNullOrWhiteSpace(_themeAccentHex) ? _themeAccentHex : KodoAccentHex);
+
+        try { WindowsAccentPreviewBrush = GetCachedBrush(_systemAccentHex); }
+        catch { WindowsAccentPreviewBrush = GetCachedBrush(KodoAccentHex); }
+
+        OnPropertyChanged(nameof(WindowsAccentPreviewBrush));
+        OnPropertyChanged(nameof(HasSystemAccent));
+    }
+
+    private static string? GetWindowsAccentColor() => SystemThemeHelper.GetSystemAccentHex();
+    private static bool? GetWindowsAppsUseLightTheme() => SystemThemeHelper.GetIsLightTheme();
 
     private static string ResolveSystemThemeName() =>
         GetWindowsAppsUseLightTheme() == true ? "Light" : "Dark";
@@ -647,31 +663,69 @@ public partial class MainWindow
         SaveSettings();
     }
 
+    private int _systemAccentProbeInFlight;
+
     private void WindowsAccentPollTimer_OnTick(object? sender, EventArgs e)
     {
         if (!IsActive) return;
         if (_accentColorMode != "windows" && !IsSystemThemeActive) return;
-        var current = GetWindowsAccentColor() ?? string.Empty;
-        if (current == _lastSeenWindowsAccentHex) return;
-        _lastSeenWindowsAccentHex = current;
-        ApplyAccentOverride();
-        if (_accentColorMode == "windows")
+        if (System.Threading.Interlocked.Exchange(ref _systemAccentProbeInFlight, 1) == 1) return;
+
+        _ = System.Threading.Tasks.Task.Run(async () =>
         {
-            ApplyThemeToEditor();
-            RefreshExtensionTheme();
-        }
+            try
+            {
+                var current = GetWindowsAccentColor() ?? string.Empty;
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (current == _lastSeenWindowsAccentHex) return;
+                    _lastSeenWindowsAccentHex = current;
+                    KodoDiagnostics.LogDebug($"System accent changed to '{current}' (detected: {current.Length > 0}).");
+                    ApplyAccentOverride();
+                    if (_accentColorMode == "windows")
+                    {
+                        ApplyThemeToEditor();
+                        RefreshExtensionTheme();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("System accent poll failed.", ex);
+            }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _systemAccentProbeInFlight, 0);
+            }
+        });
     }
 
     private void WindowsThemePollTimer_OnTick(object? sender, EventArgs e)
     {
         if (!IsActive) return;
         if (!IsSystemThemeActive && _accentColorMode != "windows") return;
-        var current = ResolveSystemThemeName();
-        if (current == _lastSeenWindowsThemeName) return;
-        _lastSeenWindowsThemeName = current;
-        RefreshSystemThemePreview();
-        if (IsSystemThemeActive)
-            ApplyTheme("System");
+
+        _ = System.Threading.Tasks.Task.Run(async () =>
+        {
+            try
+            {
+                var current = ResolveSystemThemeName();
+
+                await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (current == _lastSeenWindowsThemeName) return;
+                    _lastSeenWindowsThemeName = current;
+                    RefreshSystemThemePreview();
+                    if (IsSystemThemeActive)
+                        ApplyTheme("System");
+                });
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("System theme poll failed.", ex);
+            }
+        });
     }
 
     private void ThemeButton_OnClick(object? sender, RoutedEventArgs e)

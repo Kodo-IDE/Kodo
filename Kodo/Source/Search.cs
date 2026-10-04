@@ -99,6 +99,18 @@ public partial class MainWindow
                GetSettingsCardSearchText(card).Contains(_settingsSearchText, StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsSettingsCardPlatformSupported(Control card) => card.Name switch
+    {
+        "TerminalSettingsCard" => IsTerminalSupported,
+        _ => true
+    };
+
+    private bool IsSettingsSectionPlatformSupported(Control header) => header.Name switch
+    {
+        "SectionHeaderTerminal" => IsTerminalSupported,
+        _ => true
+    };
+
     private void NotifySettingsSearchChanged()
     {
         var cards = SettingsCardsPanel.Children
@@ -117,13 +129,19 @@ public partial class MainWindow
         var anyVisible = false;
         foreach (var card in cards)
         {
-            var visible = groupVisible[SettingsCardGroupKey(card)];
+            var visible = IsSettingsCardPlatformSupported(card) && groupVisible[SettingsCardGroupKey(card)];
             card.IsVisible = visible;
             anyVisible |= visible;
         }
 
         foreach (var header in headers)
         {
+            if (!IsSettingsSectionPlatformSupported(header))
+            {
+                header.IsVisible = false;
+                continue;
+            }
+
             var sectionTag = header.Tag as string;
             if (sectionTag is null)
             {
@@ -612,12 +630,13 @@ public partial class MainWindow
 
     private void RebuildDisplayItems()
     {
-        _searchDisplayItems.Clear();
+        var next = new System.Collections.ObjectModel.ObservableCollection<SearchDisplayItem>();
 
         if (_searchMode != SearchMode.ProjectSearch)
         {
             foreach (var item in _searchResults)
-                _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
+                next.Add(new SearchDisplayItem { Result = item });
+            ReplaceSearchDisplayItems(next);
             UpdateSearchPanelMinWidth();
             return;
         }
@@ -626,31 +645,34 @@ public partial class MainWindow
             .ToDictionary(g => g.FilePath, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
 
         _fileGroups.Clear();
-        var grouped = _searchResults
-            .GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new SearchFileGroup
-            {
-                FilePath = g.Key,
-                FileName = Path.GetFileName(g.Key),
-                RelativePath = g.First().RelativePath,
-                MatchCount = g.Count(),
-                IsExpanded = previousExpansion.TryGetValue(g.Key, out var wasExpanded) && wasExpanded,
-            })
-            .ToList();
 
-        var groupedResults = _searchResults.GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
-        foreach (var group in grouped)
+        foreach (var group in _searchResults.GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase))
         {
-            _fileGroups.Add(group);
-            _searchDisplayItems.Add(new SearchDisplayItem { IsGroupHeader = true, Group = group });
-            if (group.IsExpanded && groupedResults.TryGetValue(group.FilePath, out var items))
+            var items = group.ToList();
+            var searchGroup = new SearchFileGroup
             {
-                foreach (var item in items)
-                    _searchDisplayItems.Add(new SearchDisplayItem { Result = item });
-            }
+                FilePath = group.Key,
+                FileName = Path.GetFileName(group.Key),
+                RelativePath = items[0].RelativePath,
+                MatchCount = items.Count,
+                IsExpanded = previousExpansion.TryGetValue(group.Key, out var wasExpanded) && wasExpanded,
+            };
+
+            _fileGroups.Add(searchGroup);
+            next.Add(new SearchDisplayItem { IsGroupHeader = true, Group = searchGroup });
+            if (!searchGroup.IsExpanded) continue;
+            foreach (var item in items)
+                next.Add(new SearchDisplayItem { Result = item });
         }
 
+        ReplaceSearchDisplayItems(next);
         UpdateSearchPanelMinWidth();
+    }
+
+    private void ReplaceSearchDisplayItems(System.Collections.ObjectModel.ObservableCollection<SearchDisplayItem> next)
+    {
+        _searchDisplayItems = next;
+        OnPropertyChanged(nameof(SearchDisplayItems));
     }
 
     private void UpdateSearchPanelMinWidth()

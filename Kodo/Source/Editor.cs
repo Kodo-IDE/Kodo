@@ -88,9 +88,9 @@ public partial class MainWindow
         var document = EditorTextBox.Document;
         var capturedVersion = _insightDocVersion;
         var capturedPath = _currentFilePath;
+        var snapshot = document.Text;
         Task.Run(() =>
         {
-            var snapshot = document.Text;
             if (string.IsNullOrWhiteSpace(snapshot)) return (0, true);
             var chars = snapshot.AsSpan();
             int wc = 0;
@@ -386,6 +386,14 @@ public partial class MainWindow
         }
     }
 
+    private void EditorTextView_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        HideDiagnosticPopup();
+
+        if (HandleEditorHorizontalScrollGesture(e))
+            e.Handled = true;
+    }
+
     private void DiagnosticPopupShowTimer_OnTick(object? sender, EventArgs e)
     {
         _diagnosticPopupShowTimer.Stop();
@@ -404,14 +412,20 @@ public partial class MainWindow
                 return null;
             var floor = textView.GetPositionFloor(position + textView.ScrollOffset);
             if (floor is null) return null;
-            var line = EditorTextBox.Document.GetLineByNumber(floor.Value.Line);
-            var offset = Math.Clamp(line.Offset + Math.Max(0, floor.Value.Column - 1), 0, EditorTextBox.Document.TextLength);
-            var text = EditorTextBox.Document.Text;
-            var start = InsightEngine.FindWordStart(text, offset);
-            var end = offset;
-            while (end < text.Length && InsightEngine.IsWordChar(text[end])) end++;
+            var document = EditorTextBox.Document;
+            var line = document.GetLineByNumber(floor.Value.Line);
+            var offset = Math.Clamp(line.Offset + Math.Max(0, floor.Value.Column - 1), 0, document.TextLength);
+
+            var column = offset - line.Offset;
+            var lineText = document.GetText(line.Offset, line.Length);
+
+            var start = column;
+            while (start > 0 && InsightEngine.IsWordChar(lineText[start - 1])) start--;
+            var end = column;
+            while (end < lineText.Length && InsightEngine.IsWordChar(lineText[end])) end++;
             if (end <= start) return null;
-            return rules.GetHoverInfo(text, text[start..end])?.Contents;
+
+            return rules.GetHoverInfo(DocumentTextCache.Get(document), lineText[start..end])?.Contents;
         }
         catch
         {
@@ -1697,7 +1711,8 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
 
-        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(document.Text, languageExtension, folderPath, filePath));
+        var documentText = document.Text;
+        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath));
 
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.Document is null) return;
@@ -1808,6 +1823,29 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         return window;
     }
 
+    private bool TryHandleEditorHorizontalScrollKey(KeyEventArgs e)
+    {
+        if (MatchesKeybind(e, "ScrollEditorLeft") && ScrollEditorHorizontally(-1))
+            return ConsumeKey(e);
+
+        if (MatchesKeybind(e, "ScrollEditorRight") && ScrollEditorHorizontally(1))
+            return ConsumeKey(e);
+
+        if (MatchesKeybind(e, "ScrollEditorPageLeft") && ScrollEditorHorizontallyByPage(-1))
+            return ConsumeKey(e);
+
+        if (MatchesKeybind(e, "ScrollEditorPageRight") && ScrollEditorHorizontallyByPage(1))
+            return ConsumeKey(e);
+
+        return false;
+    }
+
+    private static bool ConsumeKey(KeyEventArgs e)
+    {
+        e.Handled = true;
+        return true;
+    }
+
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (DiagnosticPopup.IsOpen && IsEditorKeyEvent(e))
@@ -1850,6 +1888,9 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         }
 
         if (!IsEditorKeyEvent(e))
+            return;
+
+        if (TryHandleEditorHorizontalScrollKey(e))
             return;
 
         if (EditorTextBox?.Document is null)

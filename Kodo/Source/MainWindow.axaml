@@ -795,6 +795,16 @@
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
 
+        
+        <Style Selector="TextBox.tabrename">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CaretBrush" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
             <Setter Property="Background" Value="{Binding #RootWindow.CardBrush}" />
@@ -832,38 +842,12 @@
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
+        
         <Style Selector="ScrollViewer">
             <Setter Property="AllowAutoHide" Value="True" />
             <Setter Property="IsScrollChainingEnabled" Value="True" />
         </Style>
-        <Style Selector="ScrollBar:vertical">
-            <Setter Property="Width" Value="8" />
-            <Setter Property="Margin" Value="1,0,1,0" />
-            <Setter Property="MinWidth" Value="8" />
-        </Style>
-        <Style Selector="ScrollBar:horizontal">
-            <Setter Property="Height" Value="8" />
-            <Setter Property="Margin" Value="0,1,0,1" />
-            <Setter Property="MinHeight" Value="8" />
-        </Style>
-        <Style Selector="ScrollBar Thumb">
-            <Setter Property="Background" Value="#3A3A3A" />
-            <Setter Property="CornerRadius" Value="4" />
-            <Setter Property="Transitions">
-                <Transitions>
-                    <BrushTransition Property="Background" Duration="0:0:0.15" />
-                </Transitions>
-            </Setter>
-        </Style>
-        <Style Selector="ScrollBar Thumb:pointerover">
-            <Setter Property="Background" Value="#4A4A4A" />
-        </Style>
-        <Style Selector="ScrollBar Thumb:pressed">
-            <Setter Property="Background" Value="#5A5A5A" />
-        </Style>
-        <Style Selector="ScrollBar:disabled">
-            <Setter Property="IsVisible" Value="False" />
-        </Style>
+        
         <Style Selector="Menu ScrollViewer, ContextMenu ScrollViewer, ComboBox ScrollViewer">
             <Setter Property="MaxHeight" Value="420" />
             <Setter Property="AllowAutoHide" Value="True" />
@@ -1111,7 +1095,7 @@
                                                 <MenuItem Header="Copy File Name"
                                                           Tag="{Binding}"
                                                           Click="CopyEditorTabNameMenuItem_OnClick" />
-                                                <MenuItem Header="Reveal in File Explorer"
+                                                <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
                                                 <MenuItem Header="Open in Integrated Terminal"
@@ -1239,7 +1223,7 @@
                                             <MenuItem Header="Open"
                                                       Tag="{Binding}"
                                                       Click="OpenExplorerItemMenuItem_OnClick" />
-                                            <MenuItem Header="Reveal in File Explorer"
+                                            <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
                                                       Tag="{Binding}"
                                                       Click="RevealExplorerItemMenuItem_OnClick" />
                                             <MenuItem Header="Search in Folder"
@@ -1649,6 +1633,9 @@
                                                 <MenuItem Header="Save As..."
                                                           Tag="{Binding}"
                                                           Click="SaveEditorTabAsMenuItem_OnClick" />
+                                                <MenuItem Header="Rename..."
+                                                          Tag="{Binding}"
+                                                          Click="RenameEditorTabMenuItem_OnClick" />
                                                 <Separator />
                                                 <MenuItem Header="Copy Path"
                                                           Tag="{Binding}"
@@ -1659,7 +1646,7 @@
                                                 <MenuItem Header="Copy File Name"
                                                           Tag="{Binding}"
                                                           Click="CopyEditorTabNameMenuItem_OnClick" />
-                                                <MenuItem Header="Reveal in File Explorer"
+                                                <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
                                                           Tag="{Binding}"
                                                           Click="RevealEditorTabInExplorerMenuItem_OnClick" />
                                                 <MenuItem Header="Open in Integrated Terminal"
@@ -1701,12 +1688,13 @@
                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Opacity="0.85" />
                                                     </Viewbox>
-                                                    <TextBlock FontSize="13"
+<TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
+                                                               IsVisible="{Binding !IsRenaming}"
                                                                Text="{Binding DisplayName}" />
                                                      <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
-                                                             IsVisible="{Binding IsDirty}">
+                                                              IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">
                                                             <Path Fill="{Binding #RootWindow.AccentBrush}"
                                                                   Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
@@ -1731,6 +1719,18 @@
                                                     </Canvas>
                                                 </Viewbox>
                                             </Button>
+                                            <TextBox Grid.Row="0"
+                                                     Grid.Column="0"
+                                                     Grid.ColumnSpan="2"
+                                                     Classes="tabrename"
+                                                     FontSize="13"
+                                                     IsVisible="{Binding IsRenaming}"
+                                                     Text="{Binding RenameText, Mode=TwoWay}"
+                                                     KeyDown="InlineTabRenameTextBox_OnKeyDown"
+                                                     MinWidth="150"
+                                                     Padding="4,2"
+                                                     VerticalAlignment="Center"
+                                                     VerticalContentAlignment="Center" />
                                             <Border Grid.Row="1"
                                                     Grid.Column="0"
                                                     Grid.ColumnSpan="2"
@@ -1764,14 +1764,12 @@
                             <ContextMenu Opening="EditorContextMenu_Opening">
                                 <MenuItem Name="EditorCutMenuItem"
                                            Header="Cut"
-                                           InputGesture="Ctrl+X"
                                            Click="EditorCutMenuItem_OnClick" />
                                 <MenuItem Name="EditorCopyMenuItem"
                                            Header="Copy"
-                                           InputGesture="Ctrl+C"
                                            Click="EditorCopyMenuItem_OnClick" />
-                                <MenuItem Header="Paste"
-                                           InputGesture="Ctrl+V"
+                                <MenuItem Name="EditorPasteMenuItem"
+                                           Header="Paste"
                                            Click="EditorPasteMenuItem_OnClick" />
                                 <Separator />
                                 <MenuItem Name="EditorFindAllOccurrencesMenuItem"
@@ -1849,7 +1847,7 @@
                                             Foreground="{Binding PrimaryTextBrush}"
                                             TextWrapping="Wrap"
                                             VerticalAlignment="Center"
-                                            FontFamily="Consolas" />
+                                            FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace" />
                                 <Button Grid.Column="2"
                                         Content="✕"
                                         Width="28"
@@ -2801,7 +2799,7 @@
                 <Border Grid.Row="3"
                         x:Name="TerminalPanelSplitter"
                         Background="Transparent"
-                        IsVisible="{Binding IsTerminalVisible}"
+                        IsVisible="{Binding IsTerminalPanelVisible}"
                         Cursor="SizeNorthSouth"
                         ToolTip.Tip="Drag to resize the terminal panel"
                         PointerPressed="TerminalPanelSplitter_OnPointerPressed"
@@ -2810,7 +2808,7 @@
                         PointerCaptureLost="TerminalPanelSplitter_OnPointerCaptureLost" />
 
                 <Border Grid.Row="4"
-                        IsVisible="{Binding IsTerminalVisible}"
+                        IsVisible="{Binding IsTerminalPanelVisible}"
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="1"
@@ -3318,6 +3316,7 @@
                                     IsVisible="{Binding IsDocumentViewVisible}" />
 
                             <Button Classes="statusitem"
+                                    IsVisible="{Binding IsTerminalSupported}"
                                     Click="ToggleTerminalButton_OnClick"
                                     ToolTip.Tip="{Binding ToggleTerminalTooltip}"
                                     VerticalAlignment="Center">
@@ -3482,7 +3481,7 @@
                                                         <MenuItem Header="Copy Relative Path"
                                                                   Tag="{Binding Result}"
                                                                   Click="CopySearchResultRelativePathMenuItem_OnClick" />
-                                                        <MenuItem Header="Reveal in File Explorer"
+                                                        <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
                                                                   Tag="{Binding Result}"
                                                                   Click="RevealSearchResultInExplorerMenuItem_OnClick" />
                                                     </ContextMenu>
@@ -3754,7 +3753,7 @@
                                                             Click="ThemeButton_OnClick"
                                                             Tag="System"
                                                             Width="170"
-                                                            ToolTip.Tip="Match your Windows light/dark setting">
+                                                            ToolTip.Tip="{Binding TooltipSystemTheme}">
                                                         <StackPanel Spacing="8">
                                                             <Panel>
                                                                 <Border Height="72"
@@ -3947,7 +3946,7 @@
                                                                     Background="{Binding WindowsAccentPreviewBrush}"
                                                                     IsVisible="{Binding !IsAccentWindows}" />
                                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Windows" />
+                                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="{Binding LabelAccentSystem}" />
                                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
                                                                            VerticalAlignment="Center" Text="●"
                                                                            IsVisible="{Binding IsAccentWindows}" />
@@ -4103,7 +4102,7 @@
                                                                TextWrapping="Wrap"
                                                                LineHeight="18"
                                                                FontSize="12"
-                                                               FontFamily="Consolas,monospace"
+                                                               FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"
                                                                Text="{Binding PrivacyPolicyText}" />
                                                 </ScrollViewer>
                                             </Border>
@@ -5373,7 +5372,7 @@
                                             Click="ThemeButton_OnClick"
                                             Tag="System"
                                             Width="170"
-                                            ToolTip.Tip="Match your Windows light/dark setting">
+                                            ToolTip.Tip="{Binding TooltipSystemTheme}">
                                         <StackPanel Spacing="8">
                                             <Panel>
                                                 <Border Height="96"
@@ -5574,7 +5573,7 @@
                                             <Border Height="28" CornerRadius="8" Background="{Binding WindowsAccentPreviewBrush}"
                                                     IsVisible="{Binding !IsAccentWindows}" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Windows" />
+                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="{Binding LabelAccentSystem}" />
                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
                                                            VerticalAlignment="Center" Text="●"
                                                            IsVisible="{Binding IsAccentWindows}" />
@@ -5823,11 +5822,11 @@
                                 <CheckBox IsChecked="{Binding LspEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable language server features" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Language servers provide code completion, diagnostics, navigation, and other language-aware editor features." />
+
                                 <StackPanel Spacing="10" Margin="24,0,0,0" IsVisible="{Binding LspEnabled}">
-                                    <TextBlock Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="Language servers provide code completion, diagnostics, navigation, and other language-aware editor features." />
-                                    <StackPanel Spacing="10">
                                     <CheckBox IsChecked="{Binding LspDiagnosticsEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Show diagnostics and error highlighting" />
@@ -5849,24 +5848,37 @@
                                     <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Highlight references to the symbol under the caret" />
-                                    <StackPanel Spacing="2">
-                                        <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
-                                                  Foreground="{Binding PrimaryTextBrush}"
-                                                  Content="Semantic highlighting" />
-                                        <TextBlock Margin="24,0,0,0"
-                                                   FontSize="11"
-                                                   Foreground="{Binding MutedTextBrush}"
-                                                   TextWrapping="Wrap"
-                                                   Text="Adds extra syntax colors using language server information. This optional feature is off by default." />
-                                        </StackPanel>
-                                    </StackPanel>
+                                    <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Semantic highlighting" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Adds extra syntax colors using language server information. This optional feature is off by default." />
+
                                     <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Automatically install missing servers" />
-                                    <TextBlock Margin="24,-8,0,0"
+                                    <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
                                                Text="When enabled, Kodo installs missing servers in its data folder. Servers already installed on your system remain available when this is off." />
+
+                                    <TextBlock Margin="24,0,0,0"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Installed a runtime or a server since Kodo started? Use this to re-detect, bring back any install prompts you dismissed, and see what is still missing." />
+                                    <Button Classes="chrome"
+                                            HorizontalAlignment="Left"
+                                            Margin="24,0,0,0"
+                                            Click="RecheckLanguageServersButton_OnClick"
+                                            IsEnabled="{Binding !IsRecheckingLanguageServers}"
+                                            ToolTip.Tip="Re-detect language servers and restore install prompts"
+                                            Content="{Binding RecheckLanguageServersLabel}" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="{Binding LspRecheckStatusText}" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -5931,7 +5943,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderTerminal" Tag="terminal" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderTerminal" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -5950,6 +5962,7 @@
                                 BorderThickness="1"
                                 CornerRadius="16"
                                 Padding="24"
+                                IsVisible="{Binding IsTerminalSupported}"
                                 x:Name="TerminalSettingsCard" Tag="terminal">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -5981,11 +5994,13 @@
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="New terminal sessions use the selected shell. PowerShell is preferred when it is available." />
-                                <CheckBox IsChecked="{Binding IsPSReadLinePredictionEnabled, Mode=TwoWay}"
+                                           Text="{Binding TerminalShellDescriptionText}" />
+                                <CheckBox IsVisible="{Binding IsPSReadLineRelevant}"
+                                          IsChecked="{Binding IsPSReadLinePredictionEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable PSReadLine predictive IntelliSense in PowerShell" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                <TextBlock IsVisible="{Binding IsPSReadLineRelevant}"
+                                           Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="Off by default - it can render as glitchy artifacts in the terminal. Applies to new terminal sessions." />
                             </StackPanel>
@@ -6878,7 +6893,7 @@
                                                    TextWrapping="Wrap"
                                                    LineHeight="18"
                                                    FontSize="12"
-                                                   FontFamily="Consolas,monospace"
+                                                   FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"
                                                    Text="{Binding PrivacyPolicyText}" />
                                     </ScrollViewer>
                                 </Border>

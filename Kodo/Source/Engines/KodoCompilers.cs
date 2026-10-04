@@ -1212,6 +1212,17 @@ public partial class MainWindow
 
     private async Task HandleMsys2MingwInstallAsync(string installerPath, MarketplaceExtension compilerExtension)
     {
+        if (!OperatingSystem.IsWindows())
+        {
+            KodoDiagnostics.LogWarning("KodoCompilers.HandleMsys2MingwInstall",
+                new PlatformNotSupportedException(
+                    "MSYS2/MinGW is a Windows-only toolchain and cannot be installed on this platform. " +
+                    "Install GCC with your system package manager instead."),
+                operation: $"Install compiler {compilerExtension.Id}");
+            ExtensionsStatusText = $"{compilerExtension.Name} is only available on Windows.";
+            return;
+        }
+
         ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Completing setup will auto-install g++...";
         try
         {

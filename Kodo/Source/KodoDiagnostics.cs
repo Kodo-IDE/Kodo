@@ -339,18 +339,22 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
-    public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, string? detail = null)
+public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, string? detail = null) =>
+    ReportSlowStage(stage, elapsedMs, thresholdMs, () => detail);
+
+public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, Func<string?> detailFactory)
+{
+    if (elapsedMs < thresholdMs) return;
+    try
     {
-        if (elapsedMs < thresholdMs) return;
-        try
-        {
-            var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detail) ? "" : " " + detail)}";
-            EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
-            PushBreadcrumb(line);
-            WritePayloadToDisk(line, MainLogFilePath);
-        }
-        catch { }
+        var detailText = detailFactory();
+        var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detailText) ? "" : " " + detailText)}";
+        EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
+        PushBreadcrumb(line);
+        WritePayloadToDisk(line, MainLogFilePath);
     }
+    catch { }
+}
 
     public static void LogDebug(string message, Exception? exception = null)
     {
@@ -360,6 +364,8 @@ internal static class KodoDiagnostics
                 ? $"[Kodo] {message}"
                 : $"[Kodo] {message}{Environment.NewLine}{exception}");
 
+            PushBreadcrumb(FormatBreadcrumb(message));
+
             if (!VerboseLoggingEnabled) return;
 
             if (exception is not null)
@@ -368,6 +374,20 @@ internal static class KodoDiagnostics
                 WriteVerboseTrace(message);
         }
         catch { }
+    }
+
+    private static string FormatBreadcrumb(string message)
+    {
+        const int MaxLength = 300;
+        if (string.IsNullOrEmpty(message)) return "[Kodo]";
+
+        if (message.IndexOfAny(['\r', '\n']) < 0)
+            return message.Length <= MaxLength
+                ? "[Kodo] " + message
+                : "[Kodo] " + message[..MaxLength] + "...";
+
+        var single = message.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return single.Length <= MaxLength ? "[Kodo] " + single : "[Kodo] " + single[..MaxLength] + "...";
     }
 
     private static void WriteVerboseTrace(string message)
@@ -478,6 +498,8 @@ internal static class KodoDiagnostics
             RegexOptions.Compiled);
     }
 
+    public static string DisplayPath(string path) => RedactPath(path);
+
     private static string RedactPath(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -490,18 +512,24 @@ internal static class KodoDiagnostics
         if (!string.IsNullOrWhiteSpace(repoRoot) &&
             FileSystemPaths.StartsWith(path, repoRoot))
             return path.Replace(repoRoot, "<repo>", FileSystemPaths.Comparison);
+
+        var home = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrWhiteSpace(home) &&
+            FileSystemPaths.StartsWith(path, home) &&
+            path.Length > home.Length)
+        {
+            if (!OperatingSystem.IsWindows())
+                return "~" + path[home.Length..].Replace(Path.DirectorySeparatorChar, '/');
+
+            return "/home/<redacted>" + path[home.Length..];
+        }
+
         if (!string.IsNullOrWhiteSpace(appData) &&
             FileSystemPaths.StartsWith(path, appData))
             return path.Replace(appData, "%AppData%", FileSystemPaths.Comparison);
         if (!string.IsNullOrWhiteSpace(localAppData) &&
             FileSystemPaths.StartsWith(path, localAppData))
             return path.Replace(localAppData, "%LocalAppData%", FileSystemPaths.Comparison);
-
-        var home = Environment.GetEnvironmentVariable("HOME");
-        if (!string.IsNullOrWhiteSpace(home) &&
-            FileSystemPaths.StartsWith(path, home) &&
-            path.Length > home.Length)
-            return "/home/<redacted>" + path[home.Length..];
 
         return path;
     }
@@ -561,43 +589,4 @@ internal static class KodoDiagnostics
         "DEBUG" => KodoSeverity.Debug,
         _ => KodoSeverity.Warning,
     };
-}
-
-internal static class WindowsThemeHelper
-{
-    public static string KodoDataPath(string file) => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", file);
-    public static string? GetWindowsAccentHex()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent");
-            if (key?.GetValue("AccentColorMenu") is int raw)
-            {
-                var r = raw & 0xFF; var g = (raw >> 8) & 0xFF; var b = (raw >> 16) & 0xFF;
-                return $"#{r:X2}{g:X2}{b:X2}";
-            }
-        }
-        catch { }
-        return null;
-    }
-    public static bool? GetIsLightTheme()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return null;
-        try
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            if (key?.GetValue("AppsUseLightTheme") is int v) return v != 0;
-        }
-        catch { }
-        return null;
-    }
-    public static Avalonia.Media.IBrush GetReadableForeground(Avalonia.Media.Color bg)
-    {
-        static double Lum(Avalonia.Media.Color c) { double To(double ch) { ch /= 255; return ch <= 0.03928 ? ch / 12.92 : Math.Pow((ch + 0.055) / 1.055, 2.4); } return 0.2126 * To(c.R) + 0.7152 * To(c.G) + 0.0722 * To(c.B); }
-        var l = Lum(bg);
-        return (1.05 / (l + 0.05)) >= ((l + 0.05) / 0.05) ? Avalonia.Media.Brushes.White : Avalonia.Media.Brushes.Black;
-    }
-    public static Avalonia.Media.Color Lighten(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch + (255 - ch) * a, 0, 255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
-    public static Avalonia.Media.Color Darken(Avalonia.Media.Color c, double a) { byte Adj(byte ch) => (byte)Math.Clamp(ch * (1 - a), 0, 255); return Avalonia.Media.Color.FromArgb(c.A, Adj(c.R), Adj(c.G), Adj(c.B)); }
 }

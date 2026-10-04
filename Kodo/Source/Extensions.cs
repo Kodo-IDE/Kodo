@@ -371,6 +371,8 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         _compiledSyntaxProfileCache.Clear();
         _contentSniffCache.Clear();
         _appliedSyntaxExtension = null;
+        InvalidateEffectiveLanguageExtensionCache();
+        InvalidateFenceLanguageCache();
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
         stageWatch.Restart();
@@ -1005,12 +1007,26 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
             ext.IsActiveTheme = string.Equals(ext.ThemeCardThemeId, _currentThemeName, StringComparison.OrdinalIgnoreCase);
     }
 
+    private readonly Dictionary<string, LoadedExtension?> _effectiveLanguageExtensionCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object EffectiveLanguageCacheLock = new();
+
+    private void InvalidateEffectiveLanguageExtensionCache()
+    {
+        lock (EffectiveLanguageCacheLock) _effectiveLanguageExtensionCache.Clear();
+    }
+
     private LoadedExtension? GetLanguageExtension(string filePath)
     {
         if (IsPlainTextFile(filePath))
             return null;
 
         var fileExt = Path.GetExtension(filePath).ToLowerInvariant();
+
+        lock (EffectiveLanguageCacheLock)
+        {
+            if (_effectiveLanguageExtensionCache.TryGetValue(fileExt, out var cached)) return cached;
+        }
+
         var extension = LoadedExtensions.FirstOrDefault(e =>
             e.Type == "language" &&
             e.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)));
@@ -1022,12 +1038,22 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
                 sniffed = TryDetectLanguageFromContent(filePath);
                 _contentSniffCache[filePath] = sniffed;
             }
-            if (sniffed is null)
-                return null;
-
             return sniffed;
         }
 
+        var resolved = ApplyMatchingSyntaxProfiles(extension, fileExt);
+
+        lock (EffectiveLanguageCacheLock)
+        {
+            if (_effectiveLanguageExtensionCache.Count >= 512) _effectiveLanguageExtensionCache.Clear();
+            _effectiveLanguageExtensionCache[fileExt] = resolved;
+        }
+
+        return resolved;
+    }
+
+    private static LoadedExtension? ApplyMatchingSyntaxProfiles(LoadedExtension extension, string fileExt)
+    {
         var matchingProfiles = extension.SyntaxProfiles
             .Where(profile => profile.Extensions.Any(ex => ex.Equals(fileExt, StringComparison.OrdinalIgnoreCase)))
             .ToList();
@@ -1537,11 +1563,37 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         return loadedExtension is null ? null : ResolveCompiledSyntaxProfile(loadedExtension);
     }
 
+    private readonly Dictionary<string, LoadedExtension?> _fenceLanguageCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object FenceLanguageCacheLock = new();
+
+    private void InvalidateFenceLanguageCache()
+    {
+        lock (FenceLanguageCacheLock) _fenceLanguageCache.Clear();
+    }
+
     private LoadedExtension? ResolveFenceLanguageExtension(string fenceLanguage)
     {
         if (string.IsNullOrWhiteSpace(fenceLanguage))
             return null;
 
+        lock (FenceLanguageCacheLock)
+        {
+            if (_fenceLanguageCache.TryGetValue(fenceLanguage, out var cached)) return cached;
+        }
+
+        var resolved = ResolveFenceLanguageExtensionUncached(fenceLanguage);
+
+        lock (FenceLanguageCacheLock)
+        {
+            if (_fenceLanguageCache.Count >= 256) _fenceLanguageCache.Clear();
+            _fenceLanguageCache[fenceLanguage] = resolved;
+        }
+
+        return resolved;
+    }
+
+    private LoadedExtension? ResolveFenceLanguageExtensionUncached(string fenceLanguage)
+    {
         var token = fenceLanguage.Trim();
         if (token.StartsWith("{", StringComparison.Ordinal) && token.EndsWith("}", StringComparison.Ordinal) && token.Length > 2)
             token = token[1..^1];

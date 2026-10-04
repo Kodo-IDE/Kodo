@@ -84,6 +84,58 @@ internal static class LspInstallationManager
         return Path.Combine(dir, fileName);
     }
 
+    public static string GetManagedPackagePath(LspConfiguration cfg, AppSettings? settings) =>
+        Path.Combine(GetProviderDir(cfg, settings), ExpectedArtifactFileName(cfg, settings));
+
+    internal static string GetDownloadFileName(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        var withoutQuery = url.Trim();
+        var cut = withoutQuery.IndexOfAny(['?', '#']);
+        if (cut >= 0) withoutQuery = withoutQuery[..cut];
+
+        var lastSlash = withoutQuery.LastIndexOf('/');
+        if (lastSlash >= 0) withoutQuery = withoutQuery[(lastSlash + 1)..];
+        withoutQuery = Uri.UnescapeDataString(withoutQuery);
+
+        if (withoutQuery.Length == 0) return string.Empty;
+        if (withoutQuery.IndexOfAny(['/', '\\', ':', '\0']) >= 0) return string.Empty;
+        if (withoutQuery is "." or "..") return string.Empty;
+        return withoutQuery;
+    }
+
+    public static string ExpectedArtifactFileName(LspConfiguration cfg, AppSettings? settings)
+    {
+        if (UsesRuntimeLauncher(cfg) && GetDownloadFileName(cfg.DownloadUrl) is { Length: > 0 } downloadName)
+            return downloadName;
+        return Path.GetFileName(GetManagedExecutablePath(cfg, settings));
+    }
+
+    public static bool UsesRuntimeLauncher(LspConfiguration cfg) =>
+        !string.IsNullOrWhiteSpace(cfg.Runtime) &&
+        (cfg.RuntimeArgs.Length > 0 || !string.IsNullOrWhiteSpace(cfg.MainClass));
+
+    internal readonly record struct LspLaunchPlan(string FileName, IReadOnlyList<string> PrefixArgs);
+
+    internal static LspLaunchPlan ResolveLaunchPlan(LspConfiguration cfg, AppSettings? settings, string? artifact = null)
+    {
+        if (!UsesRuntimeLauncher(cfg))
+            return new(cfg.Command.Trim().Trim('"'), Array.Empty<string>());
+
+        var runtime = cfg.Runtime!.Trim();
+        var resolvedRuntime = LspRuntimeDetector.FindOnPath(runtime) ?? runtime;
+        var package = artifact ?? GetManagedPackagePath(cfg, settings);
+
+        var prefix = new List<string>(cfg.RuntimeArgs.Length + 1);
+        foreach (var arg in cfg.RuntimeArgs)
+        {
+            prefix.Add(arg.Replace("{package}", package, StringComparison.Ordinal));
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.MainClass)) prefix.Add(cfg.MainClass!.Trim());
+        return new(resolvedRuntime, prefix);
+    }
+
     public static bool IsManagedInstalled(LspConfiguration cfg) => IsManagedInstalled(cfg, null);
     public static bool IsManagedInstalled(LspConfiguration cfg, AppSettings? settings)
     {
@@ -112,7 +164,9 @@ internal static class LspInstallationManager
     public static string? FindManagedExecutable(LspConfiguration cfg) => FindManagedExecutable(cfg, null);
     public static string? FindManagedExecutable(LspConfiguration cfg, AppSettings? settings)
     {
-        var exe = GetManagedExecutablePath(cfg, settings);
+        var exe = UsesRuntimeLauncher(cfg)
+            ? GetManagedPackagePath(cfg, settings)
+            : GetManagedExecutablePath(cfg, settings);
         if (File.Exists(exe)) return exe;
         var dir = GetProviderDir(cfg, settings);
         return FindExecutableInDirectory(dir, Path.GetFileName(exe));
@@ -210,7 +264,11 @@ internal static class LspInstallationManager
 
     private static readonly ConcurrentDictionary<string, (bool ok, string? version, string? error)> VersionProbeCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public static async Task<(bool ok, string? version, string? error)> TryGetVersionAsync(string exePath, string[] versionArgs, CancellationToken ct = default)
+    public static Task<(bool ok, string? version, string? error)> TryGetVersionAsync(string exePath, string[] versionArgs, CancellationToken ct = default)
+        => TryGetVersionAsync(exePath, versionArgs, [], ct);
+
+    public static async Task<(bool ok, string? version, string? error)> TryGetVersionAsync(
+        string exePath, string[] versionArgs, IReadOnlyList<string> prefixArgs, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return (false, null, "Executable not found");
         var args = versionArgs != null && versionArgs.Length > 0 ? string.Join(" ", versionArgs) : "--version";
@@ -220,22 +278,27 @@ internal static class LspInstallationManager
         {
             bool isCmdScript = exePath.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || exePath.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
             string fileName = exePath;
-            string arguments = args;
+
+            var allArgs = new List<string>(prefixArgs.Count + 1);
             if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
             {
                 var comSpec = Environment.GetEnvironmentVariable("ComSpec") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
                 fileName = comSpec;
-                arguments = $"/c \"{exePath}\" {args}";
+                allArgs.Add("/c");
+                allArgs.Add(exePath);
             }
+            allArgs.AddRange(prefixArgs);
+            allArgs.Add(args);
+
             var psi = new ProcessStartInfo
             {
                 FileName = fileName,
-                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
             };
+            foreach (var arg in allArgs) psi.ArgumentList.Add(arg);
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return (false, null, "Failed to start");
             var stdout = await proc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
@@ -370,6 +433,7 @@ internal static class LspInstallationManager
         KodoDiagnostics.LogDebug($"LSP npm install {pkg}");
         var providerDir = GetProviderDir(cfg, settings);
         var stagingDir = providerDir + ".staging-" + Guid.NewGuid().ToString("N");
+        var expectedFileName = ExpectedArtifactFileName(cfg, settings);
         try
         {
             Directory.CreateDirectory(stagingDir);
@@ -390,8 +454,8 @@ internal static class LspInstallationManager
                 return new(InstallResultKind.Failed, $"npm install failed (exit {proc.ExitCode}): {stderr.Trim()}", null);
             }
             var stagedExe = Directory.EnumerateFiles(stagingDir, "*", SearchOption.AllDirectories)
-                .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), Path.GetFileName(GetManagedExecutablePath(cfg, settings)))
-                    || Path.GetFileNameWithoutExtension(f).Equals(Path.GetFileNameWithoutExtension(GetManagedExecutablePath(cfg, settings)), StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(f => FileSystemPaths.Equals(Path.GetFileName(f), expectedFileName)
+                    || Path.GetFileNameWithoutExtension(f).Equals(Path.GetFileNameWithoutExtension(expectedFileName), StringComparison.OrdinalIgnoreCase));
             if (stagedExe == null)
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
@@ -524,33 +588,40 @@ internal static class LspInstallationManager
 
             progress?.Report($"Installing {cfg.EffectiveProviderId}...");
             Directory.CreateDirectory(stagingDir);
-            bool isZip = url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || IsZipFile(tempFile);
-            bool isTarGz = url.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || url.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase) || IsTarGzFile(tempFile);
-            if (isZip)
+            var expectedFileName = ExpectedArtifactFileName(cfg, settings);
+            var shape = ClassifyDownload(url, tempFile);
+            if (shape == DownloadShape.Zip)
             {
                 await ExtractZipSecureAsync(tempFile, stagingDir, ct).ConfigureAwait(false);
             }
-            else if (isTarGz)
+            else if (shape == DownloadShape.TarGz)
             {
                 await ExtractTarGzSecureAsync(tempFile, stagingDir, ct).ConfigureAwait(false);
             }
             else
             {
-                var fileName = Path.GetFileName(GetManagedExecutablePath(cfg, settings));
-                var dest = Path.Combine(stagingDir, fileName);
-                File.Copy(tempFile, dest, true);
-                MakeExecutable(dest);
+                File.Copy(tempFile, Path.Combine(stagingDir, expectedFileName), true);
+                MakeExecutable(Path.Combine(stagingDir, expectedFileName));
             }
             if (!Directory.EnumerateFileSystemEntries(stagingDir).Any())
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
                 return new(InstallResultKind.Failed, "Archive extracted no files", null);
             }
-            var foundExe = FindExecutableInDirectory(stagingDir, Path.GetFileName(GetManagedExecutablePath(cfg, settings)));
+            var foundExe = FindExecutableInDirectory(stagingDir, expectedFileName);
             if (foundExe == null)
             {
                 try { Directory.Delete(stagingDir, true); } catch { }
-                return new(InstallResultKind.Failed, "Extracted archive does not contain the configured language-server executable", null);
+                var what = shape == DownloadShape.SingleFile ? "Download" : "Extracted archive";
+                var listing = string.Join(", ", Directory.Exists(stagingDir)
+                    ? Directory.EnumerateFileSystemEntries(stagingDir, "*", SearchOption.AllDirectories)
+                        .Select(Path.GetFileName)
+                        .Where(n => !string.IsNullOrEmpty(n))
+                        .Take(8)
+                    : Array.Empty<string>());
+                return new(InstallResultKind.Failed,
+                    $"{what} does not contain the configured language-server executable '{expectedFileName}'" +
+                    (listing.Length > 0 ? $". Found instead: {listing}" : string.Empty), null);
             }
             try { File.Delete(tempFile); } catch { }
             try
@@ -585,6 +656,38 @@ internal static class LspInstallationManager
             KodoDiagnostics.LogDebug($"LSP download/install failed for {cfg.EffectiveProviderId}", ex);
             return new(InstallResultKind.Failed, $"Installation failed: {ex.Message}", null);
         }
+    }
+
+    private enum DownloadShape { SingleFile, Zip, TarGz }
+
+    private static DownloadShape ClassifyDownload(string url, string downloadedFile)
+    {
+        var withoutQuery = url;
+        var cut = withoutQuery.IndexOfAny(['?', '#']);
+        if (cut >= 0) withoutQuery = withoutQuery[..cut];
+
+        var name = withoutQuery;
+        var lastSlash = name.LastIndexOf('/');
+        if (lastSlash >= 0) name = name[(lastSlash + 1)..];
+
+        if (name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
+            return DownloadShape.TarGz;
+        if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            return DownloadShape.Zip;
+        if (name.EndsWith(".jar", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".war", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".rpm", StringComparison.OrdinalIgnoreCase) ||
+            name.EndsWith(".appimage", StringComparison.OrdinalIgnoreCase))
+            return DownloadShape.SingleFile;
+
+        if (IsZipFile(downloadedFile)) return DownloadShape.Zip;
+        if (IsTarGzFile(downloadedFile)) return DownloadShape.TarGz;
+        return DownloadShape.SingleFile;
     }
 
     private static bool IsZipFile(string path)
@@ -636,40 +739,39 @@ internal static class LspInstallationManager
         {
             using var fs = File.OpenRead(tgzPath);
             using var gz = new System.IO.Compression.GZipStream(fs, System.IO.Compression.CompressionMode.Decompress);
-            var tarType = Type.GetType("System.Formats.Tar.TarReader, System.Formats.Tar");
-            if (tarType != null)
+
+            using var reader = new System.Formats.Tar.TarReader(gz, leaveOpen: false);
+
+            var fullDestDir = Path.GetFullPath(destDir);
+            while (reader.GetNextEntry() is { } entry)
             {
-                dynamic reader = Activator.CreateInstance(tarType, gz)!;
-                try
+                ct.ThrowIfCancellationRequested();
+
+                var entryName = entry.Name;
+                if (string.IsNullOrWhiteSpace(entryName)) continue;
+
+                var destPath = Path.GetFullPath(Path.Combine(destDir, entryName));
+                if (!FileSystemPaths.IsPrefixOf(destPath, fullDestDir))
+                    throw new InvalidDataException($"Tar entry escapes destination: {entryName}");
+
+                if (entry.EntryType is System.Formats.Tar.TarEntryType.Directory)
                 {
-                    while (true)
-                    {
-                        ct.ThrowIfCancellationRequested();
-                        var entry = reader.GetNextEntry();
-                        if (entry == null) break;
-                        string entryName = entry.Name;
-                        if (string.IsNullOrWhiteSpace(entryName)) continue;
-                        var destPath = Path.GetFullPath(Path.Combine(destDir, entryName));
-                        var fullDestDir = Path.GetFullPath(destDir);
-                        if (!FileSystemPaths.IsPrefixOf(destPath, fullDestDir))
-                            throw new InvalidDataException($"Tar entry escapes destination: {entryName}");
-                        if (entry.EntryType.ToString() == "Directory")
-                        {
-                            Directory.CreateDirectory(destPath);
-                        }
-                        else
-                        {
-                            var dir = Path.GetDirectoryName(destPath);
-                            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-                            using var outFs = File.Create(destPath);
-                            entry.DataStream.CopyTo(outFs);
-                        }
-                    }
+                    Directory.CreateDirectory(destPath);
+                    continue;
                 }
-                finally { (reader as IDisposable)?.Dispose(); }
-                return;
+
+                if (entry.EntryType is not (System.Formats.Tar.TarEntryType.RegularFile
+                    or System.Formats.Tar.TarEntryType.V7RegularFile
+                    or System.Formats.Tar.TarEntryType.ContiguousFile))
+                {
+                    continue;
+                }
+
+                var dir = Path.GetDirectoryName(destPath);
+                if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                using var outFs = File.Create(destPath);
+                if (entry.DataStream is not null) entry.DataStream.CopyTo(outFs);
             }
-            throw new InvalidOperationException("TAR extraction not supported on this runtime – archive is .tar.gz but System.Formats.Tar not available. Please install manually.");
         }, ct).ConfigureAwait(false);
         RestoreUnixExecBit(destDir);
     }
@@ -749,6 +851,8 @@ internal static class LspRuntimeDetector
     private static readonly TimeSpan DetectCacheTtl = TimeSpan.FromSeconds(30);
     private static readonly ConcurrentDictionary<string, (DateTime stamp, RuntimeInfo info)> DetectCache = new(StringComparer.Ordinal);
 
+    public static void InvalidateCache() => DetectCache.Clear();
+
     public static async Task<RuntimeInfo> DetectAsync(string runtime, string? minVersion, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(runtime)) return new(true, null, null, null);
@@ -785,7 +889,7 @@ internal static class LspRuntimeDetector
             (found, output, error) = await TryRunAsync(exe, args, ct).ConfigureAwait(false);
             if (found) break;
         }
-        if (!found) return new(false, null, output, error ?? $"Runtime '{runtime}' not found on PATH. Install {runtime} to use this language server.");
+        if (!found) return new(false, null, output, error ?? DescribeRuntimeMissing(runtime));
         var version = ExtractVersion(output ?? "");
         if (!string.IsNullOrWhiteSpace(minVersion) && !string.IsNullOrWhiteSpace(version))
         {
@@ -846,9 +950,21 @@ internal static class LspRuntimeDetector
 
     private static async Task<(bool found, string? output, string? error)> TryRunAsync(string exe, string args, CancellationToken ct)
     {
+        string? resolvedExe;
         try
         {
-            var resolvedExe = FindExecutable(exe) ?? exe;
+            resolvedExe = FindExecutable(exe);
+        }
+        catch (Exception ex)
+        {
+            return (false, null, $"Could not look up '{exe}': {ex.Message}");
+        }
+
+        if (string.IsNullOrWhiteSpace(resolvedExe))
+            return (false, null, DescribeRuntimeMissing(exe));
+
+        try
+        {
             var isCmdScript = resolvedExe.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || resolvedExe.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
             ProcessStartInfo psi;
             if (isCmdScript && System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
@@ -877,7 +993,7 @@ internal static class LspRuntimeDetector
                 };
             }
             using var proc = new Process { StartInfo = psi };
-            if (!proc.Start()) return (false, null, $"Failed to start {exe}");
+            if (!proc.Start()) return (false, null, DescribeRuntimeLaunchFailure(exe, resolvedExe, null));
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
             var stderrTask = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
@@ -888,14 +1004,58 @@ internal static class LspRuntimeDetector
                 return (true, combined.Trim(), null);
             return (false, combined, $"Exit code {proc.ExitCode}");
         }
-        catch (Exception ex) when (ex is FileNotFoundException || ex is System.ComponentModel.Win32Exception)
+        catch (OperationCanceledException)
         {
-            return (false, null, ex.Message);
+            return (false, null, ct.IsCancellationRequested
+                ? $"Probing {exe} was cancelled."
+                : $"Timed out probing {exe}.");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return (false, null, DescribeRuntimeLaunchFailure(exe, resolvedExe, ex));
         }
         catch (Exception ex)
         {
             return (false, null, ex.Message);
         }
+    }
+
+    private static string DescribeRuntimeMissing(string runtime) => runtime switch
+    {
+        "node" => "Node.js was not found on your PATH. Install Node.js 16 or newer from https://nodejs.org, then restart Kodo.",
+        "npm" => "npm was not found on your PATH. npm ships with Node.js - install Node.js from https://nodejs.org, then restart Kodo.",
+        "npx" => "npx was not found on your PATH. npx ships with Node.js - install Node.js from https://nodejs.org, then restart Kodo.",
+        "python" or "python3" => "Python was not found on your PATH. Install Python 3, then restart Kodo.",
+        "java" => "Java was not found on your PATH. Install a JDK, then restart Kodo.",
+        "dotnet" => "The .NET SDK was not found on your PATH. Install it from https://dotnet.microsoft.com/download, then restart Kodo.",
+        "pwsh" or "powershell" => "PowerShell was not found on your PATH. Install it, then restart Kodo.",
+        _ => $"'{runtime}' was not found on your PATH. Install it, then restart Kodo."
+    };
+
+    private static string DescribeRuntimeLaunchFailure(string runtime, string resolvedPath, Exception? ex)
+    {
+        var reason = ex is null ? "the process could not be started" : DescribeStartFailureReason(ex);
+        return $"'{resolvedPath}' was found but could not be run ({reason}). " +
+               $"Reinstall {runtime} and make sure it is on your PATH, then restart Kodo.";
+    }
+
+    private static string DescribeStartFailureReason(Exception ex)
+    {
+        if (ex is System.ComponentModel.Win32Exception { NativeErrorCode: not 0 } win32)
+            return new System.ComponentModel.Win32Exception(win32.NativeErrorCode).Message;
+
+        var message = ex.Message;
+        const string noisePrefix = "An error occurred trying to start process";
+        if (message.StartsWith(noisePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            var lastStop = message.LastIndexOf(". ", StringComparison.Ordinal);
+            if (lastStop >= 0 && lastStop + 2 < message.Length)
+                message = message[(lastStop + 2)..];
+        }
+
+        message = message.Trim();
+        if (message.EndsWith('.')) message = message[..^1];
+        return string.IsNullOrWhiteSpace(message) ? ex.GetType().Name : message;
     }
 
     public static string? FindExecutable(string command)
@@ -994,7 +1154,7 @@ internal static class LspRuntimeDetector
                 if (string.IsNullOrWhiteSpace(c)) continue;
                 var file = Path.GetFileName(c);
                 if (!file.Equals(target, StringComparison.OrdinalIgnoreCase)) continue;
-                if (File.Exists(c)) return Path.GetFullPath(c);
+                if (IsExecutableFile(c)) return Path.GetFullPath(c);
             }
             return null;
         }
@@ -1047,13 +1207,13 @@ internal static class LspRuntimeDetector
                 try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
                 if (!Directory.Exists(dir)) continue;
                 var candidate = Path.Combine(dir, fileName);
-                if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+                if (IsExecutableFile(candidate)) return Path.GetFullPath(candidate);
                 if (!isWindows) continue;
                 if (Path.HasExtension(fileName)) continue;
                 foreach (var ext in pathexts)
                 {
                     var withExt = candidate + (ext.StartsWith(".") ? ext : "." + ext);
-                    if (File.Exists(withExt)) return Path.GetFullPath(withExt);
+                    if (IsExecutableFile(withExt)) return Path.GetFullPath(withExt);
                 }
             }
             if (!isWindows && (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
@@ -1068,13 +1228,45 @@ internal static class LspRuntimeDetector
                     try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
                     if (!Directory.Exists(dir)) continue;
                     var candidate = Path.Combine(dir, stripped);
-                    if (File.Exists(candidate)) return Path.GetFullPath(candidate);
+                    if (IsExecutableFile(candidate)) return Path.GetFullPath(candidate);
                 }
             }
             return null;
         }
         catch { return null; }
     }
+
+    private static bool IsExecutableFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return false;
+            if (OperatingSystem.IsWindows()) return true;
+
+            if (Path.HasExtension(path) && WindowsOnlyExtensions.Contains(Path.GetExtension(path)))
+                return false;
+
+            var mode = new FileInfo(path).UnixFileMode;
+            const UnixFileMode executeBits =
+                UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+            if ((mode & executeBits) == 0) return false;
+
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                Span<byte> magic = stackalloc byte[2];
+                if (fs.Read(magic) == 2 && magic[0] == (byte)'M' && magic[1] == (byte)'Z')
+                    return false;
+            }
+
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static readonly HashSet<string> WindowsOnlyExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".exe", ".com", ".cmd", ".bat", ".ps1", ".msi"
+    };
 }
 
 internal static class LspServerResolver
@@ -1170,7 +1362,7 @@ internal static class LspServerResolver
         async Task<LspResolution?> TryResolveManagedOrSystemAsync(string exe, LspServerSource source)
         {
             var resolved = CloneWithCommand(cfg, exe);
-            var ver = await ProbeVersionAsync(exe, cfg.VersionArgs, ct).ConfigureAwait(false);
+            var ver = await ProbeVersionViaLaunchPlanAsync(cfg, settings, exe, ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(cfg.Version) && !string.IsNullOrWhiteSpace(ver) && !IsVersionCompatible(ver, cfg.Version))
             {
                 KodoDiagnostics.LogDebug($"LSP {source} {cfg.EffectiveProviderId} version {ver} incompatible with required {cfg.Version}");
@@ -1255,6 +1447,8 @@ internal static class LspServerResolver
         Sha256 = cfg.Sha256,
         Runtime = cfg.Runtime,
         RuntimeMinVersion = cfg.RuntimeMinVersion,
+        RuntimeArgs = cfg.RuntimeArgs,
+        MainClass = cfg.MainClass,
         AllowAutoInstall = cfg.AllowAutoInstall,
         AllowSystem = cfg.AllowSystem,
         VersionArgs = cfg.VersionArgs
@@ -1264,7 +1458,26 @@ internal static class LspServerResolver
     {
         try
         {
-            var (ok, ver, err) = await LspInstallationManager.TryGetVersionAsync(exe, versionArgs, ct).ConfigureAwait(false);
+            var (ok, ver, err) = await LspInstallationManager.TryGetVersionAsync(exe, versionArgs, [], ct).ConfigureAwait(false);
+            if (ok && !string.IsNullOrWhiteSpace(ver))
+            {
+                var first = ver.Split('\n')[0].Trim();
+                return first.Length > 120 ? first[..120] : first;
+            }
+            return null;
+        }
+        catch { return null; }
+    }
+
+    private static async Task<string?> ProbeVersionViaLaunchPlanAsync(
+        LspConfiguration cfg, AppSettings? settings, string exe, CancellationToken ct)
+    {
+        if (!LspInstallationManager.UsesRuntimeLauncher(cfg)) return await ProbeVersionAsync(exe, cfg.VersionArgs, ct).ConfigureAwait(false);
+
+        var plan = LspInstallationManager.ResolveLaunchPlan(cfg, settings, exe);
+        try
+        {
+            var (ok, ver, _) = await LspInstallationManager.TryGetVersionAsync(plan.FileName, cfg.VersionArgs, plan.PrefixArgs, ct).ConfigureAwait(false);
             if (ok && !string.IsNullOrWhiteSpace(ver))
             {
                 var first = ver.Split('\n')[0].Trim();

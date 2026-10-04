@@ -65,6 +65,8 @@ internal sealed class LspClient : IDisposable
     }
     public bool IsInitialized { get; private set; }
     internal LspConfiguration Configuration => _config;
+
+    private string? ResolvedExecutablePath => string.IsNullOrWhiteSpace(_config.Command) ? null : _config.Command;
     internal string ClientWorkspaceRoot => _workspaceRoot;
     public string Id => _config.Command;
     public IReadOnlyList<string> SemanticTokenTypes { get; private set; } = Array.Empty<string>();
@@ -143,6 +145,8 @@ internal sealed class LspClient : IDisposable
         }
         else
         {
+            foreach (var arg in LspInstallationManager.ResolveLaunchPlan(_config, null, ResolvedExecutablePath).PrefixArgs)
+                psi.ArgumentList.Add(ExpandPlaceholder(arg));
             foreach (var arg in _config.Arguments)
                 psi.ArgumentList.Add(ExpandPlaceholder(arg));
         }
@@ -453,8 +457,15 @@ internal sealed class LspClient : IDisposable
         if (!IsStarted) return;
         _shutdownRequested = true;
         _shutdownReason = reason;
-        var stack = Environment.StackTrace.Split('\n').Take(8).Select(s => s.Trim()).Where(s => s.Contains("Kodo.")).Take(3);
-        KodoDiagnostics.LogDebug($"LSP shutdown requested reason={reason} command={_config.Command} pid={_process?.Id} stack={string.Join(" | ", stack)}");
+        if (KodoDiagnostics.VerboseLoggingEnabled)
+        {
+            var stack = Environment.StackTrace.Split('\n').Take(8).Select(s => s.Trim()).Where(s => s.Contains("Kodo.")).Take(3);
+            KodoDiagnostics.LogDebug($"LSP shutdown requested reason={reason} command={_config.Command} pid={_process?.Id} stack={string.Join(" | ", stack)}");
+        }
+        else
+        {
+            KodoDiagnostics.LogDebug($"LSP shutdown requested reason={reason} command={_config.Command} pid={_process?.Id}");
+        }
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -797,7 +808,12 @@ internal sealed class LspClient : IDisposable
 
     private (string fileName, bool useCmdWrapper, string cmdArgs) ResolveProcessStartInfo()
     {
-        var command = _config.Command.Trim().Trim('"');
+        var plan = LspInstallationManager.ResolveLaunchPlan(_config, null, ResolvedExecutablePath);
+
+        if (plan.PrefixArgs.Count > 0)
+            return (plan.FileName, false, string.Empty);
+
+        var command = plan.FileName;
         var isCmdScript = command.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) ||
                           command.EndsWith(".bat", StringComparison.OrdinalIgnoreCase);
         if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))

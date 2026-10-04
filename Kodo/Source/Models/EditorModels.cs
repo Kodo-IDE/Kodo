@@ -227,6 +227,21 @@ public class EditorTab : INotifyPropertyChanged
 
     public string TabTitle => IsDirty ? $"{DisplayName} •" : DisplayName;
 
+    private bool _isRenaming;
+    private string _renameText = string.Empty;
+
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
+    }
+
+    public string RenameText
+    {
+        get => _renameText;
+        set { if (_renameText == value) return; _renameText = value; OnPropertyChanged(); }
+    }
+
     public int TopLineNumber { get; set; } = 1;
 
     public double ScrollOffsetY { get; set; } = 0.0;

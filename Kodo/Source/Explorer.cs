@@ -147,6 +147,14 @@ public partial class MainWindow
     private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true)
     {
         var activateWatch = System.Diagnostics.Stopwatch.StartNew();
+
+        if (_inlineTabRenameFocusPending is { } renaming && !ReferenceEquals(renaming, tab))
+        {
+            renaming.IsRenaming = false;
+            renaming.RenameText = renaming.DisplayName;
+            _inlineTabRenameFocusPending = null;
+        }
+
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
             _isHomePageVisible = false;
@@ -1252,6 +1260,9 @@ public partial class MainWindow
                 case "Close Files Below":
                 case "Close Tabs to the Right":
                     item.IsVisible = hasTabsToRight;
+                    break;
+                case "Rename...":
+                    item.IsVisible = !pivotTab.IsUntitled;
                     break;
             }
         }

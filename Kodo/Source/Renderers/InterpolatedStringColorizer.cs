@@ -85,10 +85,15 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 return;
         }
 
-        var snapshotWatch = System.Diagnostics.Stopwatch.StartNew();
-        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
-        snapshotWatch.Stop();
-        KodoDiagnostics.ReportSlowStage("interpolation snapshot", snapshotWatch.ElapsedMilliseconds, 500, $"len={document.TextLength}");
+        var snapshot = _snapshot;
+        if (snapshot is null)
+        {
+            var snapshotWatch = System.Diagnostics.Stopwatch.StartNew();
+            snapshot = _snapshot = BuildSnapshot(DocumentTextCache.Get(document));
+            snapshotWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("interpolation snapshot", snapshotWatch.ElapsedMilliseconds, 500, $"len={document.TextLength}");
+        }
+
         var lineState = snapshot.GetLineState(line.LineNumber);
         var text = document.GetText(line.Offset, line.Length);
         ScanLine(text, line.Offset, lineState.ActiveInterpolation);

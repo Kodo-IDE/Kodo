@@ -76,6 +76,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private Func<string, CompiledSyntaxProfile?>? _languageResolver;
     private Func<string, LoadedExtension?>? _inlineLanguageResolver;
     private readonly Dictionary<string, EmbeddedSyntaxProfile> _embeddedProfileCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, EmbeddedSyntaxProfile?> _inlineProfileCache = new(StringComparer.Ordinal);
     private readonly Dictionary<string, EmbeddedSyntaxProfile?> _htmlEmbeddedProfileCache = new(StringComparer.OrdinalIgnoreCase);
     private IBrush _keywordBrush = Brushes.White;
     private IBrush _typeBrush = Brushes.White;
@@ -98,6 +99,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     {
         _snapshot = null;
         _embeddedProfileCache.Clear();
+        _inlineProfileCache.Clear();
         _htmlEmbeddedProfileCache.Clear();
         _languageResolver = languageResolver;
         _inlineLanguageResolver = inlineLanguageResolver;
@@ -535,16 +537,28 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         if (string.IsNullOrWhiteSpace(content) || _inlineLanguageResolver is null)
             return null;
 
+        if (_inlineProfileCache.TryGetValue(content, out var memoised))
+            return memoised;
+
         var extension = _inlineLanguageResolver(content);
+        EmbeddedSyntaxProfile? profile;
         if (extension is null || IsMarkdownExtension(extension))
-            return null;
+        {
+            profile = null;
+        }
+        else
+        {
+            var cacheKey = $"{extension.Id}|{extension.Version}";
+            if (!_embeddedProfileCache.TryGetValue(cacheKey, out profile))
+            {
+                profile = EmbeddedSyntaxProfile.Create(CompiledSyntaxProfile.Create(extension));
+                _embeddedProfileCache[cacheKey] = profile;
+            }
+        }
 
-        var cacheKey = $"{extension.Id}|{extension.Version}";
-        if (_embeddedProfileCache.TryGetValue(cacheKey, out var cached))
-            return cached;
-
-        var profile = EmbeddedSyntaxProfile.Create(CompiledSyntaxProfile.Create(extension));
-        _embeddedProfileCache[cacheKey] = profile;
+        if (_inlineProfileCache.Count >= 512)
+            _inlineProfileCache.Clear();
+        _inlineProfileCache[content] = profile;
         return profile;
     }
 

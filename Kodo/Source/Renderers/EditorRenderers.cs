@@ -316,15 +316,24 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
     public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
 
     private IReadOnlyList<DeadCodeSpan> _spans = Array.Empty<DeadCodeSpan>();
+    private SpanOverlapIndex _spanIndex = SpanOverlapIndex.Empty;
+    private readonly List<int> _candidates = new();
 
-    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans) => _spans = spans;
+    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans)
+    {
+        _spans = spans;
+        _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _candidates.Clear();
+    }
 
     protected override void ColorizeLine(DocumentLine line)
     {
         if (_spans.Count == 0) return;
 
-        foreach (var span in _spans)
+        _spanIndex.Collect(line.Offset, line.EndOffset, _candidates);
+        foreach (var index in _candidates)
         {
+            var span = _spans[index];
             var start = Math.Max(span.StartOffset, line.Offset);
             var end = Math.Min(span.StartOffset + span.Length, line.EndOffset);
             if (start >= end) continue;

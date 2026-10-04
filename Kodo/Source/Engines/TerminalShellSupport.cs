@@ -86,12 +86,16 @@ public static class TerminalShellSupport
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
         var shells = new List<TerminalShellOption>();
-        var seen = new HashSet<string>(FileSystemPaths.Comparer);
+
+        var seenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenPaths = new HashSet<string>(FileSystemPaths.Comparer);
 
         void AddShell(string id, string displayName, string? resolvedPath, string arguments)
         {
-            if (string.IsNullOrWhiteSpace(resolvedPath) || !File.Exists(resolvedPath) || !seen.Add(resolvedPath))
-                return;
+            if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(resolvedPath)) return;
+            if (!File.Exists(resolvedPath)) return;
+            if (!seenIds.Add(id)) return;
+            if (!seenPaths.Add(resolvedPath)) return;
 
             shells.Add(new TerminalShellOption
             {
@@ -101,6 +105,17 @@ public static class TerminalShellSupport
                 Arguments = arguments
             });
         }
+
+        static string DisplayNameFor(string baseName) => baseName switch
+        {
+            "bash" => "Bash",
+            "zsh" => "Zsh",
+            "fish" => "Fish",
+            "sh" => "Shell",
+            "dash" => "Shell",
+            "powershell" or "pwsh" => "PowerShell",
+            _ => char.ToUpperInvariant(baseName[0]) + baseName[1..]
+        };
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
@@ -117,9 +132,13 @@ public static class TerminalShellSupport
             AddShell(
                 "powershell",
                 "PowerShell",
-                ResolveExecutable("pwsh.exe")
-                    ?? ResolveExecutable("powershell.exe", Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.System),
+                ResolveExecutable("pwsh.exe"),
+                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
+            AddShell(
+                "windows-powershell",
+                "Windows PowerShell",
+                ResolveExecutable("powershell.exe", Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
                 $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
             AddShell(
@@ -150,11 +169,7 @@ public static class TerminalShellSupport
             {
                 var baseName = Path.GetFileName(loginShell.Trim()).ToLowerInvariant();
                 if (!string.IsNullOrWhiteSpace(baseName))
-                {
-                    var id = baseName is "bash" or "zsh" or "sh" or "fish" ? baseName : baseName;
-                    var display = char.ToUpperInvariant(baseName[0]) + baseName[1..];
-                    AddShell(id, display, ResolveExecutable(loginShell.Trim(), loginShell.Trim()), "-i");
-                }
+                    AddShell(baseName, DisplayNameFor(baseName), ResolveExecutable(loginShell.Trim(), loginShell.Trim()), "-i");
             }
             AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
             AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");

@@ -232,7 +232,8 @@ public sealed class TerminalProcessHandle
     public Stream? WriteStream;
     public int UnixMasterFd = -1;
     public int UnixChildPid = -1;
-    public Process? PipeProcess;
+    public System.Diagnostics.Process? PtyProcess;
+    public System.Diagnostics.Process? PipeProcess;
     public IntPtr HPcon = IntPtr.Zero;
     public IntPtr HProcess = IntPtr.Zero;
     public IntPtr HThread = IntPtr.Zero;

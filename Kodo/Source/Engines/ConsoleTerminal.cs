@@ -91,6 +91,7 @@ public sealed class ConsoleTerminal : Control
     private IntPtr _hProcess = IntPtr.Zero;
     private IntPtr _hThread = IntPtr.Zero;
     private System.Diagnostics.Process? _unixProcess;
+    private System.Diagnostics.Process? _ptyProcess;
     private int _unixMasterFd = -1;
     private int _unixChildPid = -1;
     private Stream? _writeStream;
@@ -149,6 +150,7 @@ public sealed class ConsoleTerminal : Control
         {
             Stop();
             _cts = new CancellationTokenSource();
+            KodoDiagnostics.LogDebug($"Terminal Start requested: shell='{shellPath}' args='{arguments}' cwd='{workingDirectory}' size={Bounds.Width}x{Bounds.Height}.");
             if (StartUnixPty(shellPath, arguments, workingDirectory, suppressOutputUntilRestored))
                 return;
             StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
@@ -157,7 +159,7 @@ public sealed class ConsoleTerminal : Control
         }
         else
         {
-            Console.WriteLine("[ConPTY] Embedded terminal is supported on Windows and Linux only. Start ignored.");
+            KodoDiagnostics.LogDebug("Embedded terminal is supported on Windows and Linux only. Start ignored.");
             return;
         }
         Stop();
@@ -221,12 +223,13 @@ public sealed class ConsoleTerminal : Control
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ConPTY] Start failed: {ex}");
+            KodoDiagnostics.LogWarning("ConsoleTerminal.Start", ex, operation: "ConPTY terminal spawn");
         }
     }
-
     private bool StartUnixPty(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)
     {
+        PosixPtyStream? masterStream = null;
+        System.Diagnostics.Process? ptyProcess = null;
         try
         {
             var (cols, rows) = CalcSize();
@@ -238,28 +241,33 @@ public sealed class ConsoleTerminal : Control
                 _scrollOffset = 0;
             }
 
-            if (!System.IO.File.Exists(shellPath))
+            if (!File.Exists(shellPath))
             {
-                Console.WriteLine($"[PTY] Shell not found: {shellPath}");
+                KodoDiagnostics.LogWarning("ConsoleTerminal.StartUnixPty",
+                    new FileNotFoundException($"Shell not found: {shellPath}"),
+                    operation: "Linux terminal spawn");
                 return false;
             }
-            if (!System.IO.Directory.Exists(workingDirectory))
+            if (!Directory.Exists(workingDirectory))
                 workingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-            if (!UnixPty.TrySpawn(shellPath, arguments, workingDirectory, cols, rows, out var masterFd, out var childPid))
+            if (!UnixPty.TrySpawn(shellPath, arguments, workingDirectory, cols, rows,
+                    out var masterFd, out var launched, out var spawnError) || launched is null)
             {
-                Console.WriteLine("[PTY] Unix PTY spawn failed, falling back to pipes.");
+                KodoDiagnostics.LogWarning("ConsoleTerminal.StartUnixPty",
+                    new InvalidOperationException(spawnError ?? "Unknown PTY failure"),
+                    operation: "Linux terminal spawn - falling back to pipes");
                 return false;
             }
 
             _unixMasterFd = masterFd;
-            _unixChildPid = childPid;
+            _unixChildPid = launched.Id;
+            _ptyProcess = launched;
             _unixProcess = null;
 
-            var handle = new Microsoft.Win32.SafeHandles.SafeFileHandle(new IntPtr(masterFd), ownsHandle: true);
-            var stream = new FileStream(handle, FileAccess.ReadWrite, bufferSize: 4096, isAsync: true);
-            _readStream = stream;
-            _writeStream = stream;
+            masterStream = new PosixPtyStream(masterFd);
+            _readStream = masterStream;
+            _writeStream = masterStream;
 
             _suppressOutputUntilTick = suppressOutputUntilRestored
                 ? Environment.TickCount64 + 500
@@ -268,7 +276,12 @@ public sealed class ConsoleTerminal : Control
             var attached = BindAttached(isUnixPty: true);
             var cts = _cts!;
             var readerCts = cts.Token;
-            var readerStream = stream;
+            var readerStream = masterStream;
+            var startedAtTicks = DateTime.UtcNow;
+            var shell = launched;
+            masterStream = null;
+            ptyProcess = null;
+
             _ = Task.Run(() => ReadOutputLoop(readerCts, readerStream), readerCts);
             _ = Task.Run(async () =>
             {
@@ -278,13 +291,28 @@ public sealed class ConsoleTerminal : Control
                     while (!readerCts.IsCancellationRequested)
                     {
                         await Task.Delay(1000, readerCts).ConfigureAwait(false);
-                        if (UnixPty.TryReap(childPid)) { exited = true; break; }
+                        if (HasProcessExited(shell)) { exited = true; break; }
                     }
                 }
                 catch (OperationCanceledException) { }
                 catch { }
+
                 if (exited && !readerCts.IsCancellationRequested)
                 {
+                    var uptime = DateTime.UtcNow - startedAtTicks;
+                    if (uptime < TimeSpan.FromSeconds(3))
+                        KodoDiagnostics.LogWarning(
+                            "ConsoleTerminal.SessionExited",
+                            new InvalidOperationException(
+                                $"Terminal session for '{shellPath} {arguments}' ended after only " +
+                                $"{uptime.TotalMilliseconds:F0}ms (exit code {SafeExitCode(shell)}). " +
+                                "The shell failed to start."),
+                            operation: "Linux terminal session");
+                    else
+                        KodoDiagnostics.LogDebug(
+                            $"Terminal session for '{shellPath}' exited after {uptime.TotalSeconds:F1}s " +
+                            $"(exit code {SafeExitCode(shell)}).");
+
                     attached.Exited = true;
                     Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, attached));
                 }
@@ -293,17 +321,37 @@ public sealed class ConsoleTerminal : Control
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[PTY] Unix PTY start failed: {ex.Message}");
+            KodoDiagnostics.LogWarning("ConsoleTerminal.StartUnixPty", ex, operation: "Linux terminal spawn");
             try { StopUnixPty(); } catch { }
+            _readStream = null;
+            _writeStream = null;
+            try { ptyProcess?.Kill(entireProcessTree: true); } catch { }
+            try { ptyProcess?.Dispose(); } catch { }
+            try { masterStream?.Dispose(); } catch { }
             return false;
         }
+    }
+
+    private static bool HasProcessExited(System.Diagnostics.Process? process)
+    {
+        if (process is null) return true;
+        try { return process.HasExited; }
+        catch { return true; }
+    }
+
+    private static string SafeExitCode(System.Diagnostics.Process? process)
+    {
+        try { return process?.HasExited == true ? process.ExitCode.ToString() : "unknown"; }
+        catch { return "unknown"; }
     }
 
     private void StopUnixPty()
     {
         var pid = _unixChildPid;
+        var proc = _ptyProcess;
         _unixChildPid = -1;
         _unixMasterFd = -1;
+        _ptyProcess = null;
         if (pid <= 0) return;
         try { UnixPty.KillGroup(pid, force: false); } catch { }
         _ = Task.Run(async () =>
@@ -311,11 +359,12 @@ public sealed class ConsoleTerminal : Control
             try
             {
                 await Task.Delay(1500).ConfigureAwait(false);
-                if (!UnixPty.TryReap(pid))
+                if (!HasProcessExited(proc))
                     UnixPty.KillGroup(pid, force: true);
             }
             catch { }
         });
+        try { proc?.Dispose(); } catch { }
     }
 
     private void WriteFallbackNotice()
@@ -330,7 +379,7 @@ public sealed class ConsoleTerminal : Control
             Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
         }
         catch { }
-        Console.WriteLine("[PTY] Running in limited pipe fallback mode.");
+        KodoDiagnostics.LogDebug("Terminal running in limited pipe fallback mode (no PTY).");
     }
 
     public TerminalProcessHandle? ActiveHandle => _attached;
@@ -343,6 +392,7 @@ public sealed class ConsoleTerminal : Control
             WriteStream = _writeStream,
             UnixMasterFd = _unixMasterFd,
             UnixChildPid = _unixChildPid,
+            PtyProcess = _ptyProcess,
             PipeProcess = _unixProcess,
             HPcon = _hPcon,
             HProcess = _hProcess,
@@ -356,6 +406,7 @@ public sealed class ConsoleTerminal : Control
     public static bool IsHandleAlive(TerminalProcessHandle? handle)
     {
         if (handle is null || handle.Exited) return false;
+        if (handle.PtyProcess is { } pty) return !HasProcessExited(pty);
         if (handle.UnixChildPid > 0) return UnixPty.IsAlive(handle.UnixChildPid);
         if (handle.PipeProcess is { } proc)
         {
@@ -377,6 +428,7 @@ public sealed class ConsoleTerminal : Control
         _readStream = null;
         _writeStream = null;
         _unixProcess = null;
+        _ptyProcess = null;
         _unixMasterFd = -1;
         _unixChildPid = -1;
         _hPcon = IntPtr.Zero;
@@ -393,7 +445,7 @@ public sealed class ConsoleTerminal : Control
                 while (!watcherCts.Token.IsCancellationRequested)
                 {
                     await Task.Delay(2000, watcherCts.Token).ConfigureAwait(false);
-                    if (handle.UnixChildPid > 0 && UnixPty.TryReap(handle.UnixChildPid))
+                    if (handle.PtyProcess is { } watched ? HasProcessExited(watched) : false)
                     {
                         handle.Exited = true;
                         break;
@@ -431,6 +483,7 @@ public sealed class ConsoleTerminal : Control
         _unixMasterFd = handle.UnixMasterFd;
         _unixChildPid = handle.UnixChildPid;
         _unixProcess = handle.PipeProcess;
+        _ptyProcess = handle.PtyProcess;
         _hPcon = handle.HPcon;
         _hProcess = handle.HProcess;
         _hThread = handle.HThread;
@@ -454,7 +507,7 @@ public sealed class ConsoleTerminal : Control
                     while (!cts.IsCancellationRequested)
                     {
                         await Task.Delay(1000, cts).ConfigureAwait(false);
-                        if (UnixPty.TryReap(childPid)) { exited = true; break; }
+                        if (HasProcessExited(handle.PtyProcess)) { exited = true; break; }
                     }
                 }
                 catch (OperationCanceledException) { }
@@ -494,12 +547,15 @@ public sealed class ConsoleTerminal : Control
                 try
                 {
                     await Task.Delay(1500).ConfigureAwait(false);
-                    if (!UnixPty.TryReap(pid))
+                    if (!HasProcessExited(handle.PtyProcess))
                         UnixPty.KillGroup(pid, force: true);
                 }
                 catch { }
             });
         }
+        try { handle.PtyProcess?.Kill(entireProcessTree: true); } catch { }
+        try { handle.PtyProcess?.Dispose(); } catch { }
+        handle.PtyProcess = null;
         try { handle.PipeProcess?.Kill(entireProcessTree: true); } catch { }
         try { handle.PipeProcess?.Dispose(); } catch { }
         handle.PipeProcess = null;
@@ -560,7 +616,7 @@ public sealed class ConsoleTerminal : Control
 
             if (!File.Exists(shellPath))
             {
-                Console.WriteLine($"[ConPTY] Shell not found: {shellPath}");
+                KodoDiagnostics.LogWarning("ConsoleTerminal.StartUnixShell", new FileNotFoundException($"Shell not found: {shellPath}"), operation: "Unix terminal spawn");
                 return;
             }
             if (!Directory.Exists(workingDirectory))
@@ -603,7 +659,7 @@ public sealed class ConsoleTerminal : Control
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[ConPTY] Unix shell start failed: {ex}");
+            KodoDiagnostics.LogWarning("ConsoleTerminal.StartUnixShell", ex, operation: "Unix pipe fallback spawn");
         }
     }
 
@@ -628,7 +684,7 @@ public sealed class ConsoleTerminal : Control
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
         catch (InvalidOperationException) { }
-        catch (Exception ex) { Console.WriteLine($"[ConPTY] Stderr drain: {ex.Message}"); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Stderr drain stopped: {ex.Message}"); }
     }
 
     public void Stop()
@@ -640,6 +696,7 @@ public sealed class ConsoleTerminal : Control
         _writeStream = null;
         _readStream = null;
         _unixProcess = null;
+        _ptyProcess = null;
         _unixMasterFd = -1;
         _unixChildPid = -1;
         _hPcon = IntPtr.Zero;
@@ -674,7 +731,7 @@ public sealed class ConsoleTerminal : Control
         _scrollOffset = 0;
         var bytes = Encoding.UTF8.GetBytes(text);
         try { _writeStream.Write(bytes, 0, bytes.Length); _writeStream.Flush(); }
-        catch (Exception ex) { Console.WriteLine($"[ConPTY] SendInput failed: {ex.Message}"); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"SendInput failed: {ex.Message}"); }
     }
 
     public void SendKey(Key key, KeyModifiers mods)
@@ -683,9 +740,20 @@ public sealed class ConsoleTerminal : Control
         if (seq is not null) SendInput(seq);
     }
 
-    public bool HasLiveProcess => _hPcon != IntPtr.Zero
-        || (_unixChildPid > 0 && UnixPty.IsAlive(_unixChildPid))
-        || (_unixProcess is not null && !_unixProcess.HasExited);
+    public bool HasLiveProcess
+    {
+        get
+        {
+            try
+            {
+                return _hPcon != IntPtr.Zero
+                    || (_ptyProcess is not null && !HasProcessExited(_ptyProcess))
+                    || (_unixChildPid > 0 && UnixPty.IsAlive(_unixChildPid))
+                    || (_unixProcess is not null && !_unixProcess.HasExited);
+            }
+            catch { return false; }
+        }
+    }
 
     public IntPtr CurrentProcessHandle
     {
@@ -1110,7 +1178,7 @@ public sealed class ConsoleTerminal : Control
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
         try { await clipboard.SetTextAsync(text); }
-        catch (Exception ex) { Console.WriteLine($"[Terminal] Copy failed: {ex.Message}"); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Terminal copy failed: {ex.Message}"); }
     }
 
     private async Task PasteFromClipboardAsync()
@@ -1120,7 +1188,7 @@ public sealed class ConsoleTerminal : Control
 
         string? text;
         try { text = await clipboard.TryGetTextAsync(); }
-        catch (Exception ex) { Console.WriteLine($"[Terminal] Paste failed: {ex.Message}"); return; }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Terminal paste failed: {ex.Message}"); return; }
         if (string.IsNullOrEmpty(text)) return;
 
         text = OperatingSystem.IsWindows()
@@ -1273,7 +1341,7 @@ public sealed class ConsoleTerminal : Control
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
-        catch (Exception ex) { Console.WriteLine($"[ConPTY] ReadOutputLoop: {ex.Message}"); }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"ReadOutputLoop stopped: {ex.Message}"); }
     }
 
     private void ProcessRune(System.Text.Rune rune)

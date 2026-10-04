@@ -313,7 +313,10 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         }
 
         var lineStates = new List<LineState> { new(string.Empty, ScanMode.Normal, null) };
-        var stack = new Stack<char>();
+        var stack = new char[256];
+        var depth = 0;
+        var lastEmittedStack = string.Empty;
+        var stackDirty = true;
         var mode = ScanMode.Normal;
         string? activeDelimiter = null;
 
@@ -321,7 +324,13 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         {
             if (TryConsumeLineBreak(text, ref index, ref mode, ref activeDelimiter))
             {
-                lineStates.Add(new(new string(stack.Reverse().ToArray()), mode, activeDelimiter));
+                if (stackDirty)
+                {
+                    lastEmittedStack = new string(stack, 0, depth);
+                    stackDirty = false;
+                }
+
+                lineStates.Add(new(lastEmittedStack, mode, activeDelimiter));
                 continue;
             }
 
@@ -388,13 +397,16 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             var ch = text[index];
             if (OpeningToClosing.ContainsKey(ch))
             {
-                stack.Push(ch);
+                if (depth == stack.Length) Array.Resize(ref stack, stack.Length * 2);
+                stack[depth++] = ch;
+                stackDirty = true;
             }
             else if (ClosingToOpening.TryGetValue(ch, out var opening) &&
-                     stack.Count > 0 &&
-                     stack.Peek() == opening)
+                     depth > 0 &&
+                     stack[depth - 1] == opening)
             {
-                stack.Pop();
+                depth--;
+                stackDirty = true;
             }
         }
 
@@ -442,8 +454,16 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         index + token.Length <= text.Length &&
         string.CompareOrdinal(text, index, token, 0, token.Length) == 0;
 
-    private static string? MatchDelimiter(string text, int index, IEnumerable<string> delimiters) =>
-        delimiters.FirstOrDefault(delimiter => MatchesAt(text, index, delimiter));
+    private static string? MatchDelimiter(string text, int index, string[] delimiters)
+    {
+        for (var i = 0; i < delimiters.Length; i++)
+        {
+            var delimiter = delimiters[i];
+            if (MatchesAt(text, index, delimiter)) return delimiter;
+        }
+
+        return null;
+    }
 
     private static bool IsEscaped(string text, int index)
     {

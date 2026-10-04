@@ -2,6 +2,7 @@
 #pragma warning disable CA1416
 using Avalonia.Threading;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Kodo.Models;
 using System.Collections.Concurrent;
@@ -57,6 +58,235 @@ public partial class MainWindow
     private readonly LspFileResolver _lspFileResolver = new();
 
     private void InvalidateLspResolutionCaches() => _lspFileResolver.Invalidate();
+
+    private bool HasRunningLspForFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (ResolveLspExtensionForFile(path)?.HasLsp != true) return false;
+        var cfg = ResolveLspConfigurationForFile(path);
+        if (cfg is null) return false;
+        try
+        {
+            return _lspManager.TryGetClient(GetWorkspaceRootForFile(path), cfg) is { IsInitialized: true };
+        }
+        catch { return false; }
+    }
+
+    private void SetExtensionsStatus(string text)
+    {
+        if (Dispatcher.UIThread.CheckAccess()) ExtensionsStatusText = text;
+        else Dispatcher.UIThread.Post(() => ExtensionsStatusText = text);
+    }
+
+    private async void RecheckLanguageServersButton_OnClick(object? sender, RoutedEventArgs e) =>
+        await RecheckLanguageServersAsync();
+
+    private sealed record LanguageServerSweep(
+        List<string> Ready,
+        List<(LoadedExtension Ext, LspConfiguration Cfg, LspResolution Res)> Installable,
+        Dictionary<string, List<string>> BlockedByRuntime,
+        List<string> ManualOnly,
+        List<string> Missing);
+
+    private async Task RecheckLanguageServersAsync()
+    {
+        if (IsRecheckingLanguageServers) return;
+        if (!_lspEnabled)
+        {
+            ExtensionsStatusText = "Language server features are turned off in Settings.";
+            return;
+        }
+
+        IsRecheckingLanguageServers = true;
+        LspRecheckStatusText = "Checking language servers...";
+
+        try
+        {
+            _lspDismissedInstallPrompts.Clear();
+            _lspMissingNotified.Clear();
+            LspRuntimeDetector.InvalidateCache();
+            InvalidateLspResolutionCaches();
+
+            var extensionSnapshot = LoadedExtensions.ToList();
+            var settingsSnapshot = BuildLspResolverSettings();
+
+            var sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+
+            if (sweep.Installable.Count > 0)
+            {
+                var offer = sweep.Installable
+                    .Select(i => $"{i.Ext.Name} ({i.Cfg.DisplayName ?? i.Cfg.EffectiveProviderId})")
+                    .ToList();
+                var proceed = _lspAutoInstall || await ShowConfirmationDialogAsync(
+                    "Install language servers",
+                    BuildInstallOfferText(offer),
+                    confirmLabel: "Install",
+                    cancelLabel: "Not now");
+
+                if (proceed)
+                {
+                    LspRecheckStatusText = $"Installing {sweep.Installable.Count} language server{(sweep.Installable.Count == 1 ? "" : "s")}...";
+                    foreach (var (ext, _, res) in sweep.Installable)
+                        await PromptAndInstallLspAsync(ext, res, autoInstall: true);
+
+                    LspRuntimeDetector.InvalidateCache();
+                    InvalidateLspResolutionCaches();
+                    extensionSnapshot = LoadedExtensions.ToList();
+                    settingsSnapshot = BuildLspResolverSettings();
+                    sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+                }
+            }
+
+            SummariseLanguageServerCheck(sweep);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("MainWindow.RecheckLanguageServers", ex, operation: "Re-check language servers");
+            LspRecheckStatusText = $"Re-check failed: {ex.Message}";
+        }
+        finally
+        {
+            IsRecheckingLanguageServers = false;
+            SaveSettings(immediate: true);
+        }
+    }
+
+    private async Task<LanguageServerSweep> SweepLanguageServersAsync(
+        IReadOnlyList<LoadedExtension> extensions,
+        AppSettings settings)
+    {
+        var ready = new List<string>();
+        var installable = new List<(LoadedExtension Ext, LspConfiguration Cfg, LspResolution Res)>();
+        var blockedByRuntime = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var manualOnly = new List<string>();
+        var missing = new List<string>();
+
+        foreach (var ext in extensions)
+        {
+            foreach (var cfg in ext.AllLspConfigurations.ToList())
+            {
+                LspResolution res;
+                try
+                {
+                    LspProviderRegistry.RegisterConsumer(cfg.EffectiveProviderId, ext.Id);
+                    res = await LspServerResolver.ResolveAsync(cfg, settings, ext.Id).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"LSP re-check failed for {ext.Id} provider {cfg.EffectiveProviderId}", ex);
+                    missing.Add($"{ext.Name} ({ex.Message})");
+                    continue;
+                }
+
+                var status = res.ToDependencyStatus();
+                ext.LspProviderStatuses[cfg.EffectiveProviderId] = (status, res.Error);
+                ext.LspStatus = status;
+                ext.LspStatusMessage = res.Error;
+                LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, status, res.Error,
+                    res.Version, res.ExecutablePath, res.Source == LspServerSource.Managed);
+
+                if (res.IsReady)
+                {
+                    ready.Add(ext.Name);
+                    continue;
+                }
+
+                switch (res.Source)
+                {
+                    case LspServerSource.Installable when res.CanInstall && cfg.AllowAutoInstall:
+                        installable.Add((ext, cfg, res));
+                        break;
+                    case LspServerSource.RuntimeMissing:
+                    {
+                        var runtime = cfg.Runtime ?? "required runtime";
+                        if (!blockedByRuntime.TryGetValue(runtime, out var langs))
+                            blockedByRuntime[runtime] = langs = new List<string>();
+                        langs.Add(ext.Name);
+                        break;
+                    }
+                    case LspServerSource.ManualRequired:
+                        manualOnly.Add($"{ext.Name} ({cfg.DisplayName ?? cfg.EffectiveProviderId})");
+                        break;
+                    default:
+                        missing.Add($"{ext.Name} ({cfg.DisplayName ?? cfg.EffectiveProviderId}): {res.Error ?? "no install source"}");
+                        break;
+                }
+            }
+        }
+
+        return new LanguageServerSweep(ready, installable, blockedByRuntime, manualOnly, missing);
+    }
+
+    private static string BuildInstallOfferText(IEnumerable<string> names)
+    {
+        var list = names.ToList();
+        var preview = string.Join("\n", list.Take(8).Select(n => $"\u2022 {n}"));
+        var rest = list.Count > 8 ? $"\n\u2026and {list.Count - 8} more." : string.Empty;
+        return list.Count == 1
+            ? $"Kodo can install the language server for {preview}.{rest}"
+            : $"Kodo can install {list.Count} language servers:\n{preview}{rest}";
+    }
+
+    private void SummariseLanguageServerCheck(LanguageServerSweep sweep)
+    {
+        var distinctReady = sweep.Ready
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.Append(distinctReady.Count > 0
+            ? $"Ready: {string.Join(", ", distinctReady)}."
+            : "No language servers are ready yet.");
+
+        if (sweep.BlockedByRuntime.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine();
+            sb.AppendLine("Missing runtime:");
+            foreach (var entry in sweep.BlockedByRuntime.OrderBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"\u2022 {DescribeRuntimeRequirement(entry.Key)}");
+                sb.AppendLine($"  Needed by: {string.Join(", ", entry.Value.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))}");
+            }
+        }
+
+        if (sweep.ManualOnly.Count > 0)
+            AppendCheckDetail(sb, "Needs a manual install:", sweep.ManualOnly);
+
+        if (sweep.Missing.Count > 0)
+            AppendCheckDetail(sb, "No install source:", sweep.Missing);
+
+        var summary = sb.ToString();
+        LspRecheckStatusText = distinctReady.Count > 0
+            ? $"{distinctReady.Count} language extension{(distinctReady.Count == 1 ? "" : "s")} ready."
+            : "No language servers ready.";
+        ExtensionsStatusText = LspRecheckStatusText;
+
+        KodoDiagnostics.LogDebug($"Language server re-check: {summary.Replace('\n', ' ')}");
+        _ = ShowWarningDialogAsync("Language servers", new InvalidOperationException(summary));
+    }
+
+    private static void AppendCheckDetail(StringBuilder sb, string heading, IEnumerable<string> items)
+    {
+        sb.AppendLine();
+        sb.AppendLine();
+        sb.AppendLine(heading);
+        foreach (var item in items.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase))
+            sb.AppendLine($"\u2022 {item}");
+    }
+
+    private static string DescribeRuntimeRequirement(string runtime) => runtime switch
+    {
+        "node" => "Node.js 16 or newer - install from https://nodejs.org, then use this button again.",
+        "npm" => "npm - install Node.js from https://nodejs.org, then use this button again.",
+        "npx" => "npx - install Node.js from https://nodejs.org, then use this button again.",
+        "python" or "python3" => "Python 3 - install from https://www.python.org/downloads/, then use this button again.",
+        "java" => "A JDK (17 or newer) - install from https://adoptium.net, then use this button again.",
+        "dotnet" => "The .NET SDK - install from https://dotnet.microsoft.com/download, then use this button again.",
+        "pwsh" or "powershell" => "PowerShell 7 or newer - install from https://aka.ms/powershell, then use this button again.",
+        _ => $"'{runtime}' - install it and make sure it is on your PATH, then use this button again."
+    };
 
     private LoadedExtension? ResolveLspExtensionForFile(string? filePath)
     {
@@ -230,6 +460,8 @@ public partial class MainWindow
             var runtime = resolution.ResolvedConfiguration.Runtime ?? lspExt.Lsp?.Runtime ?? "required runtime";
             var msg = resolution.Error ?? $"Runtime '{runtime}' is required for {lspExt.Name}.";
             KodoDiagnostics.LogDebug($"LSP runtime missing for {lspExt.Id}: {msg}");
+            if (!_lspMissingNotified.Add($"{lspExt.Id}:{providerId}:runtime"))
+                return false;
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 ExtensionsStatusText = msg;
@@ -318,13 +550,17 @@ public partial class MainWindow
             var providerName = targetCfg.DisplayName ?? targetCfg.EffectiveProviderId ?? lspExt.Name;
             var providerId = targetCfg.EffectiveProviderId;
             var title = $"{lspExt.Name} – language server required";
+
+            var managedTarget = KodoDiagnostics.DisplayPath(
+                Path.Combine(LspInstallationManager.GetManagedRoot(), targetCfg.EffectiveProviderId ?? providerName));
+
             var body = autoInstall
                 ? $"Installing {providerName} for {lspExt.Name}..."
-                : $"{lspExt.Name} language support requires {providerName}.\n\nStatus: {(resolution.Source == LspServerSource.Incompatible ? $"Incompatible ({resolution.Version ?? "unknown"})" : "Not installed")}\n\nInstall {providerName} now?\n\nKodo will download it to %LocalAppData%\\Kodo\\Lsp\\{targetCfg.EffectiveProviderId} and verify it before use. You can also use an existing system installation.";
+                : $"{lspExt.Name} language support requires {providerName}.\n\nStatus: {(resolution.Source == LspServerSource.Incompatible ? $"Incompatible ({resolution.Version ?? "unknown"})" : "Not installed")}\n\nInstall {providerName} now?\n\nKodo will download it to {managedTarget} and verify it before use. You can also use an existing system installation.";
             bool shouldInstall = autoInstall;
             if (!autoInstall)
             {
-                shouldInstall = await ShowConfirmationDialogAsync(title, body, confirmLabel: $"Install {providerName}", isDestructive: false).ConfigureAwait(false);
+                shouldInstall = await ShowConfirmationDialogAsync(title, body, confirmLabel: $"Install {providerName}", isDestructive: false);
                 if (!shouldInstall)
                 {
                     _lspDismissedInstallPrompts.Add(lspExt.Id);
@@ -341,19 +577,19 @@ public partial class MainWindow
             }
             if (shouldInstall)
             {
-                ExtensionsStatusText = $"Installing {providerName}...";
+                SetExtensionsStatus($"Installing {providerName}...");
                 lspExt.LspStatus = LspDependencyStatus.Installing;
                 if (!string.IsNullOrWhiteSpace(providerId))
                 {
                     lspExt.LspProviderStatuses[providerId] = (LspDependencyStatus.Installing, null);
                     LspProviderRegistry.SetStatus(providerId, LspDependencyStatus.Installing);
                 }
-                var progress = new Progress<string>(msg => Dispatcher.UIThread.Post(() => ExtensionsStatusText = msg));
+                var progress = new Progress<string>(SetExtensionsStatus);
                 var settings = BuildLspResolverSettings();
                 var result = await LspInstallationManager.InstallAsync(targetCfg, settings, progress).ConfigureAwait(false);
                 if (result.Kind == LspInstallationManager.InstallResultKind.Success || result.Kind == LspInstallationManager.InstallResultKind.AlreadyInstalled)
                 {
-                    ExtensionsStatusText = $"{providerName} installed successfully.";
+                    SetExtensionsStatus($"{providerName} installed successfully.");
                     KodoDiagnostics.LogDebug($"LSP installed {providerName}: {result.InstalledPath}");
                     lspExt.LspStatus = LspDependencyStatus.Installed;
                     lspExt.LspStatusMessage = null;
@@ -367,8 +603,12 @@ public partial class MainWindow
                     if (!string.IsNullOrWhiteSpace(_currentFilePath) && IsSameDocument(_currentFilePath, _currentFilePath))
                     {
                         lock (_lspOpenLock) _lspPendingOpens.Remove(NormalizeFilePath(_currentFilePath));
-                        if (EditorTextBox?.Document != null)
-                            _ = LspNotifyDidOpenAsync(_currentFilePath, EditorTextBox.Document.Text);
+                        var currentPath = _currentFilePath;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            var text = EditorTextBox?.Document?.Text;
+                            if (text is not null) _ = LspNotifyDidOpenAsync(currentPath, text);
+                        });
                     }
                     return true;
                 }

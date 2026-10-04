@@ -23,6 +23,35 @@ public partial class App : Application
 {
     private static int _isCrashDialogOpen;
 
+    private static readonly System.Collections.Generic.Dictionary<string, DateTime> _recentCrashDialogs = new(StringComparer.Ordinal);
+    private static readonly TimeSpan CrashDialogDedupeWindow = TimeSpan.FromSeconds(60);
+
+    private static bool ShouldSuppressDuplicateCrashDialog(Exception exception)
+    {
+        var inner = exception is System.Reflection.TargetInvocationException tie ? tie.InnerException : null;
+        var effective = inner ?? exception;
+        var key = $"{effective.GetType().FullName}|{effective.Message}";
+
+        lock (_recentCrashDialogs)
+        {
+            var now = DateTime.UtcNow;
+            if (_recentCrashDialogs.Count > 32)
+            {
+                foreach (var stale in _recentCrashDialogs.Where(kv => now - kv.Value >= CrashDialogDedupeWindow).Select(kv => kv.Key).ToList())
+                    _recentCrashDialogs.Remove(stale);
+            }
+
+            if (_recentCrashDialogs.TryGetValue(key, out var last) && now - last < CrashDialogDedupeWindow)
+            {
+                _recentCrashDialogs[key] = now;
+                return true;
+            }
+
+            _recentCrashDialogs[key] = now;
+            return false;
+        }
+    }
+
     private static readonly Color KodoDarkSurface = DialogPalette.Surface;
     private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
     private static readonly Color KodoDarkBorder = DialogPalette.Border;
@@ -264,7 +293,8 @@ public partial class App : Application
         }
 
         KodoDiagnostics.LogCritical("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
-        ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
+        if (!ShouldSuppressDuplicateCrashDialog(e.Exception))
+            ShowCrashDialog("Dispatcher.UIThread.UnhandledException", e.Exception, isTerminating: false);
         e.Handled = true;
     }
 
@@ -289,8 +319,12 @@ public partial class App : Application
                     () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
                     DispatcherPriority.MaxValue);
 
-                for (var i = 0; _isCrashDialogOpen == 1; i++)
+                var waited = 0;
+                while (_isCrashDialogOpen == 1 && waited < 300)
+                {
                     Thread.Sleep(100);
+                    waited++;
+                }
             }
             else
             {

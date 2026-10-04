@@ -183,9 +183,7 @@ internal sealed class UpdateDialog : Window
                     ? $"This is an optional hotfix for the unstable Kodo {hotfix.BaseVersion} beta. Download the rebuilt package only if you choose to use this beta; then install it using the instructions below."
                     : $"This hotfix is for the unstable Kodo {hotfix.BaseVersion} beta. Beta updates are optional and will only be installed if you choose Download Hotfix."
                 : manualPackage
-                ? hotfix.AssetName.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
-                    ? $"This critical hotfix fixes an important issue. Download the rebuilt Debian package, then install it with your software manager or `sudo apt install ./<package>.deb`."
-                    : "This critical hotfix fixes an important issue. Download the rebuilt AppImage, then replace your current AppImage with the downloaded file."
+                ? BuildManualPackageStatus()
                 : stagedTxPath is not null && File.Exists(stagedTxPath)
                 ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
                 : $"A critical hotfix for Kodo {display} is available and fixes an important issue. Download it now.",
@@ -314,15 +312,37 @@ internal sealed class UpdateDialog : Window
         }
     }
 
+    private string BuildManualPackageStatus() =>
+        IsLinuxDebPackage
+            ? "This critical hotfix fixes an important issue. Download the rebuilt Debian package, then install it with your software manager or `sudo apt install ./<package>.deb`."
+            : IsLinuxAppImagePackage
+                ? "This critical hotfix fixes an important issue. Download the rebuilt AppImage, then replace your current AppImage with the downloaded file."
+                : "This critical hotfix fixes an important issue. Download the rebuilt package, then install it using the instructions for your platform.";
+
+    private string BuildManualPackageInstalledStatus() =>
+        IsLinuxDebPackage
+            ? "Install the downloaded Debian package with your software manager or `sudo apt install ./<package>.deb`, then relaunch Kodo."
+            : IsLinuxAppImagePackage
+                ? "Replace your current AppImage with the downloaded file, keep it executable, then relaunch Kodo. This full package includes the critical hotfix."
+                : "Install the downloaded package for your platform, then relaunch Kodo.";
+
+    private bool IsLinuxDebPackage =>
+        _hotfix is not null
+        && OperatingSystem.IsLinux()
+        && _hotfix.AssetName.EndsWith(".deb", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsLinuxAppImagePackage =>
+        _hotfix is not null
+        && OperatingSystem.IsLinux()
+        && _hotfix.AssetName.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase);
+
     private async Task OnHotfixPrimaryClickAsync()
     {
         if (_hotfix is null) return;
         if (_stagedManualHotfixPackagePath is not null && File.Exists(_stagedManualHotfixPackagePath))
         {
             UpdateService.OpenFolderInFileManager(_stagedManualHotfixPackagePath);
-            _statusText.Text = _hotfix.AssetName.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
-                ? "Install the downloaded Debian package with your software manager or `sudo apt install ./<package>.deb`, then relaunch Kodo."
-                : "Replace your current AppImage with the downloaded file, keep it executable, then relaunch Kodo. This full package includes the critical hotfix.";
+            _statusText.Text = BuildManualPackageInstalledStatus();
             return;
         }
         if (_isReady && _stagedHotfixTxPath is not null && File.Exists(_stagedHotfixTxPath))

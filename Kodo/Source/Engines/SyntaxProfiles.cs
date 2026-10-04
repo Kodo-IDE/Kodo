@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
@@ -264,13 +265,21 @@ public static class EmbeddedTagContent
     private static readonly Regex StyleCloseRegex = new(@"</\s*style\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private static readonly Regex CodeCloseRegex = new(@"</\s*x:code\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    internal static Regex GetCloseTagRegex(string tagName) => tagName.ToLowerInvariant() switch
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> CloseTagRegexCache = new(StringComparer.OrdinalIgnoreCase);
+
+    internal static Regex GetCloseTagRegex(string tagName)
     {
-        "script" => ScriptCloseRegex,
-        "style" => StyleCloseRegex,
-        "x:code" => CodeCloseRegex,
-        _ => new Regex($@"</\s*{Regex.Escape(tagName)}\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase)
-    };
+        var key = tagName.ToLowerInvariant();
+        switch (key)
+        {
+            case "script": return ScriptCloseRegex;
+            case "style": return StyleCloseRegex;
+            case "x:code": return CodeCloseRegex;
+        }
+
+        return CloseTagRegexCache.GetOrAdd(tagName, static name =>
+            new Regex($@"</\s*{Regex.Escape(name)}\s*>", RegexOptions.Compiled | RegexOptions.IgnoreCase));
+    }
 
     private const string CDataStart = "<![CDATA[";
     private const string CDataEnd = "]]>";
@@ -863,11 +872,13 @@ public static class InlineCodeLanguageDetector
 
         var hasCodePunctuation = CodePunctuationRegex.IsMatch(snippet);
 
+        var lowerSnippet = snippet.ToLowerInvariant();
+
         var bestMatch = extensions
             .Where(extension =>
                 extension.Type == "language" &&
                 !KodoExtensionIds.IsMarkdown(extension.Id))
-            .Select(extension => Score(extension, snippet, hasCodePunctuation))
+            .Select(extension => Score(extension, lowerSnippet, hasCodePunctuation))
             .Where(result => result.Extension is not null)
             .OrderByDescending(result => result.Score)
             .ThenBy(result => result.Extension!.Name, StringComparer.OrdinalIgnoreCase)
@@ -898,16 +909,17 @@ public static class InlineCodeLanguageDetector
 
     private static (LoadedExtension? Extension, int Score) Score(LoadedExtension extension, string snippet, bool hasCodePunctuation)
     {
-        var keywordHits = CountTokenMatches(snippet, extension.Keywords);
-        var typeHits = CountTokenMatches(snippet, extension.Types);
-        var functionHits = CountTokenMatches(snippet, extension.Functions);
-        var propertyHits = CountTokenMatches(snippet, extension.Properties);
-        var namespaceHits = CountTokenMatches(snippet, extension.Namespaces);
+        var tokens = ExtensionTokens.For(extension);
+        var keywordHits = CountTokenMatches(snippet, tokens.Keywords);
+        var typeHits = CountTokenMatches(snippet, tokens.Types);
+        var functionHits = CountTokenMatches(snippet, tokens.Functions);
+        var propertyHits = CountTokenMatches(snippet, tokens.Properties);
+        var namespaceHits = CountTokenMatches(snippet, tokens.Namespaces);
 
         var score = keywordHits * 5 + typeHits * 4 + functionHits * 4 + propertyHits * 3 + namespaceHits * 3;
 
         if (!string.IsNullOrWhiteSpace(extension.CommentLine) &&
-            snippet.Contains(extension.CommentLine, StringComparison.Ordinal))
+            snippet.Contains(extension.CommentLine, StringComparison.OrdinalIgnoreCase))
         {
             score += 2;
         }
@@ -922,18 +934,65 @@ public static class InlineCodeLanguageDetector
         return isCredible ? (extension, score) : (null, 0);
     }
 
-    private static int CountTokenMatches(string snippet, IEnumerable<string> tokens)
+    private sealed class ExtensionTokens
+    {
+        public required string[] Keywords { get; init; }
+        public required string[] Types { get; init; }
+        public required string[] Functions { get; init; }
+        public required string[] Properties { get; init; }
+        public required string[] Namespaces { get; init; }
+
+        private static readonly ConditionalWeakTable<LoadedExtension, ExtensionTokens> Cache = new();
+
+        public static ExtensionTokens For(LoadedExtension extension) =>
+            Cache.GetValue(extension, static e => new ExtensionTokens
+            {
+                Keywords = Normalize(e.Keywords),
+                Types = Normalize(e.Types),
+                Functions = Normalize(e.Functions),
+                Properties = Normalize(e.Properties),
+                Namespaces = Normalize(e.Namespaces)
+            });
+
+        private static string[] Normalize(IEnumerable<string> tokens)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var result = new List<string>();
+            foreach (var token in tokens)
+            {
+                if (string.IsNullOrWhiteSpace(token)) continue;
+                if (seen.Add(token)) result.Add(token.ToLowerInvariant());
+            }
+
+            return result.ToArray();
+        }
+    }
+
+    private static int CountTokenMatches(string lowerSnippet, string[] lowerTokens)
     {
         var total = 0;
-
-        foreach (var token in tokens.Where(token => !string.IsNullOrWhiteSpace(token)).Distinct(StringComparer.OrdinalIgnoreCase))
+        for (var i = 0; i < lowerTokens.Length; i++)
         {
-            var escaped = Regex.Escape(token);
-            var regex = new Regex($@"(?<![\p{{L}}\p{{Nd}}_]){escaped}(?![\p{{L}}\p{{Nd}}_])", RegexOptions.IgnoreCase);
-            if (regex.IsMatch(snippet))
-                total++;
+            if (ContainsWholeToken(lowerSnippet, lowerTokens[i])) total++;
         }
 
         return total;
     }
+
+    private static bool ContainsWholeToken(string haystack, string needle)
+    {
+        var index = haystack.IndexOf(needle, StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            var beforeOk = index == 0 || !IsTokenChar(haystack[index - 1]);
+            var afterIndex = index + needle.Length;
+            var afterOk = afterIndex >= haystack.Length || !IsTokenChar(haystack[afterIndex]);
+            if (beforeOk && afterOk) return true;
+            index = haystack.IndexOf(needle, index + 1, StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
+    private static bool IsTokenChar(char c) => c == '_' || char.IsLetter(c) || char.IsDigit(c);
 }

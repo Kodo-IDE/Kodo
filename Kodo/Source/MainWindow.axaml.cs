@@ -164,6 +164,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastSeenWindowsAccentHex = string.Empty;
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsThemeName = string.Empty;
+    private string _systemAccentHex = "#8C00FF";
+    private bool _hasSystemAccent;
     private bool _lspEnabled = true;
     private bool _lspCompletionEnabled = true;
     private bool _lspHoverEnabled = true;
@@ -410,7 +412,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSearchPanelVisible;
     private SearchMode _searchMode = SearchMode.FindInFile;
     private readonly ObservableCollection<SearchResultItem> _searchResults = new();
-    private readonly ObservableCollection<SearchDisplayItem> _searchDisplayItems = new();
+    private ObservableCollection<SearchDisplayItem> _searchDisplayItems = new();
     private readonly List<SearchFileGroup> _fileGroups = new();
     private string _searchStatusText = string.Empty;
     private bool _isSearchBusy;
@@ -798,7 +800,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.PointerEntered += (_, _) => _diagnosticPopupHideTimer.Stop();
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         EditorTextBox.TextArea.TextView.PointerPressed += (_, _) => HideDiagnosticPopup();
-        EditorTextBox.TextArea.TextView.PointerWheelChanged += (_, _) => HideDiagnosticPopup();
+        EditorTextBox.TextArea.TextView.PointerWheelChanged += EditorTextView_OnPointerWheelChanged;
         EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) => HideDiagnosticPopup(), RoutingStrategies.Bubble);
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
@@ -1751,6 +1753,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return _editorHorizontalScrollViewer;
     }
 
+    private const double EditorHorizontalScrollStep = 120;
+    private const double EditorHorizontalScrollPageStep = 480;
+
+    private bool ScrollEditorHorizontally(double steps)
+    {
+        var viewer = EditorHorizontalScrollViewer();
+        if (viewer is null) return false;
+
+        var max = Math.Max(0, viewer.Extent.Width - viewer.Viewport.Width);
+        if (max <= 0) return false;
+
+        var current = viewer.Offset.X;
+        var target = Math.Clamp(current + steps * EditorHorizontalScrollStep, 0, max);
+        if (Math.Abs(target - current) < 0.5) return false;
+
+        viewer.Offset = new Vector(target, viewer.Offset.Y);
+        try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
+        return true;
+    }
+
+    private bool ScrollEditorHorizontallyByPage(double pages) =>
+        ScrollEditorHorizontally(pages * (EditorHorizontalScrollPageStep / EditorHorizontalScrollStep));
+
+    private bool HandleEditorHorizontalScrollGesture(PointerWheelEventArgs e)
+    {
+        var delta = e.KeyModifiers.HasFlag(KeyModifiers.Shift) || Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y)
+            ? (Math.Abs(e.Delta.X) > 0 ? e.Delta.X : e.Delta.Y)
+            : 0;
+
+        if (delta == 0) return false;
+
+        var notches = delta > 0 ? 1 : -1;
+        return ScrollEditorHorizontally(notches * 3);
+    }
+
     private void ApplyEditorSettings()
     {
         if (EditorTextBox is null)
@@ -2437,29 +2474,59 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string LatestReleaseTag => LatestRelease?.Tag ?? string.Empty;
 
-    public string LatestReleaseNotes => string.IsNullOrWhiteSpace(LatestRelease?.Notes)
-        ? "No release notes available."
-        : ConvertMarkdownToDisplayText(LatestRelease.Notes);
+    private object? _releaseNotesCacheKey;
+    private string _releaseNotesDisplayText = string.Empty;
+    private string _releaseNotesPreview = string.Empty;
+    private IReadOnlyList<FormattedParagraph> _releaseNotesParagraphs = [];
+    private IReadOnlyList<ReleaseLinkItem> _releaseNotesLinks = [];
 
-    public IReadOnlyList<FormattedParagraph> LatestReleaseFormatted =>
-        string.IsNullOrWhiteSpace(LatestRelease?.Notes)
-            ? [new FormattedParagraph { Runs = [new FormattedRun { Text = "No release notes available." }] }]
-            : ParseMarkdownParagraphs(LatestRelease.Notes);
+    private void EnsureReleaseNotesCache()
+    {
+        var release = LatestRelease;
+        var key = (object?)release ?? string.Empty;
+        if (ReferenceEquals(_releaseNotesCacheKey, key)) return;
+
+        _releaseNotesCacheKey = key;
+        var notes = release?.Notes ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(notes))
+        {
+            _releaseNotesDisplayText = "No release notes available.";
+            _releaseNotesPreview = _releaseNotesDisplayText;
+            _releaseNotesParagraphs = [new FormattedParagraph { Runs = [new FormattedRun { Text = _releaseNotesDisplayText }] }];
+            _releaseNotesLinks = [];
+            return;
+        }
+
+        _releaseNotesDisplayText = ConvertMarkdownToDisplayText(notes);
+        _releaseNotesParagraphs = ParseMarkdownParagraphs(notes);
+        _releaseNotesLinks = ExtractReleaseLinks(notes);
+
+        var flattened = _releaseNotesDisplayText.Replace("\r\n", "\n").Replace('\r', '\n');
+        _releaseNotesPreview = flattened.Length > 220 ? flattened[..220].TrimEnd() + "..." : flattened;
+    }
+
+    public string LatestReleaseNotes
+    {
+        get { EnsureReleaseNotesCache(); return _releaseNotesDisplayText; }
+    }
+
+    public IReadOnlyList<FormattedParagraph> LatestReleaseFormatted
+    {
+        get { EnsureReleaseNotesCache(); return _releaseNotesParagraphs; }
+    }
 
     public string LatestReleasePreview
     {
-        get
-        {
-            var notes = LatestReleaseNotes.Replace("\r\n", "\n").Replace('\r', '\n');
-            var preview = notes.Length > 220 ? notes[..220].TrimEnd() + "..." : notes;
-            return preview;
-        }
+        get { EnsureReleaseNotesCache(); return _releaseNotesPreview; }
     }
 
     public string LatestReleaseUrl => LatestRelease?.Url ?? ReleasesPageUrl;
 
-    public IReadOnlyList<ReleaseLinkItem> LatestReleaseLinks =>
-        ExtractReleaseLinks(LatestRelease?.Notes ?? string.Empty);
+    public IReadOnlyList<ReleaseLinkItem> LatestReleaseLinks
+    {
+        get { EnsureReleaseNotesCache(); return _releaseNotesLinks; }
+    }
 
     public bool HasLatestReleaseLinks => LatestReleaseLinks.Count > 0;
 
@@ -3835,6 +3902,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isTerminalVisible == value) return;
             _isTerminalVisible = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(IsTerminalPanelVisible));
             RefreshTerminalStatusBindings();
             SaveSettings();
             if (_isTerminalVisible)
@@ -3986,7 +4054,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[Terminal] Failed to start shell for '{_activeTerminalSession.Title}': {ex.Message}");
+                        KodoDiagnostics.LogWarning("MainWindow.ActiveTerminalSession",
+                            ex, operation: $"Failed to start shell for '{_activeTerminalSession.Title}'");
                         _activeTerminalSession.IsRunning = false;
                         _activeTerminalSession.StatusText = $"Failed to start: {ex.Message}";
                     }
@@ -4080,6 +4149,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? $"{GetDocumentDisplayName()}{GetDocumentStatusSuffix()}"
         : "Home";
     public bool IsTerminalSupported => _isTerminalSupported;
+
+    public bool IsTerminalPanelVisible => IsTerminalVisible && IsTerminalSupported;
+
+    public bool IsPSReadLineRelevant => OperatingSystem.IsWindows();
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
     public bool HasTerminalSessions => TerminalSessions.Count > 0;
     public int TerminalSessionCount => TerminalSessions.Count;
@@ -4122,20 +4195,30 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private static readonly Typeface ExplorerHeaderTypeface = new("Inter,Segoe UI,sans-serif", weight: FontWeight.SemiBold);
 
+    private string? _explorerPanelMinWidthHeader;
+    private double _explorerPanelMinWidthValue;
+
     public double ExplorerPanelMinWidth
     {
         get
         {
+            var header = ExplorerHeaderText;
+            if (_explorerPanelMinWidthHeader == header) return _explorerPanelMinWidthValue;
+
             var formatted = new FormattedText(
-                ExplorerHeaderText,
+                header,
                 CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight,
                 ExplorerHeaderTypeface,
                 11,
                 Brushes.Black);
 
-            return Math.Min(MaxExplorerPanelWidth,
+            var width = Math.Min(MaxExplorerPanelWidth,
                 Math.Max(MinExplorerPanelWidth, formatted.Width + ExplorerHeaderFixedChrome));
+
+            _explorerPanelMinWidthHeader = header;
+            _explorerPanelMinWidthValue = width;
+            return width;
         }
     }
 
@@ -4159,7 +4242,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
             _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
             SaveSettings();
         }
     }
@@ -4167,8 +4250,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsAmericanEnglish => _userCountry == "US";
 
     public string LabelAccentColour => IsAmericanEnglish ? "Accent Color" : "Accent Colour";
+    public string LabelAccentSystem => SystemThemeHelper.AccentModeDisplayName(IsAmericanEnglish);
+    public string TooltipSystemTheme => SystemThemeHelper.SystemThemeTooltip(IsAmericanEnglish);
+    public string RevealInFileManagerText => SystemThemeHelper.RevealInFileManagerText(IsAmericanEnglish);
+
+    private bool _isRecheckingLanguageServers;
+
+    public bool IsRecheckingLanguageServers
+    {
+        get => _isRecheckingLanguageServers;
+        private set
+        {
+            if (_isRecheckingLanguageServers == value) return;
+            _isRecheckingLanguageServers = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _lspRecheckStatusText = string.Empty;
+    public string LspRecheckStatusText
+    {
+        get => _lspRecheckStatusText;
+        private set
+        {
+            if (_lspRecheckStatusText == value) return;
+            _lspRecheckStatusText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string RecheckLanguageServersLabel => "Re-check language servers";
+
+    public string TerminalShellDescriptionText =>
+        OperatingSystem.IsWindows()
+            ? "New terminal sessions use the selected shell. PowerShell is preferred when it is available."
+            : "New terminal sessions use the selected shell, starting in the folder you have open.";
+
     public string TooltipAccentTheme => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
-    public string TooltipAccentWindows => IsAmericanEnglish ? "Use your Windows system accent color" : "Use your Windows system accent colour";
+    public string TooltipAccentWindows
+    {
+        get
+        {
+            var baseText = SystemThemeHelper.AccentModeTooltip(IsAmericanEnglish);
+            return _hasSystemAccent
+                ? baseText
+                : baseText + " \u2013 no system accent detected, using the theme accent instead.";
+        }
+    }
     public string TooltipAccentCustom => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
     public string LabelPersonalization => IsAmericanEnglish ? "Personalization" : "Personalisation";
     public string LabelPersonalizationHeader => IsAmericanEnglish ? "PERSONALIZATION" : "PERSONALISATION";
@@ -4392,12 +4520,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     ? "Checking periodically and installing new extension updates automatically, without showing progress."
                     : "Checking periodically and installing new extension updates automatically.";
 
-    public string AutoUpdateAppStatusText =>
-        !IsAutoUpdateAppEnabled
-            ? "Kodo only updates when you download a new installer yourself."
-            : IsAutoUpdateAppInBackgroundEnabled
+    public string AutoUpdateAppStatusText
+    {
+        get
+        {
+            if (!IsAutoUpdateAppSupported)
+                return "Kodo does not ship automatic updates on this platform, so download a new version yourself.";
+            if (!IsAutoUpdateAppEnabled)
+                return "Kodo only updates when you download a new installer yourself.";
+            return IsAutoUpdateAppInBackgroundEnabled
                 ? "Checking for new Kodo versions on launch and every few hours, and installing them automatically in the background once Kodo is closed."
                 : "Checking for new Kodo versions on launch and every few hours, and prompting to install them.";
+        }
+    }
+
+    public bool IsAutoUpdateAppSupported => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
 
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
         ? "The status bar shows the full path for the current file or folder."
@@ -4541,7 +4678,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public IBrush WindowsAccentPreviewBrush { get; private set; } =
-        Brush.Parse("#0078D4");
+        Brush.Parse("#8C00FF");
+
+    public bool HasSystemAccent => _hasSystemAccent;
 
     public string AccentColorMode
     {
@@ -4800,8 +4939,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (tab.IsUntitled || IsPlainTextFile(tab.Path) || HasNoFileExtension(tab.Path) || IsInsightBlacklisted(tab.Path) || IsErrorDeadCodeBlacklisted(tab.Path))
             return;
         if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled) return;
-        var hasLsp = ResolveLspExtensionForFile(tab.Path) is not null;
-        if (hasLsp) return;
+        if (HasRunningLspForFile(tab.Path)) return;
 
         var text = tab.Content;
         if (text.Length > 80_000) return;
@@ -5082,6 +5220,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
         new("GoToDefinition",    "Go to Definition",        new KeyGesture(Key.F12, KeyModifiers.None),                         "Editor"),
         new("ToggleLineComment",  "Toggle line comment",     new KeyGesture(Key.Oem2, KeyModifiers.Control),                     "Editor"),
+        new("ScrollEditorLeft",     "Scroll editor left",         new KeyGesture(Key.Left, KeyModifiers.Alt),                      "Editor"),
+        new("ScrollEditorRight",    "Scroll editor right",        new KeyGesture(Key.Right, KeyModifiers.Alt),                     "Editor"),
+        new("ScrollEditorPageLeft", "Scroll editor left (page)",  new KeyGesture(Key.PageUp, KeyModifiers.Alt),                     "Editor"),
+        new("ScrollEditorPageRight","Scroll editor right (page)", new KeyGesture(Key.PageDown, KeyModifiers.Alt),                   "Editor"),
         new("Cut",                "Cut",                     new KeyGesture(Key.X, KeyModifiers.Control),                        "Editor"),
         new("Copy",               "Copy",                    new KeyGesture(Key.C, KeyModifiers.Control),                        "Editor"),
         new("Paste",              "Paste",                   new KeyGesture(Key.V, KeyModifiers.Control),                        "Editor"),
@@ -5153,7 +5295,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if ((gesture.KeyModifiers & KeyModifiers.Control) != 0) parts.Add("Ctrl");
         if ((gesture.KeyModifiers & KeyModifiers.Alt) != 0) parts.Add("Alt");
         if ((gesture.KeyModifiers & KeyModifiers.Shift) != 0) parts.Add("Shift");
-        if ((gesture.KeyModifiers & KeyModifiers.Meta) != 0) parts.Add("Win");
+        if ((gesture.KeyModifiers & KeyModifiers.Meta) != 0)
+            parts.Add(OperatingSystem.IsMacOS() ? "Cmd" : "Win");
         parts.Add(FormatKey(gesture.Key));
         return string.Join("+", parts);
     }
@@ -5587,7 +5730,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _appUpdateScheduler.UpdateLifecycle();
                     _marketplaceRefreshTimer.Start();
 
-                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    if (SystemThemeHelper.SupportsAccent)
                     {
                         _lastSeenWindowsAccentHex = GetWindowsAccentColor() ?? string.Empty;
                         _windowsAccentPollTimer.Tick += WindowsAccentPollTimer_OnTick;
@@ -5598,6 +5741,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         _windowsThemePollTimer.Start();
                     }
                 });
+
             }
             catch { }
         });
@@ -5981,6 +6125,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ToggleTerminalPanel(bool ensureVisible = false)
     {
+        if (!IsTerminalSupported) return;
+
         NavigateTo(AppPage.Editor);
 
         if (ensureVisible)
@@ -5997,6 +6143,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsTerminalSupported)
             return;
 
+        try
+        {
+            CreateTerminalSessionCore(shell, replaceExisting, workingDirectoryOverride);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogCritical("MainWindow.CreateTerminalSession", ex, isTerminating: false,
+                operation: "Create terminal session");
+            ExtensionsStatusText = $"Failed to create terminal: {ex.Message}";
+            IsTerminalVisible = true;
+        }
+    }
+
+    private void CreateTerminalSessionCore(TerminalShellOption? shell, TerminalSession? replaceExisting, string? workingDirectoryOverride)
+    {
         shell ??= GetSelectedTerminalShellOrFallback();
         if (shell is null)
             return;
@@ -7651,6 +7812,137 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         BeginInlineRename(item);
     }
 
+    private void RenameEditorTabMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (TryGetTaggedData<EditorTab>(sender) is not { IsUntitled: false } tab) return;
+
+        BeginInlineTabRename(tab);
+    }
+
+    private EditorTab? _inlineTabRenameFocusPending;
+
+    private void BeginInlineTabRename(EditorTab tab)
+    {
+        if (string.IsNullOrWhiteSpace(tab.Path)) return;
+
+        if (_inlineTabRenameFocusPending is { } pending && !ReferenceEquals(pending, tab))
+            pending.IsRenaming = false;
+
+        tab.RenameText = tab.DisplayName;
+        tab.IsRenaming = true;
+        _inlineTabRenameFocusPending = tab;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(_inlineTabRenameFocusPending, tab)) return;
+
+            var textBox = FindInlineTabRenameTextBox(tab);
+            if (textBox is null) return;
+
+            textBox.Focus();
+            textBox.SelectAll();
+            _inlineTabRenameFocusPending = null;
+        });
+    }
+
+    private TextBox? FindInlineTabRenameTextBox(EditorTab tab) =>
+        this.GetVisualDescendants()
+            .OfType<TextBox>()
+            .FirstOrDefault(control => ReferenceEquals(control.DataContext, tab));
+
+    private async void InlineTabRenameTextBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox textBox || textBox.DataContext is not EditorTab tab) return;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                tab.IsRenaming = false;
+                tab.RenameText = tab.DisplayName;
+                _inlineTabRenameFocusPending = null;
+                FocusEditor();
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                e.Handled = true;
+                await CompleteInlineTabRenameAsync(tab);
+                break;
+        }
+    }
+
+    private async Task CompleteInlineTabRenameAsync(EditorTab tab)
+    {
+        if (!tab.IsRenaming) return;
+        tab.IsRenaming = false;
+        _inlineTabRenameFocusPending = null;
+
+        var newName = tab.RenameText.Trim();
+        if (string.IsNullOrWhiteSpace(newName)) { FocusEditor(); return; }
+
+        var currentName = tab.DisplayName;
+        if (string.Equals(newName, currentName, StringComparison.Ordinal))
+        {
+            FocusEditor();
+            return;
+        }
+
+        var oldPath = tab.Path;
+        if (string.IsNullOrWhiteSpace(oldPath) || !File.Exists(oldPath))
+        {
+            ExtensionsStatusText = "Rename failed: the file no longer exists on disk.";
+            return;
+        }
+
+        var invalidReason = ValidateFileName(newName);
+        if (invalidReason is not null)
+        {
+            ExtensionsStatusText = $"Rename failed: {invalidReason}";
+            return;
+        }
+
+        var parentDir = Path.GetDirectoryName(oldPath);
+        if (string.IsNullOrWhiteSpace(parentDir))
+        {
+            ExtensionsStatusText = "Rename failed: the file has no parent folder.";
+            return;
+        }
+
+        var newPath = Path.Combine(parentDir, newName);
+        var isCaseOnlyRename = string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase)
+                               && !string.Equals(oldPath, newPath, StringComparison.Ordinal);
+        if (!isCaseOnlyRename && File.Exists(newPath))
+        {
+            ExtensionsStatusText = $"Rename failed: '{newName}' already exists.";
+            return;
+        }
+
+        try
+        {
+            MoveFileCaseSafe(oldPath, newPath, isCaseOnlyRename);
+
+            RetargetTabPaths(oldPath, newPath, wasDirectory: false);
+
+            if (tab.IsDirty)
+            {
+                await ActivateEditorTabForMenuActionAsync(tab);
+                await SaveAsync();
+            }
+
+            await RefreshExplorerTreeAsync();
+            ExtensionsStatusText = $"Renamed to '{newName}'.";
+        }
+        catch (Exception ex)
+        {
+            ExtensionsStatusText = $"Rename failed: {ex.Message}";
+            await ShowWarningDialogAsync("Rename file", ex);
+        }
+        finally
+        {
+            FocusEditor();
+        }
+    }
+
     private FileTreeItem? _inlineRenameFocusPending;
     private FileTreeItem? _newFileInlineRenameItem;
 
@@ -7692,6 +7984,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
     }
 
+    private static readonly HashSet<string> ReservedFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+
+    private static string? ValidateFileName(string newName)
+    {
+        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) != -1 || newName.EndsWith(".") || newName.EndsWith(" "))
+            return $"'{newName}' contains invalid characters.";
+
+        var nameWithoutExt = newName.Contains('.') ? newName[..newName.IndexOf('.')] : newName;
+        if (ReservedFileNames.Contains(nameWithoutExt) || ReservedFileNames.Contains(newName))
+            return $"'{newName}' is a reserved name.";
+
+        return null;
+    }
+
+    private static void MoveFileCaseSafe(string currentPath, string newPath, bool isCaseOnlyRename)
+    {
+        if (!isCaseOnlyRename)
+        {
+            File.Move(currentPath, newPath);
+            return;
+        }
+
+        var tempPath = newPath + ".tmp_rename_" + Guid.NewGuid().ToString("N");
+        File.Move(currentPath, tempPath);
+        File.Move(tempPath, newPath);
+    }
+
     private async Task CompleteInlineRenameAsync(FileTreeItem item)
     {
         if (!item.IsRenaming) return;
@@ -7702,16 +8026,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newName = item.RenameText.Trim();
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, item.Name, StringComparison.Ordinal)) return;
 
-        if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) != -1 || newName.EndsWith(".") || newName.EndsWith(" "))
+        var invalidReason = ValidateFileName(newName);
+        if (invalidReason is not null)
         {
-            ExtensionsStatusText = $"Rename failed: '{newName}' contains invalid characters.";
-            return;
-        }
-        var reserved = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" };
-        var nameWithoutExt = newName.Contains('.') ? newName[..newName.IndexOf('.')] : newName;
-        if (reserved.Contains(nameWithoutExt) || reserved.Contains(newName))
-        {
-            ExtensionsStatusText = $"Rename failed: '{newName}' is a reserved name.";
+            ExtensionsStatusText = $"Rename failed: {invalidReason}";
             return;
         }
 
@@ -7752,7 +8070,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             else if (item.IsDirectory)
                 Directory.Move(item.FullPath, newPath);
             else
-                File.Move(item.FullPath, newPath);
+                MoveFileCaseSafe(item.FullPath, newPath, isCaseOnlyRename);
 
             RetargetTabPaths(item.FullPath, newPath, item.IsDirectory);
             await RefreshExplorerTreeAsync();
@@ -8286,6 +8604,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorFindAllOccurrencesMenuItem" or "EditorChangeAllOccurrencesMenuItem")
                 item.IsEnabled = hasSelection;
+
+            if (item.Name == "EditorCutMenuItem")
+                item.InputGesture = _keybinds.TryGetValue("Cut", out var cutGesture) ? cutGesture : null;
+            if (item.Name == "EditorCopyMenuItem")
+                item.InputGesture = _keybinds.TryGetValue("Copy", out var copyGesture) ? copyGesture : null;
+            if (item.Name == "EditorPasteMenuItem")
+                item.InputGesture = _keybinds.TryGetValue("Paste", out var pasteGesture) ? pasteGesture : null;
+
             if (item.Name == "EditorDismissDiagnosticMenuItem")
             {
                 var diag = GetDiagnosticAtCaret();
@@ -8545,8 +8871,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_cachedInsightAnalysisVersion == scanVersion &&
                 string.Equals(_cachedInsightAnalysisPath, scanPath, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(_cachedInsightAnalysisExtension, scanExtension, StringComparison.Ordinal) &&
-                string.Equals(_cachedInsightAnalysisText, text, StringComparison.Ordinal))
+                string.Equals(_cachedInsightAnalysisExtension, scanExtension, StringComparison.Ordinal))
             {
                 rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<ErrorSpan>(_cachedInsightAnalysisSpans);
             }
@@ -8556,6 +8881,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var cfgForFile = ResolveLspConfigurationForFile(_currentFilePath);
         var isLspPrimary = lspForFile?.HasLsp == true && cfgForFile != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForFile) is { IsInitialized: true };
         var hasConfiguredLsp = lspForFile?.HasLsp == true;
+        var hasRunningLsp = HasRunningLspForFile(_currentFilePath);
 
         if (rawSpans is null)
         {
@@ -8564,7 +8890,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var insightDisabled = !IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsInsightBlacklisted(_currentFilePath) || IsErrorDeadCodeBlacklisted(_currentFilePath);
                 var isLargeFile = text.Length > 80_000;
                 var isHugeFile = text.Length > 120_000;
-                var shouldSkipInsightForLsp = hasConfiguredLsp && text.Length > 50_000;
+                var shouldSkipInsightForLsp = hasRunningLsp && text.Length > 50_000;
                 if (isLspPrimary || insightDisabled || isHugeFile || shouldSkipInsightForLsp)
                 {
                     rawSpans = new List<ErrorSpan>();
@@ -8698,8 +9024,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 catch { }
             }, DispatcherPriority.Background);
         }
-        KodoDiagnostics.ReportSlowStage("diagnostics merge", mergeWatch.ElapsedMilliseconds, 500, $"raw={rawSpans.Count} textLen={text.Length}");
-        KodoDiagnostics.ReportSlowStage("diagnostics apply+redraw", applyWatch.ElapsedMilliseconds, 500, $"spans={spans.Count} textLen={text.Length}");
+        KodoDiagnostics.ReportSlowStage("diagnostics merge", mergeWatch.ElapsedMilliseconds, 500, () => $"raw={rawSpans.Count} textLen={text.Length}");
+        KodoDiagnostics.ReportSlowStage("diagnostics apply+redraw", applyWatch.ElapsedMilliseconds, 500, () => $"spans={spans.Count} textLen={text.Length}");
         RefreshStatusBarDiagnostics();
     }
 

@@ -1,7 +1,11 @@
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -10,11 +14,10 @@ internal static class UnixPty
     private const int O_RDWR = 2;
     private const int O_NOCTTY = 0x100;
     private const ulong TIOCSWINSZ = 0x5414;
-    private const ulong TIOCSCTTY = 0x540E;
     private const int SIGWINCH = 28;
     private const int SIGTERM = 15;
     private const int SIGKILL = 9;
-    private const int WNOHANG = 1;
+    private const int EPERM = 1;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Winsize
@@ -37,141 +40,171 @@ internal static class UnixPty
     [DllImport("libc", SetLastError = true)]
     private static extern IntPtr ptsname(int fd);
 
-    [DllImport("libc", SetLastError = true, CharSet = CharSet.Ansi)]
-    private static extern int open(string pathname, int flags);
-
     [DllImport("libc", SetLastError = true)]
     private static extern int close(int fd);
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern int ioctl(int fd, ulong request, ref Winsize ws);
 
     [DllImport("libc", SetLastError = true)]
     private static extern int ioctl(int fd, ulong request, IntPtr arg);
 
     [DllImport("libc", SetLastError = true)]
-    private static extern int setsid();
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern int fork();
-
-    [DllImport("libc", SetLastError = true)]
-    private static extern int dup2(int oldfd, int newfd);
-
-    [DllImport("libc", SetLastError = true, CharSet = CharSet.Ansi)]
-    private static extern int execvp(string file, IntPtr argv);
-
-    [DllImport("libc", SetLastError = true, CharSet = CharSet.Ansi)]
-    private static extern int chdir(string path);
-
-    [DllImport("libc", SetLastError = true, CharSet = CharSet.Ansi)]
-    private static extern int setenv(string name, string value, int overwrite);
-
-    [DllImport("libc")]
-    private static extern void _exit(int status);
-
-    [DllImport("libc", SetLastError = true)]
     private static extern int kill(int pid, int sig);
 
     [DllImport("libc", SetLastError = true)]
-    private static extern int waitpid(int pid, out int status, int options);
+    private static extern int getpgid(int pid);
 
-    public static bool TrySpawn(string shellPath, string arguments, string workingDirectory, int cols, int rows, out int masterFd, out int childPid)
+    private static readonly string[] SetsidCandidates = ["/usr/bin/setsid", "/bin/setsid"];
+
+    public static bool TrySpawn(
+        string shellPath,
+        string arguments,
+        string workingDirectory,
+        int cols,
+        int rows,
+        out int masterFd,
+        out Process? process,
+        out string? error)
     {
         masterFd = -1;
-        childPid = -1;
+        process = null;
+        error = null;
+
         try
         {
-            if (string.IsNullOrWhiteSpace(shellPath) || !System.IO.File.Exists(shellPath))
+            if (string.IsNullOrWhiteSpace(shellPath))
+            {
+                error = "No shell path was provided.";
                 return false;
+            }
+            if (!File.Exists(shellPath))
+            {
+                error = $"Shell not found: {shellPath}";
+                return false;
+            }
 
             cols = Math.Clamp(cols, 2, 1000);
             rows = Math.Clamp(rows, 2, 1000);
 
             var master = posix_openpt(O_RDWR | O_NOCTTY);
-            if (master < 0) return false;
+            if (master < 0) { error = ErrnoText("posix_openpt"); return false; }
+
+            var keepMasterOpen = true;
             try
             {
-                if (grantpt(master) != 0) { close(master); return false; }
-                if (unlockpt(master) != 0) { close(master); return false; }
-                var slaveNamePtr = ptsname(master);
-                if (slaveNamePtr == IntPtr.Zero) { close(master); return false; }
-                var slavePath = Marshal.PtrToStringAnsi(slaveNamePtr);
-                if (string.IsNullOrEmpty(slavePath)) { close(master); return false; }
+                if (grantpt(master) != 0) { error = ErrnoText("grantpt"); return false; }
+                if (unlockpt(master) != 0) { error = ErrnoText("unlockpt"); return false; }
+
+                var slavePtr = ptsname(master);
+                if (slavePtr == IntPtr.Zero) { error = ErrnoText("ptsname"); return false; }
+                var slavePath = Marshal.PtrToStringAnsi(slavePtr);
+                if (string.IsNullOrEmpty(slavePath)) { error = "ptsname returned an empty path."; return false; }
 
                 SetWinsize(master, cols, rows);
 
-                var argvList = BuildArgv(shellPath, arguments);
-                var argvPtrs = new List<IntPtr>(argvList.Count + 1);
-                try
+                var inner = BuildInnerCommand(shellPath, arguments, workingDirectory, slavePath);
+                var setsid = FindSetsid();
+
+                var psi = new ProcessStartInfo
                 {
-                    foreach (var a in argvList)
-                        argvPtrs.Add(Marshal.StringToHGlobalAnsi(a));
-                    argvPtrs.Add(IntPtr.Zero);
-                    var argvArray = Marshal.AllocHGlobal(IntPtr.Size * argvPtrs.Count);
-                    try
-                    {
-                        for (var i = 0; i < argvPtrs.Count; i++)
-                            Marshal.WriteIntPtr(argvArray, i * IntPtr.Size, argvPtrs[i]);
+                    FileName = setsid ?? "/bin/sh",
+                    UseShellExecute = false,
+                    RedirectStandardInput = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
 
-                        var pid = fork();
-                        if (pid < 0)
-                        {
-                            close(master);
-                            return false;
-                        }
-
-                        if (pid == 0)
-                        {
-                            try
-                            {
-                                setsid();
-                                var slave = open(slavePath, O_RDWR);
-                                if (slave < 0) _exit(1);
-                                ioctl(slave, TIOCSCTTY, IntPtr.Zero);
-                                SetWinsize(slave, cols, rows);
-                                dup2(slave, 0);
-                                dup2(slave, 1);
-                                dup2(slave, 2);
-                                if (slave > 2) close(slave);
-                                close(master);
-                                if (!string.IsNullOrWhiteSpace(workingDirectory))
-                                {
-                                    try { chdir(workingDirectory); } catch { }
-                                }
-                                try { setenv("TERM", "xterm-256color", 0); } catch { }
-                                execvp(shellPath, argvArray);
-                                _exit(127);
-                            }
-                            catch { _exit(127); }
-                            _exit(127);
-                            return false;
-                        }
-
-                        masterFd = master;
-                        childPid = pid;
-                        return true;
-                    }
-                    finally
-                    {
-                        Marshal.FreeHGlobal(argvArray);
-                    }
-                }
-                finally
+                if (setsid is null)
                 {
-                    foreach (var p in argvPtrs)
-                        if (p != IntPtr.Zero) Marshal.FreeHGlobal(p);
+                    psi.ArgumentList.Add("-c");
+                    psi.ArgumentList.Add(inner);
+                    KodoDiagnostics.LogDebug("[PTY] setsid not found; shell will run without job control.");
                 }
+                else
+                {
+                    psi.ArgumentList.Add("/bin/sh");
+                    psi.ArgumentList.Add("-c");
+                    psi.ArgumentList.Add(inner);
+                }
+
+                psi.Environment["TERM"] = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TERM"))
+                    ? Environment.GetEnvironmentVariable("TERM")!
+                    : "xterm-256color";
+
+                var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                proc.Start();
+
+                masterFd = master;
+                keepMasterOpen = false;
+                process = proc;
+
+                _ = Task.Run(() => DrainLauncherOutputAsync(proc, inner));
+
+                KodoDiagnostics.LogDebug(
+                    $"Terminal PTY started (pid {proc.Id}, shell '{shellPath} {arguments}', " +
+                    $"cwd '{workingDirectory}', slave {slavePath}, {cols}x{rows}, setsid={setsid is not null}).");
+
+                return true;
             }
-            catch
+            finally
             {
-                try { close(master); } catch { }
-                return false;
+                if (keepMasterOpen)
+                {
+                    try { close(master); } catch { }
+                }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            error = ex.Message;
             return false;
+        }
+    }
+
+    private static string BuildInnerCommand(string shellPath, string arguments, string workingDirectory, string slavePath)
+    {
+        var slave = Quote(slavePath);
+        var cd = string.Empty;
+        if (!string.IsNullOrWhiteSpace(workingDirectory))
+            cd = $"cd {Quote(workingDirectory)} 2>/dev/null; ";
+
+        return $"{cd}exec {Quote(shellPath)} {arguments} < {slave} > {slave} 2>&1";
+    }
+
+    private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+    private static string? FindSetsid()
+    {
+        foreach (var candidate in SetsidCandidates)
+        {
+            try { if (File.Exists(candidate)) return candidate; } catch { }
+        }
+        return null;
+    }
+
+    private static async Task DrainLauncherOutputAsync(Process proc, string innerCommand)
+    {
+        try
+        {
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            await Task.WhenAll(stdoutTask, stderrTask).ConfigureAwait(false);
+
+            var noise = string.Join(' ', new[] { await stdoutTask, await stderrTask }
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim()))
+                .Trim();
+
+            if (noise.Length == 0) return;
+
+            KodoDiagnostics.LogWarning(
+                "UnixPty.TrySpawn",
+                new InvalidOperationException(
+                    $"The terminal launcher reported: {noise} (command: {innerCommand})"),
+                operation: "Linux terminal spawn");
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("[PTY] Launcher output drain failed.", ex);
         }
     }
 
@@ -192,6 +225,9 @@ internal static class UnixPty
         catch { }
     }
 
+    [DllImport("libc", SetLastError = true)]
+    private static extern int ioctl(int fd, ulong request, ref Winsize ws);
+
     public static void SendSigwinch(int pid)
     {
         if (pid <= 0) return;
@@ -209,23 +245,10 @@ internal static class UnixPty
         if (pid <= 0) return false;
         try
         {
-            var r = kill(pid, 0);
-            if (r == 0) return true;
-            var err = Marshal.GetLastWin32Error();
-            return err == 1;
+            if (kill(pid, 0) == 0) return true;
+            return Marshal.GetLastWin32Error() == EPERM;
         }
         catch { return false; }
-    }
-
-    public static bool TryReap(int pid)
-    {
-        if (pid <= 0) return true;
-        try
-        {
-            var r = waitpid(pid, out _, WNOHANG);
-            return r == pid || !IsAlive(pid);
-        }
-        catch { return !IsAlive(pid); }
     }
 
     public static void Kill(int pid)
@@ -237,46 +260,38 @@ internal static class UnixPty
     public static void KillGroup(int pid, bool force = false)
     {
         if (pid <= 0) return;
-        try { kill(-pid, force ? SIGKILL : SIGTERM); } catch { }
-        try { kill(pid, force ? SIGKILL : SIGTERM); } catch { }
-    }
+        var sig = force ? SIGKILL : SIGTERM;
 
-    private static List<string> BuildArgv(string shellPath, string arguments)
-    {
-        var argv = new List<string> { shellPath };
-        foreach (var a in SplitArguments(arguments))
-            argv.Add(a);
-        return argv;
-    }
-
-    internal static IEnumerable<string> SplitArguments(string arguments)
-    {
-        if (string.IsNullOrWhiteSpace(arguments)) yield break;
-        var sb = new System.Text.StringBuilder();
-        char? quote = null;
-        for (var i = 0; i < arguments.Length; i++)
+        var ownsGroup = false;
+        try { ownsGroup = getpgid(pid) == pid; } catch { }
+        if (ownsGroup)
         {
-            var c = arguments[i];
-            if (quote is not null)
-            {
-                if (c == quote) quote = null;
-                else if (c == '\\' && i + 1 < arguments.Length) { i++; sb.Append(arguments[i]); }
-                else sb.Append(c);
-            }
-            else if (c == '"' || c == '\'')
-            {
-                quote = c;
-            }
-            else if (char.IsWhiteSpace(c))
-            {
-                if (sb.Length > 0) { yield return sb.ToString(); sb.Clear(); }
-            }
-            else if (c == '\\' && i + 1 < arguments.Length)
-            {
-                i++; sb.Append(arguments[i]);
-            }
-            else sb.Append(c);
+            try { kill(-pid, sig); } catch { }
         }
-        if (sb.Length > 0) yield return sb.ToString();
+
+        try { kill(pid, sig); } catch { }
     }
+
+    private static string ErrnoText(string call)
+    {
+        var errno = Marshal.GetLastWin32Error();
+        return $"{call} failed: errno {errno} ({DescribeErrno(errno)})";
+    }
+
+    internal static string DescribeErrno(int errno) => errno switch
+    {
+        1 => "operation not permitted",
+        2 => "no such file or directory",
+        3 => "no such process",
+        7 => "argument list too long",
+        8 => "exec format error",
+        12 => "out of memory",
+        13 => "permission denied",
+        20 => "not a directory",
+        21 => "is a directory",
+        26 => "text file busy",
+        36 => "file name too long",
+        40 => "too many levels of symbolic links",
+        _ => "unknown error"
+    };
 }
