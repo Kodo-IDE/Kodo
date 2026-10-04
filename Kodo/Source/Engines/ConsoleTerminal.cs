@@ -172,6 +172,8 @@ public sealed class ConsoleTerminal : Control
             if (!suppressOutputUntilRestored)
             {
                 ResizeCells(rows, cols);
+                _parseState = TerminalParseState.Ground;
+                ResetTerminal();
                 _scrollback.Clear();
                 _scrollOffset = 0;
             }
@@ -237,6 +239,8 @@ public sealed class ConsoleTerminal : Control
             if (!suppressOutputUntilRestored)
             {
                 ResizeCells(rows, cols);
+                _parseState = TerminalParseState.Ground;
+                ResetTerminal();
                 _scrollback.Clear();
                 _scrollOffset = 0;
             }
@@ -610,6 +614,8 @@ public sealed class ConsoleTerminal : Control
             if (!suppressOutputUntilRestored)
             {
                 ResizeCells(rows, cols);
+                _parseState = TerminalParseState.Ground;
+                ResetTerminal();
                 _scrollback.Clear();
                 _scrollOffset = 0;
             }
@@ -672,6 +678,7 @@ public sealed class ConsoleTerminal : Control
             {
                 var n = await proc.StandardError.ReadAsync(buf, 0, buf.Length).WaitAsync(ct);
                 if (n <= 0) break;
+                if (ct.IsCancellationRequested) break;
                 var text = new string(buf, 0, n);
                 lock (_lock)
                 {
@@ -1330,6 +1337,7 @@ public sealed class ConsoleTerminal : Control
                     break;
                 }
                 if (n <= 0) break;
+                if (ct.IsCancellationRequested) break;
                 var text = Encoding.UTF8.GetString(buf, 0, n);
                 lock (_lock)
                 {

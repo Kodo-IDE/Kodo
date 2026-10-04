@@ -107,7 +107,10 @@ internal sealed class PosixPtyStream : Stream
             cancellationToken.ThrowIfCancellationRequested();
 
             if (Volatile.Read(ref _disposed) != 0) return 0;
-            if (WaitReadable(_fd, PollSliceMs)) return Read(buffer, offset, count);
+            if (!WaitReadable(_fd, PollSliceMs)) continue;
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return Read(buffer, offset, count);
         }
     }
 
