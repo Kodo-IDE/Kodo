@@ -1207,14 +1207,17 @@ internal static class LspRuntimeDetector
                 try { dir = Path.GetFullPath(expanded); } catch { dir = expanded; }
                 if (!Directory.Exists(dir)) continue;
                 var candidate = Path.Combine(dir, fileName);
+                if (isWindows && !Path.HasExtension(fileName))
+                {
+                    foreach (var ext in pathexts)
+                    {
+                        var withExt = candidate + (ext.StartsWith(".") ? ext : "." + ext);
+                        if (IsExecutableFile(withExt)) return Path.GetFullPath(withExt);
+                    }
+                    continue;
+                }
                 if (IsExecutableFile(candidate)) return Path.GetFullPath(candidate);
                 if (!isWindows) continue;
-                if (Path.HasExtension(fileName)) continue;
-                foreach (var ext in pathexts)
-                {
-                    var withExt = candidate + (ext.StartsWith(".") ? ext : "." + ext);
-                    if (IsExecutableFile(withExt)) return Path.GetFullPath(withExt);
-                }
             }
             if (!isWindows && (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".cmd", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)))
             {
