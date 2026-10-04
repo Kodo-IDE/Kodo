@@ -796,15 +796,6 @@
         </Style>
 
         
-        <Style Selector="TextBox.tabrename">
-            <Setter Property="Background" Value="{Binding ButtonBrush}" />
-            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
-            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="CaretBrush" Value="{Binding PrimaryTextBrush}" />
-        </Style>
-
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
             <Setter Property="Background" Value="{Binding #RootWindow.CardBrush}" />
@@ -1675,6 +1666,7 @@
                                                     Classes.active="{Binding IsSelected}"
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
+                                                    IsVisible="{Binding !IsRenaming}"
                                                     Padding="12,10,38,10">
                                                 <StackPanel Orientation="Horizontal" Spacing="7">
                                                     <Viewbox Width="26" Height="13" VerticalAlignment="Center" Stretch="Uniform">
@@ -1691,7 +1683,6 @@
 <TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
-                                                               IsVisible="{Binding !IsRenaming}"
                                                                Text="{Binding DisplayName}" />
                                                      <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
                                                               IsVisible="{Binding IsDirty}">
@@ -1721,14 +1712,14 @@
                                             </Button>
                                             <TextBox Grid.Row="0"
                                                      Grid.Column="0"
-                                                     Grid.ColumnSpan="2"
-                                                     Classes="tabrename"
                                                      FontSize="13"
                                                      IsVisible="{Binding IsRenaming}"
                                                      Text="{Binding RenameText, Mode=TwoWay}"
                                                      KeyDown="InlineTabRenameTextBox_OnKeyDown"
+                                                     LostFocus="InlineTabRenameTextBox_OnLostFocus"
                                                      MinWidth="150"
-                                                     Padding="4,2"
+                                                     Margin="12,0,0,0"
+                                                     Padding="4,1"
                                                      VerticalAlignment="Center"
                                                      VerticalContentAlignment="Center" />
                                             <Border Grid.Row="1"

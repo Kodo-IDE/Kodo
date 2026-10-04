@@ -7871,6 +7871,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void InlineTabRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox && textBox.DataContext is EditorTab tab && tab.IsRenaming)
+            await CompleteInlineTabRenameAsync(tab);
+    }
+
     private async Task CompleteInlineTabRenameAsync(EditorTab tab)
     {
         if (!tab.IsRenaming) return;
@@ -7878,33 +7884,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _inlineTabRenameFocusPending = null;
 
         var newName = tab.RenameText.Trim();
-        if (string.IsNullOrWhiteSpace(newName)) { FocusEditor(); return; }
+        if (string.IsNullOrWhiteSpace(newName)) { tab.RenameText = tab.DisplayName; FocusEditor(); return; }
 
         var currentName = tab.DisplayName;
         if (string.Equals(newName, currentName, StringComparison.Ordinal))
         {
+            tab.RenameText = currentName;
             FocusEditor();
             return;
+        }
+
+        void Abort(string message)
+        {
+            tab.RenameText = tab.DisplayName;
+            ExtensionsStatusText = message;
+            FocusEditor();
         }
 
         var oldPath = tab.Path;
         if (string.IsNullOrWhiteSpace(oldPath) || !File.Exists(oldPath))
         {
-            ExtensionsStatusText = "Rename failed: the file no longer exists on disk.";
+            Abort("Rename failed: the file no longer exists on disk.");
             return;
         }
 
         var invalidReason = ValidateFileName(newName);
         if (invalidReason is not null)
         {
-            ExtensionsStatusText = $"Rename failed: {invalidReason}";
+            Abort($"Rename failed: {invalidReason}");
             return;
         }
 
         var parentDir = Path.GetDirectoryName(oldPath);
         if (string.IsNullOrWhiteSpace(parentDir))
         {
-            ExtensionsStatusText = "Rename failed: the file has no parent folder.";
+            Abort("Rename failed: the file has no parent folder.");
             return;
         }
 
@@ -7913,7 +7927,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                                && !string.Equals(oldPath, newPath, StringComparison.Ordinal);
         if (!isCaseOnlyRename && File.Exists(newPath))
         {
-            ExtensionsStatusText = $"Rename failed: '{newName}' already exists.";
+            Abort($"Rename failed: '{newName}' already exists.");
             return;
         }
 
@@ -7922,6 +7936,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MoveFileCaseSafe(oldPath, newPath, isCaseOnlyRename);
 
             RetargetTabPaths(oldPath, newPath, wasDirectory: false);
+            tab.RenameText = newName;
 
             if (tab.IsDirty)
             {
