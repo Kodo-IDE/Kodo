@@ -71,6 +71,7 @@ public sealed class ConsoleTerminal : Control
     private Color _selectionBg = Color.FromArgb(120, 140, 0, 255);
     private Color _cursorColor = Color.FromRgb(190, 120, 255);
     private Color _cursorForeground = Color.FromRgb(255, 255, 255);
+    private readonly ConcurrentDictionary<(Color Foreground, Color Background), Color> _contrastColorCache = new();
     private bool _selecting;
     private (int Row, int Col)? _selStart;
     private (int Row, int Col)? _selEnd;
@@ -152,6 +153,7 @@ public sealed class ConsoleTerminal : Control
             _cursorColor = accent;
             _cursorForeground = GetReadableTerminalForeground(accent);
             _mutedColor = muted;
+            _contrastColorCache.Clear();
             if (_fg == oldForeground) _fg = foreground;
             if (_bg == oldBackground) _bg = background;
             if (_savedFg == oldForeground) _savedFg = foreground;
@@ -184,8 +186,69 @@ public sealed class ConsoleTerminal : Control
 
     private static Color GetReadableTerminalForeground(Color background)
     {
-        var luminance = (0.2126 * background.R + 0.7152 * background.G + 0.0722 * background.B) / 255;
-        return luminance > 0.58 ? Color.FromRgb(24, 20, 30) : Color.FromRgb(255, 255, 255);
+        return EnsureContrast(Color.FromRgb(255, 255, 255), background);
+    }
+
+    private Color EnsureTerminalContrast(Color foreground, Color background)
+    {
+        if (RelativeLuminance(_terminalBackground) < 0.45) return foreground;
+        if (_contrastColorCache.TryGetValue((foreground, background), out var result)) return result;
+        result = EnsureContrast(foreground, Composite(background, _terminalBackground));
+        if (_contrastColorCache.Count > 4096) _contrastColorCache.Clear();
+        return _contrastColorCache.GetOrAdd((foreground, background), result);
+    }
+
+    private static Color EnsureContrast(Color foreground, Color background)
+    {
+        var opaqueBackground = Composite(background, Color.FromRgb(0, 0, 0));
+        if (ContrastRatio(foreground, opaqueBackground) >= 4.5) return foreground;
+        var endpoint = ContrastRatio(Color.FromRgb(0, 0, 0), opaqueBackground) >=
+                       ContrastRatio(Color.FromRgb(255, 255, 255), opaqueBackground)
+            ? Color.FromRgb(0, 0, 0)
+            : Color.FromRgb(255, 255, 255);
+        var low = 0.0;
+        var high = 1.0;
+        for (var i = 0; i < 8; i++)
+        {
+            var amount = (low + high) / 2;
+            var candidate = Mix(foreground, endpoint, amount);
+            if (ContrastRatio(candidate, opaqueBackground) >= 4.5) high = amount;
+            else low = amount;
+        }
+        return Mix(foreground, endpoint, high);
+    }
+
+    private static Color Composite(Color foreground, Color background)
+    {
+        if (foreground.A == 255) return foreground;
+        var alpha = foreground.A / 255.0;
+        return Color.FromRgb(
+            (byte)Math.Round(foreground.R * alpha + background.R * (1 - alpha)),
+            (byte)Math.Round(foreground.G * alpha + background.G * (1 - alpha)),
+            (byte)Math.Round(foreground.B * alpha + background.B * (1 - alpha)));
+    }
+
+    private static Color Mix(Color from, Color to, double amount) => Color.FromRgb(
+        (byte)Math.Round(from.R + (to.R - from.R) * amount),
+        (byte)Math.Round(from.G + (to.G - from.G) * amount),
+        (byte)Math.Round(from.B + (to.B - from.B) * amount));
+
+    private static double ContrastRatio(Color first, Color second)
+    {
+        var firstLuminance = RelativeLuminance(first);
+        var secondLuminance = RelativeLuminance(second);
+        return (Math.Max(firstLuminance, secondLuminance) + 0.05) /
+               (Math.Min(firstLuminance, secondLuminance) + 0.05);
+    }
+
+    private static double RelativeLuminance(Color color)
+    {
+        static double Channel(byte value)
+        {
+            var normalized = value / 255.0;
+            return normalized <= 0.04045 ? normalized / 12.92 : Math.Pow((normalized + 0.055) / 1.055, 2.4);
+        }
+        return 0.2126 * Channel(color.R) + 0.7152 * Channel(color.G) + 0.0722 * Channel(color.B);
     }
 
     private Color _terminalBackground = DefaultBg;
@@ -1161,6 +1224,7 @@ public sealed class ConsoleTerminal : Control
                     if (!string.IsNullOrEmpty(cell.Text) && cell.Text != " " && cell.Text != WideContinuation)
                     {
                         var fg = atCursor ? _cursorForeground : (cell.Fg ?? _terminalForeground);
+                        fg = EnsureTerminalContrast(fg, bg);
                         var bold = cell.Bold;
 
                         var ft = TerminalGlyphCache.Get(cell.Text, fg, bold, FontSize);
@@ -1170,7 +1234,7 @@ public sealed class ConsoleTerminal : Control
 
                     if (cell.Underline)
                     {
-                        var fg = cell.Fg ?? _terminalForeground;
+                        var fg = EnsureTerminalContrast(cell.Fg ?? _terminalForeground, bg);
                         ctx.DrawLine(PenCache.Get(fg),
                             new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                     }
