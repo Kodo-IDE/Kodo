@@ -26,7 +26,9 @@ internal sealed class LspClient : IDisposable
     private readonly string _workspaceRoot;
     private Process? _process;
     private StreamWriter? _writer;
-    private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pending = new();
+    private readonly ConcurrentDictionary<JsonRpcId, TaskCompletionSource<JsonElement>> _pending = new();
+    private readonly Dictionary<string, string> _registeredCapabilities = new(StringComparer.Ordinal);
+    private readonly object _capabilityGate = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _readLoop;
     private Task? _stderrLoop;
@@ -71,7 +73,27 @@ internal sealed class LspClient : IDisposable
     public string Id => _config.Command;
     public IReadOnlyList<string> SemanticTokenTypes { get; private set; } = Array.Empty<string>();
 
-    public string PositionEncoding { get; private set; } = "utf-16";
+    private string _positionEncoding = "utf-16";
+
+    private readonly record struct JsonRpcId(string? StringValue, long NumericValue, bool IsString)
+    {
+        public static bool TryCreate(JsonElement value, out JsonRpcId id)
+        {
+            if (value.ValueKind == JsonValueKind.String)
+            {
+                id = new JsonRpcId(value.GetString() ?? string.Empty, 0, true);
+                return true;
+            }
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var numeric))
+            {
+                id = new JsonRpcId(null, numeric, false);
+                return true;
+            }
+            id = default;
+            return false;
+        }
+    }
+    public string PositionEncoding => _positionEncoding;
 
     public bool SupportsIncrementalSync()
     {
@@ -85,7 +107,11 @@ internal sealed class LspClient : IDisposable
 
     public bool Supports(string method)
     {
-        if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return true;
+        lock (_capabilityGate)
+            if (_registeredCapabilities.Values.Contains(method, StringComparer.Ordinal) ||
+                method == "textDocument/semanticTokens/full" && _registeredCapabilities.Values.Contains("textDocument/semanticTokens", StringComparer.Ordinal))
+                return true;
+        if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
         var property = method switch
         {
             "textDocument/signatureHelp" => "signatureHelpProvider",
@@ -106,11 +132,23 @@ internal sealed class LspClient : IDisposable
             "textDocument/rangeFormatting" => "documentRangeFormattingProvider",
             _ => null
         };
-        if (property is null || !caps.TryGetProperty(property, out var value)) return true;
-        return value.ValueKind != JsonValueKind.False;
+        if (property is null) return true;
+        if (property == "semanticTokensProvider")
+        {
+            if (!caps.TryGetProperty(property, out var semantic)) return false;
+            return semantic.ValueKind == JsonValueKind.Object && semantic.TryGetProperty("full", out var full) && full.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.Object => true,
+                _ => false
+            };
+        }
+        if (!caps.TryGetProperty(property, out var value)) return false;
+        return value.ValueKind is JsonValueKind.True or JsonValueKind.Object;
     }
 
     public event Action<string, JsonElement?>? OnNotification;
+    public event Func<string, JsonElement?, Task<object?>>? OnServerRequest;
     public event Action<JsonElement>? OnResponse;
     public event Action<string>? OnStderr;
     public event Action<int>? OnExit;
@@ -186,7 +224,6 @@ internal sealed class LspClient : IDisposable
             throw new FileNotFoundException($"Language server '{_config.Command}' could not be started. Check that it is installed and available on PATH.", ex);
         }
 
-        try { _process.PriorityClass = ProcessPriorityClass.BelowNormal; } catch { }
         _writer = new StreamWriter(_process.StandardInput.BaseStream, new UTF8Encoding(false), leaveOpen: false) { AutoFlush = false };
         _readLoop = Task.Run(() => ReadLoopAsync(_process.StandardOutput.BaseStream, _cts.Token), _cts.Token);
         _stderrLoop = Task.Run(() => StderrLoopAsync(_process.StandardError, _cts.Token), _cts.Token);
@@ -235,7 +272,7 @@ internal sealed class LspClient : IDisposable
                 {
                     ["general"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
-                        ["positionEncodings"] = new[] { "utf-16" }
+                        ["positionEncodings"] = new[] { "utf-16", "utf-8", "utf-32" }
                     },
                     ["workspace"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
@@ -249,7 +286,7 @@ internal sealed class LspClient : IDisposable
                     ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
                         ["synchronization"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["didOpen"] = true, ["didChange"] = true, ["didClose"] = true, ["willSave"] = false },
-                        ["completion"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["completionItem"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["snippetSupport"] = true, ["documentationFormat"] = new[] { "markdown", "plaintext" }, ["resolveSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["properties"] = new[] { "documentation", "detail", "additionalTextEdits" } } } },
+                        ["completion"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["completionItem"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["documentationFormat"] = new[] { "markdown", "plaintext" } } },
                         ["hover"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["contentFormat"] = new[] { "markdown", "plaintext" } },
                         ["signatureHelp"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["signatureInformation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["documentationFormat"] = new[] { "markdown", "plaintext" }, ["parameterInformation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["labelOffsetSupport"] = true } } },
                         ["definition"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["linkSupport"] = false },
@@ -286,7 +323,13 @@ internal sealed class LspClient : IDisposable
                         ["formatting"] = new Dictionary<string, object?>(StringComparer.Ordinal),
                         ["rangeFormatting"] = new Dictionary<string, object?>(StringComparer.Ordinal),
                         ["foldingRange"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["lineFoldingOnly"] = false },
-                        ["semanticTokens"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["requests"] = new Dictionary<string, object?> { ["range"] = true, ["full"] = new Dictionary<string, object?> { ["delta"] = true } }, ["tokenTypes"] = Array.Empty<string>(), ["tokenModifiers"] = Array.Empty<string>(), ["formats"] = new[] { "relative" } },
+                        ["semanticTokens"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["requests"] = new Dictionary<string, object?> { ["range"] = true, ["full"] = new Dictionary<string, object?> { ["delta"] = true } },
+                            ["tokenTypes"] = new[] { "namespace", "type", "class", "enum", "interface", "struct", "typeParameter", "parameter", "variable", "property", "enumMember", "event", "function", "method", "macro", "keyword", "modifier", "comment", "string", "number", "regexp", "operator", "decorator" },
+                            ["tokenModifiers"] = new[] { "declaration", "definition", "readonly", "static", "deprecated", "abstract", "async", "modification", "documentation", "defaultLibrary" },
+                            ["formats"] = new[] { "relative" }
+                        },
                         ["inlayHint"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["resolveSupport"] = new Dictionary<string, object?> { ["properties"] = new[] { "tooltip", "textEdits" } } },
                         ["publishDiagnostics"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["relatedInformation"] = true }
                     }
@@ -312,16 +355,11 @@ internal sealed class LspClient : IDisposable
             {
                 if (result.Value.TryGetProperty("positionEncoding", out var encoding) && encoding.ValueKind == JsonValueKind.String)
                 {
-                    PositionEncoding = encoding.GetString() ?? "utf-16";
-                    if (!string.Equals(PositionEncoding, "utf-16", StringComparison.OrdinalIgnoreCase))
-                        KodoDiagnostics.LogWarning("LspClient.StartAsync",
-                            new InvalidOperationException(
-                                $"Server '{_config.Command}' negotiated positionEncoding '{PositionEncoding}', but Kodo uses utf-16. Positions in non-ASCII text may be inaccurate."),
-                            operation: "LSP position encoding negotiation");
+                    _positionEncoding = encoding.GetString() ?? "utf-16";
                 }
                 else
                 {
-                    PositionEncoding = "utf-16";
+                    _positionEncoding = "utf-16";
                 }
 
                 if (result.Value.TryGetProperty("capabilities", out var caps))
@@ -351,30 +389,31 @@ internal sealed class LspClient : IDisposable
 
     public async Task<JsonElement?> SendRequestAsync(string method, object? @params, CancellationToken cancellationToken = default)
     {
-        var id = Interlocked.Increment(ref _nextId);
+        cancellationToken.ThrowIfCancellationRequested();
+        var id = new JsonRpcId(null, Interlocked.Increment(ref _nextId), false);
         var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         Task write;
         lock (_writeGate)
         {
             if (_transportError is not null) throw _transportError;
-            _pending[id] = tcs;
+            if (!_pending.TryAdd(id, tcs)) throw new InvalidOperationException($"Duplicate LSP request id '{id.NumericValue}'");
             write = EnqueueWriteAsync(() =>
             {
-                var json = LspProtocol.CreateRequest(id, method, @params);
+                var json = LspProtocol.CreateRequest((int)id.NumericValue, method, @params);
                 if (KodoDiagnostics.VerboseLoggingEnabled)
                 {
                     try
                     {
                         var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
-                        KodoDiagnostics.LogDebug($"LSP request id={id} method={method} json={preview}");
+                        KodoDiagnostics.LogDebug($"LSP request id={id.NumericValue} method={method} json={preview}");
                     }
                     catch { }
                 }
                 return json;
-            }, cancellationToken);
+            }, CancellationToken.None);
         }
 
-        using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
+        using var registration = RegisterRequestCancellation(id, tcs, write, cancellationToken);
         try
         {
             await write.ConfigureAwait(false);
@@ -383,18 +422,67 @@ internal sealed class LspClient : IDisposable
         }
         finally
         {
-            _pending.TryRemove(id, out _);
+            if (_pending.TryGetValue(id, out var pending) && ReferenceEquals(pending, tcs)) _pending.TryRemove(id, out _);
             tcs.TrySetCanceled();
             if (tcs.Task.IsFaulted) _ = tcs.Task.Exception;
         }
     }
+
+    private async Task<JsonElement?> SendRequestAsync(string method, object? @params, JsonElement requestId, CancellationToken cancellationToken)
+    {
+        if (!JsonRpcId.TryCreate(requestId, out var id)) return null;
+        var tcs = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_pending.TryAdd(id, tcs)) throw new InvalidOperationException($"Duplicate LSP request id '{requestId.GetRawText()}'");
+        Task write;
+        try
+        {
+            lock (_writeGate)
+            {
+                if (_transportError is not null) throw _transportError;
+                write = EnqueueWriteAsync(() => LspProtocol.CreateRequest(requestId, method, @params), CancellationToken.None);
+            }
+        }
+        catch { _pending.TryRemove(id, out _); throw; }
+        using var registration = RegisterRequestCancellation(id, tcs, write, cancellationToken);
+        try
+        {
+            await write.ConfigureAwait(false);
+            var response = await tcs.Task.ConfigureAwait(false);
+            return response.ValueKind == JsonValueKind.Undefined ? null : response;
+        }
+        finally
+        {
+            if (_pending.TryGetValue(id, out var pending) && ReferenceEquals(pending, tcs)) _pending.TryRemove(id, out _);
+            tcs.TrySetCanceled();
+            if (tcs.Task.IsFaulted) _ = tcs.Task.Exception;
+        }
+    }
+
+    private CancellationTokenRegistration RegisterRequestCancellation(JsonRpcId id, TaskCompletionSource<JsonElement> completion, Task write, CancellationToken cancellationToken) =>
+        cancellationToken.Register(() =>
+        {
+            if (!completion.TrySetCanceled(cancellationToken)) return;
+            _ = write.ContinueWith(async completed =>
+            {
+                if (completed.Status != TaskStatus.RanToCompletion) return;
+                var requestId = id.IsString ? (object?)id.StringValue : id.NumericValue;
+                try
+                {
+                    await SendNotificationAsync("$/cancelRequest", new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["id"] = requestId
+                    }).ConfigureAwait(false);
+                }
+                catch { }
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default).Unwrap();
+        });
 
     public Task SendNotificationAsync(string method, object? @params, CancellationToken cancellationToken = default)
     {
         return EnqueueWriteAsync(() => LspProtocol.CreateNotification(method, @params), cancellationToken);
     }
 
-    private async Task SendResponseAsync(int id, object? result)
+    private async Task SendResponseAsync(JsonElement id, object? result)
     {
         try
         {
@@ -425,7 +513,7 @@ internal sealed class LspClient : IDisposable
         {
             lock (_writeGate)
             {
-                if (item.Completion.Task.IsCompleted) return;
+                if (item.Completion.Task.IsCompleted || _transportError is not null) return;
                 item.Completion.TrySetCanceled(item.CancellationToken);
                 _writes.Remove(item);
                 if (item.Writing)
@@ -441,13 +529,13 @@ internal sealed class LspClient : IDisposable
         {
             lock (_writeGate)
             {
-                if (item.Completion.Task.IsCompleted) return;
+                if (item.Completion.Task.IsCompleted || _transportError is not null) return;
             }
             var frame = LspProtocol.Frame(item.Serialize());
             StreamWriter writer;
             lock (_writeGate)
             {
-                if (item.Completion.Task.IsCompleted) return;
+                if (item.Completion.Task.IsCompleted || _transportError is not null) return;
                 item.CancellationToken.ThrowIfCancellationRequested();
                 writer = _writer!;
                 item.Writing = true;
@@ -465,7 +553,9 @@ internal sealed class LspClient : IDisposable
             lock (_writeGate)
             {
                 item.Completion.TrySetCanceled(item.CancellationToken);
-                if (item.Writing)
+                var writing = item.Writing;
+                item.Writing = false;
+                if (writing)
                     TerminateTransport(new IOException("LSP frame write canceled; transport closed"));
             }
         }
@@ -474,7 +564,9 @@ internal sealed class LspClient : IDisposable
             lock (_writeGate)
             {
                 item.Completion.TrySetException(ex);
-                if (item.Writing) TerminateTransport(ex);
+                var writing = item.Writing;
+                item.Writing = false;
+                if (writing) TerminateTransport(ex);
             }
         }
         finally
@@ -553,34 +645,20 @@ internal sealed class LspClient : IDisposable
         stdout = new BufferedStream(stdout, 32768);
         var headerLines = new List<string>(4);
         var buffer = new byte[8192];
-        var headerAccum = new System.IO.MemoryStream(512);
+        using var headerAccum = new System.IO.MemoryStream(512);
         var bodyBuffer = Array.Empty<byte>();
-
-        var skipRead = false;
         try
         {
             while (!ct.IsCancellationRequested && _process?.HasExited == false)
             {
                 headerLines.Clear();
                 var contentLength = -1;
-                var foundHeaderEnd = false;
-
-                while (!foundHeaderEnd)
+                while (true)
                 {
-                    if (!skipRead)
-                    {
-                        var read = await stdout.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false);
-                        if (read == 0) return;
-                        headerAccum.Write(buffer, 0, read);
-                    }
-                    skipRead = false;
-                    var headerText = Encoding.UTF8.GetString(headerAccum.GetBuffer(), 0, (int)headerAccum.Length);
-                    int headerEnd = headerText.IndexOf("\r\n\r\n", StringComparison.Ordinal);
-                    int headerEndLen = 4;
-                    if (headerEnd < 0) { headerEnd = headerText.IndexOf("\n\n", StringComparison.Ordinal); headerEndLen = 2; }
+                    var headerEnd = FindHeaderEnd(headerAccum.GetBuffer(), (int)headerAccum.Length, out var headerEndLength);
                     if (headerEnd >= 0)
                     {
-                        var headerPart = headerText.Substring(0, headerEnd);
+                        var headerPart = Encoding.ASCII.GetString(headerAccum.GetBuffer(), 0, headerEnd);
                         var lines = headerPart.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
                         foreach (var line in lines)
                         {
@@ -588,50 +666,28 @@ internal sealed class LspClient : IDisposable
                             headerLines.Add(line);
                             if (LspProtocol.TryParseContentLength(line, out var len)) contentLength = len;
                         }
-                        var bodyStartInBuffer = headerEnd + headerEndLen;
-                        var headerBytesLen = Encoding.UTF8.GetByteCount(headerText.Substring(0, bodyStartInBuffer));
+                        var headerBytesLen = headerEnd + headerEndLength;
                         var remainingInAccum = (int)headerAccum.Length - headerBytesLen;
                         if (contentLength < 0)
                         {
                             KodoDiagnostics.LogDebug($"LSP missing Content-Length headers: {string.Join("|", headerLines)}");
-                            headerAccum.SetLength(0);
-                            if (remainingInAccum > 0) headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen, remainingInAccum);
-                            break;
+                            throw new InvalidDataException("LSP frame has no valid Content-Length header");
                         }
-                        if (contentLength == 0) { headerAccum.SetLength(0); if (remainingInAccum > 0) headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen, remainingInAccum); foundHeaderEnd = true; break; }
-                        if (contentLength > 8 * 1024 * 1024)
+                        if (contentLength == 0) { RemovePrefix(headerAccum, headerBytesLen); continue; }
+                        if (contentLength > 64 * 1024 * 1024)
                         {
                             KodoDiagnostics.LogDebug($"LSP message too large: {contentLength}");
-                            int toDrain = contentLength - remainingInAccum;
-                            var drainBuf = new byte[8192];
-                            while (toDrain > 0)
-                            {
-                                var r = await stdout.ReadAsync(drainBuf, 0, Math.Min(drainBuf.Length, toDrain), ct).ConfigureAwait(false);
-                                if (r == 0) return; toDrain -= r;
-                            }
-                            headerAccum.SetLength(0);
-                            if (remainingInAccum > 0 && remainingInAccum > contentLength)
-                            {
-                                var extra = remainingInAccum - contentLength;
-                                headerAccum.Write(headerAccum.GetBuffer(), headerBytesLen + contentLength, extra);
-                            }
-                            foundHeaderEnd = true;
-                            break;
+                            throw new InvalidDataException($"LSP message too large: {contentLength}");
                         }
                         if (bodyBuffer.Length < contentLength) bodyBuffer = new byte[contentLength];
                         int bodyOffset = 0;
-                        if (remainingInAccum > 0)
-                        {
-                            var copy = Math.Min(remainingInAccum, contentLength);
-                            Buffer.BlockCopy(headerAccum.GetBuffer(), headerBytesLen, bodyBuffer, 0, copy);
-                            bodyOffset = copy;
-                            var leftover = remainingInAccum - copy;
-                            if (leftover > 0)
-                                Buffer.BlockCopy(headerAccum.GetBuffer(), headerBytesLen + copy, headerAccum.GetBuffer(), 0, leftover);
-                            headerAccum.SetLength(leftover);
-                            headerAccum.Position = leftover;
-                        }
-                        else headerAccum.SetLength(0);
+                        var copy = Math.Min(remainingInAccum, contentLength);
+                        if (copy > 0) Buffer.BlockCopy(headerAccum.GetBuffer(), headerBytesLen, bodyBuffer, 0, copy);
+                        bodyOffset = copy;
+                        var leftover = remainingInAccum - copy;
+                        if (leftover > 0) Buffer.BlockCopy(headerAccum.GetBuffer(), headerBytesLen + copy, headerAccum.GetBuffer(), 0, leftover);
+                        headerAccum.SetLength(leftover);
+                        headerAccum.Position = leftover;
                         while (bodyOffset < contentLength)
                         {
                             var r = await stdout.ReadAsync(bodyBuffer, bodyOffset, contentLength - bodyOffset, ct).ConfigureAwait(false);
@@ -639,18 +695,14 @@ internal sealed class LspClient : IDisposable
                         }
                         var json = Encoding.UTF8.GetString(bodyBuffer, 0, contentLength);
                         HandleMessage(json);
-                        foundHeaderEnd = true;
-                        skipRead = headerAccum.Length > 0;
-                        break;
+                        continue;
                     }
                     if (headerAccum.Length > 8192)
-                    {
-                        KodoDiagnostics.LogDebug($"LSP header too large, draining");
-                        headerAccum.SetLength(0);
-                        break;
-                    }
+                        throw new InvalidDataException("LSP header exceeds 8192 bytes");
+                    var read = await stdout.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false);
+                    if (read == 0) return;
+                    headerAccum.Write(buffer, 0, read);
                 }
-                if (!foundHeaderEnd) continue;
             }
         }
         catch (OperationCanceledException) { }
@@ -658,10 +710,37 @@ internal sealed class LspClient : IDisposable
         finally { TerminateTransport(new System.IO.EndOfStreamException("LSP server stdout closed")); }
     }
 
+    private static int FindHeaderEnd(byte[] bytes, int length, out int endLength)
+    {
+        for (var index = 0; index < length; index++)
+        {
+            if (index + 3 < length && bytes[index] == 13 && bytes[index + 1] == 10 && bytes[index + 2] == 13 && bytes[index + 3] == 10)
+            {
+                endLength = 4;
+                return index;
+            }
+            if (index + 1 < length && bytes[index] == 10 && bytes[index + 1] == 10)
+            {
+                endLength = 2;
+                return index;
+            }
+        }
+        endLength = 0;
+        return -1;
+    }
+
+    private static void RemovePrefix(MemoryStream stream, int length)
+    {
+        var remaining = (int)stream.Length - length;
+        if (remaining > 0) Buffer.BlockCopy(stream.GetBuffer(), length, stream.GetBuffer(), 0, remaining);
+        stream.SetLength(remaining);
+        stream.Position = remaining;
+    }
+
     private void HandleMessage(string json)
     {
         JsonElement? root;
-        int? id = null;
+        JsonElement? id = null;
         string? method = null;
         try
         {
@@ -669,8 +748,7 @@ internal sealed class LspClient : IDisposable
             root = doc.RootElement.Clone();
             if (root.Value.TryGetProperty("id", out var idEl) && idEl.ValueKind != JsonValueKind.Null)
             {
-                if (idEl.ValueKind == JsonValueKind.Number) id = idEl.GetInt32();
-                else if (idEl.ValueKind == JsonValueKind.String && int.TryParse(idEl.GetString(), out var si)) id = si;
+                if (idEl.ValueKind is JsonValueKind.Number or JsonValueKind.String) id = idEl.Clone();
             }
             if (root.Value.TryGetProperty("method", out var mEl)) method = mEl.GetString();
         }
@@ -690,7 +768,9 @@ internal sealed class LspClient : IDisposable
                 }
             }
             catch { }
-            if (_pending.TryRemove(id.Value, out var tcs))
+            TaskCompletionSource<JsonElement>? handled = null;
+            if (JsonRpcId.TryCreate(id.Value, out var rpcId) && _pending.TryRemove(rpcId, out var pending)) handled = pending;
+            if (handled is { } tcs)
             {
                 try
                 {
@@ -708,29 +788,77 @@ internal sealed class LspClient : IDisposable
         }
         if (method is not null)
         {
+            if (method is "client/registerCapability" or "client/unregisterCapability")
+                UpdateRegisteredCapabilities(method, root.Value);
             if (id.HasValue)
             {
-                object? result = null;
-                if (method == "workspace/configuration")
-                {
-                    var reqText = root.Value.GetRawText();
-                    KodoDiagnostics.LogDebug($"LSP workspace/configuration request: {reqText.Substring(0, Math.Min(500, reqText.Length))}");
-                    result = HandleWorkspaceConfiguration(root.Value);
-                    try { KodoDiagnostics.LogDebug($"LSP workspace/configuration response: {LspProtocol.Preview(JsonSerializer.Serialize(result), 500)}"); } catch { }
-                }
-                else if (method == "window/showMessage" || method == "window/logMessage")
-                {
-                    if (KodoDiagnostics.VerboseLoggingEnabled &&
-                        root.Value.TryGetProperty("params", out var p2))
-                        KodoDiagnostics.LogDebug($"LSP {method}: {LspProtocol.Preview(p2.GetRawText())}");
-                }
-                _ = SendResponseAsync(id.Value, result);
+                _ = HandleServerRequestAsync(method, root.Value, id.Value);
             }
 
             JsonElement? @params = null;
             if (root.Value.TryGetProperty("params", out var p)) @params = p.Clone();
             OnNotification?.Invoke(method, @params);
         }
+    }
+
+    private async Task HandleServerRequestAsync(string method, JsonElement root, JsonElement id)
+    {
+        object? result = null;
+        try
+        {
+            if (method == "workspace/configuration")
+            {
+                var reqText = root.GetRawText();
+                KodoDiagnostics.LogDebug($"LSP workspace/configuration request: {reqText.Substring(0, Math.Min(500, reqText.Length))}");
+                result = HandleWorkspaceConfiguration(root);
+                try { KodoDiagnostics.LogDebug($"LSP workspace/configuration response: {LspProtocol.Preview(JsonSerializer.Serialize(result), 500)}"); } catch { }
+            }
+            else if (method == "workspace/workspaceFolders")
+            {
+                var rootUri = new Uri(_workspaceRoot.EndsWith(Path.DirectorySeparatorChar) ? _workspaceRoot : _workspaceRoot + Path.DirectorySeparatorChar).AbsoluteUri;
+                result = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = rootUri, ["name"] = Path.GetFileName(_workspaceRoot) } };
+            }
+            else if (method == "window/showMessage" || method == "window/logMessage")
+            {
+                if (KodoDiagnostics.VerboseLoggingEnabled && root.TryGetProperty("params", out var messageParams))
+                    KodoDiagnostics.LogDebug($"LSP {method}: {LspProtocol.Preview(messageParams.GetRawText())}");
+            }
+            else if (OnServerRequest is { } requestHandlers)
+            {
+                JsonElement? parameters = root.TryGetProperty("params", out var requestParams) ? requestParams.Clone() : null;
+                foreach (Func<string, JsonElement?, Task<object?>> handler in requestHandlers.GetInvocationList())
+                    result = await handler(method, parameters).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP server request {method} failed", ex); }
+        await SendResponseAsync(id, result).ConfigureAwait(false);
+    }
+
+    private void UpdateRegisteredCapabilities(string method, JsonElement root)
+    {
+        try
+        {
+            if (!root.TryGetProperty("params", out var parameters)) return;
+            lock (_capabilityGate)
+            {
+                if (method == "client/registerCapability" && parameters.TryGetProperty("registrations", out var registrations) && registrations.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var registration in registrations.EnumerateArray())
+                    {
+                        if (!registration.TryGetProperty("id", out var id) || !registration.TryGetProperty("method", out var capabilityMethod)) continue;
+                        _registeredCapabilities[id.ToString()] = capabilityMethod.GetString() ?? string.Empty;
+                    }
+                }
+                else if (method == "client/unregisterCapability")
+                {
+                    var key = parameters.TryGetProperty("unregisterations", out var misspelled) ? "unregisterations" : "unregistrations";
+                    if (!parameters.TryGetProperty(key, out var unregistrations) || unregistrations.ValueKind != JsonValueKind.Array) return;
+                    foreach (var unregistration in unregistrations.EnumerateArray())
+                        if (unregistration.TryGetProperty("id", out var id)) _registeredCapabilities.Remove(id.ToString());
+                }
+            }
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug("LSP dynamic capability update failed", ex); }
     }
 
     private object? HandleWorkspaceConfiguration(JsonElement root)

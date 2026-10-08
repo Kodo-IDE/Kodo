@@ -25,6 +25,7 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private CancellationTokenSource? _lspCompletionCts;
     private const int LspPresentationLimit = 80_000;
     private const int LspNavigationHighlightLimit = 120_000;
 
@@ -56,7 +57,11 @@ public partial class MainWindow
         var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (hasLsp && len > 80_000)
         {
-            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(len > 120_000 ? 2000 : 1200);
+            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(len > 120_000 ? 400 : 250);
+        }
+        else if (hasLsp)
+        {
+            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(100);
         }
         else
         {
@@ -364,7 +369,7 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP hover response len={hoverInfo.Length} for {hoverPath}");
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (hoverCts.IsCancellationRequested || !LspEnabled || !LspHoverEnabled) return;
+                        if (hoverCts.IsCancellationRequested || !LspEnabled || !LspHoverEnabled || !FileSystemPaths.Equals(_currentFilePath, hoverPath)) return;
                         if (DiagnosticPopup.IsOpen) return;
                         _lspHoverTooltip = hoverInfo;
                         ToolTip.SetTip(hoverView, hoverInfo);
@@ -592,9 +597,11 @@ public partial class MainWindow
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         _insightDocVersion++;
+        _lspCompletionCts?.Cancel();
         _lspDocumentRefreshPending = true;
         _lspDocumentRefreshFailures = 0;
         _insightAnalysisCancellation.Cancel();
+        lock (_lspHoverLock) _lspHoverCts?.Cancel();
         HideDiagnosticPopup();
         var curLen = EditorTextBox?.Document?.TextLength ?? 0;
         if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
@@ -666,14 +673,15 @@ public partial class MainWindow
         public LspClient? Client { get; }
         public int TextLength => Document.TextLength;
 
+        public string PositionEncoding => Client?.PositionEncoding ?? "utf-16";
+
         public string Text => _text ??= Document.Text;
 
         public int LineCount => Document.LineCount;
 
         public (int Line, int Character) PositionOf(int offset)
         {
-            var location = Document.GetLocation(Math.Clamp(offset, 0, Document.TextLength));
-            return (location.Line - 1, location.Column - 1);
+            return LspPath.OffsetToLspPosition(Text, offset, PositionEncoding);
         }
     }
 
@@ -699,20 +707,28 @@ public partial class MainWindow
         var result = await GetLspSignatureHelpAsync(ctx.FilePath, positionLine, positionCharacter).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("signatures", out var signatures) || signatures.ValueKind != JsonValueKind.Array || signatures.GetArrayLength() == 0)
         {
-            await Dispatcher.UIThread.InvokeAsync(ClearLspSignatureHelpTooltip);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
+                    ClearLspSignatureHelpTooltip();
+            });
             return;
         }
         var signature = signatures[0];
         var label = signature.TryGetProperty("label", out var labelEl) ? labelEl.GetString() : null;
         if (string.IsNullOrWhiteSpace(label))
         {
-            await Dispatcher.UIThread.InvokeAsync(ClearLspSignatureHelpTooltip);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
+                    ClearLspSignatureHelpTooltip();
+            });
             return;
         }
         var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspSignatureHelpEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null) return;
+            if (!LspSignatureHelpEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
             _lspSignatureHelpTooltip = string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}";
             ToolTip.SetTip(EditorTextBox.TextArea.TextView, _lspSignatureHelpTooltip);
             ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
@@ -901,13 +917,13 @@ public partial class MainWindow
         {
             if (!item.TryGetProperty("range", out var range)) continue;
             if (!range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end)) continue;
-            var s = OffsetFromLspPosition(starts, text, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32());
-            var e = OffsetFromLspPosition(starts, text, end.GetProperty("line").GetInt32(), end.GetProperty("character").GetInt32());
+            var s = LspPath.OffsetFromLspPosition(starts, text, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32(), ctx.PositionEncoding);
+            var e = LspPath.OffsetFromLspPosition(starts, text, end.GetProperty("line").GetInt32(), end.GetProperty("character").GetInt32(), ctx.PositionEncoding);
             if (e > s) matches.Add((s, e - s));
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspDocumentHighlightsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null) return;
+            if (!LspDocumentHighlightsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
             _lspHighlightRenderer.Clear();
             foreach (var match in matches) _lspHighlightRenderer.AddMatch(match.Offset, match.Length);
             EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
@@ -936,7 +952,7 @@ public partial class MainWindow
         {
             if (!item.TryGetProperty("position", out var position) || !position.TryGetProperty("line", out var line) || !position.TryGetProperty("character", out var character)) continue;
             var label = item.TryGetProperty("label", out var labelEl) ? ReadInlayHintLabel(labelEl) : null;
-            if (!string.IsNullOrWhiteSpace(label)) hints.Add((OffsetFromLspPosition(starts, text, line.GetInt32(), character.GetInt32()), label!));
+            if (!string.IsNullOrWhiteSpace(label)) hints.Add((LspPath.OffsetFromLspPosition(starts, text, line.GetInt32(), character.GetInt32(), ctx.PositionEncoding), label!));
         }
         hints.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         var applied = false;
@@ -993,7 +1009,7 @@ public partial class MainWindow
             line += values[i];
             character = values[i] == 0 ? character + values[i + 1] : values[i + 1];
             var length = values[i + 2];
-            var offset = OffsetFromLspPosition(starts, text, line, character);
+            var offset = LspPath.OffsetFromLspPosition(starts, text, line, character, ctx.PositionEncoding);
             if (length > 0 && offset < textLength)
             {
                 var tokenType = values[i + 3];
@@ -1321,7 +1337,12 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
     private async void EditorDocumentSymbolsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
-        var result = await GetLspDocumentSymbolsAsync(_currentFilePath).ConfigureAwait(false);
+        var filePath = _currentFilePath;
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        var document = EditorTextBox.Document;
+        var text = document.Text;
+        var encoding = GetLspClientForFile(filePath)?.PositionEncoding ?? "utf-16";
+        var result = await GetLspDocumentSymbolsAsync(filePath).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array || result.Value.GetArrayLength() == 0)
         {
             await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "The language server returned no document symbols.");
@@ -1464,8 +1485,8 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
                 if (list.SelectedIndex < 0 || list.SelectedIndex >= symbols.Count) return;
                 var selected = symbols[list.SelectedIndex];
                 window.Close();
-                if (EditorTextBox?.Document is null) return;
-                EditorTextBox.TextArea.Caret.Offset = OffsetFromLspPosition(EditorTextBox.Document.Text, selected.Line, selected.Character);
+                if (EditorTextBox?.Document is null || !ReferenceEquals(EditorTextBox.Document, document) || !FileSystemPaths.Equals(_currentFilePath, filePath) || !string.Equals(document.Text, text, StringComparison.Ordinal)) return;
+                EditorTextBox.TextArea.Caret.Offset = LspPath.OffsetFromLspPosition(EditorTextBox.Document.Text, selected.Line, selected.Character, encoding);
                 EditorTextBox.TextArea.Caret.BringCaretToView();
                 EditorTextBox.Focus();
             };
@@ -1478,11 +1499,20 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
     {
         if (!LspEnabled || !LspSignatureHelpEnabled) return;
         if (EditorTextBox?.Document is null) return;
-        var location = EditorTextBox.Document.GetLocation(
-            Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength));
-        var result = await GetLspSignatureHelpAsync(_currentFilePath, location.Line - 1, location.Column - 1).ConfigureAwait(false);
+        var filePath = _currentFilePath;
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        var document = EditorTextBox.Document;
+        var text = EditorTextBox.Document.Text;
+        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, text.Length);
+        var client = GetLspClientForFile(filePath);
+        var position = LspPath.OffsetToLspPosition(text, offset, client?.PositionEncoding ?? "utf-16");
+        var result = await GetLspSignatureHelpAsync(filePath, position.line, position.character).ConfigureAwait(false);
         var label = result is { } value && value.ValueKind == JsonValueKind.Object && value.TryGetProperty("signatures", out var signatures) && signatures.ValueKind == JsonValueKind.Array && signatures.GetArrayLength() > 0 && signatures[0].TryGetProperty("label", out var labelElement) ? labelElement.GetString() : null;
-        await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = string.IsNullOrWhiteSpace(label) ? "No signature help was returned by the language server." : $"Signature: {label}");
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!FileSystemPaths.Equals(_currentFilePath, filePath) || !ReferenceEquals(EditorTextBox?.Document, document) || !string.Equals(document.Text, text, StringComparison.Ordinal) || EditorTextBox.TextArea.Caret.Offset != offset) return;
+            ExtensionsStatusText = string.IsNullOrWhiteSpace(label) ? "No signature help was returned by the language server." : $"Signature: {label}";
+        });
     }
 
     private async void EditorQuickFixMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1618,20 +1648,27 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
                 return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
             });
         }
+        if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
 
+        var completionCts = new CancellationTokenSource();
+        var previousCompletionCts = _lspCompletionCts;
+        _lspCompletionCts = completionCts;
+        previousCompletionCts?.Cancel();
+        previousCompletionCts?.Dispose();
         try
         {
-            var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix);
+            var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, text, prefix, completionCts.Token);
             if (!LspEnabled || !LspCompletionEnabled || lspCompletionSettingsRevision != _lspCompletionSettingsRevision)
                 lspSuggestions = Array.Empty<InsightSuggestion>();
             if (lspSuggestions.Count > 0)
             {
-                var seen = new HashSet<string>(suggestions.Select(s => s.Text), StringComparer.OrdinalIgnoreCase);
-                foreach (var s in lspSuggestions)
-                {
-                    if (seen.Add(s.Text))
-                        suggestions.Add(s);
-                }
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var merged = new List<InsightSuggestion>(Math.Min(25, lspSuggestions.Count + suggestions.Count));
+                foreach (var suggestion in lspSuggestions)
+                    if (seen.Add(suggestion.Text)) merged.Add(suggestion);
+                foreach (var suggestion in suggestions)
+                    if (seen.Add(suggestion.Text)) merged.Add(suggestion);
+                suggestions = merged;
                 suggestions = suggestions.OrderByDescending(s => s.Priority).ThenBy(s => s.Text, StringComparer.OrdinalIgnoreCase).Take(25).ToList();
             }
             else if (isLspPrimaryForCompletion)
@@ -1639,7 +1676,13 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
                 KodoDiagnostics.LogDebug($"LSP completion: no results for prefix '{prefix}' at offset {offset}");
             }
         }
+        catch (OperationCanceledException) { }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP completion merge failed", ex); }
+        finally
+        {
+            if (ReferenceEquals(_lspCompletionCts, completionCts)) _lspCompletionCts = null;
+            completionCts.Dispose();
+        }
 
         if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
         if (EditorTextBox?.TextArea is null) return;

@@ -23,11 +23,16 @@ public sealed class InsightSuggestion : ICompletionData
 
     public InsightKind Kind { get; }
     public string Text { get; }
+    public int? ReplaceStartOffset { get; }
+    public int? ReplaceEndOffset { get; }
+    public string? SourceText { get; }
+    public IReadOnlyList<(int Start, int End, string NewText)> AdditionalEdits { get; }
+    private readonly double? _priority;
     public IImage? Image => null;
     private Control? _content;
     public object Content => _content ??= BuildContentVisual();
     public object? Description => null;
-    public double Priority => Kind switch
+    public double Priority => _priority ?? Kind switch
     {
         InsightKind.Variable => 5,
         InsightKind.Function => 4,
@@ -38,26 +43,68 @@ public sealed class InsightSuggestion : ICompletionData
         _ => 0,
     };
 
-    public InsightSuggestion(string text, InsightKind kind)
+    public InsightSuggestion(
+        string text,
+        InsightKind kind,
+        int? replaceStartOffset = null,
+        int? replaceEndOffset = null,
+        string? sourceText = null,
+        IReadOnlyList<(int Start, int End, string NewText)>? additionalEdits = null,
+        double? priority = null)
     {
         Text = text;
         Kind = kind;
+        ReplaceStartOffset = replaceStartOffset;
+        ReplaceEndOffset = replaceEndOffset;
+        SourceText = sourceText;
+        AdditionalEdits = additionalEdits ?? Array.Empty<(int Start, int End, string NewText)>();
+        _priority = priority;
     }
 
     public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs)
     {
         try
         {
-            textArea.Document.Replace(completionSegment, Text);
+            ApplyCompletion(textArea, completionSegment);
         }
         catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
             KodoDiagnostics.LogDebug("InsightSuggestion.Complete: Visual line race suppressed", ex);
             Dispatcher.UIThread.Post(() =>
             {
-                try { textArea.Document.Replace(completionSegment, Text); } catch { }
+                try { ApplyCompletion(textArea, completionSegment); } catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
         }
+    }
+
+    private void ApplyCompletion(TextArea textArea, ISegment completionSegment)
+    {
+        var document = textArea.Document;
+        if (SourceText is not null && !string.Equals(document.Text, SourceText, StringComparison.Ordinal)) return;
+        var start = ReplaceStartOffset ?? completionSegment.Offset;
+        var end = ReplaceEndOffset ?? completionSegment.EndOffset;
+        if (start < 0 || end < start || end > document.TextLength) return;
+        var edits = AdditionalEdits.Append((Start: start, End: end, NewText: Text)).OrderByDescending(edit => edit.Start).ThenByDescending(edit => edit.End).ToArray();
+        var previousStart = int.MaxValue;
+        foreach (var edit in edits)
+        {
+            if (edit.Start < 0 || edit.End < edit.Start || edit.End > document.TextLength || edit.End > previousStart || edit.Start == previousStart && edit.Start == edit.End) return;
+            previousStart = edit.Start;
+        }
+        document.UndoStack.StartUndoGroup();
+        try
+        {
+            foreach (var edit in edits)
+                document.Replace(edit.Start, edit.End - edit.Start, edit.NewText);
+        }
+        catch
+        {
+            document.UndoStack.EndUndoGroup();
+            if (SourceText is not null && !string.Equals(document.Text, SourceText, StringComparison.Ordinal) && document.UndoStack.CanUndo)
+                document.UndoStack.Undo();
+            throw;
+        }
+        document.UndoStack.EndUndoGroup();
     }
 
     private static string KindLabel(InsightKind kind) => kind switch

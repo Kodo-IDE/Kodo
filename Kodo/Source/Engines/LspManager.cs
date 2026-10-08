@@ -212,6 +212,19 @@ internal static class LspProtocol
         return text.Length <= maxLength ? text : text[..maxLength] + "...";
     }
 
+    public static string CreateRequest(JsonElement id, string method, object? @params)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["jsonrpc"] = JsonRpcVersion,
+            ["id"] = JsonElementToObject(id),
+            ["method"] = method
+        };
+        if (@params is not null)
+            payload["params"] = @params;
+        return JsonSerializer.Serialize(payload);
+    }
+
     public static string CreateRequest(int id, string method, object? @params)
     {
         var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -220,8 +233,18 @@ internal static class LspProtocol
             ["id"] = id,
             ["method"] = method
         };
-        if (@params is not null)
-            payload["params"] = @params;
+        if (@params is not null) payload["params"] = @params;
+        return JsonSerializer.Serialize(payload);
+    }
+
+    public static string CreateResponse(JsonElement id, object? result)
+    {
+        var payload = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["jsonrpc"] = JsonRpcVersion,
+            ["id"] = JsonElementToObject(id),
+            ["result"] = result
+        };
         return JsonSerializer.Serialize(payload);
     }
 
@@ -247,6 +270,17 @@ internal static class LspProtocol
         };
         return JsonSerializer.Serialize(payload);
     }
+
+    private static object? JsonElementToObject(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => element.GetString(),
+        JsonValueKind.Number when element.TryGetInt64(out var value) => value,
+        JsonValueKind.Number => element.GetDouble(),
+        JsonValueKind.True => true,
+        JsonValueKind.False => false,
+        JsonValueKind.Null => null,
+        _ => JsonSerializer.Deserialize<object>(element.GetRawText())
+    };
 
     public static string Frame(string json)
     {

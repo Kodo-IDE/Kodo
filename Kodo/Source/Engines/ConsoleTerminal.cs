@@ -39,13 +39,12 @@ public sealed class ConsoleTerminal : Control
         Color.FromRgb(242, 242, 242),
     ];
 
-    private static readonly Color DefaultFg = Color.FromRgb(204, 204, 204);
-    private static readonly Color DefaultBg = Color.FromRgb(12, 12, 12);
+    private static readonly Color DefaultFg = Color.FromRgb(226, 228, 235);
+    private static readonly Color DefaultBg = Color.FromRgb(18, 17, 24);
 
-    private const double CellW = 8.4;
-    private const double CellH = 17.0;
-    private const string FontFamily = "JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Mono,Consolas,Courier New,monospace";
-    private const double FontSize = 13.0;
+    private const double CellW = 8.7;
+    private const double CellH = 19.0;
+    private const double FontSize = 13.5;
 
     private readonly object _lock = new();
     private TermCell[,] _cells = new TermCell[24, 80];
@@ -69,15 +68,17 @@ public sealed class ConsoleTerminal : Control
     private bool _savedBold, _savedUnderline, _savedReverse;
     private const string WideContinuation = "\uFFFF";
 
-    private static readonly Color SelectionBg = Color.FromArgb(120, 51, 153, 255);
+    private Color _selectionBg = Color.FromArgb(120, 140, 0, 255);
+    private Color _cursorColor = Color.FromRgb(190, 120, 255);
+    private Color _cursorForeground = Color.FromRgb(255, 255, 255);
     private bool _selecting;
     private (int Row, int Col)? _selStart;
     private (int Row, int Col)? _selEnd;
 
     private bool _bracketedPasteMode;
 
-    private static readonly Color SearchMatchBg = Color.FromArgb(140, 255, 213, 79);
-    private static readonly Color SearchCurrentBg = Color.FromArgb(200, 255, 140, 0);
+    private Color _searchMatchBg = Color.FromArgb(90, 140, 0, 255);
+    private Color _searchCurrentBg = Color.FromArgb(190, 140, 0, 255);
     private bool _searchActive;
     private readonly StringBuilder _searchQuery = new();
     private readonly List<(int AbsRow, int Col)> _searchMatches = new();
@@ -108,6 +109,7 @@ public sealed class ConsoleTerminal : Control
     {
         Focusable = true;
         ClipToBounds = true;
+        ContextMenu = CreateTerminalContextMenu();
 
         _blinkTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(530) };
         _blinkTimer.Tick += (_, _) =>
@@ -135,6 +137,105 @@ public sealed class ConsoleTerminal : Control
     public event EventHandler<string>? WorkingDirectoryChanged;
 
     public IReadOnlyDictionary<string, KeyGesture>? Keybinds { get; set; }
+
+    public void ApplyKodoTheme(Color background, Color foreground, Color accent, Color muted)
+    {
+        lock (_lock)
+        {
+            var oldBackground = _terminalBackground;
+            var oldForeground = _terminalForeground;
+            _terminalBackground = background;
+            _terminalForeground = foreground;
+            _selectionBg = Color.FromArgb(105, accent.R, accent.G, accent.B);
+            _searchMatchBg = Color.FromArgb(90, accent.R, accent.G, accent.B);
+            _searchCurrentBg = Color.FromArgb(190, accent.R, accent.G, accent.B);
+            _cursorColor = accent;
+            _cursorForeground = GetReadableTerminalForeground(accent);
+            _mutedColor = muted;
+            if (_fg == oldForeground) _fg = foreground;
+            if (_bg == oldBackground) _bg = background;
+            if (_savedFg == oldForeground) _savedFg = foreground;
+            if (_savedBg == oldBackground) _savedBg = background;
+            for (var row = 0; row < _cells.GetLength(0); row++)
+                for (var col = 0; col < _cells.GetLength(1); col++)
+                {
+                    var cell = _cells[row, col];
+                    if (cell.Fg == oldForeground || cell.Bg == oldBackground)
+                        _cells[row, col] = cell with
+                        {
+                            Fg = cell.Fg == oldForeground ? foreground : cell.Fg,
+                            Bg = cell.Bg == oldBackground ? background : cell.Bg
+                        };
+                }
+            foreach (var line in _scrollback)
+                for (var col = 0; col < line.Length; col++)
+                {
+                    var cell = line[col];
+                    if (cell.Fg == oldForeground || cell.Bg == oldBackground)
+                        line[col] = cell with
+                        {
+                            Fg = cell.Fg == oldForeground ? foreground : cell.Fg,
+                            Bg = cell.Bg == oldBackground ? background : cell.Bg
+                        };
+                }
+        }
+        InvalidateVisual();
+    }
+
+    private static Color GetReadableTerminalForeground(Color background)
+    {
+        var luminance = (0.2126 * background.R + 0.7152 * background.G + 0.0722 * background.B) / 255;
+        return luminance > 0.58 ? Color.FromRgb(24, 20, 30) : Color.FromRgb(255, 255, 255);
+    }
+
+    private Color _terminalBackground = DefaultBg;
+    private Color _terminalForeground = DefaultFg;
+    private Color _mutedColor = Color.FromRgb(150, 145, 165);
+
+    private ContextMenu CreateTerminalContextMenu()
+    {
+        var menu = new ContextMenu();
+        var copy = new MenuItem { Header = "Copy", InputGesture = DefaultCopy };
+        copy.Click += async (_, _) => await CopySelectionToClipboardAsync();
+        var paste = new MenuItem { Header = "Paste", InputGesture = DefaultPaste };
+        paste.Click += async (_, _) => await PasteFromClipboardAsync();
+        var find = new MenuItem { Header = "Find", InputGesture = DefaultSearch };
+        find.Click += (_, _) => OpenSearch();
+        var selectAll = new MenuItem { Header = "Select All" };
+        selectAll.Click += (_, _) => SelectAllOutput();
+        var clearScrollback = new MenuItem { Header = "Clear Scrollback" };
+        clearScrollback.Click += (_, _) => ClearScrollback();
+        var live = new MenuItem { Header = "Scroll to Live Output" };
+        live.Click += (_, _) => ScrollToLiveOutput();
+        menu.ItemsSource = new object[] { copy, paste, new Separator(), find, selectAll, clearScrollback, live };
+        return menu;
+    }
+
+    private void SelectAllOutput()
+    {
+        _selStart = (0, 0);
+        _selEnd = (Math.Max(0, TotalAbsRows - 1), _cols);
+        _selecting = false;
+        InvalidateVisual();
+    }
+
+    private void ScrollToLiveOutput()
+    {
+        _scrollOffset = 0;
+        InvalidateVisual();
+    }
+
+    private void ClearScrollback()
+    {
+        lock (_lock)
+        {
+            _scrollback.Clear();
+            _scrollOffset = 0;
+            _selStart = null;
+            _selEnd = null;
+        }
+        InvalidateVisual();
+    }
 
     private static readonly KeyGesture DefaultCopy = new(Key.C, KeyModifiers.Control | KeyModifiers.Shift);
     private static readonly KeyGesture DefaultPaste = new(Key.V, KeyModifiers.Control);
@@ -939,6 +1040,7 @@ public sealed class ConsoleTerminal : Control
         base.OnPointerPressed(e);
         Focus();
 
+        if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed) return;
         if (e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             var pos = PointToCell(e.GetPosition(this));
@@ -989,7 +1091,7 @@ public sealed class ConsoleTerminal : Control
     {
         lock (_lock)
         {
-            ctx.FillRectangle(BrushCache.Get(DefaultBg), new Rect(Bounds.Size));
+            ctx.FillRectangle(BrushCache.Get(_terminalBackground), new Rect(Bounds.Size));
 
             var isCursorVisible = _scrollOffset == 0 && _cursorVisible && _cursorBlinkOn;
             var scrollbackStart = _scrollback.Count - _scrollOffset;
@@ -1048,17 +1150,17 @@ public sealed class ConsoleTerminal : Control
                         }
                     }
 
-                    var bg = atCursor ? DefaultFg
-                           : isCurrentMatch ? SearchCurrentBg
-                           : isMatch ? SearchMatchBg
-                           : selected ? SelectionBg
-                           : (cell.Bg ?? DefaultBg);
-                    if (bg != DefaultBg)
+                    var bg = atCursor ? _cursorColor
+                           : isCurrentMatch ? _searchCurrentBg
+                           : isMatch ? _searchMatchBg
+                           : selected ? _selectionBg
+                           : (cell.Bg ?? _terminalBackground);
+                    if (bg != _terminalBackground)
                         ctx.FillRectangle(BrushCache.Get(bg), rect);
 
                     if (!string.IsNullOrEmpty(cell.Text) && cell.Text != " " && cell.Text != WideContinuation)
                     {
-                        var fg = atCursor ? DefaultBg : (cell.Fg ?? DefaultFg);
+                        var fg = atCursor ? _cursorForeground : (cell.Fg ?? _terminalForeground);
                         var bold = cell.Bold;
 
                         var ft = TerminalGlyphCache.Get(cell.Text, fg, bold, FontSize);
@@ -1068,7 +1170,7 @@ public sealed class ConsoleTerminal : Control
 
                     if (cell.Underline)
                     {
-                        var fg = cell.Fg ?? DefaultFg;
+                        var fg = cell.Fg ?? _terminalForeground;
                         ctx.DrawLine(PenCache.Get(fg),
                             new Point(x, y + CellH - 2), new Point(x + w, y + CellH - 2));
                     }
@@ -1086,15 +1188,15 @@ public sealed class ConsoleTerminal : Control
     {
         var label = $"Find: {_searchQuery}" +
                     (_searchMatches.Count > 0 ? $"   {_searchIndex + 1}/{_searchMatches.Count}" : "   no matches");
-        var ft = TerminalGlyphCache.Get(label, DefaultFg, false, FontSize);
+        var ft = TerminalGlyphCache.Get(label, _terminalForeground, false, FontSize);
 
         const int pad = 6;
         var w = ft.Width + pad * 2;
         var h = ft.Height + pad * 2;
         var rect = new Rect(Bounds.Width - w - 10, 6, w, h);
 
-        ctx.FillRectangle(BrushCache.Get(Color.FromArgb(230, 30, 30, 30)), rect);
-        ctx.DrawRectangle(PenCache.Get(Color.FromRgb(90, 90, 90)), rect);
+        ctx.FillRectangle(BrushCache.Get(Color.FromArgb(245, _terminalBackground.R, _terminalBackground.G, _terminalBackground.B)), rect);
+        ctx.DrawRectangle(PenCache.Get(_cursorColor), rect);
         ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
@@ -1120,7 +1222,7 @@ public sealed class ConsoleTerminal : Control
         var thumbH = Math.Max(20, trackH * _rows / (double)totalLines);
         var thumbY = (trackH - thumbH) * (1 - _scrollOffset / (double)_scrollback.Count);
 
-        var brush = BrushCache.Get(Color.FromArgb(160, 204, 204, 204));
+        var brush = BrushCache.Get(Color.FromArgb(175, _mutedColor.R, _mutedColor.G, _mutedColor.B));
         ctx.FillRectangle(brush, new Rect(Bounds.Width - 4, thumbY, 4, thumbH));
     }
 
@@ -1568,20 +1670,20 @@ public sealed class ConsoleTerminal : Control
                     if (i + 2 < nums.Count && nums[i + 1] == 5) { _fg = Palette256(nums[i + 2]); i += 2; }
                     else if (i + 4 < nums.Count && nums[i + 1] == 2) { _fg = Color.FromRgb((byte)nums[i + 2], (byte)nums[i + 3], (byte)nums[i + 4]); i += 4; }
                     break;
-                case 39: _fg = DefaultFg; break;
+                case 39: _fg = _terminalForeground; break;
                 case >= 40 and <= 47: _bg = AnsiPalette[nums[i] - 40]; break;
                 case 48:
                     if (i + 2 < nums.Count && nums[i + 1] == 5) { _bg = Palette256(nums[i + 2]); i += 2; }
                     else if (i + 4 < nums.Count && nums[i + 1] == 2) { _bg = Color.FromRgb((byte)nums[i + 2], (byte)nums[i + 3], (byte)nums[i + 4]); i += 4; }
                     break;
-                case 49: _bg = DefaultBg; break;
+                case 49: _bg = _terminalBackground; break;
                 case >= 90 and <= 97: _fg = AnsiPalette[nums[i] - 90 + 8]; break;
                 case >= 100 and <= 107: _bg = AnsiPalette[nums[i] - 100 + 8]; break;
             }
         }
     }
 
-    private void ResetAttrs() { _fg = DefaultFg; _bg = DefaultBg; _bold = false; _underline = false; _reverse = false; }
+    private void ResetAttrs() { _fg = _terminalForeground; _bg = _terminalBackground; _bold = false; _underline = false; _reverse = false; }
     private void ResetTerminal()
     {
         ResetAttrs();

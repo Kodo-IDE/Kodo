@@ -169,22 +169,27 @@ internal static class LspPath
         OffsetFromLspPosition(GetLineStarts(text), text, line, character);
 
     public static int OffsetFromLspPosition(int[] starts, string text, int line, int character)
+        => OffsetFromLspPosition(starts, text, line, character, "utf-16");
+
+    public static int OffsetFromLspPosition(string text, int line, int character, string encoding) =>
+        OffsetFromLspPosition(GetLineStarts(text), text, line, character, encoding);
+
+    public static int OffsetFromLspPosition(int[] starts, string text, int line, int character, string encoding)
     {
         if (line < 0) line = 0;
         if (character < 0) character = 0;
         if (starts.Length == 0 || line >= starts.Length) return text.Length;
         var offset = starts[line];
-        var lineEnd = line + 1 < starts.Length ? starts[line + 1] - 1 : text.Length;
-        var lineLen = lineEnd - offset;
-        if (lineLen > 0 && lineEnd > offset && text[lineEnd - 1] == '\r')
-            lineLen--;
-        var col = Math.Min(character, Math.Max(0, lineLen));
-        if (col > 0 && col < lineLen && offset + col < text.Length && char.IsHighSurrogate(text[offset + col - 1]) && char.IsLowSurrogate(text[offset + col]))
-            col++;
-        return Math.Clamp(offset + col, 0, Math.Max(0, text.Length));
+        var lineEnd = line + 1 < starts.Length ? starts[line + 1] : text.Length;
+        while (lineEnd > offset && text[lineEnd - 1] is '\r' or '\n') lineEnd--;
+        var normalizedEncoding = NormalizePositionEncoding(encoding);
+        return offset + Utf16UnitsForPosition(text.AsSpan(offset, lineEnd - offset), character, normalizedEncoding);
     }
 
     public static (int line, int character) OffsetToLspPosition(string text, int offset)
+        => OffsetToLspPosition(text, offset, "utf-16");
+
+    public static (int line, int character) OffsetToLspPosition(string text, int offset, string encoding)
     {
         offset = Math.Clamp(offset, 0, text.Length);
         var starts = GetLineStarts(text);
@@ -196,6 +201,58 @@ internal static class LspPath
             if (starts[mid] <= offset) lo = mid;
             else hi = mid - 1;
         }
-        return (lo, offset - starts[lo]);
+        var normalizedEncoding = NormalizePositionEncoding(encoding);
+        var lineStart = starts[lo];
+        var lineEnd = offset;
+        while (lineEnd > lineStart && text[lineEnd - 1] is '\r' or '\n') lineEnd--;
+        var safeOffset = Math.Min(offset, lineEnd);
+        return (lo, PositionLength(text.AsSpan(lineStart, safeOffset - lineStart), normalizedEncoding));
+    }
+
+    private static string NormalizePositionEncoding(string? encoding) =>
+        string.Equals(encoding, "utf-8", StringComparison.OrdinalIgnoreCase) ? "utf-8" :
+        string.Equals(encoding, "utf-32", StringComparison.OrdinalIgnoreCase) ? "utf-32" : "utf-16";
+
+    private static int PositionWidth(ReadOnlySpan<char> text, int index, string encoding)
+    {
+        if (encoding == "utf-16") return char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]) ? 2 : 1;
+        var scalar = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
+            ? char.ConvertToUtf32(text[index], text[index + 1])
+            : text[index];
+        return encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : scalar > 0xffff ? 2 : 1;
+    }
+
+    private static int PositionLength(ReadOnlySpan<char> text, string encoding)
+    {
+        if (encoding == "utf-16") return text.Length;
+        var length = 0;
+        for (var index = 0; index < text.Length;)
+        {
+            var scalar = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
+                ? char.ConvertToUtf32(text[index], text[index + 1])
+                : text[index];
+            length += encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : scalar > 0xffff ? 2 : 1;
+            index += scalar > 0xffff ? 2 : 1;
+        }
+        return length;
+    }
+
+    public static int PositionLength(string text, string? encoding) =>
+        PositionLength(text.AsSpan(), NormalizePositionEncoding(encoding));
+
+    private static int Utf16UnitsForPosition(ReadOnlySpan<char> text, int character, string encoding)
+    {
+        var consumed = 0;
+        var units = 0;
+        for (var index = 0; index < text.Length;)
+        {
+            var pair = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]);
+            var width = PositionWidth(text, index, encoding);
+            if (consumed + width > character) break;
+            consumed += width;
+            units += pair ? 2 : 1;
+            index += pair ? 2 : 1;
+        }
+        return units;
     }
 }

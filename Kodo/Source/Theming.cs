@@ -28,6 +28,14 @@ public partial class MainWindow
 
     private void ApplyThemeToEditor()
     {
+        if (TerminalHostControl is not null)
+        {
+            TerminalHostControl.ApplyKodoTheme(
+                GetTerminalThemeColor(EditorBackgroundBrush, Color.Parse("#121118")),
+                GetTerminalThemeColor(PrimaryTextBrush, Color.Parse("#E2E4EB")),
+                GetTerminalThemeColor(AccentBrush, Color.Parse(KodoAccentHex)),
+                GetTerminalThemeColor(MutedTextBrush, Color.Parse("#9691A5")));
+        }
         if (EditorTextBox is null) return;
         _colorSwatchGenerator.PanelBrush = WindowBackgroundBrush;
         _colorSwatchGenerator.BorderBrush = SurfaceBorderBrush;
@@ -62,6 +70,9 @@ public partial class MainWindow
         EditorTextBox.TextArea.TextView.Redraw();
 
     }
+
+    private static Color GetTerminalThemeColor(IBrush brush, Color fallback) =>
+        brush.ToImmutable() is ISolidColorBrush solid ? solid.Color : fallback;
 
     private static IBrush GetAccentForeground(IBrush accent)
     {

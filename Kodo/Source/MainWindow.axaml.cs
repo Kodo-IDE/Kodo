@@ -811,7 +811,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        EditorTextBox.Document.Changing += LspDocument_Changing;
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
         {
             HideDiagnosticPopup();
@@ -5917,25 +5916,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _autoSaveStatusTimer.Start();
             }
 
-            if (savingContent.Length > 80_000 && !string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
-            {
-                List<LspPendingEdit>? savePending = null;
-                var saveForceFull = false;
-                lock (_lspOpenLock)
-                {
-                    var saveKey = NormalizeFilePath(savingPath);
-                    saveForceFull = _lspForceFullSync.Remove(saveKey);
-                    if (_lspPendingEdits.TryGetValue(saveKey, out var saveList) && saveList.Count > 0)
-                    {
-                        savePending = new(saveList);
-                        _lspPendingEdits.Remove(saveKey);
-                    }
-                }
-                if (saveForceFull)
-                    _ = LspNotifyDidChangeAsync(savingPath!, savingContent);
-                else if (savePending is { Count: > 0 })
-                    _ = LspSyncDocumentAsync(savingPath!, () => savingContent, savingContent.Length, savePending);
-            }
+            if (!string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
+                _ = FlushLspDocumentAsync(savingPath, savingContent);
 
             RefreshState(fullRefresh: true);
             return true;

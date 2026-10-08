@@ -27,16 +27,12 @@ public partial class MainWindow
     private static StringComparer LspPathComparer => FileSystemPaths.Comparer;
     private readonly Dictionary<string, int> _lspDocumentVersions = new(FileSystemPaths.Comparer);
     private readonly HashSet<string> _lspOpenDocuments = new(FileSystemPaths.Comparer);
+    private readonly Dictionary<string, LspClient> _lspDocumentClients = new(FileSystemPaths.Comparer);
     private readonly HashSet<string> _lspMissingNotified = new(FileSystemPaths.Comparer);
-    private readonly DispatcherTimer _lspDidChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
-    private string? _pendingLspChangePath;
-    private readonly object _lspPendingLock = new();
-    private readonly Dictionary<string, List<LspPendingEdit>> _lspPendingEdits = new(FileSystemPaths.Comparer);
-    private readonly HashSet<string> _lspForceFullSync = new(FileSystemPaths.Comparer);
-    private readonly Dictionary<string, DateTime> _lspLastSyncUtc = new(FileSystemPaths.Comparer);
-    private static readonly TimeSpan LspHugeFileSyncInterval = TimeSpan.FromSeconds(8);
-    private const int LspIncrementalMaxEdits = 500;
-    private const int LspIncrementalMaxChars = 100_000;
+    private readonly DispatcherTimer _lspDidChangeTimer = new() { Interval = TimeSpan.FromMilliseconds(50) };
+    private readonly Dictionary<string, string> _lspPendingTexts = new(FileSystemPaths.Comparer);
+    private readonly Dictionary<string, List<LspIncrementalChange>> _lspPendingChanges = new(FileSystemPaths.Comparer);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _lspDocumentSyncGates = new(FileSystemPaths.Comparer);
     private readonly Dictionary<string, List<LspRawDiagnostic>> _lspDiagnostics = new(FileSystemPaths.Comparer);
 
     private readonly Dictionary<string, List<JsonElement>> _lspRawDiagnostics = new(FileSystemPaths.Comparer);
@@ -50,10 +46,10 @@ public partial class MainWindow
     private readonly object _lspHoverLock = new();
     private readonly Dictionary<string, Task<string?>> _lspPendingHovers = new();
     private readonly object _lspHoverCacheLock = new();
-    private string _lastHoverKey = "";
-    private DateTime _lastHoverTime = DateTime.MinValue;
 
     private sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source);
+    private sealed record LspIncrementalChange(int StartLine, int StartCharacter, int EndLine, int EndCharacter, string Text);
+    private AvaloniaEdit.Document.TextDocument? _lspTrackedDocument;
 
     private readonly LspFileResolver _lspFileResolver = new();
 
@@ -316,112 +312,105 @@ public partial class MainWindow
 
     private static string GetLanguageId(LspConfiguration lsp, string? filePath) => LspPath.GetLanguageId(lsp, filePath);
 
+    private SemaphoreSlim GetLspDocumentSyncGate(string filePath) =>
+        _lspDocumentSyncGates.GetOrAdd(NormalizeFilePath(filePath), static _ => new SemaphoreSlim(1, 1));
+
     private void InitLspDocumentSync()
     {
         _lspDidChangeTimer.Tick += LspDidChangeTimer_OnTick;
+        if (EditorTextBox is not null)
+        {
+            EditorTextBox.DocumentChanged += LspEditorDocument_OnChanged;
+            TrackLspDocument(EditorTextBox.Document);
+        }
+    }
+
+    private void LspEditorDocument_OnChanged(object? sender, AvaloniaEdit.Document.DocumentChangedEventArgs e) =>
+        TrackLspDocument(e.NewDocument);
+
+    private void TrackLspDocument(AvaloniaEdit.Document.TextDocument? document)
+    {
+        if (ReferenceEquals(_lspTrackedDocument, document)) return;
+        if (_lspTrackedDocument is not null) _lspTrackedDocument.Changing -= LspDocument_OnChanging;
+        _lspTrackedDocument = document;
+        if (_lspTrackedDocument is not null) _lspTrackedDocument.Changing += LspDocument_OnChanging;
+    }
+
+    private void LspDocument_OnChanging(object? sender, AvaloniaEdit.Document.DocumentChangeEventArgs e)
+    {
+        if (sender is not AvaloniaEdit.Document.TextDocument document || !LspEnabled || string.IsNullOrWhiteSpace(_currentFilePath)) return;
+        var path = NormalizeFilePath(_currentFilePath);
+        LspClient? client;
+        lock (_lspOpenLock)
+        {
+            if (!_lspOpenDocuments.Contains(path) || !_lspDocumentClients.TryGetValue(path, out client)) return;
+        }
+        var start = GetLspDocumentPosition(document, e.Offset, client.PositionEncoding);
+        var end = GetLspDocumentPosition(document, e.Offset + e.RemovalLength, client.PositionEncoding);
+        var change = new LspIncrementalChange(start.line, start.character, end.line, end.character, e.InsertedText.Text);
+        lock (_lspOpenLock)
+        {
+            if (!_lspOpenDocuments.Contains(path) || !_lspDocumentClients.TryGetValue(path, out var currentClient) || !ReferenceEquals(client, currentClient)) return;
+            if (!_lspPendingChanges.TryGetValue(path, out var changes))
+                _lspPendingChanges[path] = changes = new List<LspIncrementalChange>();
+            changes.Add(change);
+        }
+        Dispatcher.UIThread.Post(ArmLspDidChangeTimer);
+    }
+
+    private static (int line, int character) GetLspDocumentPosition(AvaloniaEdit.Document.TextDocument document, int offset, string encoding)
+    {
+        offset = Math.Clamp(offset, 0, document.TextLength);
+        var line = document.GetLineByOffset(offset);
+        var columnOffset = Math.Clamp(offset - line.Offset, 0, line.Length);
+        var columnText = document.GetText(line.Offset, columnOffset);
+        return (line.LineNumber - 1, LspPath.PositionLength(columnText, encoding));
     }
 
     private async void LspDidChangeTimer_OnTick(object? sender, EventArgs e)
     {
         _lspDidChangeTimer.Stop();
-        if (!LspEnabled) return;
-        string? path;
-        lock (_lspPendingLock) { path = _pendingLspChangePath; _pendingLspChangePath = null; }
-        if (string.IsNullOrWhiteSpace(path) || EditorTextBox?.Document is null) return;
-        if (!FileSystemPaths.Equals(path, _currentFilePath))
+        if (!LspEnabled)
         {
-            lock (_lspOpenLock) _lspPendingEdits.Remove(NormalizeFilePath(path));
-            return;
-        }
-        var remaining = LspSyncThrottleRemaining(path, EditorTextBox.Document.TextLength);
-        if (remaining > TimeSpan.Zero)
-        {
-            lock (_lspPendingLock) _pendingLspChangePath = path;
-            _lspDidChangeTimer.Interval = remaining;
-            _lspDidChangeTimer.Start();
-            KodoDiagnostics.LogDebug($"LSP sync throttled for {path} ({remaining.TotalSeconds:F1}s remaining)");
-            return;
-        }
-        var document = EditorTextBox.Document;
-        var textLength = document.TextLength;
-        List<LspPendingEdit>? edits = null;
-        lock (_lspOpenLock)
-        {
-            var key = NormalizeFilePath(path);
-            if (_lspForceFullSync.Remove(key))
-            {
-                _lspPendingEdits.Remove(key);
-            }
-            else if (_lspPendingEdits.TryGetValue(key, out var list) && list.Count > 0)
-            {
-                edits = new(list);
-                _lspPendingEdits.Remove(key);
-            }
-        }
-        await LspSyncDocumentAsync(path, () => document.Text, textLength, edits).ConfigureAwait(false);
-    }
-
-    private void LspDocument_Changing(object? sender, AvaloniaEdit.Document.DocumentChangeEventArgs e)
-    {
-        try
-        {
-            if (!LspEnabled) return;
-            var path = _currentFilePath;
-            if (string.IsNullOrWhiteSpace(path)) return;
-            if (ResolveLspExtensionForFile(path) is null) return;
-            var doc = EditorTextBox?.Document;
-            if (doc is null || !ReferenceEquals(sender, doc)) return;
-            var key = NormalizeFilePath(path);
-            var startOffset = Math.Clamp(e.Offset, 0, doc.TextLength);
-            var endOffset = Math.Clamp(e.Offset + e.RemovalLength, 0, doc.TextLength);
-            var startLine = doc.GetLineByOffset(startOffset);
-            var endLine = doc.GetLineByOffset(endOffset);
             lock (_lspOpenLock)
             {
-                if (_lspPendingEdits.Count > 16) _lspPendingEdits.Clear();
-                if (startOffset < startLine.Offset || startOffset > startLine.Offset + startLine.Length ||
-                    endOffset < endLine.Offset || endOffset > endLine.Offset + endLine.Length)
-                {
-                    _lspForceFullSync.Add(key);
-                    return;
-                }
-                if (!_lspPendingEdits.TryGetValue(key, out var list))
-                    _lspPendingEdits[key] = list = new();
-                if (list.Count >= LspIncrementalMaxEdits ||
-                    list.Sum(edit => (long)(edit.Text?.Length ?? 0)) + (e.InsertedText?.Text?.Length ?? 0) > LspIncrementalMaxChars)
-                {
-                    _lspPendingEdits.Remove(key);
-                    _lspForceFullSync.Add(key);
-                    return;
-                }
-                var start = doc.GetLocation(startOffset);
-                var end = doc.GetLocation(endOffset);
-                list.Add(new LspPendingEdit(start.Line - 1, start.Column - 1, end.Line - 1, end.Column - 1, e.InsertedText?.Text ?? string.Empty));
+                _lspPendingTexts.Clear();
+                _lspPendingChanges.Clear();
             }
+            return;
         }
-        catch { }
+        List<string> pending;
+        lock (_lspOpenLock)
+        {
+            pending = _lspPendingTexts.Keys
+                .Concat(_lspPendingChanges.Keys)
+                .Distinct(FileSystemPaths.Comparer)
+                .ToList();
+        }
+        foreach (var path in pending)
+        {
+            await LspSyncDocumentAsync(path, static () => string.Empty).ConfigureAwait(false);
+        }
     }
 
     private void QueueLspDidChange(string filePath)
     {
         if (!LspEnabled) return;
         if (ResolveLspExtensionForFile(filePath) is null) return;
-        lock (_lspPendingLock) _pendingLspChangePath = filePath;
+        var normalizedPath = NormalizeFilePath(filePath);
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(ArmLspDidChangeTimer);
+            Dispatcher.UIThread.Post(() => QueueLspDidChange(filePath));
             return;
         }
+        if (!FileSystemPaths.Equals(filePath, _currentFilePath) || EditorTextBox?.Document is null) return;
+        lock (_lspOpenLock) _lspPendingTexts[normalizedPath] = string.Empty;
         ArmLspDidChangeTimer();
     }
 
     private void ArmLspDidChangeTimer()
     {
-        var curLen = EditorTextBox?.Document?.TextLength ?? 0;
-        if (curLen > 250_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(3000);
-        else if (curLen > 120_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(2000);
-        else if (curLen > 80_000) _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(600);
-        else _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _lspDidChangeTimer.Interval = TimeSpan.FromMilliseconds(50);
         _lspDidChangeTimer.Stop();
         _lspDidChangeTimer.Start();
     }
@@ -520,20 +509,22 @@ public partial class MainWindow
         {
             if (!_lspMissingNotified.Add(lspExt.Id)) return false;
             KodoDiagnostics.LogDebug($"LSP manual required for {lspExt.Id}");
+            var missingConfig = resolution.ResolvedConfiguration;
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                ExtensionsStatusText = $"Language server '{lspExt.Lsp!.Command}' not found for '{lspExt.Name}'. Manual install required.";
+                ExtensionsStatusText = $"Language server '{missingConfig.Command}' not found for '{lspExt.Name}'. Manual install required.";
                 await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
-                    new FileNotFoundException($"{lspExt.Name} language support requires manual installation.\n\n'{lspExt.Lsp.Command}' was not found on PATH and cannot be auto-installed.\n\nPlease install {lspExt.Lsp.DisplayName ?? lspExt.Lsp.EffectiveProviderId} manually and ensure it is on PATH.\n\nHighlighting remains available."));
+                    new FileNotFoundException($"{lspExt.Name} language support requires manual installation.\n\n'{missingConfig.Command}' was not found on PATH and cannot be auto-installed.\n\nPlease install {missingConfig.DisplayName ?? missingConfig.EffectiveProviderId} manually and ensure it is on PATH.\n\nHighlighting remains available."));
             });
             return false;
         }
         if (_lspMissingNotified.Add(lspExt.Id))
         {
             KodoDiagnostics.LogDebug($"LSP missing for {lspExt.Id}: {resolution.Error}");
+            var missingConfig = resolution.ResolvedConfiguration;
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
-                ExtensionsStatusText = resolution.Error ?? $"Language server '{lspExt.Lsp!.Command}' not found.";
+                ExtensionsStatusText = resolution.Error ?? $"Language server '{missingConfig.Command}' not found.";
                 await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
                     new FileNotFoundException($"{resolution.Error}\n\nHighlighting remains available."));
             });
@@ -659,6 +650,14 @@ public partial class MainWindow
 
     private async Task LspNotifyDidOpenAsync(string filePath, string content)
     {
+        var gate = GetLspDocumentSyncGate(filePath);
+        await gate.WaitAsync().ConfigureAwait(false);
+        try { await LspNotifyDidOpenCoreAsync(filePath, content).ConfigureAwait(false); }
+        finally { gate.Release(); }
+    }
+
+    private async Task LspNotifyDidOpenCoreAsync(string filePath, string content)
+    {
         if (!LspEnabled) return;
         if (string.IsNullOrWhiteSpace(filePath)) return;
         filePath = NormalizeFilePath(filePath);
@@ -672,8 +671,6 @@ public partial class MainWindow
             _lspPendingOpens.Add(filePath);
         }
 
-        var isLargeFileForLsp = content.Length > 120_000;
-        await Task.Delay(isLargeFileForLsp ? 500 : 0).ConfigureAwait(false);
         if (!LspEnabled)
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
@@ -759,16 +756,19 @@ public partial class MainWindow
             return;
         }
 
+        var activeText = await Dispatcher.UIThread.InvokeAsync(() =>
+            FileSystemPaths.Equals(_currentFilePath, filePath) ? EditorTextBox?.Document?.Text : null);
+        if (activeText is not null) content = activeText;
         var uri = FilePathToUri(filePath);
         int version;
+        var initialText = content;
         lock (_lspOpenLock)
         {
             _lspPendingOpens.Remove(filePath);
             version = _lspDocumentVersions.TryGetValue(filePath, out var v) ? v + 1 : 1;
             _lspDocumentVersions[filePath] = version;
             _lspOpenDocuments.Add(filePath);
-            _lspPendingEdits.Remove(filePath);
-            _lspForceFullSync.Remove(filePath);
+            _lspDocumentClients[filePath] = client;
         }
         lock (_lspDiagnosticsLock)
         {
@@ -783,7 +783,7 @@ public partial class MainWindow
                 ["uri"] = uri,
                 ["languageId"] = languageId,
                 ["version"] = version,
-                ["text"] = content
+                ["text"] = initialText
             }
         };
 
@@ -792,23 +792,26 @@ public partial class MainWindow
             await client.SendNotificationAsync("textDocument/didOpen", didOpenParams).ConfigureAwait(false);
             KodoDiagnostics.LogDebug($"LSP didOpen {uri} lang={languageId} ver={version} via {resolution.Source} {resolution.ExecutablePath}");
         }
-        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP didOpen failed for {uri}", ex); }
+        catch (Exception ex)
+        {
+            lock (_lspOpenLock)
+            {
+                if (_lspDocumentClients.TryGetValue(filePath, out var documentClient) && ReferenceEquals(documentClient, client))
+                {
+                    _lspDocumentClients.Remove(filePath);
+                    _lspOpenDocuments.Remove(filePath);
+                    _lspDocumentVersions.Remove(filePath);
+                    _lspPendingChanges.Remove(filePath);
+                    _lspPendingTexts.Remove(filePath);
+                }
+            }
+            KodoDiagnostics.LogDebug($"LSP didOpen failed for {uri}", ex);
+        }
         Dispatcher.UIThread.Post(() =>
         {
             if (LspEnabled && FileSystemPaths.Equals(_currentFilePath, filePath))
                 QueueLspPresentationRefresh();
         });
-    }
-
-    private TimeSpan LspSyncThrottleRemaining(string filePath, int length)
-    {
-        if (length <= 120_000) return TimeSpan.Zero;
-        lock (_lspOpenLock)
-        {
-            if (!_lspLastSyncUtc.TryGetValue(NormalizeFilePath(filePath), out var last)) return TimeSpan.Zero;
-            var wait = LspHugeFileSyncInterval - (DateTime.UtcNow - last);
-            return wait > TimeSpan.Zero ? wait : TimeSpan.Zero;
-        }
     }
 
     private async Task<(string uri, int version, LspClient client)?> PrepareLspChangeAsync(string filePath)
@@ -818,13 +821,15 @@ public partial class MainWindow
         var targetCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (targetCfg is null) return null;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var resolveWatch = System.Diagnostics.Stopwatch.StartNew();
-        var settings2 = BuildLspResolverSettings();
-        var res2 = await LspServerResolver.ResolveAsync(targetCfg, settings2, lspExt.Id).ConfigureAwait(false);
-        resolveWatch.Stop();
-        KodoDiagnostics.ReportSlowStage("LSP didChange resolve", resolveWatch.ElapsedMilliseconds, 2000);
-        var effectiveConfig = res2.IsReady ? res2.ResolvedConfiguration : targetCfg;
-        var client = _lspManager.TryGetClient(workspace, effectiveConfig);
+        var client = _lspManager.TryGetClient(workspace, targetCfg);
+        if (client is null)
+        {
+            var resolveWatch = System.Diagnostics.Stopwatch.StartNew();
+            var resolution = await LspServerResolver.ResolveAsync(targetCfg, BuildLspResolverSettings(), lspExt.Id).ConfigureAwait(false);
+            resolveWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("LSP didChange resolve", resolveWatch.ElapsedMilliseconds, 2000);
+            client = _lspManager.TryGetClient(workspace, resolution.IsReady ? resolution.ResolvedConfiguration : targetCfg);
+        }
         if (client is null || !client.IsInitialized) return null;
 
         var uri = FilePathToUri(filePath);
@@ -837,44 +842,21 @@ public partial class MainWindow
         return (uri, version, client);
     }
 
-    private async Task LspNotifyDidChangeAsync(string filePath, string newContent)
+    private async Task FlushLspDocumentAsync(string filePath, string text)
     {
-        if (!LspEnabled) return;
-        if (string.IsNullOrWhiteSpace(filePath)) return;
-        filePath = NormalizeFilePath(filePath);
-        bool isOpen;
-        lock (_lspOpenLock) isOpen = _lspOpenDocuments.Contains(filePath);
-        if (!isOpen)
+        if (!LspEnabled || string.IsNullOrWhiteSpace(filePath)) return;
+        var normalized = NormalizeFilePath(filePath);
+        lock (_lspOpenLock)
         {
-            await LspNotifyDidOpenAsync(filePath, newContent).ConfigureAwait(false);
-            return;
+            if (!_lspOpenDocuments.Contains(normalized)) return;
+            if (!_lspPendingTexts.ContainsKey(normalized) && !_lspPendingChanges.ContainsKey(normalized))
+                return;
         }
-        var prepared = await PrepareLspChangeAsync(filePath).ConfigureAwait(false);
-        if (prepared is null) return;
-        var (uri, version, client) = prepared.Value;
-
-        var didChangeParams = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
-            ["contentChanges"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["text"] = newContent } }
-        };
-
-        var sendWatch = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            await client.SendNotificationAsync("textDocument/didChange", didChangeParams).ConfigureAwait(false);
-            lock (_lspOpenLock) { _lspPendingEdits.Remove(filePath); _lspForceFullSync.Remove(filePath); _lspLastSyncUtc[filePath] = DateTime.UtcNow; }
-        }
-        catch (Exception ex)
-        {
-            KodoDiagnostics.LogDebug($"LSP didChange failed for {uri}", ex);
-            lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
-        }
-        sendWatch.Stop();
-        KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={newContent.Length}");
+        if (Dispatcher.UIThread.CheckAccess()) _lspDidChangeTimer.Stop();
+        await LspSyncDocumentAsync(normalized, () => text).ConfigureAwait(false);
     }
 
-    private async Task LspSyncDocumentAsync(string filePath, Func<string> textFactory, int textLength, List<LspPendingEdit>? edits)
+    private async Task LspSyncDocumentAsync(string filePath, Func<string> textFactory)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
         filePath = NormalizeFilePath(filePath);
@@ -882,70 +864,120 @@ public partial class MainWindow
         lock (_lspOpenLock) isOpen = _lspOpenDocuments.Contains(filePath);
         if (!isOpen)
         {
-            await LspNotifyDidOpenAsync(filePath, textFactory()).ConfigureAwait(false);
+            var text = await Dispatcher.UIThread.InvokeAsync(() =>
+                FileSystemPaths.Equals(_currentFilePath, filePath) ? EditorTextBox?.Document?.Text :
+                OpenTabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.Path) && FileSystemPaths.Equals(tab.Path, filePath))?.Content);
+            if (text is null) return;
+            await LspNotifyDidOpenAsync(filePath, text).ConfigureAwait(false);
             return;
         }
-        var prepared = await PrepareLspChangeAsync(filePath).ConfigureAwait(false);
-        if (prepared is null) return;
-        var (uri, version, client) = prepared.Value;
-
-        if (edits is { Count: > 0 } && textLength > 80_000 && client.SupportsIncrementalSync() &&
-            edits.Count <= LspIncrementalMaxEdits && edits.Sum(e => (long)(e.Text?.Length ?? 0)) <= LspIncrementalMaxChars)
-        {
-            var changes = edits.Select(e => new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["range"] = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    ["start"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = e.StartLine, ["character"] = e.StartChar },
-                    ["end"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = e.EndLine, ["character"] = e.EndChar }
-                },
-                ["text"] = e.Text
-            }).ToArray();
-            var incrementalParams = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
-                ["contentChanges"] = changes
-            };
-            try
-            {
-                await client.SendNotificationAsync("textDocument/didChange", incrementalParams).ConfigureAwait(false);
-                lock (_lspOpenLock) _lspLastSyncUtc[filePath] = DateTime.UtcNow;
-                if (KodoDiagnostics.VerboseLoggingEnabled)
-                    KodoDiagnostics.LogDebug($"LSP incremental didChange {uri} edits={edits.Count} ver={version}");
-                return;
-            }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug($"LSP incremental didChange failed for {uri}, falling back to full text", ex);
-                lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
-            }
-        }
-
-        var text = Dispatcher.UIThread.CheckAccess()
-            ? textFactory()
-            : await Dispatcher.UIThread.InvokeAsync(textFactory);
-        var didChangeParams = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
-            ["contentChanges"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["text"] = text } }
-        };
-
-        var sendWatch = System.Diagnostics.Stopwatch.StartNew();
+        var gate = GetLspDocumentSyncGate(filePath);
+        await gate.WaitAsync().ConfigureAwait(false);
+        List<LspIncrementalChange> pendingChanges = new();
+        var pendingSync = false;
+        var syncCaptured = false;
+        var syncSent = false;
         try
         {
-            await client.SendNotificationAsync("textDocument/didChange", didChangeParams).ConfigureAwait(false);
-            lock (_lspOpenLock) { _lspPendingEdits.Remove(filePath); _lspForceFullSync.Remove(filePath); _lspLastSyncUtc[filePath] = DateTime.UtcNow; }
+            lock (_lspOpenLock) isOpen = _lspOpenDocuments.Contains(filePath);
+            if (!isOpen) return;
+            var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                lock (_lspOpenLock)
+                {
+                    pendingSync = _lspPendingTexts.ContainsKey(filePath) || _lspPendingChanges.ContainsKey(filePath);
+                    if (!pendingSync) return (Text: (string?)null, UsesIncrementalChanges: false, HasPending: false);
+                    pendingSync = _lspPendingTexts.Remove(filePath) || _lspPendingChanges.ContainsKey(filePath);
+                    if (_lspPendingChanges.Remove(filePath, out var changes)) pendingChanges = changes;
+                    syncCaptured = true;
+                }
+                LspClient? syncClient;
+                lock (_lspOpenLock) _lspDocumentClients.TryGetValue(filePath, out syncClient);
+                var usesIncrementalChanges = pendingChanges.Count > 0 && syncClient is not null && syncClient.SupportsIncrementalSync();
+                AvaloniaEdit.Document.TextDocument? activeDocument = null;
+                EditorTab? inactiveTab = null;
+                if (FileSystemPaths.Equals(_currentFilePath, filePath)) activeDocument = EditorTextBox?.Document;
+                else inactiveTab = OpenTabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.Path) && FileSystemPaths.Equals(tab.Path, filePath));
+                var currentText = usesIncrementalChanges ? null : activeDocument?.Text ?? inactiveTab?.Content;
+                return (Text: currentText, UsesIncrementalChanges: usesIncrementalChanges, HasPending: true);
+            });
+            if (!snapshot.HasPending) return;
+            var text = snapshot.Text ?? (Dispatcher.UIThread.CheckAccess() ? textFactory() : await Dispatcher.UIThread.InvokeAsync(textFactory));
+            if (!pendingSync && pendingChanges.Count == 0) return;
+            var prepared = await PrepareLspChangeAsync(filePath).ConfigureAwait(false);
+            if (prepared is null) throw new InvalidOperationException($"LSP client unavailable for document sync: {filePath}");
+            var (uri, version, client) = prepared.Value;
+            if (snapshot.UsesIncrementalChanges && !client.SupportsIncrementalSync())
+                throw new InvalidOperationException($"LSP sync capability changed before sending changes: {filePath}");
+            object[] contentChanges;
+            if (snapshot.UsesIncrementalChanges && client.SupportsIncrementalSync())
+            {
+                var incrementalChanges = new List<object?>(pendingChanges.Count);
+                foreach (var pendingChange in pendingChanges)
+                {
+                    incrementalChanges.Add(new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["range"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["start"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = pendingChange.StartLine, ["character"] = pendingChange.StartCharacter },
+                            ["end"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["line"] = pendingChange.EndLine, ["character"] = pendingChange.EndCharacter }
+                        },
+                        ["text"] = pendingChange.Text
+                    });
+                }
+                contentChanges = incrementalChanges.ToArray()!;
+            }
+            else
+            {
+                contentChanges = new object[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["text"] = text } };
+            }
+            var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri, ["version"] = version },
+                ["contentChanges"] = contentChanges
+            };
+            var sendWatch = System.Diagnostics.Stopwatch.StartNew();
+            await client.SendNotificationAsync("textDocument/didChange", parameters).ConfigureAwait(false);
+            syncSent = true;
+            sendWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={(snapshot.Text?.Length ?? -1)}");
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.LogDebug($"LSP didChange failed for {uri}", ex);
-            lock (_lspOpenLock) _lspForceFullSync.Add(filePath);
+            if (syncCaptured && !syncSent)
+            {
+                lock (_lspOpenLock)
+                {
+                    if (_lspOpenDocuments.Contains(filePath))
+                    {
+                        _lspPendingTexts[filePath] = string.Empty;
+                        if (pendingChanges.Count > 0)
+                        {
+                            if (!_lspPendingChanges.TryGetValue(filePath, out var remaining)) _lspPendingChanges[filePath] = remaining = new List<LspIncrementalChange>();
+                            remaining.InsertRange(0, pendingChanges);
+                        }
+                    }
+                }
+            }
+            KodoDiagnostics.LogDebug($"LSP didChange failed for {filePath}", ex);
         }
-        sendWatch.Stop();
-        KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={text.Length}");
+        finally { gate.Release(); }
     }
 
     private async Task LspNotifyDidCloseAsync(string filePath)
+    {
+        if (!string.IsNullOrWhiteSpace(filePath))
+        {
+            var normalized = NormalizeFilePath(filePath);
+            await LspSyncDocumentAsync(normalized, static () => string.Empty).ConfigureAwait(false);
+        }
+        var gate = GetLspDocumentSyncGate(filePath);
+        await gate.WaitAsync().ConfigureAwait(false);
+        try { await LspNotifyDidCloseCoreAsync(filePath).ConfigureAwait(false); }
+        finally { gate.Release(); }
+    }
+
+    private async Task LspNotifyDidCloseCoreAsync(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
         filePath = NormalizeFilePath(filePath);
@@ -954,9 +986,10 @@ public partial class MainWindow
             if (!_lspOpenDocuments.Contains(filePath)) return;
             _lspOpenDocuments.Remove(filePath);
             _lspDocumentVersions.Remove(filePath);
+            _lspPendingChanges.Remove(filePath);
+            _lspDocumentClients.Remove(filePath);
             _lspPendingOpens.Remove(filePath);
-            _lspPendingEdits.Remove(filePath);
-            _lspForceFullSync.Remove(filePath);
+            _lspPendingTexts.Remove(filePath);
         }
         lock (_lspDiagnosticsLock)
         {
@@ -981,13 +1014,16 @@ public partial class MainWindow
         var closeCfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (closeCfg is null) return;
         var workspace = GetWorkspaceRootForFile(filePath);
-        LspClient? client = null;
+        LspClient? client = _lspManager.TryGetClient(workspace, closeCfg);
         try
         {
-            var cs = BuildLspResolverSettings();
-            var res = await LspServerResolver.ResolveAsync(closeCfg, cs, lspExt.Id).ConfigureAwait(false);
-            var effective = res.IsReady ? res.ResolvedConfiguration : closeCfg;
-            client = _lspManager.TryGetClient(workspace, effective) ?? _lspManager.TryGetClient(workspace, closeCfg);
+            if (client is null)
+            {
+                var cs = BuildLspResolverSettings();
+                var res = await LspServerResolver.ResolveAsync(closeCfg, cs, lspExt.Id).ConfigureAwait(false);
+                var effective = res.IsReady ? res.ResolvedConfiguration : closeCfg;
+                client = _lspManager.TryGetClient(workspace, effective) ?? _lspManager.TryGetClient(workspace, closeCfg);
+            }
         }
         catch { client = _lspManager.TryGetClient(workspace, closeCfg); }
         if (client is null) return;
@@ -1024,11 +1060,74 @@ public partial class MainWindow
             if (!_lspSubscribedClients.Add(client)) return;
         }
         client.OnNotification += HandleLspNotification;
+        client.OnServerRequest += HandleLspServerRequestAsync;
         client.OnExit += code =>
         {
             try { client.OnNotification -= HandleLspNotification; } catch { }
+            try { client.OnServerRequest -= HandleLspServerRequestAsync; } catch { }
             lock (_lspDiagnosticsLock) _lspSubscribedClients.Remove(client);
-            Dispatcher.UIThread.Post(() => { _ = UpdateErrorHighlightingAsync(); });
+            List<string> documents;
+            lock (_lspOpenLock)
+            {
+                documents = _lspDocumentClients.Where(pair => ReferenceEquals(pair.Value, client)).Select(pair => pair.Key).ToList();
+                foreach (var path in documents)
+                {
+                    _lspDocumentClients.Remove(path);
+                    _lspOpenDocuments.Remove(path);
+                    _lspDocumentVersions.Remove(path);
+                    _lspPendingChanges.Remove(path);
+                }
+            }
+            lock (_lspDiagnosticsLock)
+            {
+                foreach (var path in documents)
+                {
+                    _lspDiagnostics.Remove(path);
+                    _lspRawDiagnostics.Remove(path);
+                    _lspDiagnosticVersions.Remove(path);
+                    _lspDiagnosticRefreshPending.Remove(path);
+                }
+            }
+            Dispatcher.UIThread.Post(() =>
+            {
+                _ = UpdateErrorHighlightingAsync();
+                _ = ReopenLspDocumentsAfterExitAsync(documents);
+            });
+        };
+    }
+
+    private async Task ReopenLspDocumentsAfterExitAsync(IReadOnlyList<string> documents)
+    {
+        foreach (var path in documents)
+        {
+            var text = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (FileSystemPaths.Equals(_currentFilePath, path)) return EditorTextBox?.Document?.Text;
+                return OpenTabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.Path) && FileSystemPaths.Equals(tab.Path, path))?.Content;
+            });
+            if (text is null) continue;
+            try { await LspNotifyDidOpenAsync(path, text).ConfigureAwait(false); }
+            catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP document reopen failed for {path}", ex); }
+        }
+    }
+
+    private async Task<object?> HandleLspServerRequestAsync(string method, JsonElement? parameters)
+    {
+        if (method != "workspace/applyEdit" || parameters is not JsonElement request ||
+            !request.TryGetProperty("edit", out var edit) || edit.ValueKind != JsonValueKind.Object)
+            return null;
+        var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var document = EditorTextBox?.Document;
+            if (document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return null;
+            return new CodeActionSnapshot(_currentFilePath, document.Text, EditorTextBox!.TextArea.Caret.Offset, 0, Math.Min(1, document.TextLength));
+        });
+        if (snapshot is null) return new Dictionary<string, object?>(StringComparer.Ordinal) { ["applied"] = false, ["failureReason"] = "No active document" };
+        var outcome = await ApplyWorkspaceEditAsync(edit, snapshot, EditScope.WorkspaceEdit).ConfigureAwait(false);
+        return new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["applied"] = outcome == CodeActionOutcome.Applied,
+            ["failureReason"] = outcome == CodeActionOutcome.Applied ? null : "The workspace edit could not be applied to the open documents"
         };
     }
 
@@ -1077,24 +1176,28 @@ public partial class MainWindow
 
             string refreshKey;
             int? publishVersion = root.TryGetProperty("version", out var versionEl) && versionEl.ValueKind == JsonValueKind.Number ? versionEl.GetInt32() : null;
+            var normPath = NormalizeFilePath(filePath);
+            bool isOpen;
+            int? sentVersion;
+            lock (_lspOpenLock)
+            {
+                isOpen = _lspOpenDocuments.Contains(normPath) || _lspOpenDocuments.Contains(filePath) ||
+                    _lspPendingOpens.Contains(normPath) || _lspPendingOpens.Contains(filePath);
+                sentVersion = _lspDocumentVersions.TryGetValue(normPath, out var currentVersion) ||
+                    _lspDocumentVersions.TryGetValue(filePath, out currentVersion) ? currentVersion : null;
+            }
+            if (!isOpen) return;
+            publishVersion ??= sentVersion;
+            if (publishVersion.HasValue && sentVersion.HasValue && publishVersion.Value < sentVersion.Value) return;
             lock (_lspDiagnosticsLock)
             {
-                var normPath = NormalizeFilePath(filePath);
-                if (!_lspOpenDocuments.Contains(normPath) && !_lspOpenDocuments.Contains(filePath) && !_lspPendingOpens.Contains(normPath) && !_lspPendingOpens.Contains(filePath)) return;
+                if (publishVersion.HasValue && _lspDiagnosticVersions.TryGetValue(normPath, out var knownVersion) && publishVersion.Value < knownVersion) return;
                 _lspDiagnostics[normPath] = diagnostics;
                 _lspRawDiagnostics[normPath] = rawDiagnostics;
                 if (publishVersion.HasValue)
                     _lspDiagnosticVersions[normPath] = publishVersion.Value;
                 else
-                {
-                    lock (_lspOpenLock)
-                    {
-                        var sent = _lspDocumentVersions.TryGetValue(normPath, out var sv0) ||
-                                   _lspDocumentVersions.TryGetValue(filePath, out sv0);
-                        if (sent) _lspDiagnosticVersions[normPath] = sv0;
-                        else _lspDiagnosticVersions.Remove(normPath);
-                    }
-                }
+                    _lspDiagnosticVersions.Remove(normPath);
                 refreshKey = normPath;
                 if (!_lspDiagnosticRefreshPending.Add(refreshKey)) return;
             }
@@ -1171,11 +1274,12 @@ public partial class MainWindow
             raw = new List<LspRawDiagnostic>(raw);
         }
         var spans = new List<ErrorSpan>(raw.Count);
+        var encoding = GetLspClientForFile(filePath)?.PositionEncoding ?? "utf-16";
         foreach (var d in raw)
         {
             if (string.IsNullOrWhiteSpace(d.Message)) continue;
-            var start = OffsetFromLspPosition(text, d.StartLine, d.StartChar);
-            var end = OffsetFromLspPosition(text, d.EndLine, d.EndChar);
+            var start = LspPath.OffsetFromLspPosition(text, d.StartLine, d.StartChar, encoding);
+            var end = LspPath.OffsetFromLspPosition(text, d.EndLine, d.EndChar, encoding);
             if (start < 0 || start >= text.Length)
             {
                 KodoDiagnostics.LogDebug($"LSP diag filtered: start out of range line={d.StartLine} char={d.StartChar} -> offset {start} len {text.Length}");
@@ -1192,6 +1296,30 @@ public partial class MainWindow
         return spans;
     }
 
+    private LspClient? GetLspClientForFile(string filePath)
+    {
+        var extension = ResolveLspExtensionForFile(filePath);
+        var configuration = ResolveLspConfigurationForFile(filePath) ?? extension?.Lsp ?? extension?.Lsps.FirstOrDefault();
+        return configuration is null ? null : _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), configuration);
+    }
+
+    private async Task<string?> GetLspTargetTextAsync(string filePath, CancellationToken cancellationToken = default)
+    {
+        var openText = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (FileSystemPaths.Equals(_currentFilePath, filePath)) return EditorTextBox?.Document?.Text;
+            return OpenTabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.Path) && FileSystemPaths.Equals(tab.Path, filePath))?.Content;
+        });
+        if (openText is not null) return openText;
+        if (!File.Exists(filePath)) return null;
+        try { return await File.ReadAllTextAsync(filePath, cancellationToken).ConfigureAwait(false); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            if (ex is not OperationCanceledException) KodoDiagnostics.LogDebug($"LSP target document read failed for {filePath}", ex);
+            return null;
+        }
+    }
+
     private static int[] GetLspLineStarts(string text) => LspPath.GetLineStarts(text);
 
     private static int OffsetFromLspPosition(string text, int line, int character) =>
@@ -1203,6 +1331,9 @@ public partial class MainWindow
     private static (int line, int character) OffsetToLspPosition(string text, int offset) =>
         LspPath.OffsetToLspPosition(text, offset);
 
+    private static (int line, int character) OffsetToLspPosition(LspClient client, string text, int offset) =>
+        LspPath.OffsetToLspPosition(text, offset, client.PositionEncoding);
+
     private async Task<IReadOnlyList<InsightSuggestion>> GetLspCompletionSuggestionsAsync(string? filePath, int offset, string text, string prefix, CancellationToken ct = default)
     {
         if (!LspEnabled || !LspCompletionEnabled)
@@ -1213,7 +1344,7 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (cfg is null) return Array.Empty<InsightSuggestion>();
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        var client = _lspManager.TryGetClient(workspace, cfg);
         if (client is null || !client.IsInitialized)
         {
             foreach (var c in lspExt.AllLspConfigurations)
@@ -1222,11 +1353,12 @@ public partial class MainWindow
                 if (client is not null && client.IsInitialized) break;
             }
         }
-        if (client is null || !client.IsInitialized) return Array.Empty<InsightSuggestion>();
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/completion")) return Array.Empty<InsightSuggestion>();
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
         KodoDiagnostics.LogDebug($"LSP completion request file={filePath} offset={offset} prefix='{prefix}'");
 
         var uri = FilePathToUri(filePath);
-        var (line, character) = OffsetToLspPosition(text, offset);
+        var (line, character) = OffsetToLspPosition(client, text, offset);
         var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
@@ -1244,16 +1376,20 @@ public partial class MainWindow
         catch (OperationCanceledException) { return Array.Empty<InsightSuggestion>(); }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP completion failed for {filePath}", ex); return Array.Empty<InsightSuggestion>(); }
 
+        var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+            FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is not null &&
+            string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal) &&
+            EditorTextBox.TextArea.Caret.Offset == offset);
+        if (!requestIsCurrent) return Array.Empty<InsightSuggestion>();
+
         if (result is null || result.Value.ValueKind == JsonValueKind.Null)
         {
             KodoDiagnostics.LogDebug($"LSP completion response empty for {filePath}");
             return Array.Empty<InsightSuggestion>();
         }
-        var isIncomplete = result.Value.ValueKind == JsonValueKind.Object && result.Value.TryGetProperty("isIncomplete", out var inc) && inc.GetBoolean();
         var rawKind = result.Value.ValueKind;
-        var isList = rawKind == JsonValueKind.Object && result.Value.TryGetProperty("items", out _);
-        var isArray = rawKind == JsonValueKind.Array;
-        if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP completion response rawKind={rawKind} isList={isList} isArray={isArray} isIncomplete={isIncomplete} for {filePath} raw={result.Value.GetRawText().Substring(0, Math.Min(800, result.Value.GetRawText().Length))}");
+        var isIncomplete = result.Value.ValueKind == JsonValueKind.Object && result.Value.TryGetProperty("isIncomplete", out var inc) && inc.ValueKind == JsonValueKind.True;
+        if (KodoDiagnostics.VerboseLoggingEnabled) KodoDiagnostics.LogDebug($"LSP completion response rawKind={rawKind} isIncomplete={isIncomplete} for {filePath} raw={result.Value.GetRawText().Substring(0, Math.Min(800, result.Value.GetRawText().Length))}");
 
         var items = new List<JsonElement>();
         if (result.Value.ValueKind == JsonValueKind.Array)
@@ -1275,16 +1411,55 @@ public partial class MainWindow
             if (!item.TryGetProperty("label", out var labelEl)) continue;
             var label = labelEl.GetString();
             if (string.IsNullOrWhiteSpace(label)) continue;
-            var filterText = item.TryGetProperty("filterText", out var filterEl) ? filterEl.GetString() ?? label : label;
-            if (!filterText.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) continue;
-
             string insertText = label;
-            if (item.TryGetProperty("insertText", out var ins) && !string.IsNullOrWhiteSpace(ins.GetString()))
-                insertText = ins.GetString()!;
-            else if (item.TryGetProperty("textEdit", out var te) && te.ValueKind == JsonValueKind.Object && te.TryGetProperty("newText", out var nt))
+            int? replaceStartOffset = null;
+            int? replaceEndOffset = null;
+            var additionalEdits = new List<(int Start, int End, string NewText)>();
+            if (item.TryGetProperty("textEdit", out var te) && te.ValueKind == JsonValueKind.Object && te.TryGetProperty("newText", out var nt))
+            {
                 insertText = nt.GetString() ?? insertText;
-            else if (item.TryGetProperty("textEdit", out var te2) && te2.ValueKind == JsonValueKind.Object && te2.TryGetProperty("insert", out var ins2) && ins2.TryGetProperty("newText", out var nt2))
-                insertText = nt2.GetString() ?? insertText;
+                if (te.TryGetProperty("range", out var range) && range.ValueKind == JsonValueKind.Object &&
+                    range.TryGetProperty("start", out var start) && range.TryGetProperty("end", out var end) &&
+                    start.TryGetProperty("line", out var startLine) && start.TryGetProperty("character", out var startCharacter) &&
+                    end.TryGetProperty("line", out var endLine) && end.TryGetProperty("character", out var endCharacter) &&
+                    TryOffsetFromLspPosition(text, startLine.GetInt32(), startCharacter.GetInt32(), client.PositionEncoding, out var startOffset) &&
+                    TryOffsetFromLspPosition(text, endLine.GetInt32(), endCharacter.GetInt32(), client.PositionEncoding, out var endOffset) && endOffset >= startOffset)
+                {
+                    replaceStartOffset = startOffset;
+                    replaceEndOffset = endOffset;
+                }
+            }
+            else if (item.TryGetProperty("insertText", out var ins) && !string.IsNullOrWhiteSpace(ins.GetString()))
+                insertText = ins.GetString()!;
+
+            if (item.TryGetProperty("additionalTextEdits", out var additional) && additional.ValueKind == JsonValueKind.Array)
+            {
+                var validAdditionalEdits = true;
+                foreach (var edit in additional.EnumerateArray())
+                {
+                    if (!edit.TryGetProperty("newText", out var editText) || editText.ValueKind != JsonValueKind.String ||
+                        !edit.TryGetProperty("range", out var range) || range.ValueKind != JsonValueKind.Object ||
+                        !range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end) ||
+                        !start.TryGetProperty("line", out var startLine) || !start.TryGetProperty("character", out var startCharacter) ||
+                        !end.TryGetProperty("line", out var endLine) || !end.TryGetProperty("character", out var endCharacter) ||
+                        !TryOffsetFromLspPosition(text, startLine.GetInt32(), startCharacter.GetInt32(), client.PositionEncoding, out var startOffset) ||
+                        !TryOffsetFromLspPosition(text, endLine.GetInt32(), endCharacter.GetInt32(), client.PositionEncoding, out var endOffset) || endOffset < startOffset)
+                    {
+                        validAdditionalEdits = false;
+                        break;
+                    }
+                    additionalEdits.Add((startOffset, endOffset, editText.GetString() ?? string.Empty));
+                }
+                if (!validAdditionalEdits) continue;
+            }
+
+            var primaryStart = replaceStartOffset ?? Math.Clamp(offset - prefix.Length, 0, text.Length);
+            var primaryEnd = replaceEndOffset ?? offset;
+            if (additionalEdits.Any(edit => LspTextRangesOverlap(edit.Start, edit.End, primaryStart, primaryEnd)))
+                continue;
+            var orderedAdditionalEdits = additionalEdits.OrderBy(edit => edit.Start).ThenBy(edit => edit.End).ToArray();
+            if (orderedAdditionalEdits.Zip(orderedAdditionalEdits.Skip(1), (left, right) => LspTextRangesOverlap(left.Start, left.End, right.Start, right.End)).Any(overlap => overlap))
+                continue;
 
             var kindInt = item.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.Number ? k.GetInt32() : 0;
             var kind = kindInt switch
@@ -1298,8 +1473,15 @@ public partial class MainWindow
                 _ => InsightKind.Variable
             };
 
-            if (!seenSuggestionTexts.Add(insertText)) continue;
-            suggestions.Add(new InsightSuggestion(insertText, kind));
+            var identity = string.Join("\u001f", new[]
+            {
+                insertText,
+                replaceStartOffset?.ToString() ?? string.Empty,
+                replaceEndOffset?.ToString() ?? string.Empty,
+                string.Join("\u001e", additionalEdits.Select(edit => $"{edit.Start}:{edit.End}:{edit.NewText}"))
+            });
+            if (!seenSuggestionTexts.Add(identity)) continue;
+            suggestions.Add(new InsightSuggestion(insertText, kind, replaceStartOffset, replaceEndOffset, text, additionalEdits, 100 - suggestions.Count));
             if (suggestions.Count >= 25) break;
         }
         KodoDiagnostics.LogDebug($"LSP completion parsed items={items.Count} suggestions={suggestions.Count} for {filePath} samples={string.Join(", ", suggestions.Take(3).Select(s => s.Text))}");
@@ -1312,14 +1494,6 @@ public partial class MainWindow
         if (!LspEnabled || !LspHoverEnabled) return null;
         if (string.IsNullOrWhiteSpace(filePath)) return null;
         var hoverKey = $"{NormalizeFilePath(filePath)}:{offset}";
-        lock (_lspHoverCacheLock)
-        {
-            if (hoverKey == _lastHoverKey && (DateTime.UtcNow - _lastHoverTime).TotalMilliseconds < 500)
-            {
-                KodoDiagnostics.LogDebug($"LSP hover deduplicated same offset {hoverKey} within 500ms");
-                return null;
-            }
-        }
         Task<string?>? coalesced;
         lock (_lspHoverCacheLock)
         {
@@ -1334,8 +1508,6 @@ public partial class MainWindow
         lock (_lspHoverCacheLock)
         {
             _lspPendingHovers[hoverKey] = hoverTask;
-            _lastHoverKey = hoverKey;
-            _lastHoverTime = DateTime.UtcNow;
         }
         try { return await hoverTask.ConfigureAwait(false); }
         finally { lock (_lspHoverCacheLock) _lspPendingHovers.Remove(hoverKey); }
@@ -1349,7 +1521,7 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (cfg is null) return null;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        var client = _lspManager.TryGetClient(workspace, cfg);
         if (client is null || !client.IsInitialized)
         {
             foreach (var c in lspExt.AllLspConfigurations)
@@ -1358,7 +1530,11 @@ public partial class MainWindow
                 if (client is not null && client.IsInitialized) break;
             }
         }
-        if (client is null || !client.IsInitialized) return null;
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/hover")) return null;
+        var hoverText = await Dispatcher.UIThread.InvokeAsync(() => FileSystemPaths.Equals(_currentFilePath, filePath) ? EditorTextBox?.Document?.Text : null);
+        if (hoverText is null) return null;
+        await FlushLspDocumentAsync(filePath, hoverText).ConfigureAwait(false);
+        (line, character) = OffsetToLspPosition(client, hoverText, offset);
         KodoDiagnostics.LogDebug($"LSP hover request file={filePath} offset={offset}");
 
         var uri = FilePathToUri(filePath);
@@ -1423,7 +1599,7 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        var client = _lspManager.TryGetClient(workspace, cfg);
         if (client is null || !client.IsInitialized)
         {
             foreach (var c in lspExt.AllLspConfigurations)
@@ -1432,10 +1608,11 @@ public partial class MainWindow
                 if (client is not null && client.IsInitialized) break;
             }
         }
-        if (client is null || !client.IsInitialized) return false;
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/references")) return false;
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
         KodoDiagnostics.LogDebug($"LSP references request file={filePath} offset={offset}");
         var uri = FilePathToUri(filePath);
-        var (line, character) = OffsetToLspPosition(text, offset);
+        var (line, character) = OffsetToLspPosition(client, text, offset);
         var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
@@ -1450,6 +1627,11 @@ public partial class MainWindow
             result = await client.SendRequestAsync("textDocument/references", @params, cts.Token).ConfigureAwait(false);
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP references failed for {filePath}", ex); return false; }
+        var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+            FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is not null &&
+            string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal) &&
+            EditorTextBox.TextArea.Caret.Offset == offset);
+        if (!requestIsCurrent) return false;
         if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array) 
         {
             KodoDiagnostics.LogDebug($"LSP references response empty for {filePath}");
@@ -1464,13 +1646,15 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(firstUri) || firstRange.ValueKind != JsonValueKind.Object) return false;
         var firstStart = firstRange.GetProperty("start");
         var firstPath = FileUriToPath(firstUri);
-        if (!File.Exists(firstPath)) return false;
-        var firstText = await File.ReadAllTextAsync(firstPath, ct).ConfigureAwait(false);
-        var firstOffset = OffsetFromLspPosition(firstText, firstStart.GetProperty("line").GetInt32(), firstStart.GetProperty("character").GetInt32());
+        if (string.IsNullOrWhiteSpace(firstPath)) return false;
+        var firstText = await GetLspTargetTextAsync(firstPath, ct).ConfigureAwait(false);
+        if (firstText is null) return false;
+        var firstClient = GetLspClientForFile(firstPath);
+        var firstOffset = LspPath.OffsetFromLspPosition(firstText, firstStart.GetProperty("line").GetInt32(), firstStart.GetProperty("character").GetInt32(), firstClient?.PositionEncoding ?? "utf-16");
         var word = GetLanguageWordAtOffset(text, offset);
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            await OpenFileFromPathAsync(firstPath).ConfigureAwait(false);
+            await OpenFileFromPathAsync(firstPath);
             Dispatcher.UIThread.Post(() =>
             {
                 if (EditorTextBox?.Document is null) return;
@@ -1509,7 +1693,7 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        var client = _lspManager.TryGetClient(workspace, cfg);
         if (client is null || !client.IsInitialized)
         {
             foreach (var c in lspExt.AllLspConfigurations)
@@ -1518,7 +1702,8 @@ public partial class MainWindow
                 if (client is not null && client.IsInitialized) break;
             }
         }
-        if (client is null || !client.IsInitialized) return false;
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/formatting")) return false;
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
         if (client.ServerCapabilities is JsonElement caps && caps.TryGetProperty("documentFormattingProvider", out var fmt) && fmt.ValueKind == JsonValueKind.False)
             return false;
         KodoDiagnostics.LogDebug($"LSP formatting request file={filePath}");
@@ -1554,7 +1739,7 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug($"LSP formatting rejected as stale for {filePath}");
                 return;
             }
-            if (!TryReadLspTextEdits(text, result.Value, out var parsedEdits, out var formatted))
+            if (!TryReadLspTextEdits(text, result.Value, client.PositionEncoding, out var parsedEdits, out var formatted))
             {
                 KodoDiagnostics.LogDebug($"LSP formatting rejected invalid, overlapping, or out-of-range edits for {filePath}");
                 return;
@@ -1565,19 +1750,6 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug($"LSP formatting applied for {filePath}");
         });
         return applied;
-    }
-
-    private async Task<bool> WaitForLspDiagnosticsVersionAsync(string normPath, int minVersion, TimeSpan timeout, CancellationToken ct)
-    {
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        while (watch.Elapsed < timeout)
-        {
-            try { await Task.Delay(200, ct).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return false; }
-            lock (_lspDiagnosticsLock)
-                if (_lspDiagnosticVersions.TryGetValue(normPath, out var v) && v >= minVersion) return true;
-        }
-        return false;
     }
 
     private void SetLspFeatureStatus(string message) =>
@@ -1594,8 +1766,9 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
         if (ext is null || cfg is null) return false;
         var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg);
-        if (client is null || !client.IsInitialized) return false;
-        var (line, character) = OffsetToLspPosition(text, offset);
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/rename")) return false;
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
+        var (line, character) = OffsetToLspPosition(client, text, offset);
         var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["textDocument"] = new Dictionary<string, object?> { ["uri"] = FilePathToUri(filePath) },
@@ -1608,6 +1781,11 @@ public partial class MainWindow
             timeout.CancelAfter(TimeSpan.FromSeconds(5));
             var result = await client.SendRequestAsync("textDocument/rename", parameters, timeout.Token).ConfigureAwait(false);
             if (result is null || result.Value.ValueKind != JsonValueKind.Object) return false;
+            var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+                FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is not null &&
+                string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal) &&
+                EditorTextBox.TextArea.Caret.Offset == offset);
+            if (!requestIsCurrent) return false;
             return await ApplyExternalWorkspaceEditAsync(result.Value, filePath, text).ConfigureAwait(false);
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP rename failed for {filePath}", ex); return false; }
@@ -1626,9 +1804,19 @@ public partial class MainWindow
         if (!client.Supports(method)) return null;
         try
         {
+            var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!FileSystemPaths.Equals(_currentFilePath, filePath) || EditorTextBox?.Document is null) return (Text: (string?)null, Document: (AvaloniaEdit.Document.TextDocument?)null, Version: _insightDocVersion);
+                return (Text: EditorTextBox.Document.Text, Document: EditorTextBox.Document, Version: _insightDocVersion);
+            });
+            if (snapshot.Text is not null) await FlushLspDocumentAsync(filePath, snapshot.Text).ConfigureAwait(false);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            return await client.SendRequestAsync(method, parameters, timeout.Token).ConfigureAwait(false);
+            var result = await client.SendRequestAsync(method, parameters, timeout.Token).ConfigureAwait(false);
+            return await Dispatcher.UIThread.InvokeAsync(() =>
+                FileSystemPaths.Equals(_currentFilePath, filePath) && ReferenceEquals(EditorTextBox?.Document, snapshot.Document) && _insightDocVersion == snapshot.Version
+                    ? result
+                    : null);
         }
         catch (Exception ex)
         {
@@ -1668,7 +1856,11 @@ public partial class MainWindow
 
     private object CreateLspPositionParams(string filePath, string text, int offset)
     {
-        var (line, character) = OffsetToLspPosition(text, offset);
+        var ext = ResolveLspExtensionForFile(filePath);
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
+        var client = cfg is null ? null : _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg);
+        var encoding = client?.PositionEncoding ?? "utf-16";
+        var (line, character) = LspPath.OffsetToLspPosition(text, offset, encoding);
         return CreateLspPositionParams(filePath, line, character);
     }
 
@@ -1717,12 +1909,14 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(uri) || range.ValueKind != JsonValueKind.Object) return false;
         var start = range.GetProperty("start");
         var path = FileUriToPath(uri);
-        if (!File.Exists(path)) return false;
-        var targetText = await File.ReadAllTextAsync(path, ct).ConfigureAwait(false);
-        var targetOffset = OffsetFromLspPosition(targetText, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32());
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var targetText = await GetLspTargetTextAsync(path, ct).ConfigureAwait(false);
+        if (targetText is null) return false;
+        var client = GetLspClientForFile(path);
+        var targetOffset = LspPath.OffsetFromLspPosition(targetText, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32(), client?.PositionEncoding ?? "utf-16");
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            await OpenFileFromPathAsync(path).ConfigureAwait(false);
+            await OpenFileFromPathAsync(path);
             Dispatcher.UIThread.Post(() =>
             {
                 if (EditorTextBox?.Document is null) return;
@@ -1772,22 +1966,35 @@ public partial class MainWindow
         return true;
     }
 
-    private static bool TryOffsetFromLspPosition(string text, int line, int character, out int offset)
+    private static bool LspTextRangesOverlap(int firstStart, int firstEnd, int secondStart, int secondEnd)
+    {
+        if (firstStart == firstEnd && secondStart == secondEnd) return firstStart == secondStart;
+        if (firstStart == firstEnd) return firstStart > secondStart && firstStart < secondEnd;
+        if (secondStart == secondEnd) return secondStart > firstStart && secondStart < firstEnd;
+        return firstStart < secondEnd && secondStart < firstEnd;
+    }
+
+    private static bool TryOffsetFromLspPosition(string text, int line, int character, string encoding, out int offset)
+    {
+        return TryOffsetFromLspPosition(GetLspLineStarts(text), text, line, character, encoding, out offset);
+    }
+
+    private static bool TryOffsetFromLspPosition(int[] starts, string text, int line, int character, string encoding, out int offset)
     {
         offset = 0;
-        var starts = GetLspLineStarts(text);
         if (line < 0 || line >= starts.Length)
             return false;
-        offset = LspPath.OffsetFromLspPosition(starts, text, line, character);
+        offset = LspPath.OffsetFromLspPosition(starts, text, line, character, encoding);
         return true;
     }
 
-    private static bool TryReadLspTextEdits(string text, JsonElement editsElement, out List<(int Start, int End, string NewText)> edits, out string updated)
+    private static bool TryReadLspTextEdits(string text, JsonElement editsElement, string encoding, out List<(int Start, int End, string NewText)> edits, out string updated)
     {
         edits = new();
         updated = text;
         if (editsElement.ValueKind != JsonValueKind.Array)
             return false;
+        var lineStarts = GetLspLineStarts(text);
         foreach (var item in editsElement.EnumerateArray())
         {
             if (!item.TryGetProperty("newText", out var newTextElement) || newTextElement.ValueKind != JsonValueKind.String ||
@@ -1795,8 +2002,8 @@ public partial class MainWindow
                 !range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end) ||
                 !start.TryGetProperty("line", out var startLine) || !start.TryGetProperty("character", out var startCharacter) ||
                 !end.TryGetProperty("line", out var endLine) || !end.TryGetProperty("character", out var endCharacter) ||
-                !TryOffsetFromLspPosition(text, startLine.GetInt32(), startCharacter.GetInt32(), out var startOffset) ||
-                !TryOffsetFromLspPosition(text, endLine.GetInt32(), endCharacter.GetInt32(), out var endOffset) || endOffset < startOffset)
+                !TryOffsetFromLspPosition(lineStarts, text, startLine.GetInt32(), startCharacter.GetInt32(), encoding, out var startOffset) ||
+                !TryOffsetFromLspPosition(lineStarts, text, endLine.GetInt32(), endCharacter.GetInt32(), encoding, out var endOffset) || endOffset < startOffset)
                 return false;
             edits.Add((startOffset, endOffset, newTextElement.GetString() ?? string.Empty));
         }
@@ -1848,7 +2055,7 @@ public partial class MainWindow
         var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
         if (cfg is null) return false;
         var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg) ?? _lspManager.TryGetClient(workspace, lspExt.Lsp!);
+        var client = _lspManager.TryGetClient(workspace, cfg);
         if (client is null || !client.IsInitialized)
         {
             foreach (var c in lspExt.AllLspConfigurations)
@@ -1857,10 +2064,11 @@ public partial class MainWindow
                 if (client is not null && client.IsInitialized) break;
             }
         }
-        if (client is null || !client.IsInitialized) return false;
+        if (client is null || !client.IsInitialized || !client.Supports("textDocument/definition")) return false;
 
         var uri = FilePathToUri(filePath);
-        var (line, character) = OffsetToLspPosition(text, offset);
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
+        var (line, character) = OffsetToLspPosition(client, text, offset);
         var @params = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri },
@@ -1877,6 +2085,11 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP definition failed for {filePath}", ex); return false; }
 
         if (result is null || result.Value.ValueKind == JsonValueKind.Null) return false;
+        var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+            FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is not null &&
+            string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal) &&
+            EditorTextBox.TextArea.Caret.Offset == offset);
+        if (!requestIsCurrent) return false;
 
         var locations = new List<(string targetUri, int sLine, int sChar, int eLine, int eChar)>();
         void AddLoc(JsonElement loc)
@@ -1886,7 +2099,9 @@ public partial class MainWindow
                 if (!loc.TryGetProperty("targetUri", out u)) return;
             }
             var targetUri = u.GetString() ?? "";
-            var range = loc.TryGetProperty("range", out var r) ? r : (loc.TryGetProperty("targetRange", out var tr) ? tr : default);
+            var range = loc.TryGetProperty("range", out var r) ? r :
+                loc.TryGetProperty("targetSelectionRange", out var selectionRange) ? selectionRange :
+                loc.TryGetProperty("targetRange", out var targetRange) ? targetRange : default;
             if (range.ValueKind != JsonValueKind.Object) return;
             var start = range.TryGetProperty("start", out var s) ? s : default;
             var end = range.TryGetProperty("end", out var e) ? e : default;
@@ -1910,17 +2125,18 @@ public partial class MainWindow
 
         var first = locations[0];
         var targetPath = FileUriToPath(first.targetUri);
-        if (string.IsNullOrWhiteSpace(targetPath) || !File.Exists(targetPath))
+        if (string.IsNullOrWhiteSpace(targetPath))
         {
             KodoDiagnostics.LogDebug($"LSP definition target not found: {first.targetUri}");
             return false;
         }
+        var targetText = await GetLspTargetTextAsync(targetPath, ct).ConfigureAwait(false);
+        if (targetText is null) return false;
+        var targetClient = GetLspClientForFile(targetPath);
+        var targetOffset = LspPath.OffsetFromLspPosition(targetText, first.sLine, first.sChar, targetClient?.PositionEncoding ?? "utf-16");
 
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
-            string targetText;
-            try { targetText = await File.ReadAllTextAsync(targetPath).ConfigureAwait(false); } catch { targetText = ""; }
-            var targetOffset = OffsetFromLspPosition(targetText, first.sLine, first.sChar);
             var existing = OpenTabs.FirstOrDefault(t => string.Equals(t.Path, targetPath, StringComparison.OrdinalIgnoreCase));
             if (existing is not null)
             {
@@ -1931,14 +2147,11 @@ public partial class MainWindow
             }
             else
             {
-                await OpenFileFromPathAsync(targetPath).ConfigureAwait(false);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (EditorTextBox?.Document is null) return;
-                    EditorTextBox.TextArea.Caret.Offset = Math.Clamp(targetOffset, 0, EditorTextBox.Document.TextLength);
-                    EditorTextBox.TextArea.Caret.BringCaretToView();
-                    EditorTextBox.Focus();
-                }, DispatcherPriority.Background);
+                await OpenFileFromPathAsync(targetPath);
+                if (EditorTextBox?.Document is null) return;
+                EditorTextBox.TextArea.Caret.Offset = Math.Clamp(targetOffset, 0, EditorTextBox.Document.TextLength);
+                EditorTextBox.TextArea.Caret.BringCaretToView();
+                EditorTextBox.Focus();
             }
         });
 
