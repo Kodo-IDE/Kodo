@@ -1744,6 +1744,8 @@ public partial class MainWindow
     private static bool TryApplyLspTextEdits(string text, IReadOnlyList<(int Start, int End, string NewText)> edits, out string result)
     {
         result = text;
+        if (edits.Count == 0) return true;
+
         var ordered = edits.OrderBy(e => e.Start).ThenBy(e => e.End).ToArray();
         var previousEnd = -1;
         var previousStart = -1;
@@ -1757,12 +1759,16 @@ public partial class MainWindow
             previousEnd = edit.End;
         }
 
-        result = text;
-        for (var index = ordered.Length - 1; index >= 0; index--)
+        var builder = new StringBuilder(text.Length + (ordered.Length << 4));
+        var copied = 0;
+        foreach (var item in ordered)
         {
-            var item = ordered[index];
-            result = result.Remove(item.Start, item.End - item.Start).Insert(item.Start, item.NewText ?? string.Empty);
+            builder.Append(text, copied, item.Start - copied);
+            builder.Append(item.NewText ?? string.Empty);
+            copied = item.End;
         }
+        builder.Append(text, copied, text.Length - copied);
+        result = builder.ToString();
         return true;
     }
 
@@ -1770,18 +1776,9 @@ public partial class MainWindow
     {
         offset = 0;
         var starts = GetLspLineStarts(text);
-        if (line < 0 || line >= starts.Length || character < 0)
+        if (line < 0 || line >= starts.Length)
             return false;
-        var lineStart = starts[line];
-        var lineEnd = line + 1 < starts.Length ? starts[line + 1] - 1 : text.Length;
-        if (lineEnd > lineStart && text[lineEnd - 1] == '\r')
-            lineEnd--;
-        var lineLength = lineEnd - lineStart;
-        if (character > lineLength)
-            return false;
-        offset = lineStart + character;
-        if (offset > lineStart && offset < lineEnd && char.IsHighSurrogate(text[offset - 1]) && char.IsLowSurrogate(text[offset]))
-            return false;
+        offset = LspPath.OffsetFromLspPosition(starts, text, line, character);
         return true;
     }
 

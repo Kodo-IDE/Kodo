@@ -71,6 +71,8 @@ internal sealed class LspClient : IDisposable
     public string Id => _config.Command;
     public IReadOnlyList<string> SemanticTokenTypes { get; private set; } = Array.Empty<string>();
 
+    public string PositionEncoding { get; private set; } = "utf-16";
+
     public bool SupportsIncrementalSync()
     {
         if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
@@ -95,6 +97,13 @@ internal sealed class LspClient : IDisposable
             "textDocument/typeDefinition" => "typeDefinitionProvider",
             "textDocument/implementation" => "implementationProvider",
             "textDocument/definition" => "definitionProvider",
+            "textDocument/codeAction" => "codeActionProvider",
+            "textDocument/completion" => "completionProvider",
+            "textDocument/hover" => "hoverProvider",
+            "textDocument/references" => "referencesProvider",
+            "textDocument/rename" => "renameProvider",
+            "textDocument/formatting" => "documentFormattingProvider",
+            "textDocument/rangeFormatting" => "documentRangeFormattingProvider",
             _ => null
         };
         if (property is null || !caps.TryGetProperty(property, out var value)) return true;
@@ -224,10 +233,18 @@ internal sealed class LspClient : IDisposable
                 ["workspaceFolders"] = new[] { new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = rootUri, ["name"] = Path.GetFileName(_workspaceRoot) } },
                 ["capabilities"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
+                    ["general"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["positionEncodings"] = new[] { "utf-16" }
+                    },
                     ["workspace"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
                         ["configuration"] = true,
-                        ["workspaceFolders"] = true
+                        ["workspaceFolders"] = true,
+                        ["workspaceEdit"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["documentChanges"] = true
+                        }
                     },
                     ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                     {
@@ -240,6 +257,34 @@ internal sealed class LspClient : IDisposable
                         ["implementation"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["linkSupport"] = false },
                         ["documentSymbol"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["hierarchicalDocumentSymbolSupport"] = true, ["symbolKind"] = new Dictionary<string, object?>(StringComparer.Ordinal) },
                         ["documentHighlight"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+                        ["references"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+                        ["codeAction"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["codeActionLiteralSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                            {
+                                ["codeActionKind"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                                {
+                                    ["valueSet"] = new[]
+                                    {
+                                        "", "quickfix", "refactor", "refactor.extract", "refactor.inline",
+                                        "refactor.rewrite", "source", "source.organizeImports", "source.fixAll"
+                                    }
+                                }
+                            },
+                            ["dataSupport"] = true,
+                            ["disabledSupport"] = true,
+                            ["isPreferredSupport"] = true,
+                            ["resolveSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                            {
+                                ["properties"] = new[] { "edit" }
+                            }
+                        },
+                        ["rename"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                        {
+                            ["prepareSupport"] = true
+                        },
+                        ["formatting"] = new Dictionary<string, object?>(StringComparer.Ordinal),
+                        ["rangeFormatting"] = new Dictionary<string, object?>(StringComparer.Ordinal),
                         ["foldingRange"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["lineFoldingOnly"] = false },
                         ["semanticTokens"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["requests"] = new Dictionary<string, object?> { ["range"] = true, ["full"] = new Dictionary<string, object?> { ["delta"] = true } }, ["tokenTypes"] = Array.Empty<string>(), ["tokenModifiers"] = Array.Empty<string>(), ["formats"] = new[] { "relative" } },
                         ["inlayHint"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["resolveSupport"] = new Dictionary<string, object?> { ["properties"] = new[] { "tooltip", "textEdits" } } },
@@ -263,12 +308,29 @@ internal sealed class LspClient : IDisposable
                 KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialize timed out after 10s");
                 throw new TimeoutException($"Language server '{_config.Command}' did not respond to initialize within 10s");
             }
-            if (result.HasValue && result.Value.ValueKind == JsonValueKind.Object && result.Value.TryGetProperty("capabilities", out var caps))
+            if (result.HasValue && result.Value.ValueKind == JsonValueKind.Object)
             {
+                if (result.Value.TryGetProperty("positionEncoding", out var encoding) && encoding.ValueKind == JsonValueKind.String)
+                {
+                    PositionEncoding = encoding.GetString() ?? "utf-16";
+                    if (!string.Equals(PositionEncoding, "utf-16", StringComparison.OrdinalIgnoreCase))
+                        KodoDiagnostics.LogWarning("LspClient.StartAsync",
+                            new InvalidOperationException(
+                                $"Server '{_config.Command}' negotiated positionEncoding '{PositionEncoding}', but Kodo uses utf-16. Positions in non-ASCII text may be inaccurate."),
+                            operation: "LSP position encoding negotiation");
+                }
+                else
+                {
+                    PositionEncoding = "utf-16";
+                }
+
+                if (result.Value.TryGetProperty("capabilities", out var caps))
+                {
                 ServerCapabilities = caps.Clone();
                 if (caps.TryGetProperty("semanticTokensProvider", out var semanticProvider) && semanticProvider.ValueKind == JsonValueKind.Object &&
                     semanticProvider.TryGetProperty("legend", out var legend) && legend.TryGetProperty("tokenTypes", out var tokenTypes) && tokenTypes.ValueKind == JsonValueKind.Array)
                     SemanticTokenTypes = tokenTypes.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString() ?? string.Empty).ToArray();
+                }
             }
 
             await SendNotificationAsync("initialized", new Dictionary<string, object?>(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
