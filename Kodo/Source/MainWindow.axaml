@@ -5717,7 +5717,7 @@
                                                 Content="Code Suggestions" />
                                      <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
                                                 Foreground="{Binding PrimaryTextBrush}"
-                                                ToolTip.Tip="Grey out unused variables, unused functions, and unreachable code. Experimental, please always double-check if it is correct"
+                                                ToolTip.Tip="{Binding DeadCodeTooltip}"
                                                 Content="Dead Code (Experimental)" />
                                      <StackPanel Spacing="2">
                                           <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"

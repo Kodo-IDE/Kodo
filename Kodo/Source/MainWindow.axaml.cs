@@ -924,6 +924,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
             ? DetectCountryCode()
             : settings.UserCountry.ToUpperInvariant();
+        UpdateLocalizedSpelling();
         _userHemisphere = settings.UserHemisphere is >= 0 and <= 2 ? settings.UserHemisphere : 0;
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
         _userName = settings.UserName ?? string.Empty;
@@ -4239,14 +4240,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
-            _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
-            _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree));
+            UpdateLocalizedSpelling();
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling));
             SaveSettings();
         }
     }
 
+    private void UpdateLocalizedSpelling()
+    {
+        _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
+        _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+    }
+
     public bool IsAmericanEnglish => _userCountry == "US";
+    public string CancelledSpelling => IsAmericanEnglish ? "canceled" : "cancelled";
+    public string DeadCodeTooltip => IsAmericanEnglish
+        ? "Gray out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct."
+        : "Grey out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct.";
 
     public string LabelAccentColour => IsAmericanEnglish ? "Accent Color" : "Accent Colour";
     public string LabelAccentSystem => SystemThemeHelper.AccentModeDisplayName(IsAmericanEnglish);
@@ -7588,7 +7598,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var path = file?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(path))
             {
-                DeveloperOptionsStatusText = "Export cancelled.";
+                DeveloperOptionsStatusText = $"Export {CancelledSpelling}.";
                 return;
             }
 

@@ -821,7 +821,7 @@ public partial class MainWindow
         }
     }
 
-    private static async Task<T> RunWithGitHubTimeoutAsync<T>(
+    private async Task<T> RunWithGitHubTimeoutAsync<T>(
         string operationName,
         Func<CancellationToken, Task<T>> factory)
     {
@@ -834,11 +834,11 @@ public partial class MainWindow
         {
             throw new TimeoutException(
                 $"GitHub operation '{operationName}' did not complete within " +
-                $"{GitHubOperationTimeout.TotalSeconds:0} seconds and was cancelled.");
+                $"{GitHubOperationTimeout.TotalSeconds:0} seconds and was {CancelledSpelling}.");
         }
     }
 
-    private static async Task RunWithGitHubTimeoutAsync(
+    private async Task RunWithGitHubTimeoutAsync(
         string operationName,
         Func<CancellationToken, Task> factory)
     {

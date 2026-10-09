@@ -1467,7 +1467,7 @@ public partial class MainWindow
 
             if (located is null)
             {
-                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was {CancelledSpelling}. Kodo has removed it from the Installed list.";
                 ForgetLocalCompilerRecord(compilerExtension);
                 return;
             }
@@ -1530,7 +1530,7 @@ public partial class MainWindow
         }
         catch (Exception ex) when (ex is DirectoryNotFoundException || ex is FileNotFoundException || (ex is System.ComponentModel.Win32Exception win32 && win32.NativeErrorCode == 2))
         {
-            ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+            ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was {CancelledSpelling}. Kodo has removed it from the Installed list.";
             ForgetLocalCompilerRecord(compilerExtension);
         }
         catch (Exception ex)
@@ -1538,7 +1538,7 @@ public partial class MainWindow
             var folder = FindCompilerUninstaller(compilerExtension.Name)?.InstallFolder;
             if (!string.IsNullOrWhiteSpace(folder) && !Directory.Exists(folder))
             {
-                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found at {folder}. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found at {folder}. It may have already been removed or the installation was {CancelledSpelling}. Kodo has removed it from the Installed list.";
                 ForgetLocalCompilerRecord(compilerExtension);
                 return;
             }
@@ -1546,7 +1546,7 @@ public partial class MainWindow
                 ex.Message.Contains("cannot find the path", StringComparison.OrdinalIgnoreCase) ||
                 ex.Message.Contains("The system cannot find", StringComparison.OrdinalIgnoreCase))
             {
-                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was cancelled. Kodo has removed it from the Installed list.";
+                ExtensionsStatusText = $"The installation folder for {compilerExtension.Name} could not be found. It may have already been removed or the installation was {CancelledSpelling}. Kodo has removed it from the Installed list.";
                 ForgetLocalCompilerRecord(compilerExtension);
                 return;
             }
