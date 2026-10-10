@@ -100,7 +100,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = 12,
             Height = 12,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Background = new SolidColorBrush(initialColor),
             BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1),
@@ -114,7 +114,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         const double svHeight = 130;
         const double hueBarWidth = 18;
 
-        var svBase = new Border { Width = svWidth, Height = svHeight, CornerRadius = new CornerRadius(8), IsHitTestVisible = false };
+        var svBase = new Border { Width = svWidth, Height = svHeight, CornerRadius = KodoDesignTokens.ControlRadius, IsHitTestVisible = false };
         const double svCornerRadius = 8;
         var svWhiteOverlay = new Rectangle
         {
@@ -178,7 +178,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = hueBarWidth,
             Height = svHeight,
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Background = hueGradient,
             IsHitTestVisible = false
         };
@@ -199,7 +199,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         {
             Width = 40,
             Height = 24,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Background = new SolidColorBrush(initialColor),
             BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1)
@@ -214,7 +214,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Background = PanelBrush,
             BorderBrush = PanelBrush,
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(8, 4),
         };
         var rgbValueText = new TextBlock
@@ -382,7 +382,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
             Background = PanelBrush,
             BorderBrush = BorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = KodoDesignTokens.CardRadius,
             ClipToBounds = true,
             Padding = new Thickness(16),
             Child = new StackPanel { Spacing = 10 }
@@ -407,7 +407,7 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
 
             popupRoot.Background = Brushes.Transparent;
             popupRoot.TransparencyBackgroundFallback = Brushes.Transparent;
-            popupRoot.CornerRadius = new CornerRadius(12);
+            popupRoot.CornerRadius = KodoDesignTokens.CardRadius;
         };
         popup.Closed += (_, _) => CommitToDocument();
 

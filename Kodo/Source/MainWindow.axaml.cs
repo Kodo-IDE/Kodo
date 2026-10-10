@@ -4659,6 +4659,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
     public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
     public IBrush AccentBrush { get; private set; } = Brush.Parse("#8C00FF");
+    public IBrush DangerBrush { get; } = new SolidColorBrush(KodoDesignTokens.DangerColor);
+    public IBrush DangerForegroundBrush { get; } = Brushes.White;
+    public Color DangerColor => KodoDesignTokens.DangerColor;
+    public IBrush WarningBrush { get; } = new SolidColorBrush(KodoDesignTokens.WarningColor);
+    public IBrush WarningSurfaceBrush { get; } = new SolidColorBrush(KodoDesignTokens.WarningSurfaceColor);
+    public IBrush WarningBorderBrush { get; } = new SolidColorBrush(KodoDesignTokens.WarningBorderColor);
 
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
 
@@ -6800,7 +6806,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var iconBadge = new Border
         {
             Background = AccentBrush,
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Width = 36,
             Height = 36,
             VerticalAlignment = VerticalAlignment.Center,
@@ -6904,9 +6910,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             },
         };
 
+        const string shortcutColumns = "164,*,72,72,88";
         var editableGrid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("150,*,78,70,92"),
+            ColumnDefinitions = new ColumnDefinitions(shortcutColumns),
             RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
         };
 
@@ -6922,12 +6929,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var gestureBorder = new Border
             {
-                Background = CardBrush,
+                Background = ButtonBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(8, 4),
-                Margin = new Thickness(0, 0, 0, 6),
+                CornerRadius = KodoDesignTokens.ControlRadius,
+                Padding = new Thickness(9, 5),
+                Margin = new Thickness(0, 0, 8, 4),
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
@@ -6945,7 +6952,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 6),
+                Margin = new Thickness(0, 0, 0, 4),
             };
 
             Grid.SetRow(gestureBorder, i);
@@ -6960,17 +6967,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             Text = string.Empty,
             FontSize = 12,
-            Foreground = Brush.Parse("#E5484D"),
+            Foreground = DangerBrush,
             TextWrapping = TextWrapping.Wrap,
             IsVisible = false,
         };
 
         var statusBorder = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#E5484D"), 0.08),
-            BorderBrush = new SolidColorBrush(Color.Parse("#E5484D"), 0.22),
+            Background = new SolidColorBrush(DangerColor, 0.08),
+            BorderBrush = new SolidColorBrush(DangerColor, 0.22),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(10, 7),
             IsVisible = false,
             Child = statusText,
@@ -6989,12 +6996,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Content = content,
                 FontSize = 11,
                 Padding = new Thickness(8, 3),
-                Margin = new Thickness(0, 0, 6, 6),
+                Margin = new Thickness(3, 0, 3, 4),
                 Background = ButtonBrush,
                 Foreground = PrimaryTextBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(5),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Center,
             };
             ToolTip.SetTip(button, tooltip);
             return button;
@@ -7016,7 +7024,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var enabled = IsKeybindEnabled(id);
                 tb2.Content = enabled ? "Enabled" : "Disabled";
                 tb2.Foreground = enabled ? PrimaryTextBrush : AccentForegroundBrush;
-                tb2.Background = enabled ? ButtonBrush : new SolidColorBrush(Color.Parse("#E5484D"), 0.16);
+                tb2.Background = enabled ? ButtonBrush : new SolidColorBrush(DangerColor, 0.16);
                 ToolTip.SetTip(tb2, enabled ? "Disable this shortcut" : "Enable this shortcut");
             }
         }
@@ -7052,12 +7060,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var gestureBorder = new Border
             {
-                Background = CardBrush,
+                Background = ButtonBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
-                Padding = new Thickness(8, 4),
-                Margin = new Thickness(0, 0, 0, 6),
+                CornerRadius = KodoDesignTokens.ControlRadius,
+                Padding = new Thickness(9, 5),
+                Margin = new Thickness(0, 0, 8, 4),
                 VerticalAlignment = VerticalAlignment.Center,
             };
             var gestureText = new TextBlock
@@ -7077,7 +7085,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground = MutedTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(12, 0, 0, 6),
+                Margin = new Thickness(8, 0, 8, 4),
             };
 
             var editButton = MakeRowButton("Edit", "Change this shortcut");
@@ -7148,8 +7156,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var columnHeader = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("150,*,78,70,92"),
-            Margin = new Thickness(0, 0, 0, 2),
+            ColumnDefinitions = new ColumnDefinitions(shortcutColumns),
+            Margin = new Thickness(0, 2, 0, 5),
         };
         var columnHeaderLabels = new[] { "Shortcut", "Action", "Edit", "Reset", "State" };
         for (var column = 0; column < columnHeaderLabels.Length; column++)
@@ -7162,7 +7170,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Foreground = MutedTextBrush,
                 LetterSpacing = 0.3,
                 Opacity = 0.8,
-                Margin = new Thickness(column == 1 ? 12 : 0, 0, 0, 4),
+                Margin = new Thickness(column == 1 ? 8 : 0, 0, 0, 0),
             };
             if (column >= 2) header.HorizontalAlignment = HorizontalAlignment.Center;
             Grid.SetColumn(header, column);
@@ -7183,15 +7191,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MaxHeight = 380,
         };
 
-        var scrollBorder = new Border
-        {
-            Background = WindowBackgroundBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12, 10),
-            Child = scroll,
-        };
+        var scrollBorder = CreateDialogSurface(scroll, new Thickness(14, 12), new Thickness(0));
 
         var dismissButton = new Button
         {
@@ -7201,7 +7201,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Background = AccentBrush,
             Foreground = AccentForegroundBrush,
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
         };
 
         var footerHint = new TextBlock
@@ -7238,23 +7238,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         dialog = new Window
         {
             Title = "Kodo - Keyboard Shortcuts",
-            Width = 680,
+            Width = 800,
             SizeToContent = SizeToContent.Height,
-            MinWidth = 560,
+            MinWidth = 720,
             MaxHeight = 720,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = WindowBackgroundBrush,
-            Content = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = content,
-            },
+            Content = CreateDialogSurface(content),
         };
 
         dialog.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
@@ -8260,7 +8251,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     : PrimaryTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = KodoDesignTokens.CompactRadius,
                 Padding = new Thickness(12, 7),
             };
             var capturedEnc = enc;
@@ -8277,7 +8268,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Background = WindowBackgroundBrush,
             BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Padding = new Thickness(10),
             Child = listPanel
         };
@@ -8303,16 +8294,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         };
 
-        var outer = new Border
-        {
-            Background = CardBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(16),
-            Margin = new Thickness(16),
-            Child = panel
-        };
+        var outer = CreateDialogSurface(panel, new Thickness(16));
 
         dialog = new Window
         {
@@ -8426,7 +8408,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     : PrimaryTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = KodoDesignTokens.CompactRadius,
                 Padding = new Thickness(12, 7),
             };
             var captured = ending;
@@ -8443,7 +8425,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Background = WindowBackgroundBrush,
             BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Padding = new Thickness(10),
             Child = listPanel
         };
@@ -8469,16 +8451,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         };
 
-        var outer = new Border
-        {
-            Background = CardBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(16),
-            Margin = new Thickness(16),
-            Child = panel
-        };
+        var outer = CreateDialogSurface(panel, new Thickness(16));
 
         dialog = new Window
         {
@@ -8600,7 +8573,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     : PrimaryTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = KodoDesignTokens.CompactRadius,
                 Padding = new Thickness(12, 7),
             };
             var capturedSpaces = useSpaces;
@@ -8618,7 +8591,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Background = WindowBackgroundBrush,
             BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Padding = new Thickness(10),
             Child = listPanel
         };
@@ -8644,16 +8617,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         };
 
-        var outer = new Border
-        {
-            Background = CardBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
-            Padding = new Thickness(16),
-            Margin = new Thickness(16),
-            Child = panel
-        };
+        var outer = CreateDialogSurface(panel, new Thickness(16));
 
         dialog = new Window
         {
@@ -9722,7 +9686,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
     }
 
-    private static Button CreateDialogButton(
+    private Border CreateDialogSurface(Control content, Thickness? padding = null, Thickness? margin = null)
+    {
+        return new Border
+        {
+            Background = CardBrush,
+            BorderBrush = SurfaceBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = KodoDesignTokens.CardRadius,
+            Padding = padding ?? new Thickness(20),
+            Margin = margin ?? new Thickness(16),
+            Child = content,
+        };
+    }
+
+    private Button CreateDialogButton(
         string text,
         IBrush background,
         IBrush borderBrush,
@@ -9737,7 +9715,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             BorderThickness = new Thickness(1),
             Foreground = foreground,
             Padding = new Thickness(14, 8),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             MinWidth = 86,
             HorizontalContentAlignment = HorizontalAlignment.Center
         };

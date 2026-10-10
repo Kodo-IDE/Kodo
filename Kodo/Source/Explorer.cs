@@ -1197,16 +1197,7 @@ public partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = title,
             Background = WindowBackgroundBrush,
-            Content = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = inner
-            }
+            Content = CreateDialogSurface(inner)
         };
 
         dialog.Opened += (_, _) =>

@@ -725,7 +725,7 @@ public partial class MainWindow
                         Background = CardBrush,
                         BorderBrush = SurfaceBorderBrush,
                         BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(12),
+                        CornerRadius = KodoDesignTokens.CardRadius,
                         Padding = new Thickness(16, 12),
                         MaxWidth = 520,
                         MaxHeight = 420,

@@ -26,7 +26,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="12,8" />
         </Style>
 
@@ -51,12 +51,27 @@
         </Style>
 
         <Style Selector="Button.chrome.red">
-            <Setter Property="Background" Value="Red" />
-            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="{Binding DangerBrush}" />
+            <Setter Property="Foreground" Value="{Binding DangerForegroundBrush}" />
+        </Style>
+
+        <Style Selector="Button:focus">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.activity:focus /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="TextBox:focus">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="ComboBox:focus">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
 
         <Style Selector="Border.runbuildgroup">
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="ClipToBounds" Value="True" />
         </Style>
 
@@ -104,7 +119,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="6" />
             <Setter Property="Width" Value="38" />
             <Setter Property="Height" Value="30" />
@@ -132,7 +147,7 @@
                         <Border Name="PART_Border"
                                 Margin="4,0"
                                 Background="Transparent"
-                                CornerRadius="10"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter Name="PART_ContentPresenter"
                                               Background="Transparent"
@@ -153,7 +168,7 @@
             <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="Button.chrome.groupheader /template/ Border#PART_Border">
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Background" Value="Transparent" />
         </Style>
         <Style Selector="Button.chrome.groupheader:pointerover /template/ Border#PART_Border">
@@ -165,7 +180,7 @@
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="12,8" />
             <Setter Property="MinWidth" Value="88" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -192,7 +207,7 @@
             <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding #RootWindow.SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="12,8" />
             <Setter Property="MinWidth" Value="92" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -231,7 +246,7 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="14,8" />
         </Style>
 
@@ -246,12 +261,29 @@
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
 
+        <Style Selector="Button.settingsnav">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="Button.settingsnav:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Button.settingsnav:focus">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+
         <Style Selector="Button.recent">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="12,10" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -266,7 +298,7 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
@@ -278,7 +310,7 @@
         </Style>
         <Style Selector="Border.recentbadge">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="7,2" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -291,7 +323,7 @@
 
         <Style Selector="Border.installedtag">
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
@@ -302,7 +334,7 @@
 
         <Style Selector="Button.marketinstall">
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="10,4" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -321,7 +353,7 @@
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="Padding" Value="14,10" />
             <Setter Property="MinWidth" Value="96" />
         </Style>
@@ -342,13 +374,13 @@
             <Setter Property="Background" Value="{Binding CardBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="Padding" Value="6" />
         </Style>
 
         <Style Selector="Border.extensionrow">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="14,13" />
             <Setter Property="Margin" Value="0,0,0,2" />
         </Style>
@@ -357,7 +389,7 @@
         </Style>
 
         <Style Selector="Border.extensiontile">
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="Padding" Value="16,14" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Margin" Value="6" />
@@ -378,7 +410,7 @@
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Template">
                 <ControlTemplate>
                     <Border Name="PART_Border"
@@ -414,6 +446,15 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
 
+        <Style Selector="Button.activity.active /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.activity.active">
+            <Setter Property="Foreground" Value="{Binding AccentBrush}" />
+        </Style>
+
         <Style Selector="Button.activity:pressed /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
         </Style>
@@ -437,7 +478,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="7,3" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="FontWeight" Value="Normal" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
@@ -520,7 +561,7 @@
             <Setter Property="Background" Value="{Binding CardBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="Padding" Value="16,14,16,14" />
             <Setter Property="MaxWidth" Value="560" />
             <Setter Property="BoxShadow" Value="0 8 32 0 #40000000" />
@@ -531,7 +572,7 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="999" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -559,7 +600,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="6" />
             <Setter Property="Width" Value="30" />
             <Setter Property="Height" Value="28" />
@@ -586,16 +627,16 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
         </Style>
         <Style Selector="ListBox.searchresults ListBoxItem:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
                 <Style Selector="ListBox.searchresults ListBoxItem:selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
 
         <Style Selector="ListBox.codeactions">
@@ -609,16 +650,16 @@
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
         </Style>
         <Style Selector="ListBox.codeactions ListBoxItem:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
         <Style Selector="ListBox.codeactions ListBoxItem:selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
         <Style Selector="ListBox.codeactions ListBoxItem:disabled /template/ ContentPresenter">
             <Setter Property="Opacity" Value="0.55" />
@@ -628,7 +669,7 @@
         <Style Selector="ListBox.searchresults Button.groupheader">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Margin" Value="0" />
@@ -684,7 +725,7 @@
 
         <Style Selector="Border.openeditorrow">
             <Setter Property="Background" Value="Transparent" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
 
         <Style Selector="Button.openeditor">
@@ -693,7 +734,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="7,5" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
@@ -719,7 +760,7 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Width" Value="22" />
             <Setter Property="Height" Value="22" />
-            <Setter Property="CornerRadius" Value="11" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
             <Setter Property="Opacity" Value="0" />
@@ -776,7 +817,7 @@
             <Setter Property="Padding" Value="6,2" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
-            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CompactRadius}" />
         </Style>
 
         <Style Selector="Button.fileitem:pointerover">
@@ -802,7 +843,7 @@
             <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding #RootWindow.SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="10,8" />
             <Setter Property="FontSize" Value="13" />
         </Style>
@@ -855,7 +896,7 @@
             <DockPanel>
                 
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
                         <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -866,7 +907,7 @@
                 </StackPanel>
 
                 <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -874,7 +915,7 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="EditorButton_OnClick" ToolTip.Tip="{Binding EditorTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsEditorPageVisible}" Click="EditorButton_OnClick" ToolTip.Tip="{Binding EditorTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -933,7 +974,7 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="ExtensionsButton_OnClick" ToolTip.Tip="{Binding OpenExtensionsTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsExtensionsPageVisible}" Click="ExtensionsButton_OnClick" ToolTip.Tip="{Binding OpenExtensionsTooltip}">
                         <Viewbox Width="20" Height="20"
                                  HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -1483,7 +1524,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Border Width="28"
                                     Height="28"
-                                    CornerRadius="8"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                     ClipToBounds="True">
                                 <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                        Stretch="UniformToFill" />
@@ -1827,7 +1868,7 @@
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="12"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="16"
                                     MaxWidth="460"
                                     MaxHeight="260">
@@ -1844,7 +1885,7 @@
                                         Width="28"
                                         Height="28"
                                         Padding="0"
-                                        CornerRadius="8"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         Classes="chrome"
@@ -1967,7 +2008,7 @@
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="12"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                 Margin="32,24,32,12"
                                 Padding="0"
                                 ClipToBounds="True">
@@ -1975,7 +2016,7 @@
                                 
                                 <Border Background="{Binding AccentBrush}"
                                         Opacity="0.035"
-                                        CornerRadius="12"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                         IsHitTestVisible="False" />
 
                                 <Grid ColumnDefinitions="*,Auto"
@@ -2026,7 +2067,7 @@
                                             Background="{Binding WindowBackgroundBrush}"
                                             BorderBrush="{Binding AccentBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="14"
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                             Padding="12,6"
                                             VerticalAlignment="Center"
                                             Margin="16,0,0,0">
@@ -2051,7 +2092,7 @@
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding AccentBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="12"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     IsVisible="{Binding HasMostRecentFileItem}">
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
                                     <Border Grid.Column="0"
@@ -2096,7 +2137,7 @@
                                                 Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                                 BorderThickness="1"
-                                                CornerRadius="10"
+                                                CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                 Margin="0,0,8,8"
                                                 Padding="12,7"
                                                 Content="{Binding DisplayName}"
@@ -2114,7 +2155,7 @@
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="12">
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <StackPanel Spacing="14">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                 <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -2218,7 +2259,7 @@
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="12">
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <Grid RowDefinitions="Auto,*">
                                             
                                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
@@ -2396,7 +2437,7 @@
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="12">
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <StackPanel Spacing="12">
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -2500,7 +2541,7 @@
                                     <Border Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="12">
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <Grid RowDefinitions="Auto,*">
 
                                             
@@ -2803,7 +2844,7 @@
                         Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="12"
+                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                         Margin="8"
                         MinHeight="120"
                         MaxHeight="420"
@@ -2851,7 +2892,7 @@
                                               Background="{Binding ButtonBrush}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               BorderBrush="{Binding SurfaceBorderBrush}"
-                                              CornerRadius="8"
+                                              CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                               Padding="12,8"
                                               VerticalContentAlignment="Center"
                                               ToolTip.Tip="Choose the default shell for new terminals">
@@ -3158,7 +3199,7 @@
                                          VerticalAlignment="Center"
                                          IsVisible="{Binding HasDiagnostics}">
                                     <Canvas Width="24" Height="24">
-                                        <Path Fill="#E5484D"
+                                        <Path Fill="{Binding DangerBrush}"
                                               Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z" />
                                     </Canvas>
                                 </Viewbox>
@@ -3328,7 +3369,7 @@
                                     BorderThickness="0"
                                     Foreground="{Binding MutedTextBrush}"
                                     Padding="6,3"
-                                    CornerRadius="6"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding CanShowFindInFile}"
                                     ToolTip.Tip="{Binding FindInFileTooltip}"
@@ -3378,7 +3419,7 @@
 
                     
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
-                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center">
+                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Margin="0,0,10,0" VerticalAlignment="Center">
                             <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
                         </Border>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
@@ -3415,7 +3456,7 @@
                     </Grid>
 
                     <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="0,0,0,8">
-                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,10,0" VerticalAlignment="Center" IsVisible="{Binding IsFindInFileSearchMode}">
+                        <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Margin="0,0,10,0" VerticalAlignment="Center" IsVisible="{Binding IsFindInFileSearchMode}">
                             <TextBox x:Name="ReplaceTextBox" Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
                         </Border>
                         <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" FontSize="12" Text="{Binding SearchStatusText}" Margin="0,0,12,0" />
@@ -3426,11 +3467,11 @@
 
                     <Grid Grid.Row="3" ColumnDefinitions="Auto,*,Auto,*,Auto" Margin="0,0,0,8" IsVisible="{Binding IsFilterRowVisible}">
                         <TextBlock Grid.Column="0" Text="Include:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <Border Grid.Column="1" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
+                        <Border Grid.Column="1" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" VerticalAlignment="Center">
                             <TextBox Text="{Binding SearchIncludeFilter, Mode=TwoWay}" PlaceholderText="*.cs,*.axaml" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
                         </Border>
                         <TextBlock Grid.Column="2" Text="Exclude:" FontSize="11" Foreground="{Binding MutedTextBrush}" VerticalAlignment="Center" Margin="12,0,8,0" />
-                        <Border Grid.Column="3" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="8" VerticalAlignment="Center">
+                        <Border Grid.Column="3" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" VerticalAlignment="Center">
                             <TextBox Text="{Binding SearchExcludeFilter, Mode=TwoWay}" PlaceholderText="test/*,*.generated.cs" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,6" FontSize="11" />
                         </Border>
                     </Grid>
@@ -3529,7 +3570,7 @@
                                 VerticalAlignment="Center">
                         
                         <Border Width="72" Height="72"
-                                CornerRadius="20"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 ClipToBounds="True"
                                 HorizontalAlignment="Center"
                                 Margin="0,0,0,28">
@@ -3591,7 +3632,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="12"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                 Padding="20"
                                 Margin="0,0,16,0">
                             <StackPanel Spacing="18">
@@ -3613,7 +3654,7 @@
                                     <Border Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="999"
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.PillRadius}"
                                             Padding="10,4"
                                             HorizontalAlignment="Left">
                                         <TextBlock FontSize="11"
@@ -3636,7 +3677,7 @@
                                 <Border Background="{Binding ButtonBrush}"
                                         BorderBrush="{Binding SurfaceBorderBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="16"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                         Padding="18">
                                     <StackPanel Spacing="8">
                                         <TextBlock FontSize="12"
@@ -3696,12 +3737,12 @@
                                                         <StackPanel Spacing="8">
                                                             <Panel>
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         Background="#1E1E1E"
                                                                         BorderBrush="#2B2B2B"
                                                                         BorderThickness="1" />
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         BorderThickness="2"
                                                                         BorderBrush="{Binding AccentBrush}"
                                                                         IsVisible="{Binding IsDarkThemeActive}" />
@@ -3722,12 +3763,12 @@
                                                         <StackPanel Spacing="8">
                                                             <Panel>
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         Background="#FFFFFF"
                                                                         BorderBrush="#D7DCE5"
                                                                         BorderThickness="1" />
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         BorderThickness="2"
                                                                         BorderBrush="{Binding AccentBrush}"
                                                                         IsVisible="{Binding IsLightThemeActive}" />
@@ -3748,12 +3789,12 @@
                                                         <StackPanel Spacing="8">
                                                             <Panel>
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         Background="{Binding SystemThemePreviewBackground}"
                                                                         BorderBrush="{Binding SystemThemePreviewBorder}"
                                                                         BorderThickness="1" />
                                                                 <Border Height="72"
-                                                                        CornerRadius="10"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                         BorderThickness="2"
                                                                         BorderBrush="{Binding AccentBrush}"
                                                                         IsVisible="{Binding IsSystemThemeActive}" />
@@ -3841,7 +3882,7 @@
                                                                                         <StackPanel Spacing="8">
                                                                                             <Panel>
                                                                                                 <Border Height="72"
-                                                                                                        CornerRadius="10"
+                                                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                                                         Background="{Binding ThemeCardPreviewBackground}"
                                                                                                         BorderBrush="{Binding ThemeCardPreviewBorder}"
                                                                                                         BorderThickness="1">
@@ -3850,11 +3891,11 @@
                                                                                                             Margin="10"
                                                                                                             HorizontalAlignment="Left"
                                                                                                             VerticalAlignment="Top"
-                                                                                                            CornerRadius="999"
+                                                                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.PillRadius}"
                                                                                                             Background="{Binding ThemeCardAccent}" />
                                                                                                 </Border>
                                                                                                 <Border Height="72"
-                                                                                                        CornerRadius="10"
+                                                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                                                         BorderThickness="2"
                                                                                                         BorderBrush="{Binding #RootWindow.AccentBrush}"
                                                                                                         IsVisible="{Binding IsActiveTheme}" />
@@ -3902,7 +3943,7 @@
                                                             IsVisible="{Binding HasThemeAccent}"
                                                             ToolTip.Tip="{Binding TooltipAccentTheme}">
                                                         <StackPanel Spacing="6">
-                                                            <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding ThemeAccentPreviewBrush}" />
                                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                                                 <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
                                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
@@ -3916,7 +3957,7 @@
                                                             Width="120"
                                                             ToolTip.Tip="Use Kodo's default purple accent">
                                                         <StackPanel Spacing="6">
-                                                            <Border Height="28" CornerRadius="8" Background="#8C00FF" />
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="#8C00FF" />
                                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                                                 <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Kodo" />
                                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
@@ -3930,10 +3971,10 @@
                                                             Width="120"
                                                             ToolTip.Tip="{Binding TooltipAccentWindows}">
                                                         <StackPanel Spacing="6">
-                                                            <Border Height="28" CornerRadius="8"
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                     Background="{Binding AccentBrush}"
                                                                     IsVisible="{Binding IsAccentWindows}" />
-                                                            <Border Height="28" CornerRadius="8"
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                     Background="{Binding WindowsAccentPreviewBrush}"
                                                                     IsVisible="{Binding !IsAccentWindows}" />
                                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
@@ -3949,10 +3990,10 @@
                                                             Width="120"
                                                             ToolTip.Tip="{Binding TooltipAccentCustom}">
                                                         <StackPanel Spacing="6">
-                                                            <Border Height="28" CornerRadius="8"
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                     Background="{Binding AccentBrush}"
                                                                     IsVisible="{Binding IsAccentCustom}" />
-                                                            <Border Height="28" CornerRadius="8"
+                                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                                     IsVisible="{Binding !IsAccentCustom}">
                                                                 <Border.Background>
                                                                     <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
@@ -4002,7 +4043,7 @@
                                                 <TextBox Grid.Row="0" Grid.Column="1"
                                                          Text="{Binding UserName, Mode=TwoWay}"
                                                          PlaceholderText="e.g. Alex"
-                                                         CornerRadius="8"
+                                                         CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                          Padding="10,8"
                                                          Background="{Binding ButtonBrush}"
                                                          Foreground="{Binding PrimaryTextBrush}"
@@ -4016,7 +4057,7 @@
                                                 <TextBox Grid.Row="1" Grid.Column="1"
                                                          Text="{Binding UserCountry, Mode=TwoWay}"
                                                          PlaceholderText="e.g. CA, US, GB"
-                                                         CornerRadius="8"
+                                                         CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                          Padding="10,8"
                                                          Background="{Binding ButtonBrush}"
                                                          Foreground="{Binding PrimaryTextBrush}"
@@ -4033,7 +4074,7 @@
                                                           Foreground="{Binding PrimaryTextBrush}"
                                                           BorderBrush="{Binding SurfaceBorderBrush}"
                                                           HorizontalAlignment="Stretch"
-                                                          CornerRadius="8">
+                                                          CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}">
                                                     <ComboBoxItem Content="Auto-detect" />
                                                     <ComboBoxItem Content="Northern" />
                                                     <ComboBoxItem Content="Southern" />
@@ -4046,7 +4087,7 @@
                                                 <TextBox Grid.Row="3" Grid.Column="1"
                                                          Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
                                                          PlaceholderText="e.g. -5, +1"
-                                                         CornerRadius="8"
+                                                         CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                          Padding="10,8"
                                                          Background="{Binding ButtonBrush}"
                                                          Foreground="{Binding PrimaryTextBrush}"
@@ -4066,7 +4107,7 @@
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="16"
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                             Padding="20">
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -4084,7 +4125,7 @@
                                             <Border Background="{Binding WindowBackgroundBrush}"
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     BorderThickness="1"
-                                                    CornerRadius="12"
+                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                     Padding="16"
                                                     MaxHeight="220">
                                                 <ScrollViewer x:Name="PrivacyPolicyScrollViewerTutorial"
@@ -4111,7 +4152,7 @@
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
                                             BorderThickness="1"
-                                            CornerRadius="16"
+                                            CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                             Padding="20">
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -4169,7 +4210,7 @@
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="20"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                     Padding="22">
                                 <StackPanel Spacing="10">
                                     <TextBlock FontSize="12"
@@ -4236,20 +4277,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Border Classes="extstatchip">
-                                <StackPanel Spacing="0">
-                                    <TextBlock Classes="extstatvalue" Text="{Binding InstalledExtensionsCount}" />
-                                    <TextBlock Classes="extstatlabel" Text="Installed" />
-                                </StackPanel>
-                            </Border>
-                            <Border Classes="extstatchip" Classes.accented="{Binding IsExtensionUpdateBannerVisible}">
-                                <StackPanel Spacing="0">
-                                    <TextBlock Classes="extstatvalue" Text="{Binding AvailableExtensionUpdatesCount}" />
-                                    <TextBlock Classes="extstatlabel" Text="Updates" />
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -4290,7 +4317,7 @@
                                      Background="{Binding ButtonBrush}"
                                      Foreground="{Binding PrimaryTextBrush}"
                                      BorderBrush="{Binding SurfaceBorderBrush}"
-                                     CornerRadius="10"
+                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                      Height="36"
                                      Padding="12,0"
                                      VerticalContentAlignment="Center" />
@@ -4302,7 +4329,7 @@
                                     Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="10"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                     Height="36"
                                     Padding="6,0"
                                     VerticalAlignment="Center"
@@ -4331,7 +4358,7 @@
                                     Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="10"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                     Height="36"
                                     Padding="6,0"
                                     VerticalAlignment="Center"
@@ -4363,6 +4390,20 @@
                         </Grid>
 
                         <StackPanel IsVisible="{Binding IsInstalledTabSelected}" Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Classes="extstatchip">
+                                    <StackPanel Spacing="0">
+                                        <TextBlock Classes="extstatvalue" Text="{Binding InstalledExtensionsCount}" />
+                                        <TextBlock Classes="extstatlabel" Text="Installed" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="extstatchip" Classes.accented="{Binding IsExtensionUpdateBannerVisible}">
+                                    <StackPanel Spacing="0">
+                                        <TextBlock Classes="extstatvalue" Text="{Binding AvailableExtensionUpdatesCount}" />
+                                        <TextBlock Classes="extstatlabel" Text="Updates" />
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                             
                             <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensionsOrCompilers}">
                             <StackPanel Spacing="0">
@@ -4391,7 +4432,7 @@
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
@@ -4401,7 +4442,7 @@
                                                                Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
                                                     <Panel>
@@ -4495,7 +4536,7 @@
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
@@ -4505,7 +4546,7 @@
                                                                Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
                                                     <Panel>
@@ -4599,7 +4640,7 @@
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
@@ -4609,7 +4650,7 @@
                                                                Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
                                                     <Panel>
@@ -4704,7 +4745,7 @@
                                                         VerticalAlignment="Stretch"
                                                         CornerRadius="2"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         Background="{Binding #RootWindow.AccentBrush}"
                                                         IsVisible="{Binding !HasIcon}">
                                                     <TextBlock HorizontalAlignment="Center"
@@ -4714,7 +4755,7 @@
                                                                Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                Text="{Binding NameAbbreviation}" />
                                                 </Border>
-                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="9"
+                                                <Border Grid.Column="1" Width="40" Height="40" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                         IsVisible="{Binding HasIcon}"
                                                         ClipToBounds="True">
                                                     <Panel>
@@ -4790,7 +4831,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     IsVisible="{Binding IsNoExtensionsVisible}">
                                 <StackPanel Spacing="4" HorizontalAlignment="Center">
@@ -4810,7 +4851,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     IsVisible="{Binding IsInstalledSearchEmptyVisible}">
                                 <StackPanel Spacing="4" HorizontalAlignment="Center">
@@ -4830,7 +4871,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     IsVisible="{Binding IsInstalledCompilersEmptyStateVisible}">
                                 <StackPanel Spacing="4" HorizontalAlignment="Center"
@@ -4859,7 +4900,7 @@
                                          Background="{Binding ButtonBrush}"
                                          Foreground="{Binding PrimaryTextBrush}"
                                          BorderBrush="{Binding SurfaceBorderBrush}"
-                                         CornerRadius="10"
+                                         CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                          Height="36"
                                          Padding="12,0"
                                          VerticalContentAlignment="Center"
@@ -4876,7 +4917,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     Margin="0,0,0,12"
                                     IsVisible="{Binding IsMarketplaceUnavailableVisible}">
@@ -4898,7 +4939,7 @@
                             <Border Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding AccentBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="14"
                                     Margin="0,0,0,12"
                                     IsVisible="{Binding IsMarketplacePartialErrorVisible}">
@@ -4930,7 +4971,7 @@
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
                                                 
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                             Background="{Binding #RootWindow.AccentBrush}"
                                                             IsVisible="{Binding !HasIcon}">
                                                         <TextBlock HorizontalAlignment="Center"
@@ -4940,7 +4981,7 @@
                                                                    Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                    Text="{Binding NameAbbreviation}" />
                                                     </Border>
-                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                             IsVisible="{Binding HasIcon}"
                                                             ClipToBounds="True">
                                                         <Panel>
@@ -5037,7 +5078,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     Margin="0,4,0,0"
                                     IsVisible="{Binding IsMarketplaceEmptyVisible}">
@@ -5058,7 +5099,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     Margin="0,4,0,0"
                                     IsVisible="{Binding IsMarketplaceSearchEmptyVisible}">
@@ -5092,7 +5133,7 @@
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                             Background="{Binding #RootWindow.AccentBrush}"
                                                             IsVisible="{Binding !HasIcon}">
                                                         <TextBlock HorizontalAlignment="Center"
@@ -5102,7 +5143,7 @@
                                                                    Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                                    Text="{Binding NameAbbreviation}" />
                                                     </Border>
-                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="12"
+                                                    <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                             IsVisible="{Binding HasIcon}"
                                                             ClipToBounds="True">
                                                         <Panel>
@@ -5196,7 +5237,7 @@
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
-                                    CornerRadius="14"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     Padding="20"
                                     Margin="0,4,0,0"
                                     IsVisible="{Binding !HasVisibleCompilerExtensions}">
@@ -5223,7 +5264,8 @@
                   IsVisible="{Binding IsSettingsPageVisible}"
                   IsHitTestVisible="{Binding IsSettingsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
-                  RowDefinitions="Auto,*"
+                  RowDefinitions="Auto,Auto,*"
+                  Focusable="True"
                   PointerPressed="SettingsPage_OnPointerPressed">
                 <Border Grid.Row="0"
                         Background="{Binding TopBarBrush}"
@@ -5251,7 +5293,7 @@
                                  Background="{Binding ButtonBrush}"
                                  Foreground="{Binding PrimaryTextBrush}"
                                  BorderBrush="{Binding SurfaceBorderBrush}"
-                                 CornerRadius="10"
+                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                  Height="36"
                                  Padding="12,0"
                                  VerticalContentAlignment="Center"
@@ -5259,9 +5301,31 @@
                     </Grid>
                 </Border>
 
-                <ScrollViewer Grid.Row="1"
+                <Border Grid.Row="1"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,0,0,1">
+                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" Margin="16,8">
+                            <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
+                            <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
+                            <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
+                            <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
+                            <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
+                            <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
+                            <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
+                            <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
+                            <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
+                            <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="Personalization" />
+                            <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
+                            <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
+                    </WrapPanel>
+                </Border>
+
+                <ScrollViewer x:Name="SettingsScrollViewer"
+                              Grid.Row="2"
                               VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
+                              HorizontalScrollBarVisibility="Disabled"
+                              ScrollChanged="SettingsScrollViewer_OnScrollChanged">
                     <StackPanel x:Name="SettingsCardsPanel"
                                 Margin="32,28,32,36"
                                 Spacing="16"
@@ -5287,7 +5351,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="ThemeSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
@@ -5311,12 +5375,12 @@
                                         <StackPanel Spacing="8">
                                             <Panel>
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         Background="#1E1E1E"
                                                         BorderBrush="#2B2B2B"
                                                         BorderThickness="1" />
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         BorderThickness="2"
                                                         BorderBrush="{Binding AccentBrush}"
                                                         IsVisible="{Binding IsDarkThemeActive}" />
@@ -5339,12 +5403,12 @@
                                         <StackPanel Spacing="8">
                                             <Panel>
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         Background="#FFFFFF"
                                                         BorderBrush="#D7DCE5"
                                                         BorderThickness="1" />
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         BorderThickness="2"
                                                         BorderBrush="{Binding AccentBrush}"
                                                         IsVisible="{Binding IsLightThemeActive}" />
@@ -5367,12 +5431,12 @@
                                         <StackPanel Spacing="8">
                                             <Panel>
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         Background="{Binding SystemThemePreviewBackground}"
                                                         BorderBrush="{Binding SystemThemePreviewBorder}"
                                                         BorderThickness="1" />
                                                 <Border Height="96"
-                                                        CornerRadius="12"
+                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                         BorderThickness="2"
                                                         BorderBrush="{Binding AccentBrush}"
                                                         IsVisible="{Binding IsSystemThemeActive}" />
@@ -5458,7 +5522,7 @@
                                                                     <StackPanel Spacing="8">
                                                                         <Panel>
                                                                             <Border Height="96"
-                                                                                    CornerRadius="12"
+                                                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                                                     Background="{Binding ThemeCardPreviewBackground}"
                                                                                     BorderBrush="{Binding ThemeCardPreviewBorder}"
                                                                                     BorderThickness="1">
@@ -5467,11 +5531,11 @@
                                                                                         Margin="12"
                                                                                         HorizontalAlignment="Left"
                                                                                         VerticalAlignment="Top"
-                                                                                        CornerRadius="999"
+                                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.PillRadius}"
                                                                                         Background="{Binding ThemeCardAccent}" />
                                                                             </Border>
                                                                             <Border Height="96"
-                                                                                    CornerRadius="12"
+                                                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                                                     BorderThickness="2"
                                                                                     BorderBrush="{Binding #RootWindow.AccentBrush}"
                                                                                     IsVisible="{Binding IsActiveTheme}" />
@@ -5509,7 +5573,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="AccentColourSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
@@ -5529,7 +5593,7 @@
                                             IsVisible="{Binding HasThemeAccent}"
                                             ToolTip.Tip="{Binding TooltipAccentTheme}">
                                         <StackPanel Spacing="6">
-                                            <Border Height="28" CornerRadius="8" Background="{Binding ThemeAccentPreviewBrush}" />
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding ThemeAccentPreviewBrush}" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                                 <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
@@ -5544,7 +5608,7 @@
                                             Width="120"
                                             ToolTip.Tip="Use Kodo's default purple accent">
                                         <StackPanel Spacing="6">
-                                            <Border Height="28" CornerRadius="8" Background="#8C00FF" />
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="#8C00FF" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                                 <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Kodo" />
                                                 <TextBlock FontSize="11" Foreground="{Binding AccentBrush}"
@@ -5559,9 +5623,9 @@
                                             Width="120"
                                             ToolTip.Tip="{Binding TooltipAccentWindows}">
                                         <StackPanel Spacing="6">
-                                            <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding AccentBrush}"
                                                     IsVisible="{Binding IsAccentWindows}" />
-                                            <Border Height="28" CornerRadius="8" Background="{Binding WindowsAccentPreviewBrush}"
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding WindowsAccentPreviewBrush}"
                                                     IsVisible="{Binding !IsAccentWindows}" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
                                                 <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="{Binding LabelAccentSystem}" />
@@ -5577,9 +5641,9 @@
                                             Width="120"
                                             ToolTip.Tip="{Binding TooltipAccentCustom}">
                                         <StackPanel Spacing="6">
-                                            <Border Height="28" CornerRadius="8" Background="{Binding AccentBrush}"
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding AccentBrush}"
                                                     IsVisible="{Binding IsAccentCustom}" />
-                                            <Border Height="28" CornerRadius="8"
+                                            <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                     IsVisible="{Binding !IsAccentCustom}">
                                                 <Border.Background>
                                                     <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
@@ -5620,7 +5684,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="EditorSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
@@ -5664,7 +5728,7 @@
                                              Background="{Binding ButtonBrush}"
                                              BorderBrush="{Binding SurfaceBorderBrush}"
                                              BorderThickness="1"
-                                             CornerRadius="6"
+                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                              Width="44"
                                              Padding="4,6"
                                              TextAlignment="Center"
@@ -5692,7 +5756,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="EditorInsightSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
@@ -5733,7 +5797,7 @@
                                      <Border Background="{Binding CardBrush}"
                                               BorderBrush="{Binding AccentBrush}"
                                               BorderThickness="1"
-                                              CornerRadius="6"
+                                              CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                               Padding="10,8"
                                               IsVisible="{Binding IsInsightEnabled}">
                                          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
@@ -5758,7 +5822,7 @@
                                              Background="{Binding ButtonBrush}"
                                              BorderBrush="{Binding SurfaceBorderBrush}"
                                              BorderThickness="1"
-                                             CornerRadius="6"
+                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                              Padding="8,6"
                                              FontSize="13"
                                              PlaceholderText=".txt,.md" />
@@ -5772,7 +5836,7 @@
                                              Background="{Binding ButtonBrush}"
                                              BorderBrush="{Binding SurfaceBorderBrush}"
                                              BorderThickness="1"
-                                             CornerRadius="6"
+                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                              Padding="8,6"
                                              FontSize="13"
                                              PlaceholderText=".cs,.cpp" />
@@ -5798,7 +5862,7 @@
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 Tag="lsp">
                             <StackPanel Spacing="14">
@@ -5891,7 +5955,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="DisplaySettingsCard" Tag="general">
                             <StackPanel Spacing="14">
@@ -5951,7 +6015,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 IsVisible="{Binding IsTerminalSupported}"
                                 x:Name="TerminalSettingsCard" Tag="terminal">
@@ -5975,7 +6039,7 @@
                                               Background="{Binding ButtonBrush}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               BorderBrush="{Binding SurfaceBorderBrush}"
-                                              CornerRadius="8">
+                                              CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate x:DataType="kodoModels:TerminalShellOption" x:CompileBindings="True">
                                                 <TextBlock Text="{Binding DisplayName}" />
@@ -6014,7 +6078,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="DiscordRichPresenceSettingsCard" Tag="integrations">
                             <StackPanel Spacing="14">
@@ -6067,7 +6131,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="UpdatesSettingsCard" Tag="updates">
                             <StackPanel Spacing="14">
@@ -6141,7 +6205,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="PerformanceSettingsCard" Tag="performance">
                             <StackPanel Spacing="14">
@@ -6225,7 +6289,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="PrivacySettingsCard" Tag="privacy">
                             <StackPanel Spacing="14">
@@ -6268,7 +6332,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="PersonalizationSettingsCard" Tag="personalization">
                             <StackPanel Spacing="14">
@@ -6290,7 +6354,7 @@
                                         <TextBox Width="220"
                                                  Text="{Binding UserName, Mode=TwoWay}"
                                                  PlaceholderText="e.g. Alex (optional)"
-                                                 CornerRadius="8"
+                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                  Padding="10,6"
                                                  Background="{Binding ButtonBrush}"
                                                  Foreground="{Binding PrimaryTextBrush}"
@@ -6305,7 +6369,7 @@
                                         <TextBox Width="220"
                                                  Text="{Binding UserCountry, Mode=TwoWay}"
                                                  PlaceholderText="e.g. CA, US, GB (auto-detected)"
-                                                 CornerRadius="8"
+                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                  Padding="10,6"
                                                  Background="{Binding ButtonBrush}"
                                                  Foreground="{Binding PrimaryTextBrush}"
@@ -6322,7 +6386,7 @@
                                                   Background="{Binding ButtonBrush}"
                                                   Foreground="{Binding PrimaryTextBrush}"
                                                   BorderBrush="{Binding SurfaceBorderBrush}"
-                                                  CornerRadius="8">
+                                                  CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}">
                                             <ComboBoxItem Content="Auto-detect from country" />
                                             <ComboBoxItem Content="Northern hemisphere" />
                                             <ComboBoxItem Content="Southern hemisphere" />
@@ -6336,7 +6400,7 @@
                                         <TextBox Width="220"
                                                  Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
                                                  PlaceholderText="e.g. -5, +1 (auto-detected)"
-                                                 CornerRadius="8"
+                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                                  Padding="10,6"
                                                  Background="{Binding ButtonBrush}"
                                                  Foreground="{Binding PrimaryTextBrush}"
@@ -6367,7 +6431,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="DeveloperOptionsSettingsCard" Tag="advanced">
                             <StackPanel Spacing="14">
@@ -6466,7 +6530,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="HelpSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
@@ -6503,7 +6567,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="AboutSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
@@ -6527,7 +6591,7 @@
                                                 Background="{Binding AccentBrush}" />
                                         <Border Width="48"
                                                 Height="48"
-                                                CornerRadius="12"
+                                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                 ClipToBounds="True">
                                             <Image Source="avares://Kodo/Assets/kodo-logo.png"
                                                    Stretch="UniformToFill" />
@@ -6574,7 +6638,7 @@
 
                                 <Border IsVisible="{Binding IsNewerVersionAvailable}"
                                         Background="{Binding AccentBrush}"
-                                        CornerRadius="8"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                         Padding="12,8">
                                     <Grid ColumnDefinitions="*,Auto">
                                         <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -6602,7 +6666,7 @@
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
                                 x:Name="WhatsNewSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
@@ -6612,7 +6676,7 @@
                                                 Spacing="14">
                                         <Border Width="42"
                                                 Height="42"
-                                                CornerRadius="12"
+                                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                 ClipToBounds="True"
                                                 VerticalAlignment="Center">
                                             <Image Source="avares://Kodo/Assets/kodo-logo.png"
@@ -6656,7 +6720,7 @@
                                         Background="{Binding WindowBackgroundBrush}"
                                         BorderBrush="{Binding SurfaceBorderBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="12"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                         Padding="16">
                                     <StackPanel Spacing="12">
                                         <Grid ColumnDefinitions="*,Auto"
@@ -6792,7 +6856,7 @@
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="16"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24">
                             <StackPanel Spacing="6" HorizontalAlignment="Center">
                                 <TextBlock HorizontalAlignment="Center"
@@ -6814,7 +6878,7 @@
                 <Border Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="1"
-                        CornerRadius="20"
+                        CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                         Padding="32"
                         MaxWidth="560"
                         HorizontalAlignment="Center"
@@ -6823,7 +6887,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
                             <Border Width="42"
                                     Height="42"
-                                    CornerRadius="12"
+                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                     ClipToBounds="True"
                                     VerticalAlignment="Center">
                                 <Image Source="avares://Kodo/Assets/kodo-logo.png"
@@ -6845,7 +6909,7 @@
                                 Background="{Binding WindowBackgroundBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="12"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                 Padding="16"
                                 MaxHeight="220">
                             <ScrollViewer>
@@ -6861,7 +6925,7 @@
                                 Background="{Binding ButtonBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="14"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                 Padding="18">
                             <StackPanel Spacing="10">
                                 <TextBlock FontSize="14"
@@ -6875,7 +6939,7 @@
                                 <Border Background="{Binding WindowBackgroundBrush}"
                                         BorderBrush="{Binding SurfaceBorderBrush}"
                                         BorderThickness="1"
-                                        CornerRadius="10"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                         Padding="14"
                                         MaxHeight="180">
                                     <ScrollViewer x:Name="PrivacyPolicyScrollViewerSplash"
@@ -6902,7 +6966,7 @@
                                 Background="{Binding ButtonBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="1"
-                                CornerRadius="14"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                 Padding="18">
                             <StackPanel Spacing="10">
                                 <TextBlock FontSize="14"

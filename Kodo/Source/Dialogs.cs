@@ -105,20 +105,11 @@ public partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = "Unsaved Changes",
             Background = WindowBackgroundBrush,
-            Content = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = BuildUnsavedTabDialogContent(
+            Content = CreateDialogSurface(BuildUnsavedTabDialogContent(
                     tab,
                     () => { result = UnsavedTabAction.Save; dialog!.Close(); },
                     () => { result = UnsavedTabAction.Discard; dialog!.Close(); },
-                    () => { result = UnsavedTabAction.Cancel; dialog!.Close(); })
-            }
+                    () => { result = UnsavedTabAction.Cancel; dialog!.Close(); }))
         };
 
         await dialog.ShowDialog(this);
@@ -269,7 +260,7 @@ public partial class MainWindow
                 Background = WindowBackgroundBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 Padding = new Thickness(12, 8),
                 Child = new SelectableTextBlock
                 {
@@ -290,7 +281,7 @@ public partial class MainWindow
                 Foreground = MutedTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
             };
 
             var dismissButton = new Button
@@ -301,7 +292,7 @@ public partial class MainWindow
                 Background = AccentBrush,
                 Foreground = AccentForegroundBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
             };
 
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
@@ -323,16 +314,7 @@ public partial class MainWindow
                 Children = { headerRow, bodyText, pathBorder, divider, buttonRow },
             };
 
-            var outer = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = content
-            };
+            var outer = CreateDialogSurface(content);
 
             Window? dialog = null;
             dialog = new Window
@@ -376,7 +358,7 @@ public partial class MainWindow
                     {
                         Width = 3,
                         Height = 16,
-                        Background = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
+                        Background = isDestructive ? DangerBrush : AccentBrush,
                         CornerRadius = new CornerRadius(2),
                         VerticalAlignment = VerticalAlignment.Center
                     },
@@ -412,7 +394,7 @@ public partial class MainWindow
                 Foreground = MutedTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 MaxWidth = 180,
                 MinWidth = 80,
             };
@@ -422,10 +404,10 @@ public partial class MainWindow
                 Content = new TextBlock { Text = confirmLabel, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center, MaxWidth = 280 },
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding = new Thickness(20, 8),
-                Background = isDestructive ? new SolidColorBrush(Color.Parse("#C4302B")) : AccentBrush,
-                Foreground = Brushes.White,
+                Background = isDestructive ? DangerBrush : AccentBrush,
+                Foreground = isDestructive ? DangerForegroundBrush : AccentForegroundBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 MaxWidth = 320,
                 MinWidth = 100,
             };
@@ -460,16 +442,7 @@ public partial class MainWindow
                 Children = { headerRow, bodyText, divider, buttonRow },
             };
 
-            var outer = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = content
-            };
+            var outer = CreateDialogSurface(content);
 
             var scrollContent = new ScrollViewer
             {
@@ -553,7 +526,7 @@ public partial class MainWindow
                     {
                         Width = 3,
                         Height = 16,
-                        Background = isCritical ? new SolidColorBrush(Color.Parse("#FFA040")) : AccentBrush,
+                        Background = isCritical ? WarningBrush : AccentBrush,
                         CornerRadius = new CornerRadius(2),
                         VerticalAlignment = VerticalAlignment.Center
                     },
@@ -591,16 +564,16 @@ public partial class MainWindow
             var criticalBanner = new Border
             {
                 IsVisible = isCritical,
-                Background = new SolidColorBrush(Color.Parse("#2D1F00")),
-                BorderBrush = new SolidColorBrush(Color.Parse("#6B4800")),
+                Background = WarningSurfaceBrush,
+                BorderBrush = WarningBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = KodoDesignTokens.CompactRadius,
                 Padding = new Thickness(10, 6),
                 Child = new TextBlock
                 {
                     Text = "⚠ This operation affects file data. Check the log if the problem persists.",
                     FontSize = 12,
-                    Foreground = new SolidColorBrush(Color.Parse("#FFA040")),
+                    Foreground = WarningBrush,
                     TextWrapping = TextWrapping.Wrap,
                 },
             };
@@ -610,7 +583,7 @@ public partial class MainWindow
                 Background = ButtonBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(6),
+                CornerRadius = KodoDesignTokens.CompactRadius,
                 Padding = new Thickness(10, 5),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Child = new TextBlock
@@ -665,7 +638,7 @@ public partial class MainWindow
                 Background = WindowBackgroundBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 Padding = new Thickness(12),
                 Child = exceptionScroll,
             };
@@ -687,7 +660,7 @@ public partial class MainWindow
                 Foreground = MutedTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
             };
 
             var dismissButton = new Button
@@ -698,7 +671,7 @@ public partial class MainWindow
                 Background = AccentBrush,
                 Foreground = AccentForegroundBrush,
                 BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
             };
 
             var reportButton = new Button
@@ -710,7 +683,7 @@ public partial class MainWindow
                 Foreground = MutedTextBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 Margin = new Thickness(8, 0, 0, 0),
             };
 
@@ -752,16 +725,7 @@ public partial class MainWindow
                 },
             };
 
-            var outer = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = content
-            };
+            var outer = CreateDialogSurface(content);
 
             Window? dialog = null;
             dialog = new Window

@@ -435,13 +435,13 @@ public partial class App : Application
             Background = new SolidColorBrush(Color.Parse("#3D1A00")),
             BorderBrush = new SolidColorBrush(Color.Parse("#7A3A00")),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(10, 6),
             Child = new TextBlock
             {
                 Text = "⚠ The application will close after you dismiss this dialog.",
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.Parse("#FFA040")),
+                Foreground = new SolidColorBrush(KodoDesignTokens.WarningColor),
                 TextWrapping = TextWrapping.Wrap,
             },
         };
@@ -451,7 +451,7 @@ public partial class App : Application
             Background = new SolidColorBrush(KodoDarkBadgeBg),
             BorderBrush = new SolidColorBrush(KodoDarkBorder),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(10, 5),
             HorizontalAlignment = HorizontalAlignment.Left,
             Child = new TextBlock
@@ -494,7 +494,7 @@ public partial class App : Application
             Background = new SolidColorBrush(palette.SurfaceDeep),
             BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Padding = new Thickness(12),
             Child = exceptionScroll,
         };
@@ -516,7 +516,7 @@ public partial class App : Application
             Foreground = new SolidColorBrush(KodoTextMuted),
             BorderBrush = new SolidColorBrush(KodoDarkBorder),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
         };
 
         var reportButton = new Button
@@ -528,7 +528,7 @@ public partial class App : Application
             Foreground = new SolidColorBrush(KodoTextMuted),
             BorderBrush = new SolidColorBrush(KodoDarkBorder),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Margin = new Thickness(8, 0, 0, 0),
         };
 
@@ -540,7 +540,7 @@ public partial class App : Application
             Background = new SolidColorBrush(accentColor),
             Foreground = new SolidColorBrush(accentForeground),
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
         };
 
         var leftButtons = new StackPanel
@@ -585,7 +585,7 @@ public partial class App : Application
             Background = new SolidColorBrush(palette.SurfaceDeep),
             BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = KodoDesignTokens.CardRadius,
             Padding = new Thickness(20),
             Margin = new Thickness(16),
             Child = content

@@ -1419,7 +1419,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
                 Background = WindowBackgroundBrush,
                 BorderBrush = SurfaceBorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = KodoDesignTokens.ControlRadius,
                 Padding = new Thickness(10),
                 Child = list
             };
@@ -1455,16 +1455,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
             Grid.SetRow(footerDivider, 4);
             Grid.SetRow(buttonRow, 5);
 
-            var outer = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(16),
-                Margin = new Thickness(16),
-                Child = panel
-            };
+            var outer = CreateDialogSurface(panel, new Thickness(16));
 
             window = new Window
             {
@@ -1810,7 +1801,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
-        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(10)));
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, KodoDesignTokens.ControlRadius));
         panelCornerStyle.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush));
         panelCornerStyle.Setters.Add(new Setter(Border.BoxShadowProperty, new BoxShadows(
             new BoxShadow { OffsetX = 0, OffsetY = 8, Blur = 28, Spread = 0, Color = Color.FromArgb(38, 0, 0, 0) },
@@ -1838,7 +1829,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         window.Styles.Add(baseRowStyle);
 
         var itemCornerStyle = new Style(x => x.OfType<ListBoxItem>().Template().OfType<Border>());
-        itemCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, new CornerRadius(7)));
+        itemCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, KodoDesignTokens.ControlRadius));
         window.Styles.Add(itemCornerStyle);
 
         var accentTint = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid

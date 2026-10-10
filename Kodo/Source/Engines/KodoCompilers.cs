@@ -2929,7 +2929,12 @@ public partial class MainWindow
             commandLine,
             exe,
             args,
-            workingDirectory)
+            workingDirectory,
+            GetTerminalThemeColor(EditorBackgroundBrush, Color.Parse("#121118")),
+            GetTerminalThemeColor(PrimaryTextBrush, Color.Parse("#E2E4EB")),
+            GetTerminalThemeColor(AccentBrush, Color.Parse("#8C00FF")),
+            GetTerminalThemeColor(AccentForegroundBrush, Color.Parse("#FFFFFF")),
+            GetTerminalThemeColor(MutedTextBrush, Color.Parse("#9691A5")))
         {
             TerminalKeybinds = _keybinds,
         };
@@ -3402,16 +3407,7 @@ public partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = title,
             Background = WindowBackgroundBrush,
-            Content = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = inner2
-            }
+            Content = CreateDialogSurface(inner2)
         };
 
         dialog.Opened += (_, _) =>

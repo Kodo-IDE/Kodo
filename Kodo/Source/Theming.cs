@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Threading;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
@@ -17,10 +18,90 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private int _settingsNavigationRequestId;
+    private double? _settingsNavigationTargetOffset;
+
     private void RaiseMany(params string[] names) { foreach (var n in names) OnPropertyChanged(n); }
 
     private static string GetThemeColor(JsonElement theme, string propertyName, string fallback) =>
         theme.TryGetProperty(propertyName, out var value) ? value.GetString() ?? fallback : fallback;
+
+    private void SettingsSectionButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string section }) return;
+        var targetName = section.ToLowerInvariant() switch
+        {
+            "appearance" => "SectionHeaderAppearance",
+            "editor" => "SectionHeaderEditor",
+            "lsp" => "SectionHeaderLsp",
+            "general" => "SectionHeaderGeneral",
+            "terminal" => "SectionHeaderTerminal",
+            "integrations" => "SectionHeaderIntegrations",
+            "updates" => "SectionHeaderUpdates",
+            "performance" => "SectionHeaderPerformance",
+            "privacy" => "SectionHeaderPrivacy",
+            "personalization" => "SectionHeaderPersonalization",
+            "advanced" => "SectionHeaderAdvanced",
+            "helpabout" => "SectionHeaderHelpAbout",
+            _ => null,
+        };
+        if (targetName is null ||
+            this.FindControl<Control>(targetName) is not { } target ||
+            this.FindControl<ScrollViewer>("SettingsScrollViewer") is not { } scrollViewer)
+            return;
+
+        // A filtered section can be hidden. Clear the filter so navigation always
+        // lands on a real target instead of asking BringIntoView to chase a hidden
+        // element through its ancestors.
+        if (!target.IsVisible && !string.IsNullOrWhiteSpace(SettingsSearchText))
+        {
+            if (_searchFilterDebounceTimer.IsEnabled)
+                _searchFilterDebounceTimer.Stop();
+            SettingsSearchText = string.Empty;
+            if (_settingsSearchPending)
+            {
+                _settingsSearchPending = false;
+                NotifySettingsSearchChanged();
+            }
+        }
+
+        var requestId = ++_settingsNavigationRequestId;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (requestId != _settingsNavigationRequestId || !target.IsVisible)
+                return;
+
+            var position = target.TranslatePoint(new Point(0, 0), scrollViewer);
+            if (position is not { } point)
+                return;
+
+            // TranslatePoint is viewport-relative, so add the current offset to
+            // obtain the target's stable position in the settings content.
+            var targetOffset = Math.Max(0, scrollViewer.Offset.Y + point.Y - 12);
+            _settingsNavigationTargetOffset = targetOffset;
+            scrollViewer.Offset = new Vector(scrollViewer.Offset.X, targetOffset);
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void SettingsScrollViewer_OnScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer || Math.Abs(e.OffsetDelta.Y) < 0.1)
+            return;
+
+        if (_settingsNavigationTargetOffset is { } targetOffset &&
+            Math.Abs(scrollViewer.Offset.Y - targetOffset) < 1)
+        {
+            _settingsNavigationTargetOffset = null;
+            return;
+        }
+
+        _settingsNavigationTargetOffset = null;
+        if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Button button &&
+            button.Classes.Contains("settingsnav"))
+        {
+            SettingsPageGrid.Focus();
+        }
+    }
 
     private static readonly IBrush CachedLinkBrush = Brush.Parse("#5BA3D9");
 
@@ -404,7 +485,7 @@ public partial class MainWindow
         {
             Width = 36,
             Height = 36,
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             BorderBrush = SurfaceBorderBrush,
             BorderThickness = new Thickness(1),
         };
@@ -546,7 +627,7 @@ public partial class MainWindow
                     Background = WindowBackgroundBrush,
                     BorderBrush = SurfaceBorderBrush,
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(8),
+                    CornerRadius = KodoDesignTokens.ControlRadius,
                     Padding = new Thickness(10),
                     Child = new StackPanel
                     {
@@ -588,16 +669,7 @@ public partial class MainWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Title = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
             Background = WindowBackgroundBrush,
-            Content = new Border
-            {
-                Background = CardBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Padding = new Thickness(20),
-                Margin = new Thickness(16),
-                Child = inner
-            }
+            Content = CreateDialogSurface(inner)
         };
 
         dialog.Opened += (_, _) => { hexInput.Focus(); hexInput.SelectAll(); };

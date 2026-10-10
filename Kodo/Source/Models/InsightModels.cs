@@ -171,7 +171,7 @@ public sealed class InsightSuggestion : ICompletionData
         {
             Width = 22,
             Height = 22,
-            CornerRadius = new CornerRadius(7),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Background = GlyphBrushes[Kind],
             BorderBrush = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)),
             BorderThickness = new Thickness(1),

@@ -33,6 +33,7 @@ internal sealed class CompilerRunWindow : Window
     private readonly string _commandDisplay;
     private readonly Color _accent;
     private readonly Color _accentForeground;
+    private readonly DialogThemePalette _palette;
     private TextBlock _statusText = null!;
     private Button _rerunButton = null!;
 
@@ -42,13 +43,26 @@ internal sealed class CompilerRunWindow : Window
         set => _terminal.Keybinds = value;
     }
 
-    public CompilerRunWindow(string title, string commandDisplay, string exePath, string arguments, string workingDirectory)
+    public CompilerRunWindow(
+        string title,
+        string commandDisplay,
+        string exePath,
+        string arguments,
+        string workingDirectory,
+        Color terminalBackground,
+        Color terminalForeground,
+        Color accent,
+        Color accentForeground,
+        Color muted)
     {
         _commandDisplay = commandDisplay;
         _exePath = exePath;
         _arguments = arguments;
         _workingDirectory = workingDirectory;
-        (_accent, _accentForeground) = AccentResolver.GetCurrentAccent();
+        _accent = accent;
+        _accentForeground = accentForeground;
+        _palette = ThemeResolver.GetCurrentPalette();
+        _terminal.ApplyKodoTheme(terminalBackground, terminalForeground, accent, muted);
 
         Title = title;
         Width = 780;
@@ -56,8 +70,17 @@ internal sealed class CompilerRunWindow : Window
         MinWidth = 480;
         MinHeight = 300;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        Background = new SolidColorBrush(DialogPalette.Surface);
-        Content = BuildContent();
+        Background = new SolidColorBrush(_palette.Background);
+        Content = new Border
+        {
+            Background = new SolidColorBrush(_palette.SurfaceDeep),
+            BorderBrush = new SolidColorBrush(_palette.Border),
+            BorderThickness = new Thickness(1),
+            CornerRadius = KodoDesignTokens.CardRadius,
+            Margin = new Thickness(16),
+            ClipToBounds = true,
+            Child = BuildContent(),
+        };
 
         Opened += OnOpened;
         Closed += (_, _) => _terminal.Stop();
@@ -69,7 +92,7 @@ internal sealed class CompilerRunWindow : Window
         {
             Text = "Starting...",
             FontSize = 12,
-            Foreground = new SolidColorBrush(DialogPalette.TextMuted),
+            Foreground = new SolidColorBrush(_palette.TextMuted),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
         };
@@ -81,7 +104,7 @@ internal sealed class CompilerRunWindow : Window
             Background = new SolidColorBrush(_accent),
             Foreground = new SolidColorBrush(_accentForeground),
             BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Focusable = false,
         };
         _rerunButton.Click += (_, _) => RunCommand();
@@ -90,11 +113,11 @@ internal sealed class CompilerRunWindow : Window
         {
             Content = "Exit",
             Padding = new Thickness(14, 6),
-            Background = new SolidColorBrush(DialogPalette.BadgeBg),
-            Foreground = new SolidColorBrush(DialogPalette.TextMuted),
-            BorderBrush = new SolidColorBrush(DialogPalette.Border),
+            Background = new SolidColorBrush(_palette.BadgeBg),
+            Foreground = new SolidColorBrush(_palette.TextMuted),
+            BorderBrush = new SolidColorBrush(_palette.Border),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Focusable = false,
         };
         exitButton.Click += (_, _) => Close();
@@ -104,7 +127,7 @@ internal sealed class CompilerRunWindow : Window
             Text = _commandDisplay,
             FontSize = 13,
             FontWeight = FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(DialogPalette.Text),
+            Foreground = new SolidColorBrush(_palette.Text),
             TextTrimming = TextTrimming.CharacterEllipsis,
             VerticalAlignment = VerticalAlignment.Center,
         };
@@ -120,8 +143,8 @@ internal sealed class CompilerRunWindow : Window
 
         var header = new Border
         {
-            Background = new SolidColorBrush(DialogPalette.SurfaceDeep),
-            BorderBrush = new SolidColorBrush(DialogPalette.Border),
+            Background = new SolidColorBrush(_palette.Background),
+            BorderBrush = new SolidColorBrush(_palette.Border),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Padding = new Thickness(12, 8),
             Child = new Grid
@@ -131,7 +154,7 @@ internal sealed class CompilerRunWindow : Window
                 {
                     new Border
                     {
-                        Width = 4,
+                        Width = 3,
                         Height = 28,
                         CornerRadius = new CornerRadius(2),
                         Background = new SolidColorBrush(_accent),

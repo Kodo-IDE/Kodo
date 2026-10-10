@@ -61,7 +61,7 @@ internal sealed class UpdateDialog : Window
         var iconBadge = new Border
         {
             Background = new SolidColorBrush(_accentColor),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Width = 40, Height = 40,
             Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
@@ -89,7 +89,7 @@ internal sealed class UpdateDialog : Window
 
         _progressBar = new ProgressBar { Minimum = 0, Maximum = 1, Value = 0, Height = 8, IsVisible = false, Foreground = new SolidColorBrush(_accentColor), Background = new SolidColorBrush(_palette.BadgeBg), CornerRadius = new CornerRadius(4) };
 
-        _laterButton = new Button { Content = "Later", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 8), Background = new SolidColorBrush(_palette.BadgeBg), Foreground = new SolidColorBrush(_palette.TextMuted), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
+        _laterButton = new Button { Content = "Later", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 8), Background = new SolidColorBrush(_palette.BadgeBg), Foreground = new SolidColorBrush(_palette.TextMuted), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.ControlRadius };
         _laterButton.Click += (_, _) => Close();
 
         _primaryButton = new Button
@@ -101,7 +101,7 @@ internal sealed class UpdateDialog : Window
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
             Foreground = new SolidColorBrush(_accentForeground),
-            BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0), CornerRadius = KodoDesignTokens.ControlRadius,
         };
         _primaryButton.Click += async (_, _) => await OnPrimaryClickAsync();
 
@@ -116,7 +116,7 @@ internal sealed class UpdateDialog : Window
         var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
 
         var content = new StackPanel { Spacing = 12, Children = { headerRow, headerDivider, _statusText, notesLink, _progressBar, footerDivider, buttonRow } };
-        Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
+        Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.CardRadius, Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
     }
 
     protected override void OnClosing(WindowClosingEventArgs e) { if (!_canClose) e.Cancel = true; base.OnClosing(e); }
@@ -164,7 +164,7 @@ internal sealed class UpdateDialog : Window
         var iconBadge = new Border
         {
             Background = new SolidColorBrush(_accentColor),
-            CornerRadius = new CornerRadius(8),
+            CornerRadius = KodoDesignTokens.ControlRadius,
             Width = 40, Height = 40,
             Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
@@ -194,7 +194,7 @@ internal sealed class UpdateDialog : Window
 
         _progressBar = new ProgressBar { Minimum = 0, Maximum = 1, Value = 0, Height = 8, IsVisible = false, Foreground = new SolidColorBrush(_accentColor), Background = new SolidColorBrush(_palette.BadgeBg), CornerRadius = new CornerRadius(4) };
 
-        _laterButton = new Button { Content = "Later", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 8), Background = new SolidColorBrush(_palette.BadgeBg), Foreground = new SolidColorBrush(_palette.TextMuted), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8) };
+        _laterButton = new Button { Content = "Later", HorizontalAlignment = HorizontalAlignment.Left, Padding = new Thickness(16, 8), Background = new SolidColorBrush(_palette.BadgeBg), Foreground = new SolidColorBrush(_palette.TextMuted), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.ControlRadius };
         _laterButton.Click += (_, _) => Close();
 
         _primaryButton = new Button
@@ -204,7 +204,7 @@ internal sealed class UpdateDialog : Window
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
             Foreground = new SolidColorBrush(_accentForeground),
-            BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(0), CornerRadius = KodoDesignTokens.ControlRadius,
         };
         _primaryButton.Click += async (_, _) => await OnPrimaryClickAsync();
 
@@ -219,7 +219,7 @@ internal sealed class UpdateDialog : Window
         var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
 
         var content = new StackPanel { Spacing = 12, Children = { headerRow, headerDivider, _statusText, notesLink, _progressBar, footerDivider, buttonRow } };
-        Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(12), Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
+        Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.CardRadius, Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
     }
 
     private async Task OnPrimaryClickAsync()

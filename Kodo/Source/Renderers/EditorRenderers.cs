@@ -475,8 +475,8 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
 
 internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 {
-    public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.18);
-    public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(Color.Parse("#E5484D"), 0.40);
+    public IBrush LineHighlightBrush { get; set; } = new SolidColorBrush(KodoDesignTokens.DangerColor, 0.18);
+    public IBrush StripeRedBrush { get; set; } = new SolidColorBrush(KodoDesignTokens.DangerColor, 0.40);
     public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
     public IBrush WarningHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#CCA700"), 0.18);
     public IBrush InfoHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#3794FF"), 0.14);
