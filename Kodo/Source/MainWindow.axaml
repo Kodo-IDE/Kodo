@@ -958,6 +958,7 @@
                         </Viewbox>
                     </Button>
                     <Button Classes="activity"
+                            Classes.active="{Binding IsFileExplorerVisible}"
                             Click="CollapseExplorerButton_OnClick"
                             ToolTip.Tip="{Binding ToggleExplorerTooltip}"
                             IsVisible="{Binding IsFolderOpen}">
