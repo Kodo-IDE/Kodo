@@ -76,6 +76,8 @@ internal sealed class AppSettings
 
     public Dictionary<string, string> CustomKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    public HashSet<string> DisabledKeybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
     public HashSet<string> DismissedDiagnostics { get; set; } = new(StringComparer.Ordinal);
 
     public bool LspEnabled { get; set; } = true;

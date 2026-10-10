@@ -5229,6 +5229,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
         new("GoToDefinition",    "Go to Definition",        new KeyGesture(Key.F12, KeyModifiers.None),                         "Editor"),
         new("ToggleLineComment",  "Toggle line comment",     new KeyGesture(Key.Oem2, KeyModifiers.Control),                     "Editor"),
+        new("MoveLineUp",         "Move line up",            new KeyGesture(Key.Up, KeyModifiers.Alt),                             "Editor"),
+        new("MoveLineDown",       "Move line down",          new KeyGesture(Key.Down, KeyModifiers.Alt),                           "Editor"),
+        new("DuplicateLineUp",    "Duplicate line up",       new KeyGesture(Key.Up, KeyModifiers.Alt | KeyModifiers.Shift),         "Editor"),
+        new("DuplicateLineDown",  "Duplicate line down",     new KeyGesture(Key.Down, KeyModifiers.Alt | KeyModifiers.Shift),       "Editor"),
+        new("DeleteLine",         "Delete line",             new KeyGesture(Key.K, KeyModifiers.Control | KeyModifiers.Shift),      "Editor"),
+        new("InsertLineAbove",    "Insert line above",       new KeyGesture(Key.Enter, KeyModifiers.Control | KeyModifiers.Shift), "Editor"),
+        new("InsertLineBelow",    "Insert line below",       new KeyGesture(Key.Enter, KeyModifiers.Control),                      "Editor"),
+        new("ChangeAllOccurrences","Change all occurrences", new KeyGesture(Key.L, KeyModifiers.Control | KeyModifiers.Shift),      "Editor"),
+        new("GoToLine",           "Go to line",              new KeyGesture(Key.G, KeyModifiers.Control),                         "Editor"),
+        new("ToggleHighlightCurrentLine", "Toggle current line highlight", new KeyGesture(Key.K, KeyModifiers.Control | KeyModifiers.Alt), "Editor"),
         new("ScrollEditorLeft",     "Scroll editor left",         new KeyGesture(Key.Left, KeyModifiers.Alt),                      "Editor"),
         new("ScrollEditorRight",    "Scroll editor right",        new KeyGesture(Key.Right, KeyModifiers.Alt),                     "Editor"),
         new("ScrollEditorPageLeft", "Scroll editor left (page)",  new KeyGesture(Key.PageUp, KeyModifiers.Alt),                     "Editor"),
@@ -5249,6 +5259,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private Dictionary<string, KeyGesture> _keybinds = new(StringComparer.OrdinalIgnoreCase);
 
+    private HashSet<string> _disabledKeybinds = new(StringComparer.OrdinalIgnoreCase);
+
     private static string SerializeGesture(KeyGesture gesture) => $"{gesture.KeyModifiers}|{gesture.Key}";
 
     private static KeyGesture? DeserializeGesture(string? raw)
@@ -5268,6 +5280,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InitializeKeybinds(AppSettings settings)
     {
         _keybinds = new Dictionary<string, KeyGesture>(StringComparer.OrdinalIgnoreCase);
+        _disabledKeybinds = settings.DisabledKeybinds is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(settings.DisabledKeybinds, StringComparer.OrdinalIgnoreCase);
         foreach (var def in KeybindDefinitions)
         {
             var gesture = def.Default;
@@ -5296,6 +5311,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
         return result;
+    }
+
+    private HashSet<string> BuildDisabledKeybindsSnapshot() =>
+        new(_disabledKeybinds, StringComparer.OrdinalIgnoreCase);
+
+    private bool IsKeybindEnabled(string id) => !_disabledKeybinds.Contains(id);
+
+    private void SetKeybindEnabled(string id, bool enabled)
+    {
+        if (enabled) _disabledKeybinds.Remove(id);
+        else _disabledKeybinds.Add(id);
+        SaveSettings();
     }
 
     private static string FormatGesture(KeyGesture gesture)
@@ -5354,6 +5381,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string ZoomInTooltip => $"Zoom in ({ShortcutText("ZoomIn")})";
 
     private bool MatchesKeybind(KeyEventArgs e, string id) =>
+        !_disabledKeybinds.Contains(id) &&
         _keybinds.TryGetValue(id, out var gesture) &&
         e.Key == gesture.Key && e.KeyModifiers == gesture.KeyModifiers;
 
@@ -5470,6 +5498,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CompilerOverrides = new Dictionary<string, string>(_compilerOverrides, StringComparer.OrdinalIgnoreCase),
             CustomBuildScripts = new Dictionary<string, string>(_customBuildScripts, StringComparer.OrdinalIgnoreCase),
             CustomKeybinds = BuildCustomKeybindsSnapshot(),
+            DisabledKeybinds = BuildDisabledKeybindsSnapshot(),
             LspEnabled = _lspEnabled,
             LspCompletionEnabled = _lspCompletionEnabled,
             LspHoverEnabled = _lspHoverEnabled,
@@ -6877,7 +6906,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var editableGrid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("140,*,Auto,Auto"),
+            ColumnDefinitions = new ColumnDefinitions("150,*,78,70,92"),
             RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
         };
 
@@ -6951,6 +6980,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var gestureTextBlocks = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
         var editButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
         var resetButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+        var toggleButtons = new Dictionary<string, Button>(StringComparer.OrdinalIgnoreCase);
+
+        Button MakeRowButton(string content, string tooltip)
+        {
+            var button = new Button
+            {
+                Content = content,
+                FontSize = 11,
+                Padding = new Thickness(8, 3),
+                Margin = new Thickness(0, 0, 6, 6),
+                Background = ButtonBrush,
+                Foreground = PrimaryTextBrush,
+                BorderThickness = new Thickness(0),
+                CornerRadius = new CornerRadius(5),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+            ToolTip.SetTip(button, tooltip);
+            return button;
+        }
 
         void RefreshRow(string id)
         {
@@ -6959,7 +7007,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var def = KeybindDefinitions.First(d => d.Id == id);
             var isCustom = _keybinds[id].Key != def.Default.Key || _keybinds[id].KeyModifiers != def.Default.KeyModifiers;
             if (resetButtons.TryGetValue(id, out var rb))
-                rb.IsVisible = isCustom;
+            {
+                rb.IsVisible = isCustom || !IsKeybindEnabled(id);
+                rb.Foreground = MutedTextBrush;
+            }
+            if (toggleButtons.TryGetValue(id, out var tb2))
+            {
+                var enabled = IsKeybindEnabled(id);
+                tb2.Content = enabled ? "Enabled" : "Disabled";
+                tb2.Foreground = enabled ? PrimaryTextBrush : AccentForegroundBrush;
+                tb2.Background = enabled ? ButtonBrush : new SolidColorBrush(Color.Parse("#E5484D"), 0.16);
+                ToolTip.SetTip(tb2, enabled ? "Disable this shortcut" : "Enable this shortcut");
+            }
         }
 
         void UpdateStatus(string? message)
@@ -7021,32 +7080,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Margin = new Thickness(12, 0, 0, 6),
             };
 
-            var editButton = new Button
-            {
-                Content = "Edit",
-                FontSize = 11,
-                Padding = new Thickness(10, 3),
-                Margin = new Thickness(0, 0, 6, 6),
-                Background = ButtonBrush,
-                Foreground = PrimaryTextBrush,
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(5),
-            };
+            var editButton = MakeRowButton("Edit", "Change this shortcut");
             editButtons[def.Id] = editButton;
 
-            var resetButton = new Button
-            {
-                Content = "Reset",
-                FontSize = 11,
-                Padding = new Thickness(10, 3),
-                Margin = new Thickness(0, 0, 0, 6),
-                Background = ButtonBrush,
-                Foreground = MutedTextBrush,
-                BorderThickness = new Thickness(0),
-                CornerRadius = new CornerRadius(5),
-                IsVisible = _keybinds[def.Id].Key != def.Default.Key || _keybinds[def.Id].KeyModifiers != def.Default.KeyModifiers,
-            };
+            var resetButton = MakeRowButton("Reset", "Restore the default shortcut and re-enable it");
+            resetButton.IsVisible = _keybinds[def.Id].Key != def.Default.Key || _keybinds[def.Id].KeyModifiers != def.Default.KeyModifiers;
             resetButtons[def.Id] = resetButton;
+
+            var toggleButton = MakeRowButton(
+                IsKeybindEnabled(def.Id) ? "Enabled" : "Disabled",
+                IsKeybindEnabled(def.Id) ? "Disable this shortcut" : "Enable this shortcut");
+            toggleButtons[def.Id] = toggleButton;
+
+            toggleButton.Click += (_, _) =>
+            {
+                SetKeybindEnabled(def.Id, !IsKeybindEnabled(def.Id));
+                RefreshRow(def.Id);
+            };
 
             editButton.Click += (_, _) =>
             {
@@ -7065,6 +7115,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 CancelCapture();
                 _keybinds[def.Id] = def.Default;
+                _disabledKeybinds.Remove(def.Id);
                 RefreshRow(def.Id);
                 SaveSettings(immediate: true);
             };
@@ -7078,10 +7129,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Grid.SetColumn(editButton, 2);
             Grid.SetRow(resetButton, i);
             Grid.SetColumn(resetButton, 3);
+            Grid.SetRow(toggleButton, i);
+            Grid.SetColumn(toggleButton, 4);
             editableGrid.Children.Add(gestureBorder);
             editableGrid.Children.Add(descText);
             editableGrid.Children.Add(editButton);
             editableGrid.Children.Add(resetButton);
+            editableGrid.Children.Add(toggleButton);
         }
 
         var sectionDivider = new Border
@@ -7092,10 +7146,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Margin = new Thickness(0, 4),
         };
 
+        var columnHeader = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("150,*,78,70,92"),
+            Margin = new Thickness(0, 0, 0, 2),
+        };
+        var columnHeaderLabels = new[] { "Shortcut", "Action", "Edit", "Reset", "State" };
+        for (var column = 0; column < columnHeaderLabels.Length; column++)
+        {
+            var header = new TextBlock
+            {
+                Text = columnHeaderLabels[column],
+                FontSize = 10,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = MutedTextBrush,
+                LetterSpacing = 0.3,
+                Opacity = 0.8,
+                Margin = new Thickness(column == 1 ? 12 : 0, 0, 0, 4),
+            };
+            if (column >= 2) header.HorizontalAlignment = HorizontalAlignment.Center;
+            Grid.SetColumn(header, column);
+            columnHeader.Children.Add(header);
+        }
+
         var innerStack = new StackPanel
         {
             Spacing = 2,
-            Children = { editableHeader, editableGrid, sectionDivider, otherHeader, fixedGrid },
+            Children = { editableHeader, columnHeader, editableGrid, sectionDivider, otherHeader, fixedGrid },
         };
 
         var scroll = new ScrollViewer
@@ -7161,9 +7238,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         dialog = new Window
         {
             Title = "Kodo - Keyboard Shortcuts",
-            Width = 560,
+            Width = 680,
             SizeToContent = SizeToContent.Height,
-            MinWidth = 440,
+            MinWidth = 560,
             MaxHeight = 720,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,

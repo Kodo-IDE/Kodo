@@ -1957,7 +1957,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
         switch (e.Key)
         {
-            case Key.Enter when IsSmartSyntaxEnabled() && (e.KeyModifiers & KeyModifiers.Shift) != KeyModifiers.Shift:
+            case Key.Enter when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.None:
                 HandleSmartEnter(doc, caret);
                 e.Handled = true;
                 return;
@@ -1987,11 +1987,237 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
         }
 
+        if (TryHandleEditorLineAndNavigationKeys(e))
+            return;
+
         if (IsSmartSyntaxEnabled() && MatchesKeybind(e, "ToggleLineComment"))
         {
             ToggleLineComment(doc, textArea, textArea.Selection, caret);
             e.Handled = true;
         }
+    }
+
+    private bool TryHandleEditorLineAndNavigationKeys(KeyEventArgs e)
+    {
+        var textArea = EditorTextBox?.TextArea;
+        var doc = EditorTextBox?.Document;
+        if (textArea is null || doc is null) return false;
+
+        if (MatchesKeybind(e, "MoveLineUp")) { EditorMoveLines(doc, textArea, -1); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "MoveLineDown")) { EditorMoveLines(doc, textArea, 1); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "DuplicateLineUp")) { EditorDuplicateLines(doc, textArea, -1); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "DuplicateLineDown")) { EditorDuplicateLines(doc, textArea, 1); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "DeleteLine")) { EditorDeleteLines(doc, textArea); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "InsertLineAbove")) { EditorInsertLine(doc, textArea, false); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "InsertLineBelow")) { EditorInsertLine(doc, textArea, true); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "ChangeAllOccurrences")) { EditorChangeAllOccurrencesMenuItem_OnClick(null, null!); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "GoToLine")) { _ = EditorGoToLineAsync(doc, textArea); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "ToggleHighlightCurrentLine")) { EditorToggleHighlightCurrentLine(); e.Handled = true; return true; }
+        return false;
+    }
+
+    private void EditorInvalidateEditorLayers()
+    {
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (textView is null) return;
+        textView.InvalidateLayer(KnownLayer.Background);
+        textView.InvalidateLayer(KnownLayer.Text);
+    }
+
+    private (int First, int Last) EditorGetLineOperationRange(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
+    {
+        var selection = textArea.Selection;
+        if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+        {
+            var first = doc.GetLineByOffset(selection.SurroundingSegment.Offset).LineNumber;
+            var last = doc.GetLineByOffset(selection.SurroundingSegment.EndOffset).LineNumber;
+            return (first, last);
+        }
+
+        var caret = textArea.Caret;
+        if (caret is null) return (-1, -1);
+        var line = doc.GetLineByOffset(Math.Clamp(caret.Offset, 0, doc.TextLength));
+        return (line.LineNumber, line.LineNumber);
+    }
+
+    private void EditorRestoreLineSelection(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, int firstLine, int lastLine)
+    {
+        var clampedFirst = Math.Clamp(firstLine, 1, doc.LineCount);
+        var clampedLast = Math.Clamp(lastLine, clampedFirst, doc.LineCount);
+        var startLine = doc.GetLineByNumber(clampedFirst);
+        var endLine = doc.GetLineByNumber(clampedLast);
+        var start = startLine.Offset;
+        var end = clampedLast >= doc.LineCount ? endLine.EndOffset : endLine.Offset;
+        SetCaretOffsetSafely(textArea.Caret, doc, start);
+        textArea.Caret.Offset = Math.Clamp(end, start, doc.TextLength);
+    }
+
+    private void EditorMoveLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, int direction)
+    {
+        var (first, last) = EditorGetLineOperationRange(doc, textArea);
+        if (first < 0) return;
+        if (direction < 0 && first == 1) return;
+        if (direction > 0 && last >= doc.LineCount) return;
+
+        doc.UndoStack.StartUndoGroup();
+        try
+        {
+            if (direction > 0)
+            {
+                var block = doc.GetLineByNumber(last + 1);
+                var text = doc.GetText(block);
+                doc.Remove(block.Offset, block.TotalLength);
+                doc.Insert(doc.GetLineByNumber(first).Offset, text);
+            }
+            else
+            {
+                var block = doc.GetLineByNumber(first);
+                var text = doc.GetText(block);
+                doc.Remove(block.Offset, block.TotalLength);
+                doc.Insert(doc.GetLineByNumber(last).Offset + doc.GetLineByNumber(last).Length, text);
+            }
+        }
+        finally
+        {
+            doc.UndoStack.EndUndoGroup();
+        }
+
+        EditorRestoreLineSelection(doc, textArea, first + direction, last + direction);
+        EditorInvalidateEditorLayers();
+    }
+
+    private void EditorDuplicateLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, int direction)
+    {
+        var (first, last) = EditorGetLineOperationRange(doc, textArea);
+        if (first < 0) return;
+        var span = last - first + 1;
+        var startOffset = doc.GetLineByNumber(first).Offset;
+        var endOffset = doc.GetLineByNumber(last).EndOffset;
+        var text = doc.GetText(startOffset, endOffset - startOffset);
+        var insertOffset = direction > 0
+            ? doc.GetLineByNumber(last).EndOffset
+            : doc.GetLineByNumber(first).Offset;
+
+        doc.UndoStack.StartUndoGroup();
+        try
+        {
+            doc.Insert(insertOffset, text);
+        }
+        finally
+        {
+            doc.UndoStack.EndUndoGroup();
+        }
+
+        EditorRestoreLineSelection(doc, textArea,
+            direction > 0 ? last + 1 : first,
+            direction > 0 ? last + span : first);
+        EditorInvalidateEditorLayers();
+    }
+
+    private void EditorDeleteLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
+    {
+        var (first, last) = EditorGetLineOperationRange(doc, textArea);
+        if (first < 0) return;
+
+        doc.UndoStack.StartUndoGroup();
+        try
+        {
+            if (first == 1 && last >= doc.LineCount)
+            {
+                doc.Text = string.Empty;
+            }
+            else if (last >= doc.LineCount)
+            {
+                doc.Remove(doc.GetLineByNumber(first).Offset, doc.TextLength - doc.GetLineByNumber(first).Offset);
+            }
+            else
+            {
+                var start = doc.GetLineByNumber(first).Offset;
+                var end = doc.GetLineByNumber(last + 1).Offset;
+                doc.Remove(start, end - start);
+            }
+        }
+        finally
+        {
+            doc.UndoStack.EndUndoGroup();
+        }
+
+        if (doc.TextLength == 0)
+        {
+            textArea.ClearSelection();
+            SetCaretOffsetSafely(textArea.Caret, doc, 0);
+        }
+        else
+        {
+            var target = Math.Min(first, doc.LineCount);
+            var line = doc.GetLineByNumber(target);
+            SetCaretOffsetSafely(textArea.Caret, doc, Math.Clamp(line.Offset, 0, doc.TextLength));
+        }
+
+        EditorInvalidateEditorLayers();
+    }
+
+    private void EditorInsertLine(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, bool below)
+    {
+        var caret = textArea.Caret;
+        if (caret is null) return;
+        var line = doc.GetLineByOffset(Math.Clamp(caret.Offset, 0, doc.TextLength));
+        var offset = below ? line.EndOffset : line.Offset;
+
+        doc.UndoStack.StartUndoGroup();
+        try
+        {
+            doc.Insert(offset, Environment.NewLine);
+        }
+        finally
+        {
+            doc.UndoStack.EndUndoGroup();
+        }
+
+        SetCaretOffsetSafely(caret, doc, offset + Environment.NewLine.Length);
+        EditorInvalidateEditorLayers();
+    }
+
+    private async Task EditorGoToLineAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
+    {
+        var answer = await ShowTextInputDialogAsync("Go to line", $"Line number (1-{doc.LineCount}):", string.Empty).ConfigureAwait(true);
+        if (string.IsNullOrWhiteSpace(answer)) return;
+        if (!int.TryParse(answer.Trim(), out var requested)) return;
+        var lineNumber = Math.Clamp(requested, 1, doc.LineCount);
+        var line = doc.GetLineByNumber(lineNumber);
+        textArea.ClearSelection();
+        SetCaretOffsetSafely(textArea.Caret, doc, line.Offset);
+        EditorTextBox?.Focus();
+        EditorInvalidateEditorLayers();
+    }
+
+    private bool _isHighlightCurrentLineEnabled = true;
+
+    public bool IsHighlightCurrentLineEnabled => _isHighlightCurrentLineEnabled;
+
+    private void EditorToggleHighlightCurrentLine()
+    {
+        _isHighlightCurrentLineEnabled = !_isHighlightCurrentLineEnabled;
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (textView is not null)
+        {
+            textView.CurrentLineBackground = _isHighlightCurrentLineEnabled
+                ? EditorBuildCurrentLineBrush()
+                : null;
+        }
+        OnPropertyChanged(nameof(IsHighlightCurrentLineEnabled));
+        EditorInvalidateEditorLayers();
+    }
+
+    private Avalonia.Media.IBrush EditorBuildCurrentLineBrush()
+    {
+        var baseColor = GetTerminalThemeColor(EditorBackgroundBrush, Color.Parse("#121118"));
+        var overlay = Color.FromArgb(
+            (byte)0x16,
+            (byte)Math.Min(baseColor.R + 0x18, 255),
+            (byte)Math.Min(baseColor.G + 0x18, 255),
+            (byte)Math.Min(baseColor.B + 0x18, 255));
+        return new SolidColorBrush(overlay);
     }
 
     private bool IsEditorKeyEvent(KeyEventArgs e)
