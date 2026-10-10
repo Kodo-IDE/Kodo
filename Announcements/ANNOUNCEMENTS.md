@@ -71,8 +71,3 @@ This patch fixes a missing toolbar and features minor lag improvements.
 > September 8, 2026
 As a thank you, check out the new Arduino extension available in the Marketplace. Thanks for all the support, and long may it continue!
 ---
-
-## v2.1.0 is here!
-> October 7, 2026
-Kodo now runs on Linux for x64 and ARM64, with native terminal support, adapted compiler/build tooling, and a cross-platform updater. This release also adds verified hotfixes with rollback, overhauls `.kox` extensions to v2.0.0 so language extensions can define their own language rules, and introduces language-server support through extensions. Editor and UI work includes a reworked status bar, file explorer tree, and editor/terminal tabs, alongside large performance gains.
----
