@@ -35,7 +35,6 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
-using AvaloniaEdit.Editing;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 using DiscordAssetsModel = DiscordRPC.Assets;
@@ -929,7 +928,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _userTimezoneOffset = settings.UserTimezoneOffset ?? string.Empty;
         _userName = settings.UserName ?? string.Empty;
         _lastSeenVersion = settings.LastSeenVersion ?? string.Empty;
-        _isTerminalVisible = false;
+        _isTerminalVisible = settings.TerminalVisible && IsTerminalSupported;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
             .Distinct(StringComparer.OrdinalIgnoreCase));
@@ -2210,6 +2209,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasFileOpen => _currentFilePath is not null;
 
     public bool IsFolderOpen => _currentFolderPath is not null;
+
+    public string? WorkspaceFolderPath => _currentFolderPath;
 
     public bool IsEmptyStateVisible => IsHomePageVisible || (IsEditorPageVisible && !HasDocumentOpen);
 
@@ -4978,7 +4979,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible),
         nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive),
         nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen),
-        nameof(HomeQuickSearchPlaceholderText), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
+        nameof(HomeQuickSearchPlaceholderText), nameof(WorkspaceFolderPath), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
         nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection),
         nameof(StatusBarDiagnosticsText), nameof(StatusBarDiagnosticsTooltip), nameof(HasDiagnostics), nameof(ExplorerHeaderText),
@@ -6408,6 +6409,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        ShowEditorPage();
+    }
+
+    public void ShowEditorPage()
     {
         NavigateTo(AppPage.Editor);
         FocusEditor();

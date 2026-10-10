@@ -50,9 +50,6 @@ public partial class MainWindow
             this.FindControl<ScrollViewer>("SettingsScrollViewer") is not { } scrollViewer)
             return;
 
-        // A filtered section can be hidden. Clear the filter so navigation always
-        // lands on a real target instead of asking BringIntoView to chase a hidden
-        // element through its ancestors.
         if (!target.IsVisible && !string.IsNullOrWhiteSpace(SettingsSearchText))
         {
             if (_searchFilterDebounceTimer.IsEnabled)
@@ -75,8 +72,6 @@ public partial class MainWindow
             if (position is not { } point)
                 return;
 
-            // TranslatePoint is viewport-relative, so add the current offset to
-            // obtain the target's stable position in the settings content.
             var targetOffset = Math.Max(0, scrollViewer.Offset.Y + point.Y - 12);
             _settingsNavigationTargetOffset = targetOffset;
             scrollViewer.Offset = new Vector(scrollViewer.Offset.X, targetOffset);

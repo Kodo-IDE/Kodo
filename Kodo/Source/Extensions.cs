@@ -1534,6 +1534,17 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
     }
 
+    public KodoHighlightingDefinition? GetSyntaxHighlightingForPath(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return null;
+        var extension = GetLanguageExtension(filePath);
+        if (extension is null) return null;
+        if (_highlightingCache.TryGetValue(extension, out var definition)) return definition;
+        definition = new KodoHighlightingDefinition(extension, ResolveCompiledSyntaxProfile(extension));
+        _highlightingCache[extension] = definition;
+        return definition;
+    }
+
     private CompiledSyntaxProfile ResolveCompiledSyntaxProfile(LoadedExtension extension)
     {
         if (_compiledSyntaxProfileCache.TryGetValue(extension, out var cached))

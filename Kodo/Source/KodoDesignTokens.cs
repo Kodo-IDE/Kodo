@@ -4,7 +4,6 @@ using Avalonia.Media;
 
 namespace Kodo;
 
-/// <summary>Shared corner radii for Kodo controls and surfaces.</summary>
 public static class KodoDesignTokens
 {
     public static CornerRadius CompactRadius { get; } = new(6);
