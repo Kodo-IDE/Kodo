@@ -809,57 +809,57 @@ public partial class MainWindow
                             break;
                         }
 
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        throw new HttpRequestException($"Icon fetch failed with {(int)response.StatusCode} {response.ReasonPhrase}", null, response.StatusCode);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            throw new HttpRequestException($"Icon fetch failed with {(int)response.StatusCode} {response.ReasonPhrase}", null, response.StatusCode);
+                        }
+
+                        var bytes = await response.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
+
+                        if (bytes.Length == 0 || bytes.Length > 2 * 1024 * 1024)
+                        {
+                            KodoDiagnostics.LogDebug($"Icon for '{candidateUrl}' has invalid size {bytes.Length} - discarding.");
+                            break;
+                        }
+
+                        if (TryExtractIconFromGitHubJsonWrapper(bytes, out var unwrapped))
+                            bytes = unwrapped;
+
+                        var icon = DecodeCachedIconBytes(bytes);
+                        if (!icon.HasValue)
+                        {
+                            KodoDiagnostics.LogDebug($"Decoded icon has no value for '{candidateUrl}' (corrupted or unsupported) - not caching.");
+                            break;
+                        }
+
+                        _marketplaceIconBytesCache[iconUrl] = bytes;
+                        TryWriteIconToDiskCache(iconUrl, bytes);
+                        if (icon.SvgData is not null)
+                        {
+                            var svgData = _marketplaceSvgCache.GetOrAdd(iconUrl, icon.SvgData);
+                            return new IconResult(null, svgData);
+                        }
+                        return icon;
                     }
-
-                    var bytes = await response.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
-
-                    if (bytes.Length == 0 || bytes.Length > 2 * 1024 * 1024)
+                    catch (Exception ex) when (IsGitHubRateLimitException(ex))
                     {
-                        KodoDiagnostics.LogDebug($"Icon for '{candidateUrl}' has invalid size {bytes.Length} - discarding.");
+                        KodoDiagnostics.LogDebug($"Icon fetch rate-limited for '{candidateUrl}' - trying next candidate if any.", ex);
+                        lastRateLimitException = ex;
                         break;
                     }
-
-                    if (TryExtractIconFromGitHubJsonWrapper(bytes, out var unwrapped))
-                        bytes = unwrapped;
-
-                    var icon = DecodeCachedIconBytes(bytes);
-                    if (!icon.HasValue)
+                    catch (Exception ex) when (IsTransientIconFailure(ex) && HasActiveInternetConnection() && attempt < maxAttempts - 1)
                     {
-                        KodoDiagnostics.LogDebug($"Decoded icon has no value for '{candidateUrl}' (corrupted or unsupported) - not caching.");
+                        var delay = TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt) + Random.Shared.Next(0, 150));
+                        KodoDiagnostics.LogDebug($"Transient icon fetch failure for '{candidateUrl}' (attempt {attempt + 1}/{maxAttempts}): {ex.Message} - retrying in {delay.TotalMilliseconds:F0}ms");
+                        await Task.Delay(delay).ConfigureAwait(false);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        KodoDiagnostics.LogDebug($"Icon fetch failed for '{candidateUrl}' (will try next candidate if any): {ex.Message}");
                         break;
                     }
-
-                    _marketplaceIconBytesCache[iconUrl] = bytes;
-                    TryWriteIconToDiskCache(iconUrl, bytes);
-                    if (icon.SvgData is not null)
-                    {
-                        var svgData = _marketplaceSvgCache.GetOrAdd(iconUrl, icon.SvgData);
-                        return new IconResult(null, svgData);
-                    }
-                    return icon;
                 }
-                catch (Exception ex) when (IsGitHubRateLimitException(ex))
-                {
-                    KodoDiagnostics.LogDebug($"Icon fetch rate-limited for '{candidateUrl}' - trying next candidate if any.", ex);
-                    lastRateLimitException = ex;
-                    break;
-                }
-                catch (Exception ex) when (IsTransientIconFailure(ex) && HasActiveInternetConnection() && attempt < maxAttempts - 1)
-                {
-                    var delay = TimeSpan.FromMilliseconds(250 * Math.Pow(2, attempt) + Random.Shared.Next(0, 150));
-                    KodoDiagnostics.LogDebug($"Transient icon fetch failure for '{candidateUrl}' (attempt {attempt + 1}/{maxAttempts}): {ex.Message} - retrying in {delay.TotalMilliseconds:F0}ms");
-                    await Task.Delay(delay).ConfigureAwait(false);
-                    continue;
-                }
-                catch (Exception ex)
-                {
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for '{candidateUrl}' (will try next candidate if any): {ex.Message}");
-                    break;
-                }
-            }
             }
             if (lastRateLimitException != null)
             {

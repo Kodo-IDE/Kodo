@@ -123,15 +123,23 @@ public sealed class LangRulesAdapter
             .ToDictionary(g => g.Key, g => g.ToArray(), StringComparer.Ordinal);
         var supported = new Dictionary<string, bool>(StringComparer.Ordinal)
         {
-            ["Tokenize"] = _tokenize is not null, ["AnalyzeSymbols"] = _symbols is not null,
+            ["Tokenize"] = _tokenize is not null,
+            ["AnalyzeSymbols"] = _symbols is not null,
             ["GetCompletionsForPrefix"] = _completions is not null || _contextCompletions is not null,
-            ["GetAllRegexes"] = _regexes is not null, ["GetColorMap"] = _colors is not null,
-            ["AnalyzeSyntax"] = _diagnostics is not null, ["AnalyzeSemantics"] = _semantics is not null,
-            ["FindDefinition"] = _definition is not null, ["FindReferences"] = _references is not null,
-            ["GetHoverInfo"] = _hover is not null, ["GetSignatureHelp"] = _signature is not null,
-            ["GetCodeActions"] = _codeActions is not null, ["FormatDocument"] = _formatter is not null,
-            ["GetEmbeddedRegions"] = _embeddedRegions is not null, ["FindDefinitionAt"] = _positionDefinition is not null,
-            ["FindReferencesAt"] = _positionReferences is not null, ["GetHoverInfoAt"] = _positionHover is not null,
+            ["GetAllRegexes"] = _regexes is not null,
+            ["GetColorMap"] = _colors is not null,
+            ["AnalyzeSyntax"] = _diagnostics is not null,
+            ["AnalyzeSemantics"] = _semantics is not null,
+            ["FindDefinition"] = _definition is not null,
+            ["FindReferences"] = _references is not null,
+            ["GetHoverInfo"] = _hover is not null,
+            ["GetSignatureHelp"] = _signature is not null,
+            ["GetCodeActions"] = _codeActions is not null,
+            ["FormatDocument"] = _formatter is not null,
+            ["GetEmbeddedRegions"] = _embeddedRegions is not null,
+            ["FindDefinitionAt"] = _positionDefinition is not null,
+            ["FindReferencesAt"] = _positionReferences is not null,
+            ["GetHoverInfoAt"] = _positionHover is not null,
             ["GetCompletionsAt"] = _positionCompletions is not null
         };
         foreach (var pair in supported)

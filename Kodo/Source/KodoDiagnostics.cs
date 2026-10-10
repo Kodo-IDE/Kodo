@@ -339,22 +339,22 @@ internal static class KodoDiagnostics
         string? operation = null) =>
         WriteToLog(source, exception, isTerminating: false, KodoSeverity.Warning, operation);
 
-public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, string? detail = null) =>
-    ReportSlowStage(stage, elapsedMs, thresholdMs, () => detail);
+    public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, string? detail = null) =>
+        ReportSlowStage(stage, elapsedMs, thresholdMs, () => detail);
 
-public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, Func<string?> detailFactory)
-{
-    if (elapsedMs < thresholdMs) return;
-    try
+    public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, Func<string?> detailFactory)
     {
-        var detailText = detailFactory();
-        var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detailText) ? "" : " " + detailText)}";
-        EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
-        PushBreadcrumb(line);
-        WritePayloadToDisk(line, MainLogFilePath);
+        if (elapsedMs < thresholdMs) return;
+        try
+        {
+            var detailText = detailFactory();
+            var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detailText) ? "" : " " + detailText)}";
+            EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
+            PushBreadcrumb(line);
+            WritePayloadToDisk(line, MainLogFilePath);
+        }
+        catch { }
     }
-    catch { }
-}
 
     public static void LogDebug(string message, Exception? exception = null)
     {

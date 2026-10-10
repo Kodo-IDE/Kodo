@@ -180,7 +180,8 @@ internal static class LspInstallationManager
             var targetName = Path.GetFileName(expectedFileName);
             var targetWithoutExt = Path.GetFileNameWithoutExtension(targetName);
             var candidates = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
-                .Where(f => {
+                .Where(f =>
+                {
                     var name = Path.GetFileName(f);
                     return name.Equals(targetName, StringComparison.OrdinalIgnoreCase)
                         || Path.GetFileNameWithoutExtension(name).Equals(targetWithoutExt, StringComparison.OrdinalIgnoreCase);
@@ -1517,7 +1518,7 @@ internal static class LspServerResolver
             {
                 var m = System.Text.RegularExpressions.Regex.Match(s, @"v?(\d+\.\d+(?:\.\d+)?)");
                 if (m.Success) return m.Groups[1].Value;
-                return s.Trim().TrimStart('v','V').Split(' ')[0];
+                return s.Trim().TrimStart('v', 'V').Split(' ')[0];
             }
             var inst = Extract(installedRaw);
             var req = Extract(required);

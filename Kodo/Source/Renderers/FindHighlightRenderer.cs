@@ -9,6 +9,7 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 
 namespace Kodo.Models;
+
 internal sealed class FindHighlightRenderer : IBackgroundRenderer
 {
     private static readonly IBrush HighlightBrush = new SolidColorBrush(Color.FromArgb(80, 255, 210, 0));

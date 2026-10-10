@@ -337,9 +337,9 @@ public partial class MainWindow
                             var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, doc.TextLength);
                             var ch = off >= 0 && off < doc.TextLength ? doc.GetCharAt(off) : ' ';
                             var verbose = KodoDiagnostics.VerboseLoggingEnabled;
-                            var lineText = verbose && l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r","\\r").Replace("\n","\\n") : "";
+                            var lineText = verbose && l.Length > 0 ? doc.GetText(l.Offset, Math.Min(l.Length, 40)).Replace("\r", "\\r").Replace("\n", "\\n") : "";
                             var snippetFrom = Math.Max(0, off - 10);
-                            var snippet = verbose && doc.TextLength > 0 ? doc.GetText(snippetFrom, Math.Min(20, doc.TextLength - snippetFrom)).Replace("\n","\\n").Replace("\r","\\r") : "";
+                            var snippet = verbose && doc.TextLength > 0 ? doc.GetText(snippetFrom, Math.Min(20, doc.TextLength - snippetFrom)).Replace("\n", "\\n").Replace("\r", "\\r") : "";
                             var lspLine = f.Value.Line - 1;
                             var lspChar = Math.Max(0, off - l.Offset);
                             if (verbose)
@@ -1092,30 +1092,30 @@ public partial class MainWindow
         var doc = EditorTextBox.Document;
         var offset = caret.Offset;
         var selection = EditorTextBox.TextArea.Selection;
-            if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true) return;
-if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
+        if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true) return;
+        if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
+        {
+            var segment = selection.SurroundingSegment;
+            if (segment is not null)
             {
-                var segment = selection.SurroundingSegment;
-                if (segment is not null)
+                var selectedText = selection.GetText();
+                try
                 {
-                    var selectedText = selection.GetText();
-                    try
-                    {
-                        doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
-                    }
-                    catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
-                    {
-                        KodoDiagnostics.LogDebug("EditorTextArea_OnTextEntering: Visual line race suppressed", ex);
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            try { doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}"); } catch { }
-                        }, Avalonia.Threading.DispatcherPriority.Background);
-                    }
-                    caret.Offset = segment.Offset + selectedText.Length + 2;
-                    e.Handled = true;
-                    return;
+                    doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
                 }
+                catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                {
+                    KodoDiagnostics.LogDebug("EditorTextArea_OnTextEntering: Visual line race suppressed", ex);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        try { doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}"); } catch { }
+                    }, Avalonia.Threading.DispatcherPriority.Background);
+                }
+                caret.Offset = segment.Offset + selectedText.Length + 2;
+                e.Handled = true;
+                return;
             }
+        }
 
         var isPairOpener = BracketPairs.ContainsKey(ch);
 
@@ -1304,8 +1304,8 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
 
     private async void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-    if (await RunCodeActionsAsync(CodeActionScope.All).ConfigureAwait(false)) return;
-    await RunLangRuleFallbackAsync().ConfigureAwait(false);
+        if (await RunCodeActionsAsync(CodeActionScope.All).ConfigureAwait(false)) return;
+        await RunLangRuleFallbackAsync().ConfigureAwait(false);
     }
 
 
@@ -1718,7 +1718,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         _completionWindow = null;
     }
 
-     private async Task UpdateDeadCodeHighlightingAsync()
+    private async Task UpdateDeadCodeHighlightingAsync()
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
             EditorTextBox?.Document is null ||
@@ -2341,7 +2341,7 @@ if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing)
         }
     }
 
-private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
         try
         {
@@ -2503,7 +2503,7 @@ private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.
                     try { doc.Replace(segment, insertionText); } catch { }
                 }, Avalonia.Threading.DispatcherPriority.Background);
             }
-SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
+            SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
             return;
         }
 

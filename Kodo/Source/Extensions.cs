@@ -75,8 +75,8 @@ public partial class MainWindow
         });
     }
 
-private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
-{
+    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
+    {
         if (_isRefreshingExtensions)
             return;
 
@@ -1383,41 +1383,41 @@ private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressW
     {
         var clone = new LoadedExtension
         {
-        Id = src.Id,
-        Version = src.Version,
-        Name = src.Name,
-        Type = src.Type,
-        Author = src.Author,
-        Description = src.Description,
-        Extensions = src.Extensions,
-        Keywords = src.Keywords,
-        Types = src.Types,
-        Functions = src.Functions,
-        Properties = src.Properties,
-        Namespaces = src.Namespaces,
-        Blacklist = src.Blacklist,
-        DeadCodeIgnore = src.DeadCodeIgnore,
-        DeadCodeEntryPoints = src.DeadCodeEntryPoints,
-        CommentLine = src.CommentLine,
-        CommentBlockStart = src.CommentBlockStart,
-        CommentBlockEnd = src.CommentBlockEnd,
-        StringDelimiters = src.StringDelimiters.ToArray(),
-        MultiLineStringDelimiters = src.MultiLineStringDelimiters.ToArray(),
-        DisableSingleQuoteStrings = src.DisableSingleQuoteStrings,
-        ColorTokens = new Dictionary<string, string>(src.ColorTokens),
-        SourcePath = src.SourcePath,
-        IsDirectorySource = src.IsDirectorySource,
-        InstalledOnUtc = src.InstalledOnUtc,
-        PluginAssemblyFileName = src.PluginAssemblyFileName,
-        LanguagePluginAssemblyFileName = src.LanguagePluginAssemblyFileName,
-        EnableSemanticDiagnostics = src.EnableSemanticDiagnostics,
-        PluginFolderPath = src.PluginFolderPath,
-        LanguagePluginFolderPath = src.LanguagePluginFolderPath,
-        Lsp = src.Lsp,
-        LspStatus = src.LspStatus,
-        LspStatusMessage = src.LspStatusMessage,
-        IconImage = src.IconImage,
-        IconBytes = src.IconBytes,
+            Id = src.Id,
+            Version = src.Version,
+            Name = src.Name,
+            Type = src.Type,
+            Author = src.Author,
+            Description = src.Description,
+            Extensions = src.Extensions,
+            Keywords = src.Keywords,
+            Types = src.Types,
+            Functions = src.Functions,
+            Properties = src.Properties,
+            Namespaces = src.Namespaces,
+            Blacklist = src.Blacklist,
+            DeadCodeIgnore = src.DeadCodeIgnore,
+            DeadCodeEntryPoints = src.DeadCodeEntryPoints,
+            CommentLine = src.CommentLine,
+            CommentBlockStart = src.CommentBlockStart,
+            CommentBlockEnd = src.CommentBlockEnd,
+            StringDelimiters = src.StringDelimiters.ToArray(),
+            MultiLineStringDelimiters = src.MultiLineStringDelimiters.ToArray(),
+            DisableSingleQuoteStrings = src.DisableSingleQuoteStrings,
+            ColorTokens = new Dictionary<string, string>(src.ColorTokens),
+            SourcePath = src.SourcePath,
+            IsDirectorySource = src.IsDirectorySource,
+            InstalledOnUtc = src.InstalledOnUtc,
+            PluginAssemblyFileName = src.PluginAssemblyFileName,
+            LanguagePluginAssemblyFileName = src.LanguagePluginAssemblyFileName,
+            EnableSemanticDiagnostics = src.EnableSemanticDiagnostics,
+            PluginFolderPath = src.PluginFolderPath,
+            LanguagePluginFolderPath = src.LanguagePluginFolderPath,
+            Lsp = src.Lsp,
+            LspStatus = src.LspStatus,
+            LspStatusMessage = src.LspStatusMessage,
+            IconImage = src.IconImage,
+            IconBytes = src.IconBytes,
         };
         clone.Lsps.AddRange(src.Lsps);
         foreach (var kv in src.FeatureOverrides) clone.FeatureOverrides[kv.Key] = kv.Value;

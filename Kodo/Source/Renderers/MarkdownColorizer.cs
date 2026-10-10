@@ -11,6 +11,7 @@ using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
 namespace Kodo;
+
 public sealed class MarkdownColorizer : DocumentColorizingTransformer
 {
     public int TabSize { get; set; } = 4;

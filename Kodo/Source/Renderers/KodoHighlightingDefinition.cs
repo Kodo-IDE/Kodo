@@ -11,6 +11,7 @@ using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
 namespace Kodo;
+
 public sealed class KodoHighlightingDefinition : IHighlightingDefinition
 {
     private const string VariableIdentifierBodyPattern =

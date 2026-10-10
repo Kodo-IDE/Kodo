@@ -15,7 +15,8 @@ internal static class ThemeResolver
         var settings = LoadThemeSettings();
         return settings.ThemeName switch
         {
-            "Light" => LightPalette, "Dark" => DarkPalette,
+            "Light" => LightPalette,
+            "Dark" => DarkPalette,
 #pragma warning disable CA1416
             "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
 #pragma warning restore CA1416

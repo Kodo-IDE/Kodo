@@ -15,6 +15,7 @@ using AvaloniaEdit.Rendering;
 using AvaloniaEdit;
 
 namespace Kodo.Models;
+
 public sealed class LspInlayHintRenderer : VisualLineElementGenerator
 {
     private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));

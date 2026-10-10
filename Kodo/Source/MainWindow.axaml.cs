@@ -897,8 +897,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _lspPreferManaged = settings.LspPreferManaged;
         _lspPreferSystem = settings.LspPreferSystem;
         _lspInstallDir = settings.LspInstallDir;
-        foreach (var kv in settings.LspExecutableOverrides ?? new Dictionary<string,string>()) _lspExecutableOverrides[kv.Key] = kv.Value;
-        foreach (var kv in settings.LspDisabledLanguages ?? new Dictionary<string,bool>()) _lspDisabledLanguages[kv.Key] = kv.Value;
+        foreach (var kv in settings.LspExecutableOverrides ?? new Dictionary<string, string>()) _lspExecutableOverrides[kv.Key] = kv.Value;
+        foreach (var kv in settings.LspDisabledLanguages ?? new Dictionary<string, bool>()) _lspDisabledLanguages[kv.Key] = kv.Value;
         foreach (var id in settings.LspDismissedInstallPrompts ?? new HashSet<string>()) _lspDismissedInstallPrompts.Add(id);
         _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
         if (_isPerformanceModeEnabled)
@@ -1015,7 +1015,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         ApplyEditorSettings();
         Opened += MainWindow_OnOpened;
-    Activated += (_, _) => _stallWatchdog.Reset();
+        Activated += (_, _) => _stallWatchdog.Reset();
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
         RefreshState(fullRefresh: true);
@@ -5454,8 +5454,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             InsightCodeSuggestionsEnabled = IsInsightCodeSuggestionsEnabled,
             InsightDeadCodeEnabled = IsInsightDeadCodeEnabled,
             InsightErrorDetectionEnabled = IsInsightErrorDetectionEnabled,
-             InsightBlacklistExtensions = InsightBlacklistExtensions,
-             InsightErrorDeadCodeBlacklistExtensions = InsightErrorDeadCodeBlacklistExtensions,
+            InsightBlacklistExtensions = InsightBlacklistExtensions,
+            InsightErrorDeadCodeBlacklistExtensions = InsightErrorDeadCodeBlacklistExtensions,
             DismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
             TabSize = TabSize,
             InsertSpaces = InsertSpaces,

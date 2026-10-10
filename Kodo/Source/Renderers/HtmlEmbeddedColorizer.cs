@@ -11,6 +11,7 @@ using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
 namespace Kodo;
+
 internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 {
     private static readonly IBrush[] RainbowBrushes =

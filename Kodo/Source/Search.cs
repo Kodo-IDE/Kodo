@@ -963,18 +963,18 @@ public partial class MainWindow
             return;
 
         try
-{
-    EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
-}
-catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
-{
-    KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
-    Dispatcher.UIThread.Post(() =>
-    {
-        try { EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty); } catch { }
-    }, Avalonia.Threading.DispatcherPriority.Background);
-}
-FindInEditor(forward: true);
+        {
+            EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
+        }
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+        {
+            KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try { EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty); } catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        }
+        FindInEditor(forward: true);
     }
 
     private void ReplaceAllMatches()

@@ -185,7 +185,7 @@ internal sealed class LspClient : IDisposable
 
         if (useCmdWrapper)
         {
-                        psi.ArgumentList.Add("/c");
+            psi.ArgumentList.Add("/c");
             psi.ArgumentList.Add(cmdArgs);
             foreach (var arg in _config.Arguments)
                 psi.ArgumentList.Add(ExpandPlaceholder(arg));
@@ -364,10 +364,10 @@ internal sealed class LspClient : IDisposable
 
                 if (result.Value.TryGetProperty("capabilities", out var caps))
                 {
-                ServerCapabilities = caps.Clone();
-                if (caps.TryGetProperty("semanticTokensProvider", out var semanticProvider) && semanticProvider.ValueKind == JsonValueKind.Object &&
-                    semanticProvider.TryGetProperty("legend", out var legend) && legend.TryGetProperty("tokenTypes", out var tokenTypes) && tokenTypes.ValueKind == JsonValueKind.Array)
-                    SemanticTokenTypes = tokenTypes.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString() ?? string.Empty).ToArray();
+                    ServerCapabilities = caps.Clone();
+                    if (caps.TryGetProperty("semanticTokensProvider", out var semanticProvider) && semanticProvider.ValueKind == JsonValueKind.Object &&
+                        semanticProvider.TryGetProperty("legend", out var legend) && legend.TryGetProperty("tokenTypes", out var tokenTypes) && tokenTypes.ValueKind == JsonValueKind.Array)
+                        SemanticTokenTypes = tokenTypes.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString() ?? string.Empty).ToArray();
                 }
             }
 

@@ -193,13 +193,13 @@ public partial class MainWindow
                         installable.Add((ext, cfg, res));
                         break;
                     case LspServerSource.RuntimeMissing:
-                    {
-                        var runtime = cfg.Runtime ?? "required runtime";
-                        if (!blockedByRuntime.TryGetValue(runtime, out var langs))
-                            blockedByRuntime[runtime] = langs = new List<string>();
-                        langs.Add(ext.Name);
-                        break;
-                    }
+                        {
+                            var runtime = cfg.Runtime ?? "required runtime";
+                            if (!blockedByRuntime.TryGetValue(runtime, out var langs))
+                                blockedByRuntime[runtime] = langs = new List<string>();
+                            langs.Add(ext.Name);
+                            break;
+                        }
                     case LspServerSource.ManualRequired:
                         manualOnly.Add($"{ext.Name} ({cfg.DisplayName ?? cfg.EffectiveProviderId})");
                         break;
@@ -1632,7 +1632,7 @@ public partial class MainWindow
             string.Equals(EditorTextBox.Document.Text, text, StringComparison.Ordinal) &&
             EditorTextBox.TextArea.Caret.Offset == offset);
         if (!requestIsCurrent) return false;
-        if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array) 
+        if (result is null || result.Value.ValueKind == JsonValueKind.Null || result.Value.ValueKind != JsonValueKind.Array)
         {
             KodoDiagnostics.LogDebug($"LSP references response empty for {filePath}");
             return false;
@@ -2094,7 +2094,7 @@ public partial class MainWindow
         var locations = new List<(string targetUri, int sLine, int sChar, int eLine, int eChar)>();
         void AddLoc(JsonElement loc)
         {
-            if (!loc.TryGetProperty("uri", out var u)) 
+            if (!loc.TryGetProperty("uri", out var u))
             {
                 if (!loc.TryGetProperty("targetUri", out u)) return;
             }

@@ -482,9 +482,12 @@ internal static class HotfixShared
         {
             var rollback = Rollback(new HotfixRollbackRequest
             {
-                ManifestJson = request.ManifestJson, BackupDir = request.BackupDir,
-                TargetDir = request.TargetDir, StateFilePath = request.StateFilePath,
-                BaseVersion = manifest.BaseVersion, RestoreHotfixLevel = Math.Max(0, request.InstalledHotfixLevel),
+                ManifestJson = request.ManifestJson,
+                BackupDir = request.BackupDir,
+                TargetDir = request.TargetDir,
+                StateFilePath = request.StateFilePath,
+                BaseVersion = manifest.BaseVersion,
+                RestoreHotfixLevel = Math.Max(0, request.InstalledHotfixLevel),
                 RestoreLastKnownGood = Math.Max(0, request.PreviousLastKnownGood),
             }, log);
             return HotfixApplyResult.Fail(rollback.Success
@@ -501,9 +504,12 @@ internal static class HotfixShared
         {
             var rollback = Rollback(new HotfixRollbackRequest
             {
-                ManifestJson = request.ManifestJson, BackupDir = request.BackupDir,
-                TargetDir = request.TargetDir, StateFilePath = request.StateFilePath,
-                BaseVersion = manifest.BaseVersion, RestoreHotfixLevel = Math.Max(0, request.InstalledHotfixLevel),
+                ManifestJson = request.ManifestJson,
+                BackupDir = request.BackupDir,
+                TargetDir = request.TargetDir,
+                StateFilePath = request.StateFilePath,
+                BaseVersion = manifest.BaseVersion,
+                RestoreHotfixLevel = Math.Max(0, request.InstalledHotfixLevel),
                 RestoreLastKnownGood = Math.Max(0, request.PreviousLastKnownGood),
             }, log);
             return HotfixApplyResult.Fail(rollback.Success

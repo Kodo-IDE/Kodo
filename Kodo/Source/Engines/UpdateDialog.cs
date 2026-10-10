@@ -62,14 +62,18 @@ internal sealed class UpdateDialog : Window
         {
             Background = new SolidColorBrush(_accentColor),
             CornerRadius = KodoDesignTokens.ControlRadius,
-            Width = 40, Height = 40,
+            Width = 40,
+            Height = 40,
             Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
         var titleText = new TextBlock
         {
             Text = $"Kodo {update.Version} is available",
-            FontSize = 16, FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(_palette.Text), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 16,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(_palette.Text),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { iconBadge, titleText } };
 
@@ -82,7 +86,9 @@ internal sealed class UpdateDialog : Window
                     ? UpdateService.LinuxReadyBlurb(stagedInstallerPath)
                     : "Update downloaded and ready to install. Choose Restart & Update when you're ready.")
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
-            FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            Foreground = new SolidColorBrush(_palette.TextMuted),
+            TextWrapping = TextWrapping.Wrap,
         };
         var notesLink = new TextBlock { Text = "View release notes", FontSize = 12, Foreground = new SolidColorBrush(_accentColor), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
         notesLink.PointerPressed += (_, _) => OpenUrl(update.ReleaseNotesUrl);
@@ -101,7 +107,8 @@ internal sealed class UpdateDialog : Window
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
             Foreground = new SolidColorBrush(_accentForeground),
-            BorderThickness = new Thickness(0), CornerRadius = KodoDesignTokens.ControlRadius,
+            BorderThickness = new Thickness(0),
+            CornerRadius = KodoDesignTokens.ControlRadius,
         };
         _primaryButton.Click += async (_, _) => await OnPrimaryClickAsync();
 
@@ -165,14 +172,18 @@ internal sealed class UpdateDialog : Window
         {
             Background = new SolidColorBrush(_accentColor),
             CornerRadius = KodoDesignTokens.ControlRadius,
-            Width = 40, Height = 40,
+            Width = 40,
+            Height = 40,
             Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
         };
         var titleText = new TextBlock
         {
             Text = $"Critical Kodo {display} hotfix is available",
-            FontSize = 16, FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(_palette.Text), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 16,
+            FontWeight = Avalonia.Media.FontWeight.SemiBold,
+            Foreground = new SolidColorBrush(_palette.Text),
+            TextWrapping = TextWrapping.Wrap,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { iconBadge, titleText } };
 
@@ -187,7 +198,9 @@ internal sealed class UpdateDialog : Window
                 : stagedTxPath is not null && File.Exists(stagedTxPath)
                 ? "Hotfix downloaded and verified. Choose Restart & Update when you're ready."
                 : $"A critical hotfix for Kodo {display} is available and fixes an important issue. Download it now.",
-            FontSize = 13, Foreground = new SolidColorBrush(_palette.TextMuted), TextWrapping = TextWrapping.Wrap,
+            FontSize = 13,
+            Foreground = new SolidColorBrush(_palette.TextMuted),
+            TextWrapping = TextWrapping.Wrap,
         };
         var notesLink = new TextBlock { Text = "View release notes", FontSize = 12, Foreground = new SolidColorBrush(_accentColor), Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand) };
         notesLink.PointerPressed += (_, _) => OpenUrl(hotfix.ReleaseNotesUrl);
@@ -204,7 +217,8 @@ internal sealed class UpdateDialog : Window
             Padding = new Thickness(20, 8),
             Background = new SolidColorBrush(_accentColor),
             Foreground = new SolidColorBrush(_accentForeground),
-            BorderThickness = new Thickness(0), CornerRadius = KodoDesignTokens.ControlRadius,
+            BorderThickness = new Thickness(0),
+            CornerRadius = KodoDesignTokens.ControlRadius,
         };
         _primaryButton.Click += async (_, _) => await OnPrimaryClickAsync();
 
