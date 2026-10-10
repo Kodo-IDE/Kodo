@@ -448,8 +448,8 @@
 
         <Style Selector="Button.activity.active /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
-            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
         </Style>
         <Style Selector="Button.activity.active">
             <Setter Property="Foreground" Value="{Binding AccentBrush}" />
