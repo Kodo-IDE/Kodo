@@ -88,6 +88,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string PrivacyPolicyUrl = "https://github.com/Kodo-IDE/Kodo/blob/main/Policies/PRIVACY%20POLICY.txt";
     private const string DiscordServerUrl = "https://discord.gg/cUQ6C88Z9C";
     private const string WebsiteUrl = "https://kodo-ide.github.io/";
+    private const string DownloadKodoUrl = "https://github.com/Kodo-IDE/Kodo/releases/latest";
     private const string InstagramUrl = "https://www.instagram.com/kodo.ide/";
     private const string GitHubRepoUrl = "https://github.com/Kodo-IDE";
     private static readonly string AnnouncementsUrl = "https://api.github.com/repos/Kodo-IDE/Kodo-Extensions/contents/Announcements/ANNOUNCEMENTS.md";
@@ -5043,6 +5044,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 _discordRpcClient = new DiscordRpcClient(clientId);
                 _discordRpcClient.Initialize();
+                _lastDiscordPresenceKey = default;
             }
 
             UpdateDiscordPresence();
@@ -5060,8 +5062,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
 
         var currentKey = GetDiscordPresenceKey();
-        if (currentKey == _lastDiscordPresenceKey) return;
-        _lastDiscordPresenceKey = currentKey;
 
         try
         {
@@ -5077,8 +5077,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     LargeImageKey = DefaultDiscordLargeImageKey,
                     LargeImageText = DefaultDiscordLargeImageText
                 },
+                Buttons = new[]
+                {
+                    new DiscordRPC.Button
+                    {
+                        Label = "Download Kodo",
+                        Url = DownloadKodoUrl
+                    }
+                },
                 Timestamps = new DiscordRPC.Timestamps(_sessionStart)
             });
+            _lastDiscordPresenceKey = currentKey;
         }
         catch (Exception ex)
         {
