@@ -22,8 +22,7 @@ public partial class MainWindow
 
     private string ExtractKoxPluginFiles(ZipArchive archive, string id, string version)
     {
-        var safeId = string.Join("_", id.Split(Path.GetInvalidFileNameChars()));
-        var prefix = $"{safeId}_{version}_";
+        var prefix = $"{SanitizePluginCacheSegment(id)}_{SanitizePluginCacheSegment(version)}_";
         CleanupStalePluginCacheFolders(prefix);
 
         var pluginFolder = Path.Combine(PluginCacheFolderPath, $"{prefix}{Guid.NewGuid():N}");
@@ -54,12 +53,21 @@ public partial class MainWindow
         return pluginFolder;
     }
 
+    private static string SanitizePluginCacheSegment(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars().Concat(['*', '?']).ToArray();
+        return string.Join("_", value.Split(invalid));
+    }
+
     private void CleanupStalePluginCacheFolders(string prefix)
     {
         if (!Directory.Exists(PluginCacheFolderPath)) return;
 
-        foreach (var dir in Directory.EnumerateDirectories(PluginCacheFolderPath, $"{prefix}*"))
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        foreach (var dir in Directory.EnumerateDirectories(PluginCacheFolderPath))
         {
+            if (!Path.GetFileName(dir).StartsWith(prefix, comparison))
+                continue;
             try { Directory.Delete(dir, recursive: true); }
             catch { }
         }

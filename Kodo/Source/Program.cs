@@ -100,6 +100,7 @@ internal static class SingleInstance
     {
         _ = Task.Run(async () =>
         {
+            RemoveStaleUnixPipeSocket();
             while (true)
             {
                 try
@@ -118,12 +119,29 @@ internal static class SingleInstance
 
                     onActivationRequested(string.IsNullOrWhiteSpace(payload) ? null : payload);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    KodoDiagnostics.LogDebug($"Single-instance pipe listener for '{PipeName}' failed; retrying in 500ms.", ex);
                     await Task.Delay(500);
                 }
             }
         });
+    }
+
+    private static void RemoveStaleUnixPipeSocket()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        try
+        {
+            var socketPath = Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + PipeName);
+            if (!File.Exists(socketPath)) return;
+            File.Delete(socketPath);
+            KodoDiagnostics.LogDebug($"Removed stale single-instance pipe socket '{socketPath}'.");
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Could not remove stale single-instance pipe socket.", ex);
+        }
     }
 
     public static void SendActivationRequest(string? filePath)

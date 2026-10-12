@@ -115,8 +115,7 @@ internal static class HotfixShared
                 MinimumHotfix = GetInt(doc.RootElement, "minimumHotfix"),
                 Platform = GetString(doc.RootElement, "platform"),
             };
-            if (doc.RootElement.TryGetProperty("files", out var files) &&
-                !string.Equals("files", "FILES", StringComparison.Ordinal))
+            if (TryGetPropertyIgnoreCase(doc.RootElement, "files", out var files))
             {
                 if (files.ValueKind != JsonValueKind.Array)
                 {
@@ -146,6 +145,19 @@ internal static class HotfixShared
             error = $"Manifest is malformed: {ex.GetType().Name}.";
             return false;
         }
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement el, string name, out JsonElement value)
+    {
+        foreach (var prop in el.EnumerateObject())
+        {
+            if (!string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+                continue;
+            value = prop.Value;
+            return true;
+        }
+        value = default;
+        return false;
     }
 
     private static string GetString(JsonElement el, string name)

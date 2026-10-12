@@ -67,6 +67,9 @@ internal static class NativeConPty
     public static extern bool CloseHandle(IntPtr h);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     public static extern uint WaitForSingleObject(IntPtr hHandle, uint ms);
 
     [DllImport("kernel32.dll", SetLastError = true)]

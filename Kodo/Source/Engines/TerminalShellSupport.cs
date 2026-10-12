@@ -79,9 +79,12 @@ public static class TerminalShellSupport
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
 
-    private const string BashCwdHookCommand = """
-        export PROMPT_COMMAND='printf \"\033]1337;CurrentDir=%s\007\" \"$(pwd -W)\"'; exec bash --login -i
+private const string BashCwdHookCommand = """
+        export PROMPT_COMMAND='printf "\033]1337;CurrentDir=%s\007" "$(pwd -W)"'; exec bash --login -i
         """;
+
+    private const string LinuxBashCwdHookArguments =
+        @"-i -c ""export PROMPT_COMMAND='printf \""\033]1337;CurrentDir=%s\007\"" \""\$(pwd)\""'; exec bash -i""";
 
     public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
     {
@@ -142,13 +145,6 @@ public static class TerminalShellSupport
                         @"WindowsPowerShell\v1.0\powershell.exe")),
                 $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
             AddShell(
-                "windows-powershell",
-                "Windows PowerShell",
-                ResolveExecutable("powershell.exe", Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.System),
-                        @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
-            AddShell(
                 "cmd",
                 "Command Prompt",
                 ResolveExecutable(Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe")
@@ -169,9 +165,10 @@ public static class TerminalShellSupport
             {
                 var baseName = Path.GetFileName(loginShell.Trim()).ToLowerInvariant();
                 if (!string.IsNullOrWhiteSpace(baseName))
-                    AddShell(baseName, DisplayNameFor(baseName), ResolveExecutable(loginShell.Trim(), loginShell.Trim()), "-i");
+                    AddShell(baseName, DisplayNameFor(baseName), ResolveExecutable(loginShell.Trim(), loginShell.Trim()),
+                        baseName == "bash" ? LinuxBashCwdHookArguments : "-i");
             }
-            AddShell("bash", "Bash", ResolveExecutable("bash"), "-i");
+            AddShell("bash", "Bash", ResolveExecutable("bash"), LinuxBashCwdHookArguments);
             AddShell("zsh", "Zsh", ResolveExecutable("zsh"), "-i");
             AddShell("fish", "Fish", ResolveExecutable("fish"), "-i");
             AddShell("powershell", "PowerShell", ResolveExecutable("pwsh"), "-NoLogo");
@@ -188,8 +185,9 @@ public static class TerminalShellSupport
             var loginShell = Environment.GetEnvironmentVariable("SHELL");
             if (!string.IsNullOrWhiteSpace(loginShell))
             {
-                var baseName = Path.GetFileName(loginShell.Trim()).ToLowerInvariant();
-                if (!string.IsNullOrWhiteSpace(baseName))
+                var trimmed = loginShell.Trim();
+                var baseName = Path.GetFileName(trimmed).ToLowerInvariant();
+                if (!string.IsNullOrWhiteSpace(baseName) && File.Exists(trimmed))
                     return baseName;
             }
         }

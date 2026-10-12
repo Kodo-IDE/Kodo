@@ -219,7 +219,7 @@ internal static class LspPath
         var scalar = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
             ? char.ConvertToUtf32(text[index], text[index + 1])
             : text[index];
-        return encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : scalar > 0xffff ? 2 : 1;
+        return encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : 1;
     }
 
     private static int PositionLength(ReadOnlySpan<char> text, string encoding)
@@ -231,7 +231,7 @@ internal static class LspPath
             var scalar = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
                 ? char.ConvertToUtf32(text[index], text[index + 1])
                 : text[index];
-            length += encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : scalar > 0xffff ? 2 : 1;
+            length += encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : 1;
             index += scalar > 0xffff ? 2 : 1;
         }
         return length;

@@ -863,8 +863,8 @@ public partial class MainWindow
             foreach (var item in result.Value.EnumerateArray())
             {
                 if (!item.TryGetProperty("startLine", out var sl) || !item.TryGetProperty("endLine", out var el)) continue;
-                var startLine0 = sl.GetInt32();
-                var endLine0 = el.GetInt32();
+                if (sl.ValueKind != JsonValueKind.Number || el.ValueKind != JsonValueKind.Number) continue;
+                if (!sl.TryGetInt32(out var startLine0) || !el.TryGetInt32(out var endLine0)) continue;
                 if (startLine0 < 0 || endLine0 <= startLine0 || startLine0 > lastLine0) continue;
                 if (endLine0 > lastLine0) endLine0 = lastLine0;
                 var start = starts[startLine0];
@@ -917,8 +917,10 @@ public partial class MainWindow
         {
             if (!item.TryGetProperty("range", out var range)) continue;
             if (!range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end)) continue;
-            var s = LspPath.OffsetFromLspPosition(starts, text, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32(), ctx.PositionEncoding);
-            var e = LspPath.OffsetFromLspPosition(starts, text, end.GetProperty("line").GetInt32(), end.GetProperty("character").GetInt32(), ctx.PositionEncoding);
+            if (!TryReadLspPosition(start, out var startLine, out var startCharacter)) continue;
+            if (!TryReadLspPosition(end, out var endLine, out var endCharacter)) continue;
+            var s = LspPath.OffsetFromLspPosition(starts, text, startLine, startCharacter, ctx.PositionEncoding);
+            var e = LspPath.OffsetFromLspPosition(starts, text, endLine, endCharacter, ctx.PositionEncoding);
             if (e > s) matches.Add((s, e - s));
         }
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -950,9 +952,9 @@ public partial class MainWindow
         var hints = new List<(int Offset, string Label)>();
         foreach (var item in result.Value.EnumerateArray())
         {
-            if (!item.TryGetProperty("position", out var position) || !position.TryGetProperty("line", out var line) || !position.TryGetProperty("character", out var character)) continue;
+            if (!item.TryGetProperty("position", out var position) || !TryReadLspPosition(position, out var positionLine, out var positionCharacter)) continue;
             var label = item.TryGetProperty("label", out var labelEl) ? ReadInlayHintLabel(labelEl) : null;
-            if (!string.IsNullOrWhiteSpace(label)) hints.Add((LspPath.OffsetFromLspPosition(starts, text, line.GetInt32(), character.GetInt32(), ctx.PositionEncoding), label!));
+            if (!string.IsNullOrWhiteSpace(label)) hints.Add((LspPath.OffsetFromLspPosition(starts, text, positionLine, positionCharacter, ctx.PositionEncoding), label!));
         }
         hints.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
         var applied = false;
@@ -964,6 +966,16 @@ public partial class MainWindow
             applied = true;
         });
         return applied;
+    }
+
+    private static bool TryReadLspPosition(JsonElement position, out int line, out int character)
+    {
+        line = 0;
+        character = 0;
+        return position.ValueKind == JsonValueKind.Object &&
+            position.TryGetProperty("line", out var lineEl) && lineEl.ValueKind == JsonValueKind.Number &&
+            position.TryGetProperty("character", out var characterEl) && characterEl.ValueKind == JsonValueKind.Number &&
+            lineEl.TryGetInt32(out line) && characterEl.TryGetInt32(out character);
     }
 
     private static string? ReadInlayHintLabel(System.Text.Json.JsonElement labelEl)
@@ -996,7 +1008,7 @@ public partial class MainWindow
         if (LspMethodUnavailable(ctx, "textDocument/semanticTokens/full")) return true;
         var result = await GetLspSemanticTokensAsync(ctx.FilePath).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Object || !result.Value.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return false;
-        var values = data.EnumerateArray().Where(v => v.ValueKind == JsonValueKind.Number).Select(v => v.GetInt32()).ToArray();
+        var values = data.EnumerateArray().Select(static v => v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var value) ? (int?)value : null).OfType<int>().ToArray();
         var tokens = new List<(int Offset, int Length, Color Color)>();
         var text = ctx.Text;
         var starts = GetLspLineStarts(text);
@@ -1111,7 +1123,7 @@ public partial class MainWindow
                         try { doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}"); } catch { }
                     }, Avalonia.Threading.DispatcherPriority.Background);
                 }
-                caret.Offset = segment.Offset + selectedText.Length + 2;
+                caret.Offset = segment.Offset + selectedText.Length + 1;
                 e.Handled = true;
                 return;
             }
@@ -1356,8 +1368,9 @@ public partial class MainWindow
                 if (!symbol.TryGetProperty("name", out var name)) continue;
                 var range = symbol.TryGetProperty("selectionRange", out var selection) ? selection : symbol.TryGetProperty("range", out var fallback) ? fallback : default;
                 if (range.ValueKind != JsonValueKind.Object || !range.TryGetProperty("start", out var start)) continue;
-                var kind = symbol.TryGetProperty("kind", out var kindEl) ? kindEl.GetInt32().ToString() : "";
-                symbols.Add(($"{indent}{name.GetString()}  ({kind})", start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32()));
+                if (!TryReadLspPosition(start, out var symbolLine, out var symbolCharacter)) continue;
+                var kind = symbol.TryGetProperty("kind", out var kindEl) && kindEl.ValueKind == JsonValueKind.Number && kindEl.TryGetInt32(out var kindValue) ? kindValue.ToString() : "";
+                symbols.Add(($"{indent}{name.GetString()}  ({kind})", symbolLine, symbolCharacter));
                 if (symbol.TryGetProperty("children", out var children) && children.ValueKind == JsonValueKind.Array) AddSymbols(children, indent + "  ");
             }
         }
@@ -2356,7 +2369,7 @@ public partial class MainWindow
                     return;
 
                 doc.Remove(line.Offset, removable);
-                SetCaretOffsetSafely(caret, doc, caret.Offset - removable);
+                SetCaretOffsetSafely(caret, doc, line.Offset + Math.Max(0, caretColumnInLine - removable));
                 return;
             }
 

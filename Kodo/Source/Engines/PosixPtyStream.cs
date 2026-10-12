@@ -1,5 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 using System;
+using System.Buffers;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -97,7 +98,31 @@ internal sealed class PosixPtyStream : Stream
         cancellationToken.ThrowIfCancellationRequested();
         if (count == 0) return Task.FromResult(0);
 
-        return Task.FromResult(ReadWaitingForData(buffer, offset, count, cancellationToken));
+        return Task.Run(() => ReadWaitingForData(buffer, offset, count, cancellationToken), cancellationToken);
+    }
+
+    public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        if (!MemoryMarshal.TryGetArray<byte>(buffer, out var segment))
+            return new ValueTask<int>(Task.Run(() => ReadMemoryWaitingForData(buffer, cancellationToken), cancellationToken));
+
+        return new ValueTask<int>(ReadAsync(segment.Array!, segment.Offset, segment.Count, cancellationToken));
+    }
+
+    private int ReadMemoryWaitingForData(Memory<byte> buffer, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (buffer.Length == 0) return 0;
+
+        var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
+        try
+        {
+            var read = ReadWaitingForData(rented, 0, buffer.Length, cancellationToken);
+            if (read > 0)
+                new ReadOnlySpan<byte>(rented, 0, read).CopyTo(buffer.Span);
+            return read;
+        }
+        finally { ArrayPool<byte>.Shared.Return(rented); }
     }
 
     private int ReadWaitingForData(byte[] buffer, int offset, int count, CancellationToken cancellationToken)

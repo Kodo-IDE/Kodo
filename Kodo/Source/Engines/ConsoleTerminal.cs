@@ -46,6 +46,8 @@ public sealed class ConsoleTerminal : Control
     private const double CellH = 19.0;
     private const double FontSize = 13.5;
 
+    private const uint WaitObject0 = 0;
+
     private readonly object _lock = new();
     private TermCell[,] _cells = new TermCell[24, 80];
     private int _rows = 24, _cols = 80;
@@ -342,28 +344,32 @@ public sealed class ConsoleTerminal : Control
                 _scrollOffset = 0;
             }
 
-            NativeConPty.CreatePipe(out var hReadPtyOutput, out var hWritePtyOutput, IntPtr.Zero, 0);
-            NativeConPty.CreatePipe(out var hReadPtyInput, out var hWritePtyInput, IntPtr.Zero, 0);
-
-            var result = NativeConPty.CreatePseudoConsole(
-                new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
-                hReadPtyInput, hWritePtyOutput,
-                0, out _hPcon);
-
-            if (result != 0)
-                throw new InvalidOperationException($"CreatePseudoConsole failed: 0x{result:X}");
-
-            NativeConPty.CloseHandle(hReadPtyInput);
-            NativeConPty.CloseHandle(hWritePtyOutput);
+            CreateConpty(cols, rows, out _hPcon, out var hReadPtyOutput, out var hWritePtyInput);
 
             _writeStream = new FileStream(
                 new Microsoft.Win32.SafeHandles.SafeFileHandle(hWritePtyInput, true), FileAccess.Write);
             _readStream = new FileStream(
                 new Microsoft.Win32.SafeHandles.SafeFileHandle(hReadPtyOutput, true), FileAccess.Read);
 
-            var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
-            NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
-                out _hProcess, out _hThread);
+            try
+            {
+                var cmdLine = new StringBuilder($"\"{shellPath}\" {arguments}");
+                NativeConPty.LaunchProcess(cmdLine, workingDirectory, _hPcon,
+                    out _hProcess, out _hThread);
+            }
+            catch
+            {
+                _writeStream.Dispose();
+                _readStream.Dispose();
+                _writeStream = null;
+                _readStream = null;
+                if (_hPcon != IntPtr.Zero)
+                {
+                    NativeConPty.ClosePseudoConsole(_hPcon);
+                    _hPcon = IntPtr.Zero;
+                }
+                throw;
+            }
 
             _suppressOutputUntilTick = suppressOutputUntilRestored
                 ? Environment.TickCount64 + 500
@@ -392,6 +398,49 @@ public sealed class ConsoleTerminal : Control
             KodoDiagnostics.LogWarning("ConsoleTerminal.Start", ex, operation: "ConPTY terminal spawn");
         }
     }
+
+    private static void CreateConpty(int cols, int rows, out IntPtr hPcon,
+        out IntPtr hReadPtyOutput, out IntPtr hWritePtyInput)
+    {
+        hPcon = IntPtr.Zero;
+        hReadPtyOutput = IntPtr.Zero;
+        hWritePtyInput = IntPtr.Zero;
+        var hWritePtyOutput = IntPtr.Zero;
+        var hReadPtyInput = IntPtr.Zero;
+
+        try
+        {
+            if (!NativeConPty.CreatePipe(out hReadPtyOutput, out hWritePtyOutput, IntPtr.Zero, 0))
+                throw new InvalidOperationException($"CreatePipe failed: {Marshal.GetLastWin32Error()}");
+            if (!NativeConPty.CreatePipe(out hReadPtyInput, out hWritePtyInput, IntPtr.Zero, 0))
+                throw new InvalidOperationException($"CreatePipe failed: {Marshal.GetLastWin32Error()}");
+
+            var result = NativeConPty.CreatePseudoConsole(
+                new NativeConPty.COORD { X = (short)cols, Y = (short)rows },
+                hReadPtyInput, hWritePtyOutput,
+                0, out hPcon);
+
+            if (result != 0)
+                throw new InvalidOperationException($"CreatePseudoConsole failed: 0x{result:X}");
+        }
+        catch
+        {
+            if (hReadPtyOutput != IntPtr.Zero) NativeConPty.CloseHandle(hReadPtyOutput);
+            if (hWritePtyOutput != IntPtr.Zero) NativeConPty.CloseHandle(hWritePtyOutput);
+            if (hReadPtyInput != IntPtr.Zero) NativeConPty.CloseHandle(hReadPtyInput);
+            if (hWritePtyInput != IntPtr.Zero) NativeConPty.CloseHandle(hWritePtyInput);
+            if (hPcon != IntPtr.Zero)
+            {
+                NativeConPty.ClosePseudoConsole(hPcon);
+                hPcon = IntPtr.Zero;
+            }
+            throw;
+        }
+
+        NativeConPty.CloseHandle(hReadPtyInput);
+        NativeConPty.CloseHandle(hWritePtyOutput);
+    }
+
     private bool StartUnixPty(string shellPath, string arguments, string workingDirectory, bool suppressOutputUntilRestored)
     {
         PosixPtyStream? masterStream = null;
@@ -580,7 +629,9 @@ public sealed class ConsoleTerminal : Control
         {
             try { return !proc.HasExited; } catch { return false; }
         }
-        return handle.HProcess != IntPtr.Zero;
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            && handle.HProcess != IntPtr.Zero
+            && NativeConPty.WaitForSingleObject(handle.HProcess, 0) != WaitObject0;
     }
 
     public TerminalProcessHandle? Detach()
@@ -697,6 +748,28 @@ public sealed class ConsoleTerminal : Control
                 Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
             };
         }
+        else if (handle.HProcess != IntPtr.Zero)
+        {
+            var hProcess = handle.HProcess;
+            _ = Task.Run(() =>
+            {
+                var exited = false;
+                try
+                {
+                    while (!cts.IsCancellationRequested)
+                    {
+                        if (NativeConPty.WaitForSingleObject(hProcess, 250) == WaitObject0) { exited = true; break; }
+                    }
+                }
+                catch (OperationCanceledException) { }
+                catch { }
+                if (exited && !cts.IsCancellationRequested)
+                {
+                    handle.Exited = true;
+                    Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
+                }
+            }, cts);
+        }
         return true;
     }
 
@@ -710,12 +783,13 @@ public sealed class ConsoleTerminal : Control
         {
             try { UnixPty.KillGroup(handle.UnixChildPid, force: false); } catch { }
             var pid = handle.UnixChildPid;
+            var watched = handle.PtyProcess;
             _ = Task.Run(async () =>
             {
                 try
                 {
                     await Task.Delay(1500).ConfigureAwait(false);
-                    if (!HasProcessExited(handle.PtyProcess))
+                    if (!HasProcessExited(watched))
                         UnixPty.KillGroup(pid, force: true);
                 }
                 catch { }
@@ -740,6 +814,10 @@ public sealed class ConsoleTerminal : Control
         handle.UnixChildPid = -1;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
+            if (handle.HProcess != IntPtr.Zero)
+            {
+                try { NativeConPty.TerminateProcess(handle.HProcess, 1); } catch { }
+            }
             if (handle.HPcon != IntPtr.Zero)
             {
                 try { NativeConPty.ClosePseudoConsole(handle.HPcon); } catch { }
@@ -1487,6 +1565,8 @@ public sealed class ConsoleTerminal : Control
         stream ??= _readStream;
         if (stream is null) return;
         var buf = new byte[4096];
+        var chars = new char[Encoding.UTF8.GetMaxCharCount(buf.Length)];
+        var decoder = Encoding.UTF8.GetDecoder();
         try
         {
             while (!ct.IsCancellationRequested)
@@ -1504,18 +1584,24 @@ public sealed class ConsoleTerminal : Control
                 }
                 if (n <= 0) break;
                 if (ct.IsCancellationRequested) break;
-                var text = Encoding.UTF8.GetString(buf, 0, n);
-                lock (_lock)
-                {
-                    if (Environment.TickCount64 >= _suppressOutputUntilTick)
-                        foreach (var rune in text.EnumerateRunes()) ProcessRune(rune);
-                }
+                var charCount = decoder.GetChars(buf, 0, n, chars, 0);
+                if (charCount <= 0) continue;
+                ProcessDecodedChars(chars, charCount);
                 Dispatcher.UIThread.Post(InvalidateVisual, DispatcherPriority.Render);
             }
         }
         catch (OperationCanceledException) { }
         catch (ObjectDisposedException) { }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"ReadOutputLoop stopped: {ex.Message}"); }
+    }
+
+    private void ProcessDecodedChars(char[] chars, int count)
+    {
+        lock (_lock)
+        {
+            if (Environment.TickCount64 >= _suppressOutputUntilTick)
+                foreach (var rune in chars.AsSpan(0, count).EnumerateRunes()) ProcessRune(rune);
+        }
     }
 
     private void ProcessRune(System.Text.Rune rune)

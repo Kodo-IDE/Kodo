@@ -917,6 +917,13 @@ public partial class MainWindow
 
     private static void CopyDirectoryRecursive(string sourceDirectory, string destinationDirectory)
     {
+        var visited = new HashSet<string>(FileSystemPaths.Comparer);
+        visited.Add(NormalizeDirectoryIdentity(sourceDirectory));
+        CopyDirectoryRecursiveCore(sourceDirectory, destinationDirectory, visited, 0);
+    }
+
+    private static void CopyDirectoryRecursiveCore(string sourceDirectory, string destinationDirectory, HashSet<string> visited, int depth)
+    {
         Directory.CreateDirectory(destinationDirectory);
 
         foreach (var file in Directory.GetFiles(sourceDirectory))
@@ -927,12 +934,20 @@ public partial class MainWindow
 
         foreach (var directory in Directory.GetDirectories(sourceDirectory))
         {
+            if (!TryEnterCopiedDirectory(directory, sourceDirectory, visited, depth)) continue;
             var destinationChild = Path.Combine(destinationDirectory, Path.GetFileName(directory));
-            CopyDirectoryRecursive(directory, destinationChild);
+            CopyDirectoryRecursiveCore(directory, destinationChild, visited, depth + 1);
         }
     }
 
     private static async Task CopyDirectoryRecursiveAsync(string sourceDirectory, string destinationDirectory, CancellationToken ct = default)
+    {
+        var visited = new HashSet<string>(FileSystemPaths.Comparer);
+        visited.Add(NormalizeDirectoryIdentity(sourceDirectory));
+        await CopyDirectoryRecursiveAsyncCore(sourceDirectory, destinationDirectory, ct, visited, 0).ConfigureAwait(false);
+    }
+
+    private static async Task CopyDirectoryRecursiveAsyncCore(string sourceDirectory, string destinationDirectory, CancellationToken ct, HashSet<string> visited, int depth)
     {
         Directory.CreateDirectory(destinationDirectory);
         foreach (var file in Directory.GetFiles(sourceDirectory))
@@ -953,9 +968,62 @@ public partial class MainWindow
         foreach (var directory in Directory.GetDirectories(sourceDirectory))
         {
             ct.ThrowIfCancellationRequested();
+            if (!TryEnterCopiedDirectory(directory, sourceDirectory, visited, depth)) continue;
             var destinationChild = Path.Combine(destinationDirectory, Path.GetFileName(directory));
-            await CopyDirectoryRecursiveAsync(directory, destinationChild, ct).ConfigureAwait(false);
+            await CopyDirectoryRecursiveAsyncCore(directory, destinationChild, ct, visited, depth + 1).ConfigureAwait(false);
         }
+    }
+
+    private const int MaxDirectoryCopyDepth = 64;
+
+    private static bool TryEnterCopiedDirectory(string directory, string parentDirectory, HashSet<string> visited, int depth)
+    {
+        if (depth >= MaxDirectoryCopyDepth)
+        {
+            KodoDiagnostics.LogDebug($"Stopped copying '{directory}' - the directory tree is deeper than {MaxDirectoryCopyDepth} levels.");
+            return false;
+        }
+
+        if (IsDirectoryLink(directory))
+        {
+            KodoDiagnostics.LogDebug($"Skipped linked directory '{directory}' while copying '{parentDirectory}'.");
+            return false;
+        }
+
+        string identity;
+        try
+        {
+            identity = NormalizeDirectoryIdentity(directory);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Skipped '{directory}' while copying '{parentDirectory}' - the path could not be resolved.", ex);
+            return false;
+        }
+
+        if (visited.Add(identity))
+            return true;
+
+        KodoDiagnostics.LogDebug($"Skipped '{directory}' while copying '{parentDirectory}' - it was already copied.");
+        return false;
+    }
+
+    private static bool IsDirectoryLink(string directory)
+    {
+        try
+        {
+            return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeDirectoryIdentity(string directory)
+    {
+        var resolved = new DirectoryInfo(directory).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? directory;
+        return Path.GetFullPath(resolved).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 
     private async Task OpenPathInSystemExplorer(string path, bool selectItem)
@@ -1352,11 +1420,12 @@ public partial class MainWindow
 
         try
         {
-            var duplicatePath = CreateUniqueSiblingPath(item.FullPath, item.IsDirectory);
+            var sourcePath = item.FullPath;
+            var duplicatePath = CreateUniqueSiblingPath(sourcePath, item.IsDirectory);
             if (item.IsDirectory)
-                await Task.Run(() => CopyDirectoryRecursiveAsync(item.FullPath, duplicatePath)).ConfigureAwait(false);
+                await Task.Run(() => CopyDirectoryRecursiveAsync(sourcePath, duplicatePath));
             else
-                await Task.Run(() => File.Copy(item.FullPath, duplicatePath, overwrite: false)).ConfigureAwait(false);
+                await Task.Run(() => File.Copy(sourcePath, duplicatePath, overwrite: false));
 
             await RefreshExplorerTreeAsync();
         }
@@ -1393,9 +1462,9 @@ public partial class MainWindow
                 return;
 
             if (item.IsDirectory)
-                await Task.Run(() => Directory.Delete(item.FullPath, recursive: true)).ConfigureAwait(false);
+                await Task.Run(() => Directory.Delete(item.FullPath, recursive: true));
             else
-                File.Delete(item.FullPath);
+                await Task.Run(() => File.Delete(item.FullPath));
 
             CloseTabsWithoutPrompt(matchingTabs);
             await RefreshExplorerTreeAsync();
@@ -1460,10 +1529,11 @@ public partial class MainWindow
             }
             else
             {
+                var copySource = _clipboardItemPath;
                 if (_clipboardItemIsDirectory)
-                    await Task.Run(() => CopyDirectoryRecursiveAsync(_clipboardItemPath, destPath)).ConfigureAwait(false);
+                    await Task.Run(() => CopyDirectoryRecursiveAsync(copySource, destPath));
                 else
-                    await Task.Run(() => File.Copy(_clipboardItemPath, destPath, overwrite: false)).ConfigureAwait(false);
+                    await Task.Run(() => File.Copy(copySource, destPath, overwrite: false));
             }
 
             await RefreshExplorerTreeAsync();

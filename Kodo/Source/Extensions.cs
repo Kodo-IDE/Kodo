@@ -133,10 +133,9 @@ public partial class MainWindow
                 LoadMarketplaceExtensionsAsync(),
                 LoadPluginsIndexAsync(),
                 LoadCompilerExtensionsAsync(forceResolve: force));
-            if (_deferredExtensionUiActions.Count > 0)
+            var actions = TakeDeferredExtensionUiActions();
+            if (actions.Count > 0)
             {
-                var actions = _deferredExtensionUiActions.ToList();
-                _deferredExtensionUiActions.Clear();
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     foreach (var a in actions) a();
@@ -171,7 +170,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            _deferredExtensionUiActions.Clear();
+            ClearDeferredExtensionUiActions();
             _extensionFilterBatchDepth = 0;
             _pendingExtensionFilterNotify = false;
             if (IsOfflineException(ex))
@@ -193,7 +192,7 @@ public partial class MainWindow
         {
             if (_extensionFilterBatchDepth > 0)
             {
-                _deferredExtensionUiActions.Clear();
+                ClearDeferredExtensionUiActions();
                 _extensionFilterBatchDepth = 0;
                 _pendingExtensionFilterNotify = false;
             }
@@ -1351,11 +1350,71 @@ public partial class MainWindow
                 yield return legacy;
         }
 
-        var projectRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..");
-        string? srcPath = null;
-        try { srcPath = Path.GetFullPath(Path.Combine(projectRoot, "Extensions")); } catch { srcPath = null; }
-        if (!string.IsNullOrWhiteSpace(srcPath) && !FileSystemPaths.Equals(srcPath, ExtensionsFolderPath) && Directory.Exists(srcPath))
-            yield return srcPath;
+        foreach (var devSource in EnumerateDevelopmentExtensionSources())
+            if (!FileSystemPaths.Equals(devSource, ExtensionsFolderPath) && Directory.Exists(devSource))
+                yield return devSource;
+    }
+
+    private static IEnumerable<string> EnumerateDevelopmentExtensionSources()
+    {
+        var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        if (string.IsNullOrWhiteSpace(baseDirectory)) yield break;
+
+        string? projectDirectory = null;
+        var candidateDirectory = baseDirectory;
+        for (var level = 0; level < 8; level++)
+        {
+            if (IsDevelopmentProjectDirectory(candidateDirectory))
+            {
+                projectDirectory = candidateDirectory;
+                break;
+            }
+
+            var parent = Path.GetDirectoryName(candidateDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            if (string.IsNullOrEmpty(parent) || FileSystemPaths.Equals(parent, candidateDirectory)) break;
+            candidateDirectory = parent;
+        }
+
+        if (projectDirectory is null) yield break;
+
+        var normalizedBase = TryGetFullDirectoryPath(baseDirectory);
+        var normalizedProject = TryGetFullDirectoryPath(projectDirectory);
+        var srcPath = TryGetFullDirectoryPath(Path.Combine(projectDirectory, "Extensions"));
+        if (normalizedBase is null || normalizedProject is null || srcPath is null) yield break;
+
+        if (FileSystemPaths.Equals(srcPath, normalizedProject)) yield break;
+        if (!FileSystemPaths.IsPrefixOf(srcPath, normalizedProject)) yield break;
+        if (FileSystemPaths.IsPrefixOf(normalizedBase, srcPath)) yield break;
+        if (FileSystemPaths.Equals(srcPath, TryGetFullDirectoryPath(Path.GetPathRoot(srcPath)))) yield break;
+
+        yield return srcPath;
+    }
+
+    private static bool IsDevelopmentProjectDirectory(string directory)
+    {
+        try
+        {
+            if (!Directory.Exists(directory)) return false;
+            if (!Directory.EnumerateFiles(directory, "*.csproj", SearchOption.TopDirectoryOnly).Any()) return false;
+            return Directory.EnumerateDirectories(directory, "bin", SearchOption.TopDirectoryOnly).Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? TryGetFullDirectoryPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+        try
+        {
+            return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private IEnumerable<(string Path, bool IsDirectory)> EnumerateInstalledExtensionSources(string extensionId)

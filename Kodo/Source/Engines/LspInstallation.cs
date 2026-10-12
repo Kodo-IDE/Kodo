@@ -302,9 +302,11 @@ internal static class LspInstallationManager
             foreach (var arg in allArgs) psi.ArgumentList.Add(arg);
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return (false, null, "Failed to start");
-            var stdout = await proc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-            var stderr = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+            var stdout = await stdoutTask.ConfigureAwait(false);
+            var stderr = await stderrTask.ConfigureAwait(false);
             var outText = string.IsNullOrWhiteSpace(stdout) ? stderr : stdout;
             if (proc.ExitCode != 0 && string.IsNullOrWhiteSpace(outText))
                 return (false, null, $"Exit code {proc.ExitCode}: {stderr.Trim()}");
@@ -500,17 +502,22 @@ internal static class LspInstallationManager
             using var listProc = new Process { StartInfo = listPsi };
             if (listProc.Start())
             {
-                var outTxt = await listProc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+                var listOutTask = listProc.StandardOutput.ReadToEndAsync(ct);
+                var listErrTask = listProc.StandardError.ReadToEndAsync(ct);
                 await listProc.WaitForExitAsync(ct).ConfigureAwait(false);
+                var outTxt = await listOutTask.ConfigureAwait(false);
+                await listErrTask.ConfigureAwait(false);
                 if (outTxt.Contains(pkg, StringComparison.OrdinalIgnoreCase))
                 {
                     var updPsi = new ProcessStartInfo { FileName = "dotnet", Arguments = $"tool update --global {pkg}", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
                     using var updProc = new Process { StartInfo = updPsi };
                     if (updProc.Start())
                     {
-                        var uo = await updProc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-                        var ue = await updProc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+                        var upOutTask = updProc.StandardOutput.ReadToEndAsync(ct);
+                        var upErrTask = updProc.StandardError.ReadToEndAsync(ct);
                         await updProc.WaitForExitAsync(ct).ConfigureAwait(false);
+                        var uo = await upOutTask.ConfigureAwait(false);
+                        var ue = await upErrTask.ConfigureAwait(false);
                         KodoDiagnostics.LogDebug($"dotnet tool update stdout: {uo} stderr: {ue} exit:{updProc.ExitCode}");
                         if (updProc.ExitCode == 0) return new(InstallResultKind.Success, $"Updated {pkg} via dotnet tool", null);
                     }
@@ -519,9 +526,11 @@ internal static class LspInstallationManager
             var psi = new ProcessStartInfo { FileName = "dotnet", Arguments = $"tool install --global {pkg}", UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return new(InstallResultKind.Failed, "Failed to start dotnet", null);
-            var stdout = await proc.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
-            var stderr = await proc.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
+            var stderrTask = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
+            var stdout = await stdoutTask.ConfigureAwait(false);
+            var stderr = await stderrTask.ConfigureAwait(false);
             KodoDiagnostics.LogDebug($"dotnet tool install stdout: {stdout} stderr: {stderr} exit:{proc.ExitCode}");
             if (proc.ExitCode != 0)
                 return new(InstallResultKind.Failed, $"dotnet tool install failed (exit {proc.ExitCode}): {stderr.Trim()}", null);
@@ -841,6 +850,14 @@ internal static class LspInstallationManager
     public static async Task<InstallResult> UpdateAsync(LspConfiguration cfg, AppSettings? settings, IProgress<string>? progress, CancellationToken ct = default)
     {
         var uninstall = Uninstall(cfg, settings);
+        if (uninstall.Kind != InstallResultKind.Success)
+        {
+            bool stillInstalled;
+            try { stillInstalled = Directory.Exists(GetProviderDir(cfg, settings)); }
+            catch { stillInstalled = true; }
+            if (stillInstalled)
+                return new(InstallResultKind.Failed, uninstall.Message, null);
+        }
         return await InstallAsync(cfg, settings, progress, ct).ConfigureAwait(false);
     }
 }

@@ -191,6 +191,18 @@ internal static class Program
             return 7;
         }
 
+        var stagingRoot = Path.Combine(expectedDir, "staging");
+        if (string.IsNullOrWhiteSpace(_trustedInstallRoot))
+        {
+            Log("Update transaction rejected: the trusted installation directory could not be determined.");
+            return 7;
+        }
+        if (!ValidateTransactionExecutionPaths(tx, stagingRoot, _trustedInstallRoot!))
+        {
+            Log($"Update transaction {tx.TransactionId} rejected: transaction paths are not contained in the staging or installation directory.");
+            return 7;
+        }
+
         var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath));
         if (string.IsNullOrWhiteSpace(installRoot))
         {
@@ -232,7 +244,13 @@ internal static class Program
             return 9;
         }
 
-        if (!string.IsNullOrWhiteSpace(tx.Sha256) && !VerifyFileSha256(tx.InstallerPath, tx.Sha256))
+        if (string.IsNullOrWhiteSpace(tx.Sha256))
+        {
+            Log($"No publisher checksum recorded for {tx.InstallerPath} – refusing to launch an unverified installer, keeping files for diagnostics");
+            return 9;
+        }
+
+        if (!VerifyFileSha256(tx.InstallerPath, tx.Sha256))
         {
             Log($"Installer checksum mismatch for {tx.InstallerPath} – not launching, keeping files for diagnostics");
             return 9;
@@ -241,7 +259,7 @@ internal static class Program
         if (OperatingSystem.IsLinux())
         {
             if (IsManagedTarballTransaction(tx))
-                return await RunLinuxTarballTransactionAsync(tx, transactionPath).ConfigureAwait(false);
+                return await RunLinuxTarballTransactionAsync(tx, transactionPath, installGuard).ConfigureAwait(false);
             Log($"Linux manual update: staged={tx.InstallerPath}. " + LinuxManualBlurb(tx.InstallerPath));
             TryDelete(transactionPath);
             return 0;
@@ -341,15 +359,15 @@ internal static class Program
         }
     }
 
-    private static async Task<int> RunLinuxTarballTransactionAsync(UpdateTransaction tx, string transactionPath)
+    private static async Task<int> RunLinuxTarballTransactionAsync(UpdateTransaction tx, string transactionPath, InstallUpdateGuard installGuard)
     {
-        var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath))!;
-        using var installGuard = InstallUpdateGuard.TryAcquire(installRoot);
         if (installGuard is null)
         {
-            Log($"Another updater operation is already modifying installation '{installRoot}'. Exiting.");
+            Log("Linux tarball transaction requires the install guard to be held by the caller.");
             return 3;
         }
+
+        var installRoot = Path.GetDirectoryName(Path.GetFullPath(tx.KodoExePath))!;
 
         var updateDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update");
         CleanupOrphanedLinuxWorkDirs(Path.Combine(updateDir, "linux-full"), tx.TransactionId);
@@ -1115,15 +1133,43 @@ internal static class Program
 
     private static void TryDeleteIfInStaging(string installerPath)
     {
+        var stagingRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "staging");
+        if (IsContainedPath(installerPath, stagingRoot))
+            TryDelete(installerPath);
+    }
+
+    private static bool ValidateTransactionExecutionPaths(UpdateTransaction tx, string stagingRoot, string trustedInstallRoot)
+    {
+        if (!IsContainedPath(tx.InstallerPath, stagingRoot))
+        {
+            Log($"Installer path is outside the update staging directory: {tx.InstallerPath}");
+            return false;
+        }
+        if (!IsContainedPath(tx.KodoExePath, trustedInstallRoot))
+        {
+            Log($"Kodo executable is outside the trusted installation directory: {tx.KodoExePath}");
+            return false;
+        }
+        var exeName = Path.GetFileName(tx.KodoExePath);
+        var validName = OperatingSystem.IsWindows()
+            ? string.Equals(exeName, "Kodo.exe", StringComparison.OrdinalIgnoreCase)
+            : string.Equals(exeName, "Kodo", StringComparison.OrdinalIgnoreCase);
+        if (!validName)
+        {
+            Log($"Unexpected restart executable name: '{exeName}'");
+            return false;
+        }
+        return true;
+    }
+
+    private static bool IsContainedPath(string path, string directory)
+    {
         try
         {
-            var stagingRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update", "staging");
-            var fullInst = Path.GetFullPath(installerPath);
-            var fullStaging = Path.GetFullPath(stagingRoot);
-            if (IsInsideDirectory(fullInst, fullStaging))
-                TryDelete(fullInst);
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(directory)) return false;
+            return IsInsideDirectory(Path.GetFullPath(path), Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory)));
         }
-        catch { }
+        catch { return false; }
     }
 
     private static bool IsInsideDirectory(string path, string directory)
@@ -1198,7 +1244,9 @@ internal static class Program
             }
             catch
             {
-                return null;
+                Log($"Named mutex '{name}' is unavailable on this system - continuing without a cross-process lock.");
+                try { return new UpdaterMutex(new Mutex()); }
+                catch { return null; }
             }
 
             bool owns;

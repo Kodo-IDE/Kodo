@@ -275,7 +275,7 @@ internal static class LspProtocol
     {
         JsonValueKind.String => element.GetString(),
         JsonValueKind.Number when element.TryGetInt64(out var value) => value,
-        JsonValueKind.Number => element.GetDouble(),
+        JsonValueKind.Number => element.TryGetDouble(out var number) ? number : element.GetRawText(),
         JsonValueKind.True => true,
         JsonValueKind.False => false,
         JsonValueKind.Null => null,

@@ -232,13 +232,13 @@ public static class ExternalLanguageToolRunner
                     : Enumerable.Empty<JsonElement>();
             return diagnostics.Select(item =>
             {
-                var startOffset = item.TryGetProperty("start", out var start) && start.ValueKind == JsonValueKind.Number
-                    ? start.GetInt32()
+                var startOffset = item.TryGetProperty("start", out var start) && start.ValueKind == JsonValueKind.Number && start.TryGetInt32(out var startValue)
+                    ? startValue
                     : item.TryGetProperty("range", out var range) && range.TryGetProperty("start", out var rangeStart)
                         ? OffsetAtLineColumnFromJson(rangeStart, documentText)
                         : 0;
-                var length = item.TryGetProperty("length", out var lengthValue) && lengthValue.ValueKind == JsonValueKind.Number
-                    ? Math.Max(1, lengthValue.GetInt32())
+                var length = item.TryGetProperty("length", out var lengthValue) && lengthValue.ValueKind == JsonValueKind.Number && lengthValue.TryGetInt32(out var rawLength)
+                    ? Math.Max(1, rawLength)
                     : item.TryGetProperty("range", out var rangeValue) && rangeValue.TryGetProperty("end", out var end)
                         ? Math.Max(1, OffsetAtLineColumnFromJson(end, documentText) - startOffset)
                         : 1;
@@ -259,7 +259,9 @@ public static class ExternalLanguageToolRunner
 
     private static string NormalizeExternalSeverity(JsonElement value)
     {
-        var raw = value.ValueKind == JsonValueKind.Number ? value.GetInt32().ToString() : value.GetString() ?? "error";
+        var raw = value.ValueKind == JsonValueKind.Number
+            ? value.TryGetInt32(out var numericValue) ? numericValue.ToString() : "error"
+            : value.GetString() ?? "error";
         return raw.ToLowerInvariant() switch
         {
             "1" or "error" => "error",
@@ -272,10 +274,10 @@ public static class ExternalLanguageToolRunner
 
     private static int OffsetAtLineColumnFromJson(JsonElement position, string text)
     {
-        if (position.TryGetProperty("offset", out var offset) && offset.ValueKind == JsonValueKind.Number)
-            return Math.Clamp(offset.GetInt32(), 0, Math.Max(0, text.Length));
-        var line = position.TryGetProperty("line", out var lineValue) ? lineValue.GetInt32() + 1 : 1;
-        var character = position.TryGetProperty("character", out var characterValue) ? characterValue.GetInt32() + 1 : 1;
+        if (position.TryGetProperty("offset", out var offset) && offset.ValueKind == JsonValueKind.Number && offset.TryGetInt32(out var offsetValue))
+            return Math.Clamp(offsetValue, 0, Math.Max(0, text.Length));
+        var line = position.TryGetProperty("line", out var lineValue) && lineValue.ValueKind == JsonValueKind.Number && lineValue.TryGetInt32(out var lineIndex) ? lineIndex + 1 : 1;
+        var character = position.TryGetProperty("character", out var characterValue) && characterValue.ValueKind == JsonValueKind.Number && characterValue.TryGetInt32(out var characterIndex) ? characterIndex + 1 : 1;
         return OffsetAtLineColumn(text, line, character);
     }
 

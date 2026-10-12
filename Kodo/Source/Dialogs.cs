@@ -34,19 +34,34 @@ public partial class MainWindow
         NetworkInterface.GetAllNetworkInterfaces().Any(networkInterface =>
             networkInterface.OperationalStatus == OperationalStatus.Up &&
             networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Loopback &&
-            networkInterface.NetworkInterfaceType is not NetworkInterfaceType.Tunnel);
+            !IsLoopbackOnlyInterface(networkInterface));
+
+    private static bool IsLoopbackOnlyInterface(NetworkInterface networkInterface)
+    {
+        try
+        {
+            return networkInterface.GetIPProperties().UnicastAddresses.Any(address => System.Net.IPAddress.IsLoopback(address.Address));
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static bool IsGitHubRateLimitException(Exception exception) =>
         exception is HttpRequestException { StatusCode: HttpStatusCode.Forbidden or HttpStatusCode.TooManyRequests };
 
-    private static bool IsOfflineException(Exception exception)
+    private static bool IsOfflineException(Exception exception) =>
+        IsOfflineExceptionCore(exception, HasActiveInternetConnection());
+
+    private static bool IsOfflineExceptionCore(Exception exception, bool hasConnection)
     {
-        if (!HasActiveInternetConnection())
+        if (!hasConnection)
             return true;
         if (exception is AggregateException agg)
         {
             foreach (var inner in agg.InnerExceptions)
-                if (IsOfflineException(inner))
+                if (IsOfflineExceptionCore(inner, hasConnection))
                     return true;
         }
         var current = exception;
@@ -56,7 +71,7 @@ public partial class MainWindow
                 return true;
             if (current is HttpRequestException hre && hre.InnerException is System.Net.Sockets.SocketException)
                 return true;
-            if (current is HttpRequestException hre2 && hre2.InnerException is not null && IsOfflineException(hre2.InnerException))
+            if (current is HttpRequestException hre2 && hre2.InnerException is not null && IsOfflineExceptionCore(hre2.InnerException, hasConnection))
                 return true;
             if (current.Message.Contains("No such host is known", StringComparison.OrdinalIgnoreCase) ||
                 current.Message.Contains("Name or service not known", StringComparison.OrdinalIgnoreCase) ||

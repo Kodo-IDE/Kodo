@@ -215,7 +215,15 @@ public partial class MainWindow
         if (_brushCache.TryGetValue(colorValue, out var brush))
             return brush;
 
-        brush = Brush.Parse(colorValue);
+        try
+        {
+            brush = Brush.Parse(colorValue);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("Theming.GetCachedBrush", ex, operation: $"Ignoring invalid theme colour '{colorValue}'");
+            brush = Brush.Parse(KodoAccentHex);
+        }
         _brushCache[colorValue] = brush;
         return brush;
     }

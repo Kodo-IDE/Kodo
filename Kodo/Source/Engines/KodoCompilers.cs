@@ -205,7 +205,7 @@ public partial class MainWindow
         });
         if (_extensionFilterBatchDepth > 0)
         {
-            _deferredExtensionUiActions.Add(() =>
+            DeferExtensionUiAction(() =>
             {
                 _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
             });
@@ -1145,7 +1145,7 @@ public partial class MainWindow
                 ? Path.GetFileName(new Uri(compilerExtension.DownloadUrl).LocalPath)
                 : compilerExtension.FileName;
             if (string.IsNullOrWhiteSpace(fileName))
-                fileName = $"{compilerExtension.Id}-{compilerExtension.Version}.exe";
+                fileName = $"{compilerExtension.Id}-{compilerExtension.Version}{(OperatingSystem.IsWindows() ? ".exe" : ".bin")}";
 
             var compilerFolder = Path.Combine(CompilersFolderPath, compilerExtension.Id);
             Directory.CreateDirectory(compilerFolder);
@@ -1168,6 +1168,7 @@ public partial class MainWindow
                 });
 
             await File.WriteAllBytesAsync(outputPath, bytes);
+            LspInstallationManager.MakeExecutable(outputPath);
 
             if (compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
             {
@@ -1190,7 +1191,9 @@ public partial class MainWindow
             if (!compilerExtension.Id.Equals("msys2-mingw", StringComparison.OrdinalIgnoreCase))
             {
                 await InstallPairedLanguageExtensionsAsync(compilerExtension);
-                ExtensionsStatusText = $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation.";
+                ExtensionsStatusText = OperatingSystem.IsWindows()
+                    ? $"{compilerExtension.Name} installer launched. Finish the setup wizard to complete installation."
+                    : $"{compilerExtension.Name} installer launched. Complete the installation to finish setup.";
             }
         }
         catch (Exception ex)
@@ -1788,13 +1791,75 @@ public partial class MainWindow
         }
     }
 
+    private static readonly TimeSpan RemoteIndexMatchTimeout = TimeSpan.FromSeconds(2);
+
+    private static bool MatchesRemoteAssetName(Regex pattern, string assetName)
+    {
+        try
+        {
+            return pattern.IsMatch(assetName);
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            KodoDiagnostics.LogDebug("Compiler asset pattern timed out while matching a release asset name.", ex);
+            return false;
+        }
+    }
+
+    private static bool ContainsAny(string haystack, params string[] needles)
+    {
+        foreach (var needle in needles)
+            if (haystack.Contains(needle, StringComparison.Ordinal))
+                return true;
+        return false;
+    }
+
+    private static bool AssetTargetsCurrentOperatingSystem(string assetName)
+    {
+        var name = assetName.ToLowerInvariant();
+
+        var windows = ContainsAny(name, "windows", "win32", "win64", "win-x64", "win-arm64", ".exe", ".msi", ".zip");
+        var linux = ContainsAny(name, "linux");
+        var mac = ContainsAny(name, "macos", "osx", "darwin", "apple");
+
+        if (OperatingSystem.IsWindows()) return windows || !linux && !mac;
+        if (OperatingSystem.IsLinux()) return linux || !windows && !mac;
+        return mac || !windows && !linux;
+    }
+
+    private static bool AssetTargetsCurrentArchitecture(string assetName)
+    {
+        var name = assetName.ToLowerInvariant();
+        var wantsArm = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+        var arm = ContainsAny(name, "aarch64", "arm64", "armv7", "arm");
+        var x64 = ContainsAny(name, "x86_64", "x86-64", "amd64", "x64", "win32", "win64");
+
+        if (arm && !x64) return wantsArm;
+        if (x64 && !arm) return !wantsArm;
+        return true;
+    }
+
+    private static string? MatchRemoteVersion(Regex pattern, string tagName)
+    {
+        try
+        {
+            var match = pattern.Match(tagName);
+            return match.Success ? match.Groups[1].Value : null;
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            KodoDiagnostics.LogDebug("Compiler version pattern timed out while matching a release tag.", ex);
+            return null;
+        }
+    }
+
     private async Task<CompilerResolution?> ResolveGitHubReleaseAsync(Dictionary<string, string> p, CancellationToken ct)
     {
         if (!p.TryGetValue("repo", out var repo) || string.IsNullOrWhiteSpace(repo)) return null;
         if (!p.TryGetValue("assetPattern", out var assetPatternStr) || string.IsNullOrWhiteSpace(assetPatternStr)) return null;
 
-        var assetPattern = new Regex(assetPatternStr, RegexOptions.IgnoreCase);
-        var versionPattern = p.TryGetValue("versionPattern", out var vp) && !string.IsNullOrWhiteSpace(vp) ? new Regex(vp) : null;
+        var assetPattern = new Regex(assetPatternStr, RegexOptions.IgnoreCase, RemoteIndexMatchTimeout);
+        var versionPattern = p.TryGetValue("versionPattern", out var vp) && !string.IsNullOrWhiteSpace(vp) ? new Regex(vp, RegexOptions.None, RemoteIndexMatchTimeout) : null;
         var includePrerelease = p.TryGetValue("includePrerelease", out var ip) && string.Equals(ip, "true", StringComparison.OrdinalIgnoreCase);
 
         CompilerResolution? TryOne(JsonElement release)
@@ -1805,17 +1870,34 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(tagName)) return null;
             if (!release.TryGetProperty("assets", out var assetsEl) || assetsEl.ValueKind != JsonValueKind.Array) return null;
 
+            string? bestAssetName = null;
+            string? bestDownloadUrl = null;
+            var bestScore = -1;
+
             foreach (var asset in assetsEl.EnumerateArray())
             {
                 var assetName = asset.TryGetProperty("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty;
-                if (string.IsNullOrWhiteSpace(assetName) || !assetPattern.IsMatch(assetName)) continue;
+                if (string.IsNullOrWhiteSpace(assetName) || !MatchesRemoteAssetName(assetPattern, assetName)) continue;
                 var downloadUrl = asset.TryGetProperty("browser_download_url", out var urlEl) ? urlEl.GetString() ?? string.Empty : string.Empty;
                 if (string.IsNullOrWhiteSpace(downloadUrl)) continue;
 
+                if (!AssetTargetsCurrentOperatingSystem(assetName)) continue;
+
+                var score = AssetTargetsCurrentArchitecture(assetName) ? 1 : 0;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestAssetName = assetName;
+                    bestDownloadUrl = downloadUrl;
+                }
+            }
+
+            if (bestAssetName is not null && bestDownloadUrl is not null)
+            {
                 var version = versionPattern is not null
-                    ? (versionPattern.Match(tagName) is { Success: true } m ? m.Groups[1].Value : tagName)
+                    ? MatchRemoteVersion(versionPattern, tagName) ?? tagName
                     : tagName.TrimStart('v', 'V');
-                return new CompilerResolution(version, downloadUrl, assetName);
+                return new CompilerResolution(version, bestDownloadUrl, bestAssetName);
             }
             return null;
         }
@@ -1983,12 +2065,21 @@ public partial class MainWindow
         if (!response.IsSuccessStatusCode) return null;
         var html = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
-        var entryPattern = new Regex(entryPatternStr);
-        var candidates = entryPattern.Matches(html)
-            .Select(m => m.Groups[1].Value)
-            .Distinct()
-            .OrderByDescending(v => ParseVersionNumbers(v), VersionNumberSequenceComparer.Instance)
-            .ToList();
+        var entryPattern = new Regex(entryPatternStr, RegexOptions.None, RemoteIndexMatchTimeout);
+        List<string> candidates;
+        try
+        {
+            candidates = entryPattern.Matches(html)
+                .Select(m => m.Groups[1].Value)
+                .Distinct()
+                .OrderByDescending(v => ParseVersionNumbers(v), VersionNumberSequenceComparer.Instance)
+                .ToList();
+        }
+        catch (RegexMatchTimeoutException ex)
+        {
+            KodoDiagnostics.LogDebug($"Compiler directory listing pattern timed out for '{indexUrl}'.", ex);
+            return null;
+        }
         if (candidates.Count == 0) return null;
 
         foreach (var candidate in candidates)

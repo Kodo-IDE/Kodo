@@ -227,6 +227,8 @@ internal static class SearchEngine
 
             if (read >= 3 && bom[0] == 0xEF && bom[1] == 0xBB && bom[2] == 0xBF)
                 return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+            if (read >= 4 && bom[0] == 0xFF && bom[1] == 0xFE && bom[2] == 0x00 && bom[3] == 0x00)
+                return System.Text.Encoding.UTF32;
             if (read >= 2 && bom[0] == 0xFF && bom[1] == 0xFE)
                 return System.Text.Encoding.Unicode;
             if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)

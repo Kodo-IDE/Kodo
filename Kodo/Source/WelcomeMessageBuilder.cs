@@ -6,6 +6,10 @@ namespace Kodo;
 
 internal static class WelcomeMessageBuilder
 {
+    internal const string TaglineAccentSuffix = "light.";
+    internal const string TaglineGreeting = "Code fast. Stay " + TaglineAccentSuffix;
+    internal static string TaglinePrefix => TaglineGreeting[..^TaglineAccentSuffix.Length];
+
     private static HolidayEntry? GetHolidayEntry(DateTime date, string country)
     {
         var m = date.Month;
@@ -29,6 +33,12 @@ internal static class WelcomeMessageBuilder
         if (m == 6 && d == 5) return new("World Environment Day", "Happy World Environment Day!");
         if (m == 9 && d == 21) return new("International Day of Peace", "Happy International Day of Peace!");
         if (m == 12 && d == 10) return new("International Human Rights Day", "Happy Human Rights Day!");
+        if (m == 10 && d == 29) return new("World Coding Day", "Happy World Coding Day! Keep building something great.");
+        if (m == 9 && d == 13) return new("International Programmers' Day", "Happy International Programmers' Day!");
+
+        var programmersDay = new DateTime(y, 1, 1).AddDays(255);
+        if (m == programmersDay.Month && d == programmersDay.Day)
+            return new("Programmers' Day", "Happy Programmers' Day! Day 256 of the year - fitting, isn't it?");
 
         if (m == 5 && dow == DayOfWeek.Sunday && d >= 8 && d <= 14)
             return new("Mother's Day", "Happy Mother's Day!");
@@ -46,33 +56,6 @@ internal static class WelcomeMessageBuilder
 
         if (LunarNewYear(y) is { } lny && m == lny.Month && d == lny.Day)
             return new("Lunar New Year", "Happy Lunar New Year!");
-
-        if (HoliDate(y) is { } holi && m == holi.Month && d == holi.Day)
-            return new("Holi", "Happy Holi!");
-
-        if (VesakDate(y) is { } vesak && m == vesak.Month && d == vesak.Day)
-            return new("Vesak", "Happy Vesak!");
-
-        if (EidAlFitr(y) is { } eidFitr && m == eidFitr.Month && d == eidFitr.Day)
-            return new("Eid al-Fitr", "Eid Mubarak!");
-
-        if (EidAlAdha(y) is { } eidAdha && m == eidAdha.Month && d == eidAdha.Day)
-            return new("Eid al-Adha", "Eid Mubarak!");
-
-        if (RoshHashanah(y) is { } rosh && m == rosh.Month && d == rosh.Day)
-            return new("Rosh Hashanah", "Shana Tova! Happy New Year!");
-
-        if (YomKippur(y) is { } yk && m == yk.Month && d == yk.Day)
-            return new("Yom Kippur", "G'mar Chatima Tova. Easy fast.");
-
-        if (NavratriDate(y) is { } nav && m == nav.Month && d == nav.Day)
-            return new("Navratri", "Happy Navratri!");
-
-        if (DiwaliDate(y) is { } diwali && m == diwali.Month && d == diwali.Day)
-            return new("Diwali", "Happy Diwali!");
-
-        if (HanukkahDate(y) is { } hanukkah && m == hanukkah.Month && d == hanukkah.Day)
-            return new("Hanukkah", "Happy Hanukkah!");
 
         if (country == "CA")
         {
@@ -221,20 +204,6 @@ internal static class WelcomeMessageBuilder
         return new DateTime(year, month, day);
     }
 
-    private static DateTime? MoonInMonth(int year, int month, bool fullMoon = false)
-    {
-        double kApprox = (year - 2000) * 12.3685 + month - 1;
-        for (int offset = -2; offset <= 3; offset++)
-        {
-            double k = Math.Floor(kApprox) + offset + (fullMoon ? 0.5 : 0.0);
-            double jdn = MoonPhaseJdn(k);
-            var dt = JdnToDateTime(jdn);
-            if (dt.Year == year && dt.Month == month)
-                return dt;
-        }
-        return null;
-    }
-
     private static DateTime? LunarNewYear(int year)
     {
         double kApprox = (year - 2000) * 12.3685;
@@ -246,149 +215,6 @@ internal static class WelcomeMessageBuilder
             if (dt.Year == year && ((dt.Month == 1 && dt.Day >= 20) || (dt.Month == 2 && dt.Day <= 20)))
                 return dt;
         }
-        return null;
-    }
-
-    private static DateTime? HoliDate(int year)
-    {
-        var march = MoonInMonth(year, 3, fullMoon: true);
-        if (march != null) return march;
-        var feb = MoonInMonth(year, 2, fullMoon: true);
-        return feb?.Day >= 20 ? feb : null;
-    }
-
-    private static DateTime? VesakDate(int year) =>
-        MoonInMonth(year, 5, fullMoon: true);
-
-    private static DateTime IslamicToGregorian(int iy, int im, int id)
-    {
-        int jdn = id
-                + (int)Math.Ceiling(29.5 * (im - 1))
-                + (iy - 1) * 354
-                + (3 + 11 * iy) / 30
-                + 1948438;
-        return JdnToDateTime(jdn);
-    }
-
-    private static int ApproxHijriYear(int gregorianYear) =>
-        (int)((gregorianYear - 622) * 1.030685);
-
-    private static DateTime? EidAlFitr(int year)
-    {
-        int hy = ApproxHijriYear(year);
-        for (int h = hy - 1; h <= hy + 1; h++)
-        {
-            var dt = IslamicToGregorian(h, 10, 1);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    private static DateTime? EidAlAdha(int year)
-    {
-        int hy = ApproxHijriYear(year);
-        for (int h = hy - 1; h <= hy + 1; h++)
-        {
-            var dt = IslamicToGregorian(h, 12, 10);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    private static bool IsHebrewLeapYear(int hy) => (7 * hy + 1) % 19 < 7;
-
-    private static int HebrewElapsedDays(int hy)
-    {
-        int monthsElapsed = 235 * ((hy - 1) / 19)
-                          + 12 * ((hy - 1) % 19)
-                          + (7 * ((hy - 1) % 19) + 1) / 19;
-        int parts = 204 + 793 * (monthsElapsed % 1080);
-        int hours = 5 + 12 * monthsElapsed + 793 * (monthsElapsed / 1080) + parts / 1080;
-        int day = 1 + 29 * monthsElapsed + hours / 24;
-        int pMod = 1080 * (hours % 24) + parts % 1080;
-
-        int alt = day;
-        if (pMod >= 19440
-            || (day % 7 == 2 && pMod >= 9924 && !IsHebrewLeapYear(hy))
-            || (day % 7 == 1 && pMod >= 16789 && IsHebrewLeapYear(hy - 1)))
-            alt++;
-
-        if (alt % 7 == 0 || alt % 7 == 3 || alt % 7 == 5) alt++;
-        return alt;
-    }
-
-    private static int HebrewYearDays(int hy) =>
-        HebrewElapsedDays(hy + 1) - HebrewElapsedDays(hy);
-
-    private static int HebrewMonthLength(int hy, int hm)
-    {
-        int yd = HebrewYearDays(hy);
-        if (hm == 2) return yd % 10 == 5 ? 30 : 29;
-        if (hm == 3) return yd % 10 == 3 ? 29 : 30;
-        if (hm == 6) return IsHebrewLeapYear(hy) ? 30 : 29;
-        return hm is 1 or 5 or 7 or 10 or 12 ? 30 : 29;
-    }
-
-    private static DateTime HebrewToGregorian(int hy, int hm, int hd)
-    {
-        const int HebrewEpoch = 347997;
-        int elapsed = HebrewElapsedDays(hy);
-        int doy = hd;
-        for (int mo = 1; mo < hm; mo++)
-            doy += HebrewMonthLength(hy, mo);
-        return JdnToDateTime(HebrewEpoch + elapsed + doy - 1);
-    }
-
-    private static int ApproxHebrewYear(int gregorianYear) => gregorianYear + 3760;
-
-    private static DateTime? RoshHashanah(int year)
-    {
-        int hy0 = ApproxHebrewYear(year);
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 1, 1);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    private static DateTime? YomKippur(int year)
-    {
-        int hy0 = ApproxHebrewYear(year);
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 1, 10);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    private static DateTime? HanukkahDate(int year)
-    {
-        int hy0 = ApproxHebrewYear(year) + 1;
-        for (int hy = hy0 - 1; hy <= hy0 + 1; hy++)
-        {
-            var dt = HebrewToGregorian(hy, 3, 25);
-            if (dt.Year == year) return dt;
-        }
-        return null;
-    }
-
-    private static DateTime? DiwaliDate(int year)
-    {
-        var oct = MoonInMonth(year, 10, fullMoon: false);
-        if (oct != null && oct.Value.Day >= 14) return oct;
-        var nov = MoonInMonth(year, 11, fullMoon: false);
-        if (nov != null && nov.Value.Day <= 15) return nov;
-        return oct;
-    }
-
-    private static DateTime? NavratriDate(int year)
-    {
-        var sep = MoonInMonth(year, 9, fullMoon: false);
-        if (sep != null && sep.Value.Day >= 15) return sep.Value.AddDays(1);
-        var oct = MoonInMonth(year, 10, fullMoon: false);
-        if (oct != null && oct.Value.Day <= 10) return oct.Value.AddDays(1);
         return null;
     }
 
@@ -669,6 +495,9 @@ internal static class WelcomeMessageBuilder
             messages.Add("Let's get to work!");
             messages.Add($"Happy {dayName}!");
         }
+
+        if (Random.Shared.Next(10_000) == 0)
+            messages.Add(TaglineGreeting);
 
         return messages.ToArray();
     }

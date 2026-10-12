@@ -1,6 +1,5 @@
 // Licensed under the GNU GPL-v3.0
 using System;
-using System.Runtime.Versioning;
 using Avalonia.Media;
 using Kodo.Models;
 
@@ -17,9 +16,7 @@ internal static class ThemeResolver
         {
             "Light" => LightPalette,
             "Dark" => DarkPalette,
-#pragma warning disable CA1416
-            "System" => IsWindowsLightTheme() ? LightPalette : DarkPalette,
-#pragma warning restore CA1416
+            "System" => SystemThemeHelper.GetIsLightTheme() == true ? LightPalette : DarkPalette,
             _ => ResolveExtensionPalette(settings),
         };
     }
@@ -36,7 +33,6 @@ internal static class ThemeResolver
     private static Color Lighten(Color c, double a) { var r = (byte)Math.Clamp(c.R + (255 - c.R) * a, 0, 255); var g = (byte)Math.Clamp(c.G + (255 - c.G) * a, 0, 255); var b = (byte)Math.Clamp(c.B + (255 - c.B) * a, 0, 255); return Color.Parse($"#{r:X2}{g:X2}{b:X2}"); }
     private static Color Darken(Color c, double a) { var r = (byte)Math.Clamp(c.R * (1 - a), 0, 255); var g = (byte)Math.Clamp(c.G * (1 - a), 0, 255); var b = (byte)Math.Clamp(c.B * (1 - a), 0, 255); return Color.Parse($"#{r:X2}{g:X2}{b:X2}"); }
     private static Color Blend(Color a, Color b, double t) { var r = (byte)(a.R + (b.R - a.R) * t); var g = (byte)(a.G + (b.G - a.G) * t); var bl = (byte)(a.B + (b.B - a.B) * t); return Color.Parse($"#{r:X2}{g:X2}{bl:X2}"); }
-    [SupportedOSPlatform("windows")] private static bool IsWindowsLightTheme() { try { using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"); if (key?.GetValue("AppsUseLightTheme") is int raw) return raw != 0; } catch { } return false; }
     private static ThemeSettings LoadThemeSettings() => SettingsStore.Theme;
 
 }

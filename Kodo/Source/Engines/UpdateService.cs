@@ -417,15 +417,22 @@ internal static class UpdateService
         return actual is not null && string.Equals(actual, expectedHex.Trim().ToLowerInvariant(), StringComparison.Ordinal);
     }
 
+    internal static string? NormalizePublisherSha256(string? value)
+    {
+        var hex = value?.Trim().ToLowerInvariant();
+        return !string.IsNullOrEmpty(hex) && Shared.IsValidSha256(hex) ? hex : null;
+    }
+
     internal static bool IsCachedInstallerValid(string path, UpdateInfo update)
     {
         try
         {
-            if (!File.Exists(path) || string.IsNullOrWhiteSpace(update.Sha256)) return false;
+            var expected = NormalizePublisherSha256(update.Sha256);
+            if (expected is null || !File.Exists(path)) return false;
             var length = new FileInfo(path).Length;
             if (length < 1024 * 1024) return false;
             if (update.AssetSizeBytes > 0 && length != update.AssetSizeBytes) return false;
-            return VerifyFileSha256(path, update.Sha256);
+            return VerifyFileSha256(path, expected);
         }
         catch { return false; }
     }
@@ -699,7 +706,9 @@ internal static class UpdateService
         if (!File.Exists(installerPath)) throw new FileNotFoundException("Staged installer not found", installerPath);
         var fi = new FileInfo(installerPath);
         if (fi.Length < 1024 * 1024) throw new InvalidDataException($"Staged installer too small ({fi.Length} bytes)");
-        expectedSha256 ??= ComputeFileSha256(installerPath);
+        var publisherSha256 = NormalizePublisherSha256(expectedSha256);
+        if (publisherSha256 is null)
+            throw new InvalidDataException($"No published checksum for '{Path.GetFileName(installerPath)}' - refusing to install an unverified update.");
 
         Directory.CreateDirectory(TransactionDir);
         var transactionId = Guid.NewGuid().ToString("N");
@@ -717,7 +726,7 @@ internal static class UpdateService
             RestartAfterUpdate: restartAfterUpdate,
             CreatedAtUtc: DateTime.UtcNow,
             Version: version,
-            Sha256: expectedSha256,
+            Sha256: publisherSha256,
             ExpectedSize: fi.Length,
             AssetName: Path.GetFileName(installerPath));
 

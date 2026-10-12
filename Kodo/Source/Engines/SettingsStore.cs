@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Kodo.Models;
@@ -110,16 +111,39 @@ internal static class SettingsStore
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 
-            if (json.Contains("\"CodePredictEnabled\"", StringComparison.Ordinal))
-                json = json.Replace("\"CodePredictEnabled\"", "\"InsightEnabled\"", StringComparison.Ordinal);
-
-            return JsonSerializer.Deserialize<AppSettings>(json, ReadOptions) ?? new AppSettings();
+            return JsonSerializer.Deserialize<AppSettings>(MigrateLegacySettingsJson(json), ReadOptions) ?? new AppSettings();
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogWarning("SettingsStore.ReadFromDisk", ex, operation: $"Failed to load settings from '{FilePath}'");
             return new AppSettings();
         }
+    }
+
+    private static string MigrateLegacySettingsJson(string json)
+    {
+        if (!json.Contains("\"CodePredictEnabled\"", StringComparison.Ordinal))
+            return json;
+        if (JsonNode.Parse(json) is not JsonObject root)
+            return json;
+
+        string? legacyKey = null;
+        JsonNode? legacyValue = null;
+        foreach (var property in root)
+        {
+            if (!string.Equals(property.Key, "CodePredictEnabled", StringComparison.Ordinal))
+                continue;
+            legacyKey = property.Key;
+            legacyValue = property.Value?.DeepClone();
+            break;
+        }
+        if (legacyKey is null)
+            return json;
+
+        root.Remove(legacyKey);
+        if (legacyValue is not null && !root.ContainsKey("InsightEnabled"))
+            root["InsightEnabled"] = legacyValue;
+        return root.ToJsonString();
     }
 
     private static void EnsurePrivateDirectory(string path)
@@ -140,7 +164,7 @@ internal static class SettingsStore
             return;
         }
 
-        File.SetUnixFileMode(path, PrivateDirectoryMode);
+        ApplyUnixModeBestEffort(path, PrivateDirectoryMode);
     }
 
     private static void EnsurePrivateFile(string path)
@@ -159,7 +183,20 @@ internal static class SettingsStore
             return;
         }
 
-        File.SetUnixFileMode(path, PrivateFileMode);
+        ApplyUnixModeBestEffort(path, PrivateFileMode);
+    }
+
+    private static void ApplyUnixModeBestEffort(string path, UnixFileMode mode)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        try
+        {
+            File.SetUnixFileMode(path, mode);
+        }
+        catch (Exception ex) when (ex is IOException or PlatformNotSupportedException or UnauthorizedAccessException or NotSupportedException)
+        {
+            KodoDiagnostics.LogDebug($"SettingsStore: '{path}' does not support POSIX permission bits; leaving file modes unchanged.", ex);
+        }
     }
 
     public static ThemeSettings Theme => new()

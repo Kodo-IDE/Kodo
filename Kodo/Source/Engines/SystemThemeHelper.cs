@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace Kodo;
@@ -169,9 +170,12 @@ internal static class SystemThemeHelper
         }
 
         var kde = Path.Combine(LinuxConfigDir(), "kdeglobals");
-        if (TryReadIniValue(kde, "Colors:Window", "Foreground", out var fg) &&
-            TryParseColor(fg, out var kdeHex))
-            return kdeHex;
+        if (TryReadIniValue(kde, "General", "AccentColor", out var kdeAccent) &&
+            TryParseColor(kdeAccent, out var kdeAccentHex))
+            return kdeAccentHex;
+        if (TryReadIniValue(kde, "Colors:Selection", "BackgroundNormal", out var kdeSelection) &&
+            TryParseColor(kdeSelection, out var kdeSelectionHex))
+            return kdeSelectionHex;
 
         return null;
     }
@@ -214,17 +218,27 @@ internal static class SystemThemeHelper
                 s.Equals("default", StringComparison.OrdinalIgnoreCase)) return true;
         }
 
-        var kde = Path.Combine(LinuxConfigDir(), "kdeglobals");
-        if (TryReadIniValue(kde, "Looks", "colorScheme", out var kdeScheme))
-        {
-            var s = kdeScheme.Trim();
-            if (s.Equals("Day", StringComparison.OrdinalIgnoreCase)) return true;
-            if (s.Equals("Bark", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("Dark", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("Night", StringComparison.OrdinalIgnoreCase)) return false;
-        }
+        if (TryReadKdeColor("Colors:Window", "BackgroundNormal", out var kr, out var kg, out var kb))
+            return Lum(Avalonia.Media.Color.FromArgb(255, kr, kg, kb)) > KdeLightLuminanceThreshold;
 
         return null;
+    }
+
+    private static bool TryReadKdeColor(string section, string key, out byte r, out byte g, out byte b)
+    {
+        r = g = b = 0;
+        try
+        {
+            var kde = Path.Combine(LinuxConfigDir(), "kdeglobals");
+            if (!TryReadIniValue(kde, section, key, out var raw)) return false;
+            if (!TryParseColor(raw, out var hex) || string.IsNullOrEmpty(hex)) return false;
+            var color = Avalonia.Media.Color.Parse(hex);
+            r = color.R;
+            g = color.G;
+            b = color.B;
+            return true;
+        }
+        catch { r = g = b = 0; return false; }
     }
 
     private static Dictionary<string, string> ReadGSettings()
@@ -300,6 +314,9 @@ internal static class SystemThemeHelper
         return found > 0;
     }
 
+    private const int RunCaptureExitTimeoutMs = 3000;
+    private const int RunCaptureDrainTimeoutMs = 2000;
+
     private static string? RunCapture(string fileName, string arguments)
     {
         try
@@ -315,8 +332,20 @@ internal static class SystemThemeHelper
             };
             using var proc = System.Diagnostics.Process.Start(psi);
             if (proc is null) return null;
-            var output = proc.StandardOutput.ReadToEnd();
-            if (!proc.WaitForExit(3000)) return null;
+
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+
+            if (!proc.WaitForExit(RunCaptureExitTimeoutMs))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { }
+                return null;
+            }
+
+            if (!Task.WaitAll(new[] { stdoutTask, stderrTask }, RunCaptureDrainTimeoutMs))
+                return null;
+
+            var output = stdoutTask.IsCompletedSuccessfully ? stdoutTask.Result ?? string.Empty : string.Empty;
             return proc.ExitCode == 0 ? output : null;
         }
         catch { return null; }
@@ -480,9 +509,12 @@ internal static class SystemThemeHelper
     }
 
 
+    private const double KdeLightLuminanceThreshold = 0.4;
+
+    private static double Lum(Avalonia.Media.Color c) { static double To(double ch) { ch /= 255; return ch <= 0.03928 ? ch / 12.92 : Math.Pow((ch + 0.055) / 1.055, 2.4); } return 0.2126 * To(c.R) + 0.7152 * To(c.G) + 0.0722 * To(c.B); }
+
     public static Avalonia.Media.IBrush GetReadableForeground(Avalonia.Media.Color bg)
     {
-        static double Lum(Avalonia.Media.Color c) { double To(double ch) { ch /= 255; return ch <= 0.03928 ? ch / 12.92 : Math.Pow((ch + 0.055) / 1.055, 2.4); } return 0.2126 * To(c.R) + 0.7152 * To(c.G) + 0.0722 * To(c.B); }
         var l = Lum(bg);
         return (1.05 / (l + 0.05)) >= ((l + 0.05) / 0.05) ? Avalonia.Media.Brushes.White : Avalonia.Media.Brushes.Black;
     }

@@ -275,6 +275,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _statusBarDiagnosticsTooltip = "No problems detected";
     private bool _pendingFullStateRefresh = true;
     private (string?, string?, int, bool, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
+    private bool _hasDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     private bool _isFirstLaunch;
     private bool _hasCompletedTutorial;
@@ -362,14 +363,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _extensionFilterBatchDepth;
     private bool _pendingExtensionFilterNotify;
     private readonly List<Action> _deferredExtensionUiActions = new();
+    private readonly object _deferredExtensionUiActionsLock = new();
     private void BeginExtensionFilterBatch() => _extensionFilterBatchDepth++;
     private void EndExtensionFilterBatch()
     {
         if (--_extensionFilterBatchDepth > 0) return;
-        if (_deferredExtensionUiActions.Count > 0)
+        List<Action> actions;
+        lock (_deferredExtensionUiActionsLock)
         {
-            var actions = _deferredExtensionUiActions.ToList();
-            _deferredExtensionUiActions.Clear();
+            if (_deferredExtensionUiActions.Count == 0)
+            {
+                actions = new List<Action>();
+            }
+            else
+            {
+                actions = new List<Action>(_deferredExtensionUiActions);
+                _deferredExtensionUiActions.Clear();
+            }
+        }
+        if (actions.Count > 0)
+        {
             Dispatcher.UIThread.Post(() =>
             {
                 foreach (var a in actions) a();
@@ -390,11 +403,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         RaiseMany(nameof(FilteredInstalledExtensions), nameof(FilteredInstalledLanguageExtensions), nameof(FilteredInstalledPluginExtensions), nameof(FilteredInstalledThemeExtensions), nameof(HasVisibleInstalledLanguageExtensions), nameof(HasVisibleInstalledPluginExtensions), nameof(HasVisibleInstalledThemeExtensions), nameof(IsInstalledLanguageDividerVisible), nameof(IsInstalledPluginDividerVisible), nameof(IsInstalledThemeDividerVisible), nameof(FilteredMarketplaceExtensions), nameof(FilteredCompilerExtensions), nameof(FilteredInstalledCompilerExtensions), nameof(IsNoExtensionsVisible), nameof(IsInstalledSearchEmptyVisible), nameof(IsMarketplaceSearchEmptyVisible), nameof(IsMarketplaceEmptyVisible), nameof(InstalledExtensionsCount), nameof(InstalledCompilersCount), nameof(MarketplaceEmptyStateText), nameof(HasVisibleInstalledExtensions), nameof(HasVisibleMarketplaceExtensions), nameof(HasVisibleCompilerExtensions), nameof(HasVisibleInstalledCompilerExtensions), nameof(HasVisibleInstalledExtensionsOrCompilers), nameof(HasVisibleInstalledExtensionsAndCompilers), nameof(IsInstalledCompilersEmptyStateVisible));
     }
+    private void DeferExtensionUiAction(Action action)
+    {
+        lock (_deferredExtensionUiActionsLock)
+        {
+            _deferredExtensionUiActions.Add(action);
+        }
+    }
+
+    private List<Action> TakeDeferredExtensionUiActions()
+    {
+        lock (_deferredExtensionUiActionsLock)
+        {
+            if (_deferredExtensionUiActions.Count == 0)
+                return new List<Action>();
+            var snapshot = new List<Action>(_deferredExtensionUiActions);
+            _deferredExtensionUiActions.Clear();
+            return snapshot;
+        }
+    }
+
+    private void ClearDeferredExtensionUiActions()
+    {
+        lock (_deferredExtensionUiActionsLock)
+        {
+            _deferredExtensionUiActions.Clear();
+        }
+    }
+
     private async Task InvokeExtensionUiAsync(Action action)
     {
         if (_extensionFilterBatchDepth > 0)
         {
-            _deferredExtensionUiActions.Add(action);
+            lock (_deferredExtensionUiActionsLock)
+            {
+                _deferredExtensionUiActions.Add(action);
+            }
             return;
         }
         await Dispatcher.UIThread.InvokeAsync(action, DispatcherPriority.Background);
@@ -765,7 +809,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _suppressSettingsSave = true;
 
         var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
-        _startupFilePath = !string.IsNullOrWhiteSpace(trimmedStartupPath) && File.Exists(trimmedStartupPath)
+        _startupFilePath = !string.IsNullOrWhiteSpace(trimmedStartupPath)
+            && (File.Exists(trimmedStartupPath) || Directory.Exists(trimmedStartupPath))
             ? trimmedStartupPath
             : null;
         InitializeComponent();
@@ -1034,7 +1079,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (!forceNetwork && await LoadCachedLatestReleaseAsync().ConfigureAwait(false))
+            if (!forceNetwork && await LoadCachedLatestReleaseAsync())
             {
                 LatestReleaseStatusText = HasLatestRelease
                     ? $"Latest release: {LatestReleaseDisplayName}"
@@ -1082,7 +1127,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            if (!forceNetwork && await LoadCachedAnnouncementsAsync().ConfigureAwait(false))
+            if (!forceNetwork && await LoadCachedAnnouncementsAsync())
                 return;
 
             foreach (var url in new[]
@@ -4242,6 +4287,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
+            RaiseWelcomeMessageChanged();
             UpdateLocalizedSpelling();
             RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling));
             SaveSettings();
@@ -4328,6 +4374,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
+            RaiseWelcomeMessageChanged();
             SaveSettings();
         }
     }
@@ -4342,6 +4389,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
+            RaiseWelcomeMessageChanged();
             SaveSettings();
         }
     }
@@ -4357,8 +4405,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _welcomeMessagesCache = null;
             _selectedWelcomeMessage = null;
             OnPropertyChanged();
+            RaiseWelcomeMessageChanged();
             SaveSettings();
         }
+    }
+
+    private void RaiseWelcomeMessageChanged()
+    {
+        OnPropertyChanged(nameof(WelcomeMessage));
+        OnPropertyChanged(nameof(IsTaglineGreeting));
     }
 
     private static string DetectCountryCode()
@@ -4375,8 +4430,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private string? _selectedWelcomeMessage;
 
-    private readonly bool _isTaglineGreeting = Random.Shared.Next(10_000) == 0;
-    public bool IsTaglineGreeting => _isTaglineGreeting;
+    public bool IsTaglineGreeting => string.Equals(WelcomeMessage, WelcomeMessageBuilder.TaglineGreeting, StringComparison.Ordinal);
+
+    public string TaglinePrefixText => WelcomeMessageBuilder.TaglinePrefix;
+    public string TaglineAccentText => WelcomeMessageBuilder.TaglineAccentSuffix;
 
     private readonly bool _isRareWordmarkVariant = Random.Shared.Next(1_000_000) == 0;
     public string KodoWordmarkText => _isRareWordmarkVariant ? "KODE-O" : "KODO";
@@ -5045,6 +5102,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _discordRpcClient = new DiscordRpcClient(clientId);
                 _discordRpcClient.Initialize();
                 _lastDiscordPresenceKey = default;
+                _hasDiscordPresenceKey = false;
             }
 
             UpdateDiscordPresence();
@@ -5062,6 +5120,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_discordRpcClient is null || !IsDiscordRichPresenceEnabled) return;
 
         var currentKey = GetDiscordPresenceKey();
+        if (_hasDiscordPresenceKey && _lastDiscordPresenceKey == currentKey) return;
 
         try
         {
@@ -5088,6 +5147,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Timestamps = new DiscordRPC.Timestamps(_sessionStart)
             });
             _lastDiscordPresenceKey = currentKey;
+            _hasDiscordPresenceKey = true;
         }
         catch (Exception ex)
         {
@@ -5197,6 +5257,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _discordRpcClient = null;
             _lastDiscordPresenceKey = default;
+            _hasDiscordPresenceKey = false;
         }
     }
 
@@ -5561,7 +5622,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             while (true)
             {
-                AppSettings toWrite;
                 lock (_settingsWriteLock)
                 {
                     if (_pendingSettingsSnapshot is null)
@@ -5569,11 +5629,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         _isPersistingSettings = false;
                         return;
                     }
-                    toWrite = _pendingSettingsSnapshot;
+                    WriteToDisk(_pendingSettingsSnapshot);
                     _pendingSettingsSnapshot = null;
                 }
-
-                WriteToDisk(toWrite);
             }
         });
     }
@@ -5587,9 +5645,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Activate();
 
         var trimmedPath = filePath?.Trim().Trim('"');
-        if (!string.IsNullOrWhiteSpace(trimmedPath) && File.Exists(trimmedPath))
+        if (!string.IsNullOrWhiteSpace(trimmedPath))
         {
-            await OpenFileFromPathAsync(trimmedPath);
+            if (Directory.Exists(trimmedPath))
+                await OpenFolderFromPathAsync(trimmedPath);
+            else if (File.Exists(trimmedPath))
+                await OpenFileFromPathAsync(trimmedPath);
         }
     }
 
@@ -5720,7 +5781,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (!string.IsNullOrWhiteSpace(_startupFilePath))
             {
-                await OpenFileFromPathAsync(_startupFilePath);
+                if (Directory.Exists(_startupFilePath))
+                    await OpenFolderFromPathAsync(_startupFilePath);
+                else
+                    await OpenFileFromPathAsync(_startupFilePath);
             }
         }
         finally
@@ -5929,6 +5993,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var savingTab = ActiveEditorTab;
         var savingPath = _currentFilePath;
         var savingContent = EditorTextBox.Document.Text;
+        var savingVersion = _insightDocVersion;
 
         try
         {
@@ -5946,17 +6011,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             saveWatch.Stop();
             KodoDiagnostics.ReportSlowStage("save convert+write", saveWatch.ElapsedMilliseconds, 1000, $"len={savingContent.Length}");
 
-            if (savingTab is not null)
+            if (savingVersion == _insightDocVersion)
             {
-                savingTab.Content = textToSave;
-                savingTab.IsDirty = false;
-                if (savingTab.IsUntitled)
-                    savingTab.IsUntitled = false;
+                if (savingTab is not null)
+                {
+                    savingTab.Content = textToSave;
+                    savingTab.IsDirty = false;
+                }
+                if (ReferenceEquals(ActiveEditorTab, savingTab))
+                {
+                    _isDirty = false;
+                    OnPropertyChanged(nameof(IsDocumentDirty));
+                }
             }
+            else
+            {
+                KodoDiagnostics.LogDebug($"Save raced with edits for '{savingPath}' - leaving tab dirty");
+                if (savingTab is not null)
+                    savingTab.IsDirty = true;
+            }
+            if (savingTab is not null && savingTab.IsUntitled)
+                savingTab.IsUntitled = false;
             if (ReferenceEquals(ActiveEditorTab, savingTab))
             {
-                _isDirty = false;
-                OnPropertyChanged(nameof(IsDocumentDirty));
                 if (shouldPromptForPath)
                     RefreshCurrentFileSyntaxHighlighting();
                 else
@@ -5966,9 +6043,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (IsAutoSaveEnabled && HasFileOpen && ReferenceEquals(ActiveEditorTab, savingTab))
             {
-                _autoSaveStatusMessage = AutoSaveSavedMessage;
-                _autoSaveStatusTimer.Stop();
-                _autoSaveStatusTimer.Start();
+                if (savingVersion == _insightDocVersion)
+                {
+                    _autoSaveStatusMessage = AutoSaveSavedMessage;
+                    _autoSaveStatusTimer.Stop();
+                    _autoSaveStatusTimer.Start();
+                }
+                else
+                {
+                    _autoSaveStatusMessage = AutoSaveSavingMessage;
+                    _autoSaveStatusTimer.Stop();
+                    OnPropertyChanged(nameof(FileSummaryText));
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
@@ -6371,7 +6457,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void CloseAllTerminalSessions()
     {
         foreach (var session in TerminalSessions.ToList())
-            CloseTerminalSession(session);
+            CloseTerminalSession(session, activateReplacement: false);
 
         ActiveTerminalSession = null;
     }
@@ -8339,7 +8425,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _currentFileEncoding = chosen;
             OnPropertyChanged(nameof(EncodingDisplayText));
             if (ActiveEditorTab is not null)
+            {
                 ActiveEditorTab.Content = textToWrite;
+                ActiveEditorTab.Encoding = chosen;
+                ActiveEditorTab.IsDirty = false;
+            }
+            _isDirty = false;
+            OnPropertyChanged(nameof(IsDocumentDirty));
         }
         catch (Exception ex)
         {

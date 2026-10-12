@@ -1041,18 +1041,27 @@ public partial class MainWindow
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
         (int Offset, int Length) match;
-        if (forward)
+        try
         {
-            match = SearchEngine.FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (match.Offset < 0)
-                match = SearchEngine.FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            if (forward)
+            {
+                match = SearchEngine.FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+                if (match.Offset < 0)
+                    match = SearchEngine.FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
+            }
+            else
+            {
+                var searchTo = Math.Max(0, caretOffset - 1);
+                match = SearchEngine.FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+                if (match.Offset < 0)
+                    match = SearchEngine.FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+            }
         }
-        else
+        catch (RegexMatchTimeoutException ex)
         {
-            var searchTo = Math.Max(0, caretOffset - 1);
-            match = SearchEngine.FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
-            if (match.Offset < 0)
-                match = SearchEngine.FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
+            KodoDiagnostics.LogDebug("Find in editor stopped: the search pattern took too long to evaluate.", ex);
+            SearchStatusText = "That pattern is too expensive to search with - try a simpler one.";
+            return;
         }
 
         if (match.Offset < 0) return;

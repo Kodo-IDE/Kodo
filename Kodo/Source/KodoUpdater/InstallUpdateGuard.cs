@@ -49,7 +49,8 @@ internal sealed class InstallUpdateGuard : IDisposable
         catch
         {
             try { mutex?.Dispose(); } catch { }
-            return null;
+            try { return new InstallUpdateGuard(new Mutex()); }
+            catch { return null; }
         }
     }
 

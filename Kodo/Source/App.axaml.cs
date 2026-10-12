@@ -106,6 +106,10 @@ public partial class App : Application
         {
             DeferFileAssociationsRegistration();
         }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            DeferDesktopEntryRegistration();
+        }
 #endif
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
@@ -201,6 +205,67 @@ public partial class App : Application
         });
     }
 
+    private static void DeferDesktopEntryRegistration()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                RegisterDesktopEntry();
+            }
+            catch { }
+        });
+    }
+
+    private static void RegisterDesktopEntry()
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(exe)) return;
+
+            var applicationsDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".local", "share", "applications");
+            Directory.CreateDirectory(applicationsDir);
+
+            var desktopFile = Path.Combine(applicationsDir, "kodo.desktop");
+            var contents = string.Join('\n',
+            [
+                "[Desktop Entry]",
+                "Type=Application",
+                "Name=Kodo",
+                "GenericName=Text Editor",
+                "Comment=Open files and folders in Kodo",
+                $"Exec=\"{exe}\" %f",
+                "Terminal=false",
+                "Categories=Development;IDE;TextEditor;",
+                "MimeType=inode/directory;text/plain;text/x-c;text/x-csharp;text/x-java;text/x-python;text/x-makefile;text/x-shellscript;application/json;application/xml;application/x-sh;application/javascript;",
+                "NoDisplay=false",
+                "",
+            ]);
+
+            File.WriteAllText(desktopFile, contents);
+
+            try
+            {
+                using var update = Process.Start(new ProcessStartInfo("update-desktop-database", applicationsDir)
+                {
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                });
+                update?.WaitForExit(5000);
+            }
+            catch { }
+        }
+        catch
+        {
+        }
+    }
+
     private static void DeferUpdateChecks()
     {
         _ = Task.Run(async () =>
@@ -251,6 +316,34 @@ public partial class App : Application
                     $@"Software\Classes\{ext}\OpenWithList\Kodo.exe");
                 extKey?.SetValue("", "");
             }
+
+            using (var directoryKey = Registry.CurrentUser.CreateSubKey(@"Software\Classes\Directory\shell\Kodo"))
+            {
+                directoryKey.SetValue("", "Open with Kodo");
+                directoryKey.SetValue("Icon", $"\"{exe}\",0");
+                using var directoryCommandKey = directoryKey.CreateSubKey("command");
+                directoryCommandKey.SetValue("", command);
+            }
+
+            NotifyShellAssociationsChanged();
+        }
+        catch
+        {
+        }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
+    private static extern void SHChangeNotify(uint eventId, uint flags, nint item1, nint item2);
+
+    private const uint ShcneAssocChanged = 0x08000000;
+    private const uint ShcnfIdList = 0x00001000;
+
+    [SupportedOSPlatform("windows")]
+    private static void NotifyShellAssociationsChanged()
+    {
+        try
+        {
+            SHChangeNotify(ShcneAssocChanged, ShcnfIdList, 0, 0);
         }
         catch
         {

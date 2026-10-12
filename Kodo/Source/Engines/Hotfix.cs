@@ -933,11 +933,12 @@ internal static class HotfixStaging
     internal static string NormalizeEntryName(string? name) =>
         (name ?? "").Trim().Replace('\\', '/').Trim('/');
 
-    internal static string NormalizeArchiveForInstaller(string packagePath, string platformRid)
+    internal static string NormalizeArchiveForInstaller(string packagePath, string platformRid, string? assetName = null)
     {
         if (!string.Equals(platformRid, "linux-x64", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(platformRid, "linux-arm64", StringComparison.OrdinalIgnoreCase)) return packagePath;
-        if (!packagePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return packagePath;
+        var archiveName = string.IsNullOrWhiteSpace(assetName) ? packagePath : Path.GetFileName(assetName.Trim());
+        if (!archiveName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return packagePath;
         var normalizedPath = packagePath + ".normalized.zip";
         if (File.Exists(normalizedPath)) File.Delete(normalizedPath);
         try
@@ -1149,13 +1150,21 @@ internal static class HotfixStaging
         await DownloadAsync(client, candidate, downloadPath, progress, ct).ConfigureAwait(false);
 
         var rid = HotfixDiscovery.GetCurrentPlatformRid();
-        var normalizedPackagePath = NormalizeArchiveForInstaller(downloadPath, rid);
+        var normalizedPackagePath = NormalizeArchiveForInstaller(downloadPath, rid, candidate.AssetName);
         var verify = VerifyPackage(normalizedPackagePath, installedBase, installedLevel, rid);
         if (!verify.Ok || verify.Manifest is null || verify.ManifestJson is null)
             throw new InvalidDataException(verify.Error ?? "Hotfix verification failed.");
 
         var kodoExeName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
         var kodoExePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, kodoExeName);
+        var baseDir = AppContext.BaseDirectory;
+        var candidateKodo = Path.Combine(baseDir, kodoExeName);
+        if (File.Exists(candidateKodo)) kodoExePath = Path.GetFullPath(candidateKodo);
+        if (!IsRestartableKodoPath(kodoExePath, targetDir))
+        {
+            KodoDiagnostics.LogDebug($"Hotfix {candidate.TagName} not staged: '{kodoExePath}' is not the Kodo launcher in '{targetDir}'. Kodo keeps running on the current installation.");
+            return new PrepareResult();
+        }
         var txPath = StageVerifiedPackage(
             normalizedPackagePath, verify.ManifestJson, verify.Manifest,
             hotfixRoot, targetDir, kodoExePath,
@@ -1171,6 +1180,23 @@ internal static class HotfixStaging
         }
         catch { }
         return new PrepareResult { TransactionPath = txPath, Transaction = tx };
+    }
+
+    private static bool IsRestartableKodoPath(string kodoExePath, string targetDir)
+    {
+        try
+        {
+            var exeName = Path.GetFileName(kodoExePath);
+            var validName = OperatingSystem.IsWindows()
+                ? string.Equals(exeName, "Kodo.exe", StringComparison.OrdinalIgnoreCase)
+                : string.Equals(exeName, "Kodo", StringComparison.Ordinal) || string.Equals(exeName, "kodo", StringComparison.Ordinal);
+            if (!validName) return false;
+            return string.Equals(
+                Path.GetFullPath(kodoExePath),
+                Path.GetFullPath(Path.Combine(targetDir, exeName)),
+                OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+        }
+        catch { return false; }
     }
 
     internal static void EnsureTargetWritable(string targetDir)

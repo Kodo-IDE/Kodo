@@ -223,7 +223,7 @@ public partial class MainWindow
         });
         if (_extensionFilterBatchDepth > 0)
         {
-            _deferredExtensionUiActions.Add(() =>
+            DeferExtensionUiAction(() =>
             {
                 _ = FetchMarketplaceIconsAsync(marketplaceIconMap);
                 _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap);
@@ -402,7 +402,7 @@ public partial class MainWindow
 
         if (_extensionFilterBatchDepth > 0)
         {
-            _deferredExtensionUiActions.Add(() =>
+            DeferExtensionUiAction(() =>
             {
                 _ = FetchMarketplaceIconsAsync(pluginIconMap);
                 _ = FetchInstalledExtensionIconsAsync(pluginIconMap);
@@ -1373,9 +1373,18 @@ public partial class MainWindow
                 });
 
             ValidateDownloadedExtensionPackage(marketplaceExtension, bytes);
-            DeleteInstalledExtensionSources(marketplaceExtension.Id, outputPath);
-            await File.WriteAllBytesAsync(outputPath, bytes);
-            NormalizeKoxManifestVersion(outputPath);
+            var installPath = Path.GetFullPath(outputPath);
+            var stagedPath = await StageExtensionPackageAsync(installPath, bytes);
+            try
+            {
+                File.Move(stagedPath, installPath, overwrite: true);
+                DeleteInstalledExtensionSources(marketplaceExtension.Id, installPath);
+            }
+            finally
+            {
+                try { if (File.Exists(stagedPath)) File.Delete(stagedPath); } catch { }
+            }
+            NormalizeKoxManifestVersion(installPath);
 
             await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
@@ -1577,6 +1586,29 @@ public partial class MainWindow
         {
             throw new InvalidDataException(
                 $"Downloaded package version '{manifestVersion}' is older than the marketplace version '{marketplaceExtension.Version}'.");
+        }
+    }
+
+    private static async Task<string> StageExtensionPackageAsync(string outputPath, byte[] packageBytes)
+    {
+        var directory = Path.GetDirectoryName(outputPath);
+        if (string.IsNullOrWhiteSpace(directory))
+            throw new IOException("Extension install path has no parent directory.");
+        Directory.CreateDirectory(directory);
+        var stagedPath = outputPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            using (var stream = new FileStream(stagedPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, FileOptions.WriteThrough))
+            {
+                await stream.WriteAsync(packageBytes, 0, packageBytes.Length);
+                stream.Flush(flushToDisk: true);
+            }
+            return stagedPath;
+        }
+        catch
+        {
+            try { if (File.Exists(stagedPath)) File.Delete(stagedPath); } catch { }
+            throw;
         }
     }
 

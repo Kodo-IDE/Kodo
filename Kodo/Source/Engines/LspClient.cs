@@ -99,9 +99,9 @@ internal sealed class LspClient : IDisposable
     {
         if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
         if (!caps.TryGetProperty("textDocumentSync", out var sync)) return false;
-        if (sync.ValueKind == JsonValueKind.Number) return sync.GetInt32() == 2;
+        if (sync.ValueKind == JsonValueKind.Number) return sync.TryGetInt32(out var syncKind) && syncKind == 2;
         if (sync.ValueKind == JsonValueKind.Object && sync.TryGetProperty("change", out var change) && change.ValueKind == JsonValueKind.Number)
-            return change.GetInt32() == 2;
+            return change.TryGetInt32(out var changeKind) && changeKind == 2;
         return false;
     }
 

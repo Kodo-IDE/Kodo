@@ -591,7 +591,7 @@ public partial class MainWindow
                     _lspMissingNotified.Remove(lspExt.Id);
                     _lspMissingNotified.Remove(lspExt.Id + ":" + providerId);
                     SaveSettings(immediate: true);
-                    if (!string.IsNullOrWhiteSpace(_currentFilePath) && IsSameDocument(_currentFilePath, _currentFilePath))
+                    if (!string.IsNullOrWhiteSpace(_currentFilePath))
                     {
                         lock (_lspOpenLock) _lspPendingOpens.Remove(NormalizeFilePath(_currentFilePath));
                         var currentPath = _currentFilePath;
@@ -887,7 +887,9 @@ public partial class MainWindow
                 {
                     pendingSync = _lspPendingTexts.ContainsKey(filePath) || _lspPendingChanges.ContainsKey(filePath);
                     if (!pendingSync) return (Text: (string?)null, UsesIncrementalChanges: false, HasPending: false);
-                    pendingSync = _lspPendingTexts.Remove(filePath) || _lspPendingChanges.ContainsKey(filePath);
+                    var removedPendingText = _lspPendingTexts.Remove(filePath);
+                    var hasPendingChanges = _lspPendingChanges.ContainsKey(filePath);
+                    pendingSync = removedPendingText || hasPendingChanges;
                     if (_lspPendingChanges.Remove(filePath, out var changes)) pendingChanges = changes;
                     syncCaptured = true;
                 }
@@ -1045,7 +1047,8 @@ public partial class MainWindow
     private async Task LspShutdownAllAsync()
     {
         _lspDidChangeTimer.Stop();
-        var open = _lspOpenDocuments.ToList();
+        List<string> open;
+        lock (_lspOpenLock) open = _lspOpenDocuments.ToList();
         foreach (var path in open)
         {
             try { await LspNotifyDidCloseAsync(path).ConfigureAwait(false); } catch { }
@@ -1137,6 +1140,18 @@ public partial class MainWindow
             HandlePublishDiagnostics(@params);
     }
 
+    private static JsonElement LspDiagnosticChild(JsonElement parent, string name) =>
+        parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(name, out var child) ? child : default;
+
+    private static int LspDiagnosticInt(JsonElement element, int fallback) =>
+        element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var value) ? value : fallback;
+
+    private static int? LspDiagnosticNullableInt(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var value) ? value : null;
+
+    private static string LspDiagnosticString(JsonElement element, string fallback) =>
+        element.ValueKind == JsonValueKind.String ? element.GetString() ?? fallback : fallback;
+
     private void HandlePublishDiagnostics(JsonElement? @params)
     {
         if (!LspEnabled || !LspDiagnosticsEnabled) return;
@@ -1155,27 +1170,28 @@ public partial class MainWindow
             {
                 foreach (var d in diags.EnumerateArray())
                 {
+                    if (d.ValueKind != JsonValueKind.Object) continue;
                     rawDiagnostics.Add(d.Clone());
                     var range = d.TryGetProperty("range", out var r) ? r : default;
-                    var start = range.ValueKind == JsonValueKind.Object && range.TryGetProperty("start", out var s) ? s : default;
-                    var end = range.ValueKind == JsonValueKind.Object && range.TryGetProperty("end", out var e) ? e : default;
-                    var sLine = start.TryGetProperty("line", out var sl) ? sl.GetInt32() : 0;
-                    var sChar = start.TryGetProperty("character", out var sc) ? sc.GetInt32() : 0;
-                    var eLine = end.TryGetProperty("line", out var el) ? el.GetInt32() : sLine;
-                    var eChar = end.TryGetProperty("character", out var ec) ? ec.GetInt32() : sChar + 1;
-                    var msg = d.TryGetProperty("message", out var me) ? me.GetString() ?? "" : "";
-                    var sev = d.TryGetProperty("severity", out var se) && se.ValueKind == JsonValueKind.Number ? se.GetInt32() : 1;
+                    var start = LspDiagnosticChild(range, "start");
+                    var end = LspDiagnosticChild(range, "end");
+                    var sLine = LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0);
+                    var sChar = LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0);
+                    var eLine = LspDiagnosticInt(LspDiagnosticChild(end, "line"), sLine);
+                    var eChar = LspDiagnosticInt(LspDiagnosticChild(end, "character"), sChar + 1);
+                    var msg = LspDiagnosticString(d.TryGetProperty("message", out var me) ? me : default, "");
+                    var sev = LspDiagnosticInt(d.TryGetProperty("severity", out var se) ? se : default, 1);
                     var severity = sev switch { 1 => "error", 2 => "warning", 3 => "info", 4 => "hint", _ => "error" };
                     var code = d.TryGetProperty("code", out var ce) ? ce.ToString() : "";
                     if (d.TryGetProperty("code", out var ce2) && ce2.ValueKind == JsonValueKind.Object && ce2.TryGetProperty("value", out var cv)) code = cv.ToString();
-                    else if (ce2.ValueKind == JsonValueKind.Number) code = ce2.GetInt32().ToString();
-                    var source = d.TryGetProperty("source", out var se2) ? se2.GetString() ?? "lsp" : "lsp";
+                    else if (ce2.ValueKind == JsonValueKind.Number && ce2.TryGetInt32(out var cvInt)) code = cvInt.ToString();
+                    var source = LspDiagnosticString(d.TryGetProperty("source", out var se2) ? se2 : default, "lsp");
                     diagnostics.Add(new LspRawDiagnostic(sLine, sChar, eLine, eChar, msg, severity, code, source));
                 }
             }
 
             string refreshKey;
-            int? publishVersion = root.TryGetProperty("version", out var versionEl) && versionEl.ValueKind == JsonValueKind.Number ? versionEl.GetInt32() : null;
+            int? publishVersion = root.TryGetProperty("version", out var versionEl) ? LspDiagnosticNullableInt(versionEl) : null;
             var normPath = NormalizeFilePath(filePath);
             bool isOpen;
             int? sentVersion;
@@ -1422,8 +1438,12 @@ public partial class MainWindow
                     range.TryGetProperty("start", out var start) && range.TryGetProperty("end", out var end) &&
                     start.TryGetProperty("line", out var startLine) && start.TryGetProperty("character", out var startCharacter) &&
                     end.TryGetProperty("line", out var endLine) && end.TryGetProperty("character", out var endCharacter) &&
-                    TryOffsetFromLspPosition(text, startLine.GetInt32(), startCharacter.GetInt32(), client.PositionEncoding, out var startOffset) &&
-                    TryOffsetFromLspPosition(text, endLine.GetInt32(), endCharacter.GetInt32(), client.PositionEncoding, out var endOffset) && endOffset >= startOffset)
+startLine.ValueKind == JsonValueKind.Number && startCharacter.ValueKind == JsonValueKind.Number &&
+                      endLine.ValueKind == JsonValueKind.Number && endCharacter.ValueKind == JsonValueKind.Number &&
+                      startLine.TryGetInt32(out var startLineNumber) && startCharacter.TryGetInt32(out var startCharacterNumber) &&
+                      endLine.TryGetInt32(out var endLineNumber) && endCharacter.TryGetInt32(out var endCharacterNumber) &&
+                      TryOffsetFromLspPosition(text, startLineNumber, startCharacterNumber, client.PositionEncoding, out var startOffset) &&
+                    TryOffsetFromLspPosition(text, endLineNumber, endCharacterNumber, client.PositionEncoding, out var endOffset) && endOffset >= startOffset)
                 {
                     replaceStartOffset = startOffset;
                     replaceEndOffset = endOffset;
@@ -1442,8 +1462,12 @@ public partial class MainWindow
                         !range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end) ||
                         !start.TryGetProperty("line", out var startLine) || !start.TryGetProperty("character", out var startCharacter) ||
                         !end.TryGetProperty("line", out var endLine) || !end.TryGetProperty("character", out var endCharacter) ||
-                        !TryOffsetFromLspPosition(text, startLine.GetInt32(), startCharacter.GetInt32(), client.PositionEncoding, out var startOffset) ||
-                        !TryOffsetFromLspPosition(text, endLine.GetInt32(), endCharacter.GetInt32(), client.PositionEncoding, out var endOffset) || endOffset < startOffset)
+startLine.ValueKind != JsonValueKind.Number || startCharacter.ValueKind != JsonValueKind.Number ||
+                    endLine.ValueKind != JsonValueKind.Number || endCharacter.ValueKind != JsonValueKind.Number ||
+                    !startLine.TryGetInt32(out var startLineNumber) || !startCharacter.TryGetInt32(out var startCharacterNumber) ||
+                    !endLine.TryGetInt32(out var endLineNumber) || !endCharacter.TryGetInt32(out var endCharacterNumber) ||
+                        !TryOffsetFromLspPosition(text, startLineNumber, startCharacterNumber, client.PositionEncoding, out var startOffset) ||
+                        !TryOffsetFromLspPosition(text, endLineNumber, endCharacterNumber, client.PositionEncoding, out var endOffset) || endOffset < startOffset)
                     {
                         validAdditionalEdits = false;
                         break;
@@ -1461,7 +1485,7 @@ public partial class MainWindow
             if (orderedAdditionalEdits.Zip(orderedAdditionalEdits.Skip(1), (left, right) => LspTextRangesOverlap(left.Start, left.End, right.Start, right.End)).Any(overlap => overlap))
                 continue;
 
-            var kindInt = item.TryGetProperty("kind", out var k) && k.ValueKind == JsonValueKind.Number ? k.GetInt32() : 0;
+            var kindInt = item.TryGetProperty("kind", out var k) ? LspDiagnosticInt(k, 0) : 0;
             var kind = kindInt switch
             {
                 2 or 3 or 4 => InsightKind.Function,
@@ -1644,13 +1668,13 @@ public partial class MainWindow
         var firstUri = firstLocation.TryGetProperty("uri", out var firstU) ? firstU.GetString() : null;
         var firstRange = firstLocation.TryGetProperty("range", out var firstR) ? firstR : default;
         if (string.IsNullOrWhiteSpace(firstUri) || firstRange.ValueKind != JsonValueKind.Object) return false;
-        var firstStart = firstRange.GetProperty("start");
+        var firstStart = firstRange.TryGetProperty("start", out var firstS) ? firstS : default;
         var firstPath = FileUriToPath(firstUri);
         if (string.IsNullOrWhiteSpace(firstPath)) return false;
         var firstText = await GetLspTargetTextAsync(firstPath, ct).ConfigureAwait(false);
         if (firstText is null) return false;
         var firstClient = GetLspClientForFile(firstPath);
-        var firstOffset = LspPath.OffsetFromLspPosition(firstText, firstStart.GetProperty("line").GetInt32(), firstStart.GetProperty("character").GetInt32(), firstClient?.PositionEncoding ?? "utf-16");
+        var firstOffset = LspPath.OffsetFromLspPosition(firstText, LspDiagnosticInt(LspDiagnosticChild(firstStart, "line"), 0), LspDiagnosticInt(LspDiagnosticChild(firstStart, "character"), 0), firstClient?.PositionEncoding ?? "utf-16");
         var word = GetLanguageWordAtOffset(text, offset);
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
@@ -1907,13 +1931,13 @@ public partial class MainWindow
         var uri = item.TryGetProperty("uri", out var u) ? u.GetString() : item.TryGetProperty("targetUri", out var tu) ? tu.GetString() : null;
         var range = item.TryGetProperty("range", out var r) ? r : item.TryGetProperty("targetSelectionRange", out var tsr) ? tsr : item.TryGetProperty("targetRange", out var tr) ? tr : default;
         if (string.IsNullOrWhiteSpace(uri) || range.ValueKind != JsonValueKind.Object) return false;
-        var start = range.GetProperty("start");
+        var start = range.TryGetProperty("start", out var startEl) ? startEl : default;
         var path = FileUriToPath(uri);
         if (string.IsNullOrWhiteSpace(path)) return false;
         var targetText = await GetLspTargetTextAsync(path, ct).ConfigureAwait(false);
         if (targetText is null) return false;
         var client = GetLspClientForFile(path);
-        var targetOffset = LspPath.OffsetFromLspPosition(targetText, start.GetProperty("line").GetInt32(), start.GetProperty("character").GetInt32(), client?.PositionEncoding ?? "utf-16");
+        var targetOffset = LspPath.OffsetFromLspPosition(targetText, LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0), LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0), client?.PositionEncoding ?? "utf-16");
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             await OpenFileFromPathAsync(path);
@@ -2002,8 +2026,10 @@ public partial class MainWindow
                 !range.TryGetProperty("start", out var start) || !range.TryGetProperty("end", out var end) ||
                 !start.TryGetProperty("line", out var startLine) || !start.TryGetProperty("character", out var startCharacter) ||
                 !end.TryGetProperty("line", out var endLine) || !end.TryGetProperty("character", out var endCharacter) ||
-                !TryOffsetFromLspPosition(lineStarts, text, startLine.GetInt32(), startCharacter.GetInt32(), encoding, out var startOffset) ||
-                !TryOffsetFromLspPosition(lineStarts, text, endLine.GetInt32(), endCharacter.GetInt32(), encoding, out var endOffset) || endOffset < startOffset)
+                !startLine.TryGetInt32(out var startLineNumber) || !startCharacter.TryGetInt32(out var startCharacterNumber) ||
+                !endLine.TryGetInt32(out var endLineNumber) || !endCharacter.TryGetInt32(out var endCharacterNumber) ||
+                !TryOffsetFromLspPosition(lineStarts, text, startLineNumber, startCharacterNumber, encoding, out var startOffset) ||
+                !TryOffsetFromLspPosition(lineStarts, text, endLineNumber, endCharacterNumber, encoding, out var endOffset) || endOffset < startOffset)
                 return false;
             edits.Add((startOffset, endOffset, newTextElement.GetString() ?? string.Empty));
         }
@@ -2105,10 +2131,10 @@ public partial class MainWindow
             if (range.ValueKind != JsonValueKind.Object) return;
             var start = range.TryGetProperty("start", out var s) ? s : default;
             var end = range.TryGetProperty("end", out var e) ? e : default;
-            var sl = start.TryGetProperty("line", out var slEl) ? slEl.GetInt32() : 0;
-            var sc = start.TryGetProperty("character", out var scEl) ? scEl.GetInt32() : 0;
-            var el = end.TryGetProperty("line", out var elEl) ? elEl.GetInt32() : sl;
-            var ec = end.TryGetProperty("character", out var ecEl) ? ecEl.GetInt32() : sc;
+            var sl = LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0);
+            var sc = LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0);
+            var el = LspDiagnosticInt(LspDiagnosticChild(end, "line"), sl);
+            var ec = LspDiagnosticInt(LspDiagnosticChild(end, "character"), sc);
             locations.Add((targetUri, sl, sc, el, ec));
         }
 

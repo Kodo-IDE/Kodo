@@ -262,8 +262,8 @@ public partial class MainWindow
             {
                 if (!raw.TryGetProperty("range", out var range) || range.ValueKind != JsonValueKind.Object) continue;
                 if (!range.TryGetProperty("start", out var start) || start.ValueKind != JsonValueKind.Object) continue;
-                var dLine = start.TryGetProperty("line", out var dl) && dl.ValueKind == JsonValueKind.Number ? dl.GetInt32() : 0;
-                var dChar = start.TryGetProperty("character", out var dc) && dc.ValueKind == JsonValueKind.Number ? dc.GetInt32() : 0;
+                var dLine = start.TryGetProperty("line", out var dl) && dl.ValueKind == JsonValueKind.Number && dl.TryGetInt32(out var dLineValue) ? dLineValue : 0;
+                var dChar = start.TryGetProperty("character", out var dc) && dc.ValueKind == JsonValueKind.Number && dc.TryGetInt32(out var dCharValue) ? dCharValue : 0;
                 var onLine = dLine >= startLine && dLine <= endLine;
                 if (!onLine) continue;
                 if (dLine == startLine && dChar > endChar) continue;
@@ -472,13 +472,13 @@ public partial class MainWindow
                     !change.TryGetProperty("edits", out var editsElement)) continue;
                 var uri = uriElement.GetString() ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(uri)) continue;
-                if (textDocument.TryGetProperty("version", out var expectedVersion) && expectedVersion.ValueKind == JsonValueKind.Number)
+                if (textDocument.TryGetProperty("version", out var expectedVersion) && expectedVersion.ValueKind == JsonValueKind.Number && expectedVersion.TryGetInt32(out var expectedVersionValue))
                 {
                     var targetPath = FileUriToPath(uri);
                     var currentVersion = string.IsNullOrWhiteSpace(targetPath) ? null : CurrentLspDocumentVersion(targetPath);
-                    if (currentVersion.HasValue && currentVersion.Value != expectedVersion.GetInt32())
+                    if (currentVersion.HasValue && currentVersion.Value != expectedVersionValue)
                     {
-                        KodoDiagnostics.LogDebug($"Workspace edit rejected stale document version for {targetPath}: expected={expectedVersion.GetInt32()} current={currentVersion.Value}");
+                        KodoDiagnostics.LogDebug($"Workspace edit rejected stale document version for {targetPath}: expected={expectedVersionValue} current={currentVersion.Value}");
                         SetLspFeatureStatus("A file changed while the language server prepared the edit, so it was not applied.");
                         return CodeActionOutcome.Failed;
                     }
@@ -525,6 +525,69 @@ public partial class MainWindow
             }
         }
 
+        var activeStillCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var doc = EditorTextBox?.Document;
+            return doc is not null && string.Equals(doc.Text, snapshot.Text, StringComparison.Ordinal);
+        });
+        if (!activeStillCurrent)
+        {
+            KodoDiagnostics.LogDebug("Code action abandoned: the active document changed before the edit could be applied");
+            await Dispatcher.UIThread.InvokeAsync(() => SetLspFeatureStatus("The file changed - the fix was not applied."));
+            return CodeActionOutcome.Failed;
+        }
+
+        var openTabSnapshot = await Dispatcher.UIThread.InvokeAsync(() =>
+            plan
+                .Select(entry => (entry.Path, Tab: OpenTabs.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t.Path) && IsSameDocument(t.Path, entry.Path))))
+                .Where(pair => pair.Tab is not null)
+                .GroupBy(pair => pair.Path, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Tab!.Content ?? string.Empty, StringComparer.OrdinalIgnoreCase));
+
+        var diskCommit = await Task.Run<string?>(() =>
+        {
+            var writes = new List<(string Path, string Updated)>();
+            foreach (var entry in plan)
+            {
+                if (openTabSnapshot.TryGetValue(entry.Path, out var tabContent))
+                {
+                    if (!string.Equals(tabContent, entry.Original, StringComparison.Ordinal))
+                    {
+                        KodoDiagnostics.LogDebug($"Code action abandoned: tab {entry.Path} changed since the edit was computed");
+                        return "Another open file changed - the fix was not applied.";
+                    }
+                    continue;
+                }
+                if (entry.IsActive) continue;
+                try
+                {
+                    if (!string.Equals(File.ReadAllText(entry.Path), entry.Original, StringComparison.Ordinal))
+                    {
+                        KodoDiagnostics.LogDebug($"Code action abandoned: {entry.Path} changed on disk since the edit was computed");
+                        return "A file on disk changed - the fix was not applied.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"Code action abandoned: could not re-read {entry.Path}", ex);
+                    return null;
+                }
+                writes.Add((entry.Path, entry.Updated));
+            }
+            foreach (var write in writes)
+                File.WriteAllText(write.Path, write.Updated);
+            return string.Empty;
+        });
+
+        if (diskCommit is null)
+            return CodeActionOutcome.Failed;
+
+        if (diskCommit.Length > 0)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => SetLspFeatureStatus(diskCommit));
+            return CodeActionOutcome.Failed;
+        }
+
         var committed = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var doc = EditorTextBox?.Document;
@@ -547,22 +610,6 @@ public partial class MainWindow
                         SetLspFeatureStatus("Another open file changed - the fix was not applied.");
                         return false;
                     }
-                    continue;
-                }
-                if (entry.IsActive) continue;
-                try
-                {
-                    if (!string.Equals(File.ReadAllText(entry.Path), entry.Original, StringComparison.Ordinal))
-                    {
-                        KodoDiagnostics.LogDebug($"Code action abandoned: {entry.Path} changed on disk since the edit was computed");
-                        SetLspFeatureStatus("A file on disk changed - the fix was not applied.");
-                        return false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    KodoDiagnostics.LogDebug($"Code action abandoned: could not re-read {entry.Path}", ex);
-                    return false;
                 }
             }
 
@@ -585,7 +632,6 @@ public partial class MainWindow
                     }
                     continue;
                 }
-                File.WriteAllText(entry.Path, entry.Updated);
             }
             if (plan.Any(entry => !entry.IsActive && OpenTabs.Any(tab => !string.IsNullOrWhiteSpace(tab.Path) && IsSameDocument(tab.Path, entry.Path))))
                 ArmLspDidChangeTimer();

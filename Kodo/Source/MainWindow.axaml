@@ -2057,7 +2057,7 @@
                                                      IsVisible="{Binding IsTaglineGreeting}">
                                                 <TextBlock FontSize="30"
                                                            FontWeight="Bold"
-                                                           xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
+                                                           xml:space="preserve"><Run Foreground="{Binding PrimaryTextBrush}" Text="{Binding TaglinePrefixText}" /><Run Foreground="{Binding AccentBrush}" Text="{Binding TaglineAccentText}" /></TextBlock>
                                             </Viewbox>
 
                                         </StackPanel>
@@ -6603,7 +6603,7 @@
                                                        Foreground="{Binding PrimaryTextBrush}"
                                                        Text="{Binding AboutTitle}" />
                                             <TextBlock FontSize="12"
-                                                       xml:space="preserve"><Run Foreground="{Binding MutedTextBrush}">Code fast. Stay </Run><Run Foreground="{Binding AccentBrush}">light.</Run></TextBlock>
+                                                       xml:space="preserve"><Run Foreground="{Binding MutedTextBrush}" Text="{Binding TaglinePrefixText}" /><Run Foreground="{Binding AccentBrush}" Text="{Binding TaglineAccentText}" /></TextBlock>
                                         </StackPanel>
                                     </StackPanel>
                                      <StackPanel Grid.Column="1"
