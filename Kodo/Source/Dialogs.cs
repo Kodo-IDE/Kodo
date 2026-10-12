@@ -721,7 +721,9 @@ public partial class MainWindow
                 Margin = new Thickness(0, 4)
             };
 
-            var content = new StackPanel
+            // Keep the action row visible on short displays. A capped, non-scrolling
+            // SizeToContent window otherwise clips the stack beneath its footer.
+            var body = new StackPanel
             {
                 Spacing = 12,
                 Children =
@@ -735,10 +737,26 @@ public partial class MainWindow
                     errorMessageText,
                     exceptionBorder,
                     logPathText,
-                    footerDivider,
-                    buttonRow,
                 },
             };
+            var bodyScroll = new ScrollViewer
+            {
+                Content = body,
+                VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            };
+            var content = new DockPanel
+            {
+                LastChildFill = true,
+                Children =
+                {
+                    buttonRow,
+                    footerDivider,
+                    bodyScroll,
+                },
+            };
+            DockPanel.SetDock(buttonRow, Dock.Bottom);
+            DockPanel.SetDock(footerDivider, Dock.Bottom);
 
             var outer = CreateDialogSurface(content);
 

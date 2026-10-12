@@ -723,9 +723,9 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug($"LSP start missing for '{lspExt.Id}'", ex);
                 await Dispatcher.UIThread.InvokeAsync(async () =>
                 {
-                    ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' not found for '{lspExt.Name}'. Install it and ensure it is on PATH. Highlighting still works.";
-                    await ShowWarningDialogAsync($"{lspExt.Name} – language server not found",
-                        new FileNotFoundException($"{lspExt.Name} language server could not be started.\n\n'{resolvedConfig.Command}' was not found.\nCheck that {resolvedConfig.Command} is installed and available on PATH.\n\nHighlighting remains available.", ex));
+                    ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start for '{lspExt.Name}'. Highlighting still works.";
+                    await ShowWarningDialogAsync($"{lspExt.Name} – language server failed to start",
+                        new InvalidOperationException($"{lspExt.Name} language server could not be started.\n\n{ex.InnerException?.Message ?? ex.Message}\n\nHighlighting remains available.", ex));
                 });
             }
             return;

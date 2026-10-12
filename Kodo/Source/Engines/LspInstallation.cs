@@ -186,8 +186,29 @@ internal static class LspInstallationManager
                     return name.Equals(targetName, StringComparison.OrdinalIgnoreCase)
                         || Path.GetFileNameWithoutExtension(name).Equals(targetWithoutExt, StringComparison.OrdinalIgnoreCase);
                 }).ToList();
-            var binPref = candidates.FirstOrDefault(c => c.Contains("node_modules" + Path.DirectorySeparatorChar + ".bin", StringComparison.OrdinalIgnoreCase));
-            if (binPref != null) return binPref;
+            // npm creates Windows command shims (.cmd/.ps1) in node_modules/.bin.
+            // The extensionless Unix shim can also be present in package contents;
+            // starting it directly on Windows fails with Win32 error 193.
+            var isWindows = System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+            var binCandidates = candidates
+                .Where(c => c.Contains(Path.Combine("node_modules", ".bin"), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var preferred = isWindows
+                ? new[] { ".exe", ".cmd", ".bat", "" }
+                : new[] { "", ".sh" };
+            foreach (var extension in preferred)
+            {
+                var match = binCandidates.FirstOrDefault(c =>
+                    string.Equals(Path.GetExtension(c), extension, StringComparison.OrdinalIgnoreCase));
+                if (match != null) return match;
+            }
+            if (binCandidates.Count > 0) return binCandidates[0];
+            foreach (var extension in preferred)
+            {
+                var match = candidates.FirstOrDefault(c =>
+                    string.Equals(Path.GetExtension(c), extension, StringComparison.OrdinalIgnoreCase));
+                if (match != null) return match;
+            }
             return candidates.FirstOrDefault();
         }
         catch { return null; }
