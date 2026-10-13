@@ -196,11 +196,18 @@ public partial class MainWindow
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
-        SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
-            ApplyIndentationForContent(tab.Content);
-        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
-        EditorTextBox.ScrollToLine(tab.TopLineNumber);
+        var activationVersion = _activeTabVersion;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_activeTabVersion != activationVersion) return;
+            if (!ReferenceEquals(ActiveEditorTab, tab)) return;
+
+            SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
+            if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
+                ApplyIndentationForContent(tab.Content);
+            EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
+            EditorTextBox.ScrollToLine(tab.TopLineNumber);
+        }, DispatcherPriority.Background);
         var savedOffsetY = tab.ScrollOffsetY;
         var targetTabForScroll = tab;
         var savedOffsetVersion = _activeTabVersion;

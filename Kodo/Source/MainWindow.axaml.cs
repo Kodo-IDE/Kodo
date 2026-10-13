@@ -6179,7 +6179,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _suppressDirtyTracking = true;
         try
         {
-            EditorTextBox.Document.Text = content;
+            if (!string.Equals(EditorTextBox.Document.Text, content, StringComparison.Ordinal))
+                EditorTextBox.Document.Text = content;
             EditorTextBox.Document.UndoStack.ClearAll();
             EditorTextBox.TextArea.ClearSelection();
             EditorTextBox.TextArea.Caret.Offset = 0;
