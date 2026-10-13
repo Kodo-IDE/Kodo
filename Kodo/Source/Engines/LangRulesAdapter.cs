@@ -84,19 +84,23 @@ public sealed class LangRulesAdapter
         }
     }
 
-    public bool HasTokenizer => _tokenize is not null;
-    public bool HasSymbolAnalyzer => _symbols is not null;
-    public bool HasDiagnostics => _diagnostics is not null;
-    public bool HasSemanticAnalyzer => _semantics is not null;
-    public bool HasDefinitionProvider => _definition is not null;
-    public bool HasReferenceProvider => _references is not null;
-    public bool HasHoverProvider => _hover is not null;
-    public bool HasSignatureHelpProvider => _signature is not null;
-    public bool HasCodeActionProvider => _codeActions is not null;
-    public bool HasFormatter => _formatter is not null;
-    public bool HasEmbeddedRegions => _embeddedRegions is not null;
-    public bool HasPositionNavigation => _positionDefinition is not null;
-    public bool HasPositionCompletions => _positionCompletions is not null;
+    private bool TypedProvides(string methodName) =>
+        _typedProvider is not null &&
+        _typedProvider.GetType().GetMethod(methodName)?.DeclaringType != typeof(ILangRulesProvider);
+
+    public bool HasTokenizer => _tokenize is not null || TypedProvides(nameof(ILangRulesProvider.Tokenize));
+    public bool HasSymbolAnalyzer => _symbols is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSymbols));
+    public bool HasDiagnostics => _diagnostics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSyntax));
+    public bool HasSemanticAnalyzer => _semantics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSemantics));
+    public bool HasDefinitionProvider => _definition is not null || TypedProvides(nameof(ILangRulesProvider.FindDefinition));
+    public bool HasReferenceProvider => _references is not null || TypedProvides(nameof(ILangRulesProvider.FindReferences));
+    public bool HasHoverProvider => _hover is not null || TypedProvides(nameof(ILangRulesProvider.GetHover));
+    public bool HasSignatureHelpProvider => _signature is not null || TypedProvides(nameof(ILangRulesProvider.GetSignatureHelp));
+    public bool HasCodeActionProvider => _codeActions is not null || TypedProvides(nameof(ILangRulesProvider.GetCodeActions));
+    public bool HasFormatter => _formatter is not null || TypedProvides(nameof(ILangRulesProvider.FormatDocument));
+    public bool HasEmbeddedRegions => _embeddedRegions is not null || TypedProvides(nameof(ILangRulesProvider.GetEmbeddedRegions));
+    public bool HasPositionNavigation => _positionDefinition is not null || _typedProvider is not null;
+    public bool HasPositionCompletions => _positionCompletions is not null || _typedProvider is not null;
     public IReadOnlyList<string> ValidationWarnings => DiscoverValidationWarnings();
 
     public LangRulesProviderInfo ProviderInfo => _typedProvider?.Info ?? new(
