@@ -721,8 +721,6 @@ public partial class MainWindow
                 Margin = new Thickness(0, 4)
             };
 
-            // Keep the action row visible on short displays. A capped, non-scrolling
-            // SizeToContent window otherwise clips the stack beneath its footer.
             var body = new StackPanel
             {
                 Spacing = 12,
