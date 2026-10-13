@@ -1,1 +1,12 @@
+# Normalise all text to LF in the repository and in the working tree.
+# The project is developed on both Windows and Linux; without this, a Windows
+# checkout (autocrlf=true) makes every file look modified to a Linux clone and
+# vice versa. .gitattributes takes precedence over core.autocrlf.
+* text=auto eol=lf
+
+# Shell scripts must always be LF regardless of platform.
 *.sh text eol=lf
+
+# Binary assets - never let git touch line endings in these.
+*.png binary
+*.ico binary
