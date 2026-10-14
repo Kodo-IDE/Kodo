@@ -781,7 +781,19 @@ public partial class MainWindow
             AllowTrailingCommas = true,
             CommentHandling = JsonCommentHandling.Skip
         };
-        using var doc = JsonDocument.Parse(json, jsonOptions);
+        JsonDocument parsedDoc;
+        try
+        {
+            parsedDoc = JsonDocument.Parse(json, jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            loadErrors.Add($"Compiler index could not be read: {ex.Message}");
+            return result;
+        }
+        using var doc = parsedDoc;
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return result;
         if (!doc.RootElement.TryGetProperty("compilers", out var compilersElement) ||
             compilersElement.ValueKind != JsonValueKind.Array)
             return result;
@@ -1818,7 +1830,7 @@ public partial class MainWindow
     {
         var name = assetName.ToLowerInvariant();
 
-        var windows = ContainsAny(name, "windows", "win32", "win64", "win-x64", "win-arm64", ".exe", ".msi", ".zip");
+        var windows = ContainsAny(name, "windows", "win32", "win64", "win-x64", "win-arm64", ".exe", ".msi");
         var linux = ContainsAny(name, "linux");
         var mac = ContainsAny(name, "macos", "osx", "darwin", "apple");
 
