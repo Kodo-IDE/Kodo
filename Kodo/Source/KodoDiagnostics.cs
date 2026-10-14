@@ -513,7 +513,14 @@ internal static class KodoDiagnostics
             FileSystemPaths.StartsWith(path, repoRoot))
             return path.Replace(repoRoot, "<repo>", FileSystemPaths.Comparison);
 
-        var home = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrWhiteSpace(appData) &&
+            FileSystemPaths.StartsWith(path, appData))
+            return path.Replace(appData, "%AppData%", FileSystemPaths.Comparison);
+        if (!string.IsNullOrWhiteSpace(localAppData) &&
+            FileSystemPaths.StartsWith(path, localAppData))
+            return path.Replace(localAppData, "%LocalAppData%", FileSystemPaths.Comparison);
+
+        var home = ResolveHomeDirectory();
         if (!string.IsNullOrWhiteSpace(home) &&
             FileSystemPaths.StartsWith(path, home) &&
             path.Length > home.Length)
@@ -524,14 +531,25 @@ internal static class KodoDiagnostics
             return "/home/<redacted>" + path[home.Length..];
         }
 
-        if (!string.IsNullOrWhiteSpace(appData) &&
-            FileSystemPaths.StartsWith(path, appData))
-            return path.Replace(appData, "%AppData%", FileSystemPaths.Comparison);
-        if (!string.IsNullOrWhiteSpace(localAppData) &&
-            FileSystemPaths.StartsWith(path, localAppData))
-            return path.Replace(localAppData, "%LocalAppData%", FileSystemPaths.Comparison);
-
         return path;
+    }
+
+    private static string? ResolveHomeDirectory()
+    {
+        var home = Environment.GetEnvironmentVariable("HOME");
+        if (!string.IsNullOrWhiteSpace(home))
+            return home;
+
+        var profile = Environment.GetEnvironmentVariable("USERPROFILE");
+        if (!string.IsNullOrWhiteSpace(profile))
+            return profile;
+
+        var drive = Environment.GetEnvironmentVariable("HOMEDRIVE");
+        var relative = Environment.GetEnvironmentVariable("HOMEPATH");
+        if (!string.IsNullOrWhiteSpace(drive) && !string.IsNullOrWhiteSpace(relative))
+            return drive.TrimEnd('\\', '/') + relative;
+
+        return null;
     }
 
     private static readonly object _logWriteLock = new();
