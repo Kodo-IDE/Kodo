@@ -234,7 +234,7 @@ internal static class SearchEngine
             if (read >= 2 && bom[0] == 0xFE && bom[1] == 0xFF)
                 return System.Text.Encoding.BigEndianUnicode;
             if (read >= 4 && bom[0] == 0x00 && bom[1] == 0x00 && bom[2] == 0xFE && bom[3] == 0xFF)
-                return System.Text.Encoding.UTF32;
+                return new System.Text.UTF32Encoding(bigEndian: true, byteOrderMark: true);
 
             return new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         }
