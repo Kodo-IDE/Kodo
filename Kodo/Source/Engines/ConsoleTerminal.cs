@@ -2246,6 +2246,8 @@ public sealed class ConsoleTerminal : Control
 
     private static Color Palette256(int n)
     {
+        if (n < 0) n = 0;
+        else if (n > 255) n = 255;
         if (n < 16) return AnsiPalette[n];
         if (n < 232)
         {
