@@ -79,7 +79,7 @@ public static class TerminalShellSupport
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
 
-private const string BashCwdHookCommand = """
+    private const string BashCwdHookCommand = """
         export PROMPT_COMMAND='printf "\033]1337;CurrentDir=%s\007" "$(pwd -W)"'; exec bash --login -i
         """;
 
