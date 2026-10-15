@@ -814,6 +814,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? trimmedStartupPath
             : null;
         InitializeComponent();
+        AddHandler(PointerPressedEvent, OnWindowPointerPressedToDismissFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
         NotifySettingsSearchChanged();
         LoadWindowIcon();
@@ -3507,6 +3508,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!value)
                 FlushPendingSearchFilters();
         }
+    }
+
+    private void OnWindowPointerPressedToDismissFocus(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.Source is not Visual source) return;
+        for (Visual? v = source; v is not null && v != this; v = v.GetVisualParent())
+        {
+            if (v is Control { Focusable: true })
+                return;
+        }
+        TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
     }
 
     private void SettingsPage_OnPointerPressed(object? sender, PointerPressedEventArgs e)
