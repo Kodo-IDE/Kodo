@@ -1,5 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 using System;
+using System.Collections.Generic;
 using Avalonia.Media;
 
 namespace Kodo;
@@ -21,4 +22,32 @@ internal static class KodoFonts
         LinuxMonoStack;
 
     public static FontFamily MonoFamily => new(MonoFontStack);
+
+    public static IReadOnlyList<string> EditorFontChoices { get; } = new[]
+    {
+        "Default",
+        "Cascadia Code",
+        "Consolas",
+        "JetBrains Mono",
+        "Fira Code",
+        "Source Code Pro",
+        "Iosevka",
+        "Hack",
+        "Menlo",
+        "SF Mono",
+        "DejaVu Sans Mono",
+        "Ubuntu Mono",
+        "Liberation Mono",
+        "Noto Sans Mono",
+        "Courier New"
+    };
+
+    public static FontFamily ResolveEditorFamily(string? choice)
+    {
+        if (string.IsNullOrWhiteSpace(choice) ||
+            string.Equals(choice, "Default", StringComparison.OrdinalIgnoreCase))
+            return MonoFamily;
+
+        return new FontFamily($"{choice},{MonoFontStack}");
+    }
 }

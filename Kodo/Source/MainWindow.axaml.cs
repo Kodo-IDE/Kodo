@@ -258,6 +258,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private int _tabSize = 4;
     private bool _insertSpaces = true;
     private int _editorFontSize = 14;
+    private string _editorFontFamily = "";
+    private int _terminalScrollbackLines = 5000;
     private string _accentColorMode = "kodo";
     private string _customAccentHex = "#8C00FF";
     private string _themeAccentHex = "#8C00FF";
@@ -965,6 +967,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _tabSize = NormalizeTabSize(settings.TabSize);
         _insertSpaces = settings.InsertSpaces;
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
+        _editorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Default" : settings.EditorFontFamily;
+        _terminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 200, 200000);
+        TerminalHostControl.MaxScrollbackLines = _terminalScrollbackLines;
         _terminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
         _explorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
@@ -1845,6 +1850,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.Options.IndentationSize = TabSize;
         EditorTextBox.Options.ConvertTabsToSpaces = InsertSpaces;
         EditorTextBox.FontSize = EditorFontSize;
+        EditorTextBox.FontFamily = KodoFonts.ResolveEditorFamily(EditorFontFamily);
         _indentGuideRenderer.TabSize = TabSize;
         _markdownColorizer.TabSize = TabSize;
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
@@ -3449,6 +3455,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _editorFontSize = clamped;
             OnPropertyChanged();
             ApplyEditorSettings();
+            SaveSettings();
+        }
+    }
+
+    public string EditorFontFamily
+    {
+        get => _editorFontFamily;
+        set
+        {
+            var next = value ?? "";
+            if (_editorFontFamily == next) return;
+            _editorFontFamily = next;
+            OnPropertyChanged();
+            ApplyEditorSettings();
+            SaveSettings();
+        }
+    }
+
+    public IReadOnlyList<string> EditorFontChoices => KodoFonts.EditorFontChoices;
+
+    public int TerminalScrollbackLines
+    {
+        get => _terminalScrollbackLines;
+        set
+        {
+            var clamped = Math.Clamp(value, 200, 200000);
+            if (_terminalScrollbackLines == clamped) return;
+            _terminalScrollbackLines = clamped;
+            OnPropertyChanged();
+            TerminalHostControl.MaxScrollbackLines = clamped;
             SaveSettings();
         }
     }
@@ -5542,6 +5578,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TabSize = TabSize,
             InsertSpaces = InsertSpaces,
             EditorFontSize = EditorFontSize,
+            EditorFontFamily = EditorFontFamily,
+            TerminalScrollbackLines = TerminalScrollbackLines,
             ConfirmBeforeClosingUnsavedTabsEnabled = IsConfirmBeforeClosingUnsavedTabsEnabled,
             RestoreOpenTabsOnLaunchEnabled = IsRestoreOpenTabsOnLaunchEnabled,
             AutoUpdateExtensionsEnabled = IsAutoUpdateExtensionsEnabled,

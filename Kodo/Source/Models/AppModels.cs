@@ -36,6 +36,7 @@ internal sealed class AppSettings
     public int TabSize { get; set; } = 4;
     public bool InsertSpaces { get; set; } = true;
     public int EditorFontSize { get; set; } = 14;
+    public string EditorFontFamily { get; set; } = "";
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
     public bool RestoreOpenTabsOnLaunchEnabled { get; set; }
     public bool AutoUpdateExtensionsEnabled { get; set; }
@@ -46,6 +47,7 @@ internal sealed class AppSettings
     public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
+    public int TerminalScrollbackLines { get; set; } = 5000;
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }

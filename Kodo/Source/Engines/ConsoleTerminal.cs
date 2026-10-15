@@ -54,7 +54,13 @@ public sealed class ConsoleTerminal : Control
     private int _cursorRow, _cursorCol;
     private bool _cursorVisible = true;
 
-    private const int MaxScrollbackLines = 5000;
+    private int _maxScrollbackLines = 5000;
+
+    public int MaxScrollbackLines
+    {
+        get => _maxScrollbackLines;
+        set => _maxScrollbackLines = Math.Clamp(value, 200, 200000);
+    }
     private readonly List<TermCell[]> _scrollback = new();
     private int _scrollOffset;
 
