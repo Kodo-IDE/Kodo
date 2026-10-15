@@ -41,7 +41,7 @@ internal static class SearchEngine
                 {
                     var real = new DirectoryInfo(dir).ResolveLinkTarget(returnFinalTarget: true)?.FullName
                         ?? Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar);
-                    if (!visited.Add(real))
+                    if (visited.Contains(real))
                         continue;
                 }
                 catch { continue; }
