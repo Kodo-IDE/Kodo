@@ -370,17 +370,35 @@ public sealed class EmbeddedSyntaxProfile
         var tokenRules = syntaxProfile.TokenRules
             .Select(rule => (
                 rule.Regex,
-                Brush.Parse(syntaxProfile.Extension.ColorTokens.TryGetValue(rule.ColorTokenName, out var hex)
-                    ? hex
-                    : rule.FallbackHex),
+                BrushFor(syntaxProfile.Extension, rule.ColorTokenName, rule.FallbackHex),
                 rule.ColorTokenName))
             .ToArray();
 
         return new EmbeddedSyntaxProfile(
             syntaxProfile.Extension,
-            Brush.Parse(syntaxProfile.Extension.ColorTokens.TryGetValue("comment", out var commentHex) ? commentHex : "#6A9955"),
-            Brush.Parse(syntaxProfile.Extension.ColorTokens.TryGetValue("string", out var stringHex) ? stringHex : "#CE9178"),
+            BrushFor(syntaxProfile.Extension, "comment", "#6A9955"),
+            BrushFor(syntaxProfile.Extension, "string", "#CE9178"),
             tokenRules);
+    }
+
+    private static IBrush BrushFor(LoadedExtension extension, string tokenName, string fallback)
+    {
+        var hex = extension.ColorTokens.TryGetValue(tokenName, out var value) ? value : fallback;
+        try
+        {
+            return Brush.Parse(hex);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("SyntaxProfiles.BrushFor", ex, operation: $"Ignoring invalid extension colour '{hex}' for token '{tokenName}'");
+            return ParseBrushOrDefault(fallback);
+        }
+    }
+
+    private static IBrush ParseBrushOrDefault(string hex)
+    {
+        try { return Brush.Parse(hex); }
+        catch { return Brush.Parse("#D4D4D4"); }
     }
 
     public EmbeddedSyntaxState Advance(string text, EmbeddedSyntaxState initialState) =>

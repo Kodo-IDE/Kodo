@@ -7,10 +7,11 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
-public sealed class LangRulesAdapter
+public sealed class LangRulesAdapter : IDisposable
 {
     private readonly LanguageWorker _worker = new();
     private readonly Type _rules;
@@ -35,6 +36,7 @@ public sealed class LangRulesAdapter
     private readonly MethodInfo? _positionHover;
     private readonly MethodInfo? _positionCompletions;
     private readonly ILangRulesProvider? _typedProvider;
+    private bool _disposed;
 
     private LangRulesAdapter(Type rules, AssemblyLoadContext loadContext, ILangRulesProvider? typedProvider = null)
     {
@@ -67,20 +69,58 @@ public sealed class LangRulesAdapter
         if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(assemblyFile)) return null;
         var path = Path.Combine(folder, assemblyFile);
         if (!File.Exists(path)) return null;
+        var loadContext = new AssemblyLoadContext($"Kodo.LangRules.{Guid.NewGuid():N}", isCollectible: true);
+        var handedOff = false;
         try
         {
-            var loadContext = new AssemblyLoadContext($"Kodo.LangRules.{Guid.NewGuid():N}", isCollectible: false);
             var assembly = loadContext.LoadFromAssemblyPath(Path.GetFullPath(path));
             var rules = assembly.GetTypes().FirstOrDefault(t => t.IsAbstract && t.IsSealed && t.Name == "LangRules");
-            if (rules is not null) return new LangRulesAdapter(rules, loadContext);
+            if (rules is not null)
+            {
+                var staticAdapter = new LangRulesAdapter(rules, loadContext);
+                handedOff = true;
+                return staticAdapter;
+            }
             var providerType = assembly.GetTypes().FirstOrDefault(t => !t.IsAbstract && typeof(ILangRulesProvider).IsAssignableFrom(t));
             if (providerType is null || Activator.CreateInstance(providerType) is not ILangRulesProvider provider) return null;
-            return new LangRulesAdapter(providerType, loadContext, provider);
+            var typedAdapter = new LangRulesAdapter(providerType, loadContext, provider);
+            handedOff = true;
+            return typedAdapter;
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug($"LangRules load failed: path={path}; {ex.GetType().Name}: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            if (!handedOff) ReleaseLoadContext(loadContext);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _worker.Dispose();
+        ReleaseLoadContext(_loadContext);
+    }
+
+    private static void ReleaseLoadContext(AssemblyLoadContext loadContext)
+    {
+        try
+        {
+            if (!loadContext.IsCollectible) return;
+            loadContext.Unload();
+            _ = Task.Run(() =>
+            {
+                GC.Collect(0, GCCollectionMode.Optimized);
+                GC.WaitForPendingFinalizers();
+            });
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LangRules load context release failed: name={loadContext.Name}; {ex.GetType().Name}: {ex.Message}");
         }
     }
 

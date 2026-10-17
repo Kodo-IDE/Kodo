@@ -794,7 +794,21 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private static IBrush BrushFor(LoadedExtension extension, string tokenName, string fallback)
     {
         var hex = extension.ColorTokens.TryGetValue(tokenName, out var value) ? value : fallback;
-        return Brush.Parse(hex);
+        try
+        {
+            return Brush.Parse(hex);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("MarkdownColorizer.BrushFor", ex, operation: $"Ignoring invalid extension colour '{hex}' for token '{tokenName}'");
+            return ParseBrushOrDefault(fallback);
+        }
+    }
+
+    private static IBrush ParseBrushOrDefault(string hex)
+    {
+        try { return Brush.Parse(hex); }
+        catch { return Brush.Parse("#D4D4D4"); }
     }
 
     private static bool TryReserveRange(bool[] protectedRanges, int start, int end)

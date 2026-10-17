@@ -991,13 +991,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : null;
         LoadRecentFiles(settings.RecentFiles);
         _isPSReadLinePredictionEnabled = settings.PSReadLinePredictionEnabled;
-        foreach (var pair in settings.CustomRunCommands)
+        foreach (var pair in settings.CustomRunCommands ?? new Dictionary<string, string>())
             _customRunCommands[pair.Key] = pair.Value;
-        foreach (var pair in settings.CustomBuildCommands)
+        foreach (var pair in settings.CustomBuildCommands ?? new Dictionary<string, string>())
             _customBuildCommands[pair.Key] = pair.Value;
-        foreach (var pair in settings.CompilerOverrides)
+        foreach (var pair in settings.CompilerOverrides ?? new Dictionary<string, string>())
             _compilerOverrides[pair.Key] = pair.Value;
-        foreach (var pair in settings.CustomBuildScripts)
+        foreach (var pair in settings.CustomBuildScripts ?? new Dictionary<string, string>())
             _customBuildScripts[pair.Key] = pair.Value;
         _deferredPreferredShellId = settings.PreferredTerminalShellId;
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;

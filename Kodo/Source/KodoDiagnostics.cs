@@ -120,13 +120,75 @@ internal static class KodoPaths
         catch { return Directory.Exists(legacy) ? legacy : preferred; }
     }
 
+    private const int MaxDirectoryCopyDepth = 64;
+
     private static void CopyDirectoryRecursive(string source, string dest)
+    {
+        var visited = new HashSet<string>(FileSystemPaths.Comparer);
+        visited.Add(NormalizeDirectoryIdentity(source));
+        CopyDirectoryRecursiveCore(source, dest, visited, 0);
+    }
+
+    private static void CopyDirectoryRecursiveCore(string source, string dest, HashSet<string> visited, int depth)
     {
         Directory.CreateDirectory(dest);
         foreach (var file in Directory.EnumerateFiles(source))
             File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), overwrite: false);
         foreach (var dir in Directory.EnumerateDirectories(source))
-            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
+        {
+            if (!TryEnterCopiedDirectory(dir, source, visited, depth)) continue;
+            CopyDirectoryRecursiveCore(dir, Path.Combine(dest, Path.GetFileName(dir)), visited, depth + 1);
+        }
+    }
+
+    private static bool TryEnterCopiedDirectory(string directory, string parentDirectory, HashSet<string> visited, int depth)
+    {
+        if (depth >= MaxDirectoryCopyDepth)
+        {
+            KodoDiagnostics.LogDebug($"Stopped copying '{directory}' - the directory tree is deeper than {MaxDirectoryCopyDepth} levels.");
+            return false;
+        }
+
+        if (IsDirectoryLink(directory))
+        {
+            KodoDiagnostics.LogDebug($"Skipped linked directory '{directory}' while copying '{parentDirectory}'.");
+            return false;
+        }
+
+        string identity;
+        try
+        {
+            identity = NormalizeDirectoryIdentity(directory);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Skipped '{directory}' while copying '{parentDirectory}' - the path could not be resolved.", ex);
+            return false;
+        }
+
+        if (visited.Add(identity))
+            return true;
+
+        KodoDiagnostics.LogDebug($"Skipped '{directory}' while copying '{parentDirectory}' - it was already copied.");
+        return false;
+    }
+
+    private static bool IsDirectoryLink(string directory)
+    {
+        try
+        {
+            return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeDirectoryIdentity(string directory)
+    {
+        var resolved = new DirectoryInfo(directory).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? directory;
+        return Path.GetFullPath(resolved).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 }
 

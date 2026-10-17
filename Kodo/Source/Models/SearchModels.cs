@@ -124,21 +124,21 @@ internal sealed class SearchIgnoreRules
 
         if (_excludePatterns.Count > 0)
         {
-            var relPath = Path.GetRelativePath(_excludePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
+            var relPath = RelativeFilterPath(filePath);
             foreach (var pat in _excludePatterns)
             {
-                if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath.Replace('\\', '/')))
+                if (MatchesGlob(NormalizeFilterPattern(pat), name) || MatchesGlob(NormalizeFilterPattern(pat), relPath))
                     return true;
             }
         }
 
         if (_includePatterns.Count > 0)
         {
-            var relPath2 = Path.GetRelativePath(_includePatterns.Count > 0 ? Path.GetDirectoryName(filePath)! : "", filePath);
+            var relPath2 = RelativeFilterPath(filePath);
             var included = false;
             foreach (var pat in _includePatterns)
             {
-                if (MatchesGlob(pat, name) || MatchesGlob(pat, relPath2.Replace('\\', '/')))
+                if (MatchesGlob(NormalizeFilterPattern(pat), name) || MatchesGlob(NormalizeFilterPattern(pat), relPath2))
                 {
                     included = true;
                     break;
@@ -149,6 +149,27 @@ internal sealed class SearchIgnoreRules
 
         return false;
     }
+
+    private string RelativeFilterPath(string filePath)
+    {
+        if (!string.IsNullOrEmpty(RootSnapshot))
+        {
+            try
+            {
+                var full = Path.GetFullPath(filePath);
+                if (FileSystemPaths.IsPrefixOf(full, RootSnapshot))
+                    return Path.GetRelativePath(RootSnapshot, full).Replace('\\', '/');
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"Search filter could not resolve a relative path for '{filePath}'.", ex);
+            }
+        }
+
+        return Path.GetFileName(filePath);
+    }
+
+    private static string NormalizeFilterPattern(string pattern) => pattern.Trim().Replace('\\', '/');
 
     private static bool MatchesAnyPathComponent(string pattern, string componentName)
     {

@@ -29,10 +29,11 @@ internal static class FileSystemPaths
         try
         {
             path = System.IO.Path.GetFullPath(path);
-            dirPrefix = System.IO.Path.GetFullPath(dirPrefix.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar));
+            dirPrefix = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(dirPrefix));
         }
         catch { return false; }
         var sep = System.IO.Path.DirectorySeparatorChar.ToString();
-        return Equals(path, dirPrefix) || StartsWith(path, dirPrefix + sep);
+        var prefix = EndsWith(dirPrefix, sep) ? dirPrefix : dirPrefix + sep;
+        return Equals(path, dirPrefix) || StartsWith(path, prefix);
     }
 }

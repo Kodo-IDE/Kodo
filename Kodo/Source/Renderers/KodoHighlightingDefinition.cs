@@ -35,7 +35,24 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
     private static HighlightingColor ColorFor(LoadedExtension ext, string tokenName, string fallback)
     {
         var hex = ext.ColorTokens.TryGetValue(tokenName, out var h) ? h : fallback;
-        return new HighlightingColor { Foreground = new SimpleHighlightingBrush(Color.Parse(hex)) };
+        Color color;
+        try
+        {
+            color = Color.Parse(hex);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("KodoHighlightingDefinition.ColorFor", ex, operation: $"Ignoring invalid extension colour '{hex}' for token '{tokenName}'");
+            color = ParseColorOrDefault(fallback);
+        }
+
+        return new HighlightingColor { Foreground = new SimpleHighlightingBrush(color) };
+    }
+
+    private static Color ParseColorOrDefault(string hex)
+    {
+        try { return Color.Parse(hex); }
+        catch { return Color.Parse("#D4D4D4"); }
     }
 
     private static bool IsBatchExtension(LoadedExtension ext) =>

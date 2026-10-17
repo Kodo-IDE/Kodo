@@ -1073,15 +1073,16 @@ internal static class HotfixShared
         try
         {
             path = Path.GetFullPath(path);
-            directory = Path.GetFullPath(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            directory = Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
         }
         catch { return false; }
         var comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
         var sep = Path.DirectorySeparatorChar.ToString();
+        var prefix = directory.EndsWith(sep, comparison) ? directory : directory + sep;
         return string.Equals(path, directory, comparison) ||
-            path.StartsWith(directory + sep, comparison);
+            path.StartsWith(prefix, comparison);
     }
 
     internal static bool IsPathWithinDirectoryWithoutReparsePoints(string path, string directory)

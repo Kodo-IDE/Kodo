@@ -1153,13 +1153,16 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(compilerExtension.DownloadUrl))
                 throw new InvalidOperationException($"{compilerExtension.Name} has no download URL set.");
 
+            var compilerId = SanitizeCompilerSegment(compilerExtension.Id, "compiler");
+            var defaultFileName =
+                $"{compilerId}-{SanitizeCompilerSegment(compilerExtension.Version, "0")}{(OperatingSystem.IsWindows() ? ".exe" : ".bin")}";
+
             var fileName = string.IsNullOrWhiteSpace(compilerExtension.FileName)
                 ? Path.GetFileName(new Uri(compilerExtension.DownloadUrl).LocalPath)
                 : compilerExtension.FileName;
-            if (string.IsNullOrWhiteSpace(fileName))
-                fileName = $"{compilerExtension.Id}-{compilerExtension.Version}{(OperatingSystem.IsWindows() ? ".exe" : ".bin")}";
+            fileName = SanitizeCompilerSegment(fileName, defaultFileName);
 
-            var compilerFolder = Path.Combine(CompilersFolderPath, compilerExtension.Id);
+            var compilerFolder = Path.Combine(CompilersFolderPath, compilerId);
             Directory.CreateDirectory(compilerFolder);
             var outputPath = Path.Combine(compilerFolder, fileName);
 
@@ -1611,9 +1614,18 @@ public partial class MainWindow
         return Environment.SystemDirectory;
     }
 
+    private static string SanitizeCompilerSegment(string? segment, string fallback)
+    {
+        var sanitized = Path.GetFileName((segment ?? string.Empty).Trim().Replace('\\', '/'));
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+            sanitized = sanitized.Replace(invalid, '_');
+        sanitized = sanitized.Trim(' ', '.');
+        return string.IsNullOrWhiteSpace(sanitized) ? fallback : sanitized;
+    }
+
     private void ForgetLocalCompilerRecord(MarketplaceExtension compilerExtension)
     {
-        var compilerFolder = Path.Combine(CompilersFolderPath, compilerExtension.Id);
+        var compilerFolder = Path.Combine(CompilersFolderPath, SanitizeCompilerSegment(compilerExtension.Id, "compiler"));
         if (Directory.Exists(compilerFolder))
             Directory.Delete(compilerFolder, recursive: true);
 

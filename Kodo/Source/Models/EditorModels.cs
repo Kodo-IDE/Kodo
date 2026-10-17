@@ -417,13 +417,19 @@ public class FileTreeItem : INotifyPropertyChanged
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
+    private const int MaxIconCacheEntries = 512;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _iconCache = new(StringComparer.OrdinalIgnoreCase);
 
     internal static string GetFileIcon(string fileName)
     {
-        if (_iconCache.TryGetValue(fileName, out var cached)) return cached;
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
-        var icon = ext switch
+        return _iconCache.GetOrAdd(ext, _ => ResolveFileIcon(ext));
+    }
+
+    private static string ResolveFileIcon(string ext)
+    {
+        if (_iconCache.Count >= MaxIconCacheEntries) _iconCache.Clear();
+        return ext switch
         {
             ".cs" or ".csproj" or ".axaml.cs" or ".csx" => "C#",
             ".xml" => "XML",
@@ -473,7 +479,5 @@ public class FileTreeItem : INotifyPropertyChanged
             ".iss" => "ISS",
             _ => "..",
         };
-        _iconCache.TryAdd(fileName, icon);
-        return icon;
     }
 }
