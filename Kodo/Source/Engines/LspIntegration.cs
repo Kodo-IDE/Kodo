@@ -106,7 +106,9 @@ public partial class MainWindow
             var extensionSnapshot = LoadedExtensions.ToList();
             var settingsSnapshot = BuildLspResolverSettings();
 
-            var sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+            LanguageServerSweep sweep;
+            using (BeginAppLoading("Checking language servers"))
+                sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
 
             if (sweep.Installable.Count > 0)
             {
@@ -129,7 +131,8 @@ public partial class MainWindow
                     InvalidateLspResolutionCaches();
                     extensionSnapshot = LoadedExtensions.ToList();
                     settingsSnapshot = BuildLspResolverSettings();
-                    sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+                    using (BeginAppLoading("Checking language servers"))
+                        sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
                 }
             }
 
