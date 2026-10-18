@@ -54,7 +54,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const string AutoSaveSavingMessage = "Saving...";
     private const string AutoSaveFailedMessagePrefix = "Save failed:";
     private static readonly string CurrentAppVersion = KodoDiagnostics.AppVersion;
-    public string CopyrightText => $"© {DateTime.Now.Year} Kodo-IDE, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0.";
+    public string CopyrightText => $"© {DateTime.Now.Year} Kodo-IDE, built by KerbalMissile and SS-YYC. Licensed under the GNU GPL-v3.0 license.";
     public string AboutTitle => $"Kodo for {AboutPlatformName}";
 
     private static string AboutPlatformName =>
