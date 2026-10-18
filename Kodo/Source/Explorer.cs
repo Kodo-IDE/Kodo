@@ -201,17 +201,7 @@ public partial class MainWindow
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         var activationVersion = _activeTabVersion;
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (_activeTabVersion != activationVersion) return;
-            if (!ReferenceEquals(ActiveEditorTab, tab)) return;
-
-            SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-            if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
-                ApplyIndentationForContent(tab.Content);
-            EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
-            EditorTextBox.ScrollToLine(tab.TopLineNumber);
-        }, DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() => _ = SetEditorTabContentAsync(tab, activationVersion), DispatcherPriority.Background);
         var savedOffsetY = tab.ScrollOffsetY;
         var targetTabForScroll = tab;
         var savedOffsetVersion = _activeTabVersion;
@@ -243,6 +233,19 @@ public partial class MainWindow
             FocusEditor();
         activateWatch.Stop();
         KodoDiagnostics.ReportSlowStage("tab activation", activateWatch.ElapsedMilliseconds, 1000, $"path={tab.Path} len={tab.Content?.Length ?? 0}");
+    }
+
+    private async Task SetEditorTabContentAsync(EditorTab tab, int activationVersion)
+    {
+        if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab)) return;
+        await ClearLspFoldingsAsync();
+        if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab)) return;
+
+        SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
+        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
+            ApplyIndentationForContent(tab.Content);
+        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
+        EditorTextBox.ScrollToLine(tab.TopLineNumber);
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
             _ = LspNotifyDidOpenAsync(tab.Path, tab.Content ?? string.Empty);
     }
@@ -478,7 +481,7 @@ public partial class MainWindow
             var watcher = new FileSystemWatcher(folderPath)
             {
                 IncludeSubdirectories = true,
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName,
                 InternalBufferSize = 64 * 1024,
             };
 
@@ -691,7 +694,7 @@ public partial class MainWindow
             {
                 Name = Path.GetFileName(entry),
                 FullPath = entry,
-                IsDirectory = Directory.Exists(entry),
+                IsDirectory = (File.GetAttributes(entry) & FileAttributes.Directory) != 0,
                 Depth = depth,
             })
             .ToList());
@@ -708,23 +711,18 @@ public partial class MainWindow
             if (dirItem.IsExpanded)
             {
                 dirItem.IsExpanded = false;
-                var toRemove = FileTreeItems
-                    .Skip(index + 1)
-                    .TakeWhile(i => i.Depth > dirItem.Depth)
-                    .ToList();
-                for (var i = toRemove.Count - 1; i >= 0; i--)
-                    FileTreeItems.Remove(toRemove[i]);
+                var endIndex = index + 1;
+                while (endIndex < FileTreeItems.Count && FileTreeItems[endIndex].Depth > dirItem.Depth)
+                    endIndex++;
+                for (var i = endIndex - 1; i > index; i--)
+                    FileTreeItems.RemoveAt(i);
             }
             else
             {
                 dirItem.IsExpanded = true;
                 var items = await CreateFileTreeItemsAsync(dirItem.FullPath, dirItem.Depth + 1);
-                var pos = index + 1;
-                foreach (var item in items)
-                {
-                    FileTreeItems.Insert(pos, item);
-                    pos++;
-                }
+                for (var i = 0; i < items.Count; i++)
+                    FileTreeItems.Insert(index + 1 + i, items[i]);
             }
         }
         finally

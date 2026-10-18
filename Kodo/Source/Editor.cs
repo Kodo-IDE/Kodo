@@ -753,7 +753,26 @@ public partial class MainWindow
         _lspFoldedVersion = -1;
         _lspDiagnosticsSeenForFile = false;
         _lspFoldingDeferred = false;
-        _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+    }
+
+    private async Task ClearLspFoldingsAsync()
+    {
+        var manager = _lspFoldingManager;
+        if (manager is null) return;
+
+        var foldings = manager.AllFoldings.ToArray();
+        const int batchSize = 8;
+        for (var index = 0; index < foldings.Length; index += batchSize)
+        {
+            if (!ReferenceEquals(_lspFoldingManager, manager)) return;
+
+            var end = Math.Min(index + batchSize, foldings.Length);
+            for (var i = index; i < end; i++)
+                manager.RemoveFolding(foldings[i]);
+
+            if (end < foldings.Length)
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        }
     }
 
     private const int LspDocumentRefreshMaxRetries = 6;
@@ -879,14 +898,79 @@ public partial class MainWindow
             foldings.Sort(static (left, right) => left.StartOffset.CompareTo(right.StartOffset));
             foldings.RemoveRange(LspMaxFoldingsApplied, foldings.Count - LspMaxFoldingsApplied);
         }
+        var manager = _lspFoldingManager;
+        var orderedFoldings = foldings.OrderBy(f => f.StartOffset).ToArray();
+        var updates = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null)
+                return null;
+
+            var changes = new List<Action>();
+            var existing = manager.AllFoldings.ToArray();
+            var existingIndex = 0;
+            foreach (var folding in orderedFoldings)
+            {
+                while (existingIndex < existing.Length && folding.StartOffset > existing[existingIndex].StartOffset)
+                {
+                    var stale = existing[existingIndex++];
+                    changes.Add(() => manager.RemoveFolding(stale));
+                }
+
+                if (existingIndex < existing.Length && folding.StartOffset == existing[existingIndex].StartOffset)
+                {
+                    var section = existing[existingIndex++];
+                    changes.Add(() =>
+                    {
+                        section.Length = folding.EndOffset - folding.StartOffset;
+                        section.Title = folding.Name;
+                        section.Tag = folding;
+                    });
+                }
+                else
+                {
+                    changes.Add(() =>
+                    {
+                        var section = manager.CreateFolding(folding.StartOffset, folding.EndOffset);
+                        section.Title = folding.Name;
+                        section.Tag = folding;
+                    });
+                }
+            }
+
+            while (existingIndex < existing.Length)
+            {
+                var stale = existing[existingIndex++];
+                changes.Add(() => manager.RemoveFolding(stale));
+            }
+
+            return changes;
+        }, DispatcherPriority.Background);
+
+        if (updates is null || manager is null) return false;
+        const int updateBatchSize = 8;
+        for (var index = 0; index < updates.Count; index += updateBatchSize)
+        {
+            var start = index;
+            var end = Math.Min(index + updateBatchSize, updates.Count);
+            applied = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!ReferenceEquals(_lspFoldingManager, manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled))
+                    return false;
+
+                for (var i = start; i < end; i++)
+                    updates[i]();
+                return true;
+            }, DispatcherPriority.Background);
+            if (!applied) return false;
+        }
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null) return;
-            _lspFoldingManager.UpdateFoldings(foldings.OrderBy(f => f.StartOffset), 0);
+            if (!ReferenceEquals(_lspFoldingManager, manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled)) return;
             _lspFoldedPath = ctx.FilePath;
             _lspFoldedVersion = ctx.Version;
             applied = true;
-        });
+        }, DispatcherPriority.Background);
         return applied;
     }
 
