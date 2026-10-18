@@ -1338,7 +1338,7 @@ internal static class LspServerResolver
         AppSettings? settings,
         CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(extensionId) && settings != null && settings.LspDisabledLanguages.TryGetValue(extensionId, out var disabled) && disabled)
+        if (!string.IsNullOrWhiteSpace(extensionId) && settings != null && (settings.LspDisabledLanguages ?? new Dictionary<string, bool>()).TryGetValue(extensionId, out var disabled) && disabled)
             return new(LspServerSource.Disabled, null, cfg, null, "LSP disabled for this language", false);
         if (settings != null && !settings.LspEnabled)
             return new(LspServerSource.Disabled, null, cfg, null, "LSP globally disabled", false);
@@ -1356,9 +1356,10 @@ internal static class LspServerResolver
         string? ov = null;
         if (settings != null)
         {
-            if (!string.IsNullOrWhiteSpace(extensionId) && settings.LspExecutableOverrides.TryGetValue(extensionId, out var ov1) && !string.IsNullOrWhiteSpace(ov1))
+            var executableOverrides = settings.LspExecutableOverrides ?? new Dictionary<string, string>();
+            if (!string.IsNullOrWhiteSpace(extensionId) && executableOverrides.TryGetValue(extensionId, out var ov1) && !string.IsNullOrWhiteSpace(ov1))
             { ov = ov1; overrideKey = extensionId; }
-            else if (settings.LspExecutableOverrides.TryGetValue(cfg.EffectiveProviderId, out var ov2) && !string.IsNullOrWhiteSpace(ov2))
+            else if (executableOverrides.TryGetValue(cfg.EffectiveProviderId, out var ov2) && !string.IsNullOrWhiteSpace(ov2))
             { ov = ov2; overrideKey = cfg.EffectiveProviderId; }
         }
         if (!string.IsNullOrWhiteSpace(ov))

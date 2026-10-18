@@ -362,6 +362,20 @@ public partial class MainWindow
         string cancelLabel = "Cancel",
         bool isDestructive = false)
     {
+        var confirmed = await TryShowConfirmationDialogAsync(title, body, confirmLabel, cancelLabel, isDestructive);
+        return confirmed == true;
+    }
+
+    private async Task<bool?> TryShowConfirmationDialogAsync(
+        string title,
+        string body,
+        string confirmLabel = "Confirm",
+        string cancelLabel = "Cancel",
+        bool isDestructive = false)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+            return await Dispatcher.UIThread.InvokeAsync<bool?>(
+                () => TryShowConfirmationDialogAsync(title, body, confirmLabel, cancelLabel, isDestructive));
         try
         {
             var headerRow = new Grid
@@ -491,12 +505,18 @@ public partial class MainWindow
         catch (Exception dialogEx)
         {
             KodoDiagnostics.LogDebug($"ShowConfirmationDialogAsync failed to display for '{title}'.", dialogEx);
-            return false;
+            return null;
         }
     }
 
     private async Task ShowWarningDialogAsync(string context, Exception exception, bool isCritical = false)
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () => await ShowWarningDialogAsync(context, exception, isCritical));
+            return;
+        }
+
         isCritical = isCritical
             || context.StartsWith("File save", StringComparison.OrdinalIgnoreCase)
             || context.StartsWith("Auto-save", StringComparison.OrdinalIgnoreCase);

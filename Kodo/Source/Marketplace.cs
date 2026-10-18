@@ -1456,13 +1456,13 @@ public partial class MainWindow
                         else
                         {
                             var provider = cfg.DisplayName ?? cfg.EffectiveProviderId;
-                            var shouldInstall = await ShowConfirmationDialogAsync(
+                            var shouldInstall = await TryShowConfirmationDialogAsync(
                                 $"{installed.Name} – language server update required",
                                 $"{installed.Name} requires {provider} version {cfg.Version}, but installed {res.Version ?? "unknown"} is incompatible.\n\nInstall compatible version?",
                                 confirmLabel: $"Install {provider}",
                                 cancelLabel: "Not now").ConfigureAwait(false);
-                            if (shouldInstall) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
-                            else
+                            if (shouldInstall == true) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
+                            else if (shouldInstall == false)
                             {
                                 installed.LspStatus = LspDependencyStatus.Declined;
                                 LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, LspDependencyStatus.Declined, "User declined update");
@@ -1487,13 +1487,13 @@ public partial class MainWindow
                     else if (cfg.AllowAutoInstall)
                     {
                         var provider = cfg.DisplayName ?? cfg.EffectiveProviderId;
-                        var shouldInstall = await ShowConfirmationDialogAsync(
+                        var shouldInstall = await TryShowConfirmationDialogAsync(
                             $"{installed.Name} – language server required",
                             $"{installed.Name} installed, but '{provider}' is missing.\n\nWithout it, Kodo uses embedded diagnostics (may show false positives).\n\nInstall {provider} now?",
                             confirmLabel: $"Install {provider}",
                             cancelLabel: "Use embedded").ConfigureAwait(false);
-                        if (shouldInstall) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
-                        else
+                        if (shouldInstall == true) await PromptAndInstallLspAsync(installed, res, autoInstall: false).ConfigureAwait(false);
+                        else if (shouldInstall == false)
                         {
                             installed.LspStatus = LspDependencyStatus.Declined;
                             LspProviderRegistry.SetStatus(cfg.EffectiveProviderId, LspDependencyStatus.Declined, "User declined");
