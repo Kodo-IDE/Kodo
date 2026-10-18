@@ -111,7 +111,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _settingsSearchPending;
 
     private string? _currentFilePath;
-    private System.Text.Encoding _currentFileEncoding = System.Text.Encoding.UTF8;
+    private System.Text.Encoding _currentFileEncoding = Kodo.Models.EditorTab.DefaultEncoding;
     private Kodo.Models.LineEnding _currentLineEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
     private string? _currentFolderPath;
     private DiscordRpcClient? _discordRpcClient;
@@ -4608,7 +4608,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get
         {
             if (!IsLineEndingVisible) return string.Empty;
-            return _currentLineEnding == Kodo.Models.LineEnding.CRLF ? "CRLF" : "LF";
+            return _currentLineEnding switch
+            {
+                Kodo.Models.LineEnding.CRLF => "CRLF",
+                Kodo.Models.LineEnding.CR => "CR",
+                _ => "LF"
+            };
         }
     }
 
@@ -5720,6 +5725,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             IsDirty = _isDirty
         };
+        CaptureTabDiskState(recoveredTab);
 
         OpenTabs.Add(recoveredTab);
         ActivateTab(recoveredTab, focusEditor: false);
@@ -5797,6 +5803,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             var tab = new EditorTab(result.path, Path.GetFileName(result.path), result.content, lineEnding: result.lineEnding) { Encoding = result.encoding };
                             if (result.isCorrupted)
                                 _corruptedTabs.Add(tab);
+                            CaptureTabDiskState(tab);
                             OpenTabs.Add(tab);
                             AddRecentFile(result.path);
                         }
@@ -6005,6 +6012,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _autoSaveTimer.Stop();
         if (_isSaving) return false;
         if (HasImagePreview) return false;
+        if (ActiveEditorTab is not null && _corruptedTabs.Contains(ActiveEditorTab))
+        {
+            await ReportSaveRefusedAsync(
+                $"\"{ActiveEditorTab.DisplayName}\" is a binary or corrupted file, so it cannot be saved as text. The original bytes were left untouched.");
+            return false;
+        }
 
         var shouldPromptForPath = forcePromptForPath || _currentFilePath is null;
         if (shouldPromptForPath)
@@ -6045,6 +6058,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var savingContent = EditorTextBox.Document.Text;
         var savingVersion = _insightDocVersion;
 
+        if (!shouldPromptForPath && savingTab is not null && IsTabDiskStateChanged(savingTab))
+        {
+            await ReportSaveRefusedAsync(
+                $"\"{Path.GetFileName(savingPath!)}\" changed on disk since it was opened, so it was not overwritten. Use Save As to keep your changes under a new name, or reload the file to pick up the newer version.");
+            return false;
+        }
+
+        var savingEncoding = savingTab?.Encoding ?? _currentFileEncoding;
+
         try
         {
             _isSaving = true;
@@ -6057,7 +6079,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var saveWatch = System.Diagnostics.Stopwatch.StartNew();
             var textToSave = ConvertToLineEnding(savingContent, _currentLineEnding);
-            await File.WriteAllTextAsync(savingPath!, textToSave, _currentFileEncoding);
+            await WriteTextFileAtomicallyAsync(savingPath!, textToSave, savingEncoding);
             saveWatch.Stop();
             KodoDiagnostics.ReportSlowStage("save convert+write", saveWatch.ElapsedMilliseconds, 1000, $"len={savingContent.Length}");
 
@@ -6082,6 +6104,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (savingTab is not null && savingTab.IsUntitled)
                 savingTab.IsUntitled = false;
+            if (savingTab is not null)
+            {
+                CaptureTabDiskState(savingTab);
+                savingTab.IsModifiedExternally = false;
+            }
             if (ReferenceEquals(ActiveEditorTab, savingTab))
             {
                 if (shouldPromptForPath)
@@ -6135,6 +6162,88 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task<bool> SaveAsAsync() =>
         await SaveAsync(allowPromptForPath: true, forcePromptForPath: true);
+
+    private async Task ReportSaveRefusedAsync(string reason)
+    {
+        _autoSaveStatusTimer.Stop();
+        _autoSaveStatusMessage = reason;
+        OnPropertyChanged(nameof(FileSummaryText));
+        OnPropertyChanged(nameof(AutoSaveStatusText));
+        await ShowWarningDialogAsync("File save", new IOException(reason));
+    }
+
+    private static async Task WriteTextFileAtomicallyAsync(string path, string text, System.Text.Encoding encoding)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath);
+        if (string.IsNullOrWhiteSpace(directory))
+            throw new IOException("Save path has no parent directory.");
+        Directory.CreateDirectory(directory);
+
+        var unixMode = OperatingSystem.IsWindows() ? null : ReadUnixMode(fullPath);
+        if (unixMode is not null && (unixMode.Value & UnixFileMode.UserWrite) == 0)
+            throw new UnauthorizedAccessException($"Access to the path '{path}' is denied.");
+
+        var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+            };
+            if (unixMode.HasValue)
+                options.UnixCreateMode = unixMode.Value;
+
+            using (var stream = new FileStream(tempPath, options))
+            using (var writer = new StreamWriter(stream, encoding, 1024, leaveOpen: true))
+            {
+                await writer.WriteAsync(text);
+                await writer.FlushAsync();
+                stream.Flush(flushToDisk: true);
+            }
+
+            if (unixMode.HasValue)
+            {
+                try { File.SetUnixFileMode(tempPath, unixMode.Value); } catch { }
+            }
+
+            await CommitTempFileAsync(tempPath, fullPath);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
+    }
+
+    private static UnixFileMode? ReadUnixMode(string path)
+    {
+        try
+        {
+            return File.Exists(path) ? File.GetUnixFileMode(path) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task CommitTempFileAsync(string tempPath, string targetPath)
+    {
+        try
+        {
+            File.Move(tempPath, targetPath, overwrite: true);
+            return;
+        }
+        catch (IOException) when (OperatingSystem.IsWindows() && File.Exists(targetPath))
+        {
+            KodoDiagnostics.LogDebug($"Atomic replace of '{targetPath}' was blocked by an open handle - falling back to an in-place write.");
+        }
+
+        await File.WriteAllBytesAsync(targetPath, await File.ReadAllBytesAsync(tempPath));
+        File.Delete(tempPath);
+    }
 
     private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
         Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
@@ -6608,6 +6717,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
+                    if (_corruptedTabs.Contains(tab))
+                        continue;
+
+                    if (IsTabDiskStateChanged(tab))
+                    {
+                        ExtensionsStatusText = $"Save failed: \"{Path.GetFileName(tab.Path)}\" changed on disk and was left untouched.";
+                        await ShowWarningDialogAsync("File save", new IOException($"\"{tab.Path}\" changed on disk since it was opened. Kodo did not overwrite it."));
+                        continue;
+                    }
+
                     try
                     {
                         var textToSave = ConvertToLineEnding(tab.Content, tab.LineEnding);
@@ -6616,10 +6735,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         {
                             try { encToUse = SearchEngine.DetectFileEncoding(tab.Path); } catch { }
                         }
-                        await File.WriteAllTextAsync(tab.Path, textToSave, encToUse);
+                        await WriteTextFileAtomicallyAsync(tab.Path, textToSave, encToUse);
                         tab.Content = textToSave;
                         tab.Encoding = encToUse;
                         tab.IsDirty = false;
+                        tab.IsModifiedExternally = false;
+                        CaptureTabDiskState(tab);
                     }
                     catch (Exception ex)
                     {
@@ -8311,7 +8432,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (!HasFileOpen) return;
+        if (!HasFileOpen || !IsTextEditorVisible) return;
 
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
@@ -8472,7 +8593,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var textToWrite = ConvertToLineEnding(EditorTextBox.Document.Text, _currentLineEnding);
-            await File.WriteAllTextAsync(_currentFilePath!, textToWrite, chosen);
+            await WriteTextFileAtomicallyAsync(_currentFilePath!, textToWrite, chosen);
             _currentFileEncoding = chosen;
             OnPropertyChanged(nameof(EncodingDisplayText));
             if (ActiveEditorTab is not null)
@@ -8480,6 +8601,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ActiveEditorTab.Content = textToWrite;
                 ActiveEditorTab.Encoding = chosen;
                 ActiveEditorTab.IsDirty = false;
+                ActiveEditorTab.IsModifiedExternally = false;
+                CaptureTabDiskState(ActiveEditorTab);
             }
             _isDirty = false;
             OnPropertyChanged(nameof(IsDocumentDirty));
@@ -8498,6 +8621,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             ("LF (\\n) - Unix / macOS", Kodo.Models.LineEnding.LF),
             ("CRLF (\\r\\n) - Windows", Kodo.Models.LineEnding.CRLF),
+            ("CR (\\r) - Classic Mac OS", Kodo.Models.LineEnding.CR),
         };
 
         Kodo.Models.LineEnding? chosen = null;
@@ -8632,13 +8756,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var textToWrite = ConvertToLineEnding(EditorTextBox.Document.Text, chosen.Value);
-            await File.WriteAllTextAsync(_currentFilePath!, textToWrite, _currentFileEncoding);
+            await WriteTextFileAtomicallyAsync(_currentFilePath!, textToWrite, _currentFileEncoding);
             _currentLineEnding = chosen.Value;
             if (ActiveEditorTab is not null)
             {
                 ActiveEditorTab.LineEnding = chosen.Value;
                 ActiveEditorTab.Content = textToWrite;
                 ActiveEditorTab.IsDirty = false;
+                ActiveEditorTab.IsModifiedExternally = false;
+                CaptureTabDiskState(ActiveEditorTab);
             }
             _isDirty = false;
             OnPropertyChanged(nameof(IsDocumentDirty));
@@ -9319,13 +9445,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrEmpty(text))
             return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
 
-        int crlf = 0, lf = 0;
+        int crlf = 0, lf = 0, cr = 0;
         for (int i = 0; i < text.Length; i++)
         {
             if (text[i] == '\r')
             {
                 if (i + 1 < text.Length && text[i + 1] == '\n') { crlf++; i++; }
-                else lf++;
+                else cr++;
             }
             else if (text[i] == '\n')
             {
@@ -9333,18 +9459,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         }
 
-        if (crlf == 0 && lf == 0)
+        if (crlf == 0 && lf == 0 && cr == 0)
             return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
 
-        if (crlf > lf) return Kodo.Models.LineEnding.CRLF;
-        if (lf > crlf) return Kodo.Models.LineEnding.LF;
+        if (crlf > lf && crlf > cr) return Kodo.Models.LineEnding.CRLF;
+        if (lf > crlf && lf > cr) return Kodo.Models.LineEnding.LF;
+        if (cr > crlf && cr > lf) return Kodo.Models.LineEnding.CR;
         return Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
     }
 
     private static string ConvertToLineEnding(string text, Kodo.Models.LineEnding ending)
     {
         var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n');
-        return ending == Kodo.Models.LineEnding.CRLF ? normalized.Replace("\n", "\r\n") : normalized;
+        return ending switch
+        {
+            Kodo.Models.LineEnding.CRLF => normalized.Replace("\n", "\r\n"),
+            Kodo.Models.LineEnding.CR => normalized.Replace("\n", "\r"),
+            Kodo.Models.LineEnding.LF => normalized,
+            _ => Environment.NewLine == "\r\n" ? normalized.Replace("\n", "\r\n") : normalized
+        };
     }
 
     private static string GetSharedIndent(string left, string right)

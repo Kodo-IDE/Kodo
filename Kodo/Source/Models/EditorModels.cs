@@ -110,7 +110,8 @@ internal sealed class SpanOverlapIndex
 public enum LineEnding
 {
     LF,
-    CRLF
+    CRLF,
+    CR
 }
 
 internal enum UnsavedTabAction
@@ -147,7 +148,15 @@ public class EditorTab : INotifyPropertyChanged
 
     public LineEnding LineEnding { get; set; }
 
-    public System.Text.Encoding Encoding { get; set; } = System.Text.Encoding.UTF8;
+    public static readonly System.Text.Encoding DefaultEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    public System.Text.Encoding Encoding { get; set; } = DefaultEncoding;
+
+    public bool IsModifiedExternally { get; set; }
+
+    public DateTime LastKnownWriteTimeUtc { get; set; }
+
+    public long LastKnownLength { get; set; }
 
     public string Content
     {

@@ -141,7 +141,10 @@ public partial class MainWindow
     {
         var displayName = $"untitled-{_nextUntitledTabNumber++}.txt";
         var defaultEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
-        return new EditorTab(displayName, displayName, string.Empty, isUntitled: true, lineEnding: defaultEnding);
+        return new EditorTab(displayName, displayName, string.Empty, isUntitled: true, lineEnding: defaultEnding)
+        {
+            Encoding = EditorTab.DefaultEncoding
+        };
     }
 
     private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true)
@@ -193,6 +196,7 @@ public partial class MainWindow
         _isDirty = tab.IsDirty;
         OnPropertyChanged(nameof(IsDocumentDirty));
         _currentLineEnding = tab.LineEnding;
+        _currentFileEncoding = tab.Encoding;
         _autoSaveTimer.Stop();
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
@@ -426,6 +430,7 @@ public partial class MainWindow
         var tab = new EditorTab(path, Path.GetFileName(path), content, lineEnding: lineEndingForTab) { Encoding = _currentFileEncoding };
         if (isCorrupted)
             _corruptedTabs.Add(tab);
+        CaptureTabDiskState(tab);
         OpenTabs.Add(tab);
         AddRecentFile(path);
         ActivateTab(tab);
@@ -478,6 +483,7 @@ public partial class MainWindow
             watcher.Created += ProjectFolderWatcher_OnChanged;
             watcher.Deleted += ProjectFolderWatcher_OnChanged;
             watcher.Renamed += ProjectFolderWatcher_OnChanged;
+            watcher.Changed += ProjectFolderWatcher_OnChanged;
             watcher.Error += ProjectFolderWatcher_OnError;
             watcher.EnableRaisingEvents = true;
 
@@ -497,13 +503,79 @@ public partial class MainWindow
         _projectFolderWatcher.Created -= ProjectFolderWatcher_OnChanged;
         _projectFolderWatcher.Deleted -= ProjectFolderWatcher_OnChanged;
         _projectFolderWatcher.Renamed -= ProjectFolderWatcher_OnChanged;
+        _projectFolderWatcher.Changed -= ProjectFolderWatcher_OnChanged;
         _projectFolderWatcher.Error -= ProjectFolderWatcher_OnError;
         _projectFolderWatcher.Dispose();
         _projectFolderWatcher = null;
     }
 
-    private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e) =>
+    private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
+    {
+        if (e.ChangeType == WatcherChangeTypes.Changed)
+        {
+            var changedPath = e.FullPath;
+            Dispatcher.UIThread.Post(() => MarkExternallyChangedTab(changedPath));
+        }
         Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+    }
+
+    private void MarkExternallyChangedTab(string path)
+    {
+        if (_isSaving) return;
+
+        foreach (var tab in OpenTabs)
+        {
+            if (tab.IsUntitled || !tab.IsDirty || tab.IsModifiedExternally || tab.Path is null) continue;
+            if (!FileSystemPaths.Equals(tab.Path, path)) continue;
+            if (!IsTabDiskStateChanged(tab)) continue;
+            tab.IsModifiedExternally = true;
+            if (ReferenceEquals(tab, ActiveEditorTab))
+            {
+                _autoSaveStatusTimer.Stop();
+                _autoSaveStatusMessage = $"{Path.GetFileName(tab.Path)} changed on disk.";
+                OnPropertyChanged(nameof(FileSummaryText));
+            }
+        }
+    }
+
+    private static void CaptureTabDiskState(EditorTab tab)
+    {
+        if (tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path))
+        {
+            tab.LastKnownWriteTimeUtc = DateTime.MinValue;
+            tab.LastKnownLength = -1;
+            return;
+        }
+
+        try
+        {
+            var info = new FileInfo(tab.Path);
+            tab.LastKnownWriteTimeUtc = info.LastWriteTimeUtc;
+            tab.LastKnownLength = info.Exists ? info.Length : -1;
+        }
+        catch
+        {
+            tab.LastKnownWriteTimeUtc = DateTime.MinValue;
+            tab.LastKnownLength = -1;
+        }
+    }
+
+    private static bool IsTabDiskStateChanged(EditorTab tab)
+    {
+        if (tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path)) return false;
+        if (tab.LastKnownLength < 0) return false;
+
+        try
+        {
+            var info = new FileInfo(tab.Path);
+            if (!info.Exists) return false;
+            return info.LastWriteTimeUtc != tab.LastKnownWriteTimeUtc || info.Length != tab.LastKnownLength;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private void RestartFileTreeRefreshTimer()
     {
