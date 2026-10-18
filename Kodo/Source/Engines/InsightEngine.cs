@@ -625,7 +625,7 @@ public sealed class InsightEngine
                         if (eqIdx > 0)
                         {
                             var lhs = t.Substring(0, eqIdx).Trim();
-                            if (System.Text.RegularExpressions.Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$") && !lhs.Contains(" "))
+                            if (SimpleAssignmentTarget.IsMatch(lhs) && !lhs.Contains(" "))
                                 continue;
                         }
                     }
@@ -672,6 +672,26 @@ public sealed class InsightEngine
         RegexOptions.Compiled);
 
     private static readonly Regex ClosingBraceOnlyLine = new(@"^\}+;?$", RegexOptions.Compiled);
+
+    private static readonly Regex SimpleAssignmentTarget = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled);
+
+    private static readonly Regex WordIdentifier = new(@"\b[A-Za-z_][A-Za-z0-9_]*\b", RegexOptions.Compiled);
+
+    private static readonly Regex ConditionalTerminatorOnIf = new(
+        @"\bif\s*\(.*\)\s*(?:return|throw|break|continue)\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ConditionalTerminatorOnElse = new(
+        @"\belse\b.*\b(?:return|throw|break|continue)\b",
+        RegexOptions.Compiled);
+
+    private static readonly Regex OpenConditionalOnIf = new(@"\bif\s*\(.*\)\s*$", RegexOptions.Compiled);
+
+    private static readonly Regex OpenConditionalOnElse = new(@"\belse\b\s*$", RegexOptions.Compiled);
+
+    private static readonly Regex LeadingJumpStatement = new(
+        @"^\s*(?:return|throw|break|continue)\b",
+        RegexOptions.Compiled);
 
     private static int ContentLength(string line) => line.EndsWith('\r') ? line.Length - 1 : line.Length;
 
@@ -725,11 +745,17 @@ public sealed class InsightEngine
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
 
         var wordFreq = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (Match m in Regex.Matches(maskedDoc, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
-            wordFreq[m.Value] = wordFreq.TryGetValue(m.Value, out var c) ? c + 1 : 1;
+        foreach (var m in WordIdentifier.EnumerateMatches(maskedDoc))
+        {
+            var word = maskedDoc.Substring(m.Index, m.Length);
+            wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
+        }
         if (folderMaskedText is not null)
-            foreach (Match m in Regex.Matches(folderMaskedText, @"\b[A-Za-z_][A-Za-z0-9_]*\b"))
-                wordFreq[m.Value] = wordFreq.TryGetValue(m.Value, out var c) ? c + 1 : 1;
+            foreach (var m in WordIdentifier.EnumerateMatches(folderMaskedText))
+            {
+                var word = folderMaskedText.Substring(m.Index, m.Length);
+                wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
+            }
 
         int CountWholeWord(string name) => wordFreq.TryGetValue(name, out var cnt) ? cnt : 0;
 
@@ -787,7 +813,7 @@ public sealed class InsightEngine
                             if (eqIdx > 0)
                             {
                                 var lhs = trimmedForProp.Substring(0, eqIdx).Trim();
-                                if (Regex.IsMatch(lhs, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                                if (SimpleAssignmentTarget.IsMatch(lhs))
                                     continue;
                             }
                         }
@@ -903,17 +929,17 @@ public sealed class InsightEngine
     private static bool IsConditionalTerminator(string[] masked, int terminatorIndex)
     {
         var line = masked[terminatorIndex].Trim();
-        if (Regex.IsMatch(line, @"\bif\s*\(.*\)\s*(?:return|throw|break|continue)\b"))
+        if (ConditionalTerminatorOnIf.IsMatch(line))
             return true;
-        if (Regex.IsMatch(line, @"\belse\b.*\b(?:return|throw|break|continue)\b"))
+        if (ConditionalTerminatorOnElse.IsMatch(line))
             return true;
         for (var k = terminatorIndex - 1; k >= 0; k--)
         {
             var prev = masked[k].Trim();
             if (prev.Length == 0) continue;
-            if (Regex.IsMatch(prev, @"\bif\s*\(.*\)\s*$") || Regex.IsMatch(prev, @"\belse\b\s*$"))
+            if (OpenConditionalOnIf.IsMatch(prev) || OpenConditionalOnElse.IsMatch(prev))
             {
-                if (Regex.IsMatch(line, @"^\s*(?:return|throw|break|continue)\b") && !prev.Contains("{"))
+                if (LeadingJumpStatement.IsMatch(line) && !prev.Contains("{"))
                     return true;
             }
             break;
