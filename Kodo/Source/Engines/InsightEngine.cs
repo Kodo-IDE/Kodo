@@ -19,6 +19,8 @@ namespace Kodo;
 
 public sealed class InsightEngine
 {
+    private readonly object _fileCacheLock = new();
+
     private readonly Dictionary<string, HashSet<string>> _variablesByFile = new(FileSystemPaths.Comparer);
 
     private readonly Dictionary<string, string[]> _declarationNamesByFile = new(FileSystemPaths.Comparer);
@@ -405,7 +407,11 @@ public sealed class InsightEngine
                         return cached.masked;
                 }
                 var result = BuildFolderMaskedTextCore(folderPath, currentFilePath, ext);
-                lock (_folderMaskCache) _folderMaskCache[cacheKey] = (folderMtime, result);
+                lock (_folderMaskCache)
+                {
+                    _folderMaskCache[cacheKey] = (folderMtime, result);
+                    if (_folderMaskCache.Count > 8) _folderMaskCache.Remove(_folderMaskCache.Keys.First());
+                }
                 return result;
             }
             catch { }
@@ -633,14 +639,20 @@ public sealed class InsightEngine
             }
         }
 
-        _variablesByFile[fileKey] = variables;
-        _declarationNamesByFile[fileKey] = declarationNames;
+        lock (_fileCacheLock)
+        {
+            _variablesByFile[fileKey] = variables;
+            _declarationNamesByFile[fileKey] = declarationNames;
+        }
     }
 
     public void ForgetFile(string fileKey)
     {
-        _variablesByFile.Remove(fileKey);
-        _declarationNamesByFile.Remove(fileKey);
+        lock (_fileCacheLock)
+        {
+            _variablesByFile.Remove(fileKey);
+            _declarationNamesByFile.Remove(fileKey);
+        }
     }
 
     private static readonly Regex KeywordFunctionDeclaration = new(
@@ -868,12 +880,18 @@ public sealed class InsightEngine
         return spans;
     }
 
-    public IReadOnlyCollection<string> GetVariables(string fileKey) =>
-        _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
+    public IReadOnlyCollection<string> GetVariables(string fileKey)
+    {
+        lock (_fileCacheLock)
+            return _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
+    }
 
     private IReadOnlyList<string> GetDeclarationNames(string fileKey, string documentText, LangRulesAdapter rules)
     {
-        if (_declarationNamesByFile.TryGetValue(fileKey, out var cached)) return cached;
+        lock (_fileCacheLock)
+        {
+            if (_declarationNamesByFile.TryGetValue(fileKey, out var cached)) return cached;
+        }
         var symbols = rules.AnalyzeSymbols(documentText);
         var names = new List<string>(symbols.Count);
         foreach (var symbol in symbols)

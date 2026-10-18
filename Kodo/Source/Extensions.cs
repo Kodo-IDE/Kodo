@@ -356,13 +356,18 @@ public partial class MainWindow
         catch { return false; }
     }
 
+    private static readonly object LoadedExtensionsLock = new();
+
     private void ApplyLoadedExtensionsResult(ExtensionScanResult result)
     {
         var fingerprint = string.Join('\u001F', result.Extensions
             .OrderBy(e => e.Id, StringComparer.OrdinalIgnoreCase)
             .Select(e => e.Id + "@" + (e.Version ?? string.Empty)));
         if (fingerprint.Equals(_lastAppliedExtensionFingerprint, StringComparison.Ordinal))
+        {
+            DisposeScanLangRules(result.Extensions);
             return;
+        }
         _lastAppliedExtensionFingerprint = fingerprint;
         var applyWatch = System.Diagnostics.Stopwatch.StartNew();
         var stageWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -374,8 +379,12 @@ public partial class MainWindow
         InvalidateFenceLanguageCache();
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
+        AdoptLiveLangRules(result.Extensions);
         stageWatch.Restart();
-        SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
+        lock (LoadedExtensionsLock)
+        {
+            SyncObservableCollection(LoadedExtensions, result.Extensions, ext => ext.Id);
+        }
         SyncObservableCollection(ExtensionLoadErrors, result.LoadErrors, error => error);
         stageWatch.Stop();
         KodoDiagnostics.ReportSlowStage("apply/sync collections", stageWatch.ElapsedMilliseconds, 250, $"extensions={result.Extensions.Count}");
@@ -476,6 +485,37 @@ public partial class MainWindow
 
         applyWatch.Stop();
         KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
+    }
+
+    private void AdoptLiveLangRules(List<LoadedExtension> incoming)
+    {
+        var live = new Dictionary<string, LoadedExtension>(StringComparer.OrdinalIgnoreCase);
+        foreach (var ext in LoadedExtensions)
+        {
+            if (ext.LangRules is not null && !live.ContainsKey(ext.Id))
+                live[ext.Id] = ext;
+        }
+
+        foreach (var ext in incoming)
+        {
+            if (ext.LangRules is not { } loaded) continue;
+            if (!live.TryGetValue(ext.Id, out var previous) || previous.LangRules is not { } reusable) continue;
+            if (!string.Equals(ext.Version, previous.Version, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(ext.PluginAssemblyFileName, previous.PluginAssemblyFileName, StringComparison.OrdinalIgnoreCase)) continue;
+            ext.LangRules = reusable;
+            loaded.Dispose();
+        }
+    }
+
+    private static void DisposeScanLangRules(IEnumerable<LoadedExtension> scanned)
+    {
+        foreach (var ext in scanned)
+        {
+            var rules = ext.LangRules;
+            if (rules is null) continue;
+            ext.LangRules = null;
+            rules.Dispose();
+        }
     }
 
     private IEnumerable<LoadedExtension> LoadExtensionsFromFolder(string folderPath)
@@ -1673,7 +1713,9 @@ public partial class MainWindow
             return null;
 
         var normalized = token.Trim().TrimStart('.').ToLowerInvariant();
-        var bestMatch = LoadedExtensions
+        List<LoadedExtension> snapshot;
+        lock (LoadedExtensionsLock) snapshot = LoadedExtensions.ToList();
+        var bestMatch = snapshot
             .Where(extension =>
                 extension.Type == "language" &&
                 !KodoExtensionIds.IsMarkdown(extension.Id))
