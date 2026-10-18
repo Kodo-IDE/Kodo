@@ -108,7 +108,11 @@ public partial class MainWindow
 
             LanguageServerSweep sweep;
             using (BeginAppLoading("Checking language servers"))
-                sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+                sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot, status =>
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (IsRecheckingLanguageServers) LspRecheckStatusText = status;
+                    })));
 
             if (sweep.Installable.Count > 0)
             {
@@ -132,7 +136,11 @@ public partial class MainWindow
                     extensionSnapshot = LoadedExtensions.ToList();
                     settingsSnapshot = BuildLspResolverSettings();
                     using (BeginAppLoading("Checking language servers"))
-                        sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot));
+                        sweep = await Task.Run(() => SweepLanguageServersAsync(extensionSnapshot, settingsSnapshot, status =>
+                            Dispatcher.UIThread.Post(() =>
+                            {
+                                if (IsRecheckingLanguageServers) LspRecheckStatusText = status;
+                            })));
                 }
             }
 
@@ -152,23 +160,44 @@ public partial class MainWindow
 
     private async Task<LanguageServerSweep> SweepLanguageServersAsync(
         IReadOnlyList<LoadedExtension> extensions,
-        AppSettings settings)
+        AppSettings settings,
+        Action<string>? reportProgress = null)
     {
         var ready = new List<string>();
         var installable = new List<(LoadedExtension Ext, LspConfiguration Cfg, LspResolution Res)>();
         var blockedByRuntime = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         var manualOnly = new List<string>();
         var missing = new List<string>();
+        using var sweepCts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
 
         foreach (var ext in extensions)
         {
             foreach (var cfg in ext.AllLspConfigurations.ToList())
             {
+                if (sweepCts.IsCancellationRequested)
+                {
+                    missing.Add("The language-server check timed out before all providers were checked.");
+                    return new LanguageServerSweep(ready, installable, blockedByRuntime, manualOnly, missing);
+                }
+
+                reportProgress?.Invoke($"Checking {ext.Name} ({cfg.DisplayName ?? cfg.EffectiveProviderId})...");
                 LspResolution res;
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(sweepCts.Token);
+                probeCts.CancelAfter(TimeSpan.FromSeconds(10));
                 try
                 {
                     LspProviderRegistry.RegisterConsumer(cfg.EffectiveProviderId, ext.Id);
-                    res = await LspServerResolver.ResolveAsync(cfg, settings, ext.Id).ConfigureAwait(false);
+                    res = await LspServerResolver.ResolveAsync(cfg, settings, ext.Id, probeCts.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (!sweepCts.IsCancellationRequested)
+                {
+                    missing.Add($"{ext.Name} ({cfg.DisplayName ?? cfg.EffectiveProviderId}): check timed out.");
+                    continue;
+                }
+                catch (OperationCanceledException) when (sweepCts.IsCancellationRequested)
+                {
+                    missing.Add("The language-server check timed out before all providers were checked.");
+                    return new LanguageServerSweep(ready, installable, blockedByRuntime, manualOnly, missing);
                 }
                 catch (Exception ex)
                 {
@@ -263,6 +292,8 @@ public partial class MainWindow
         ExtensionsStatusText = LspRecheckStatusText;
 
         KodoDiagnostics.LogDebug($"Language server re-check: {summary.Replace('\n', ' ')}");
+        if (distinctReady.Count > 0 && sweep.BlockedByRuntime.Count == 0 && sweep.ManualOnly.Count == 0 && sweep.Missing.Count == 0)
+            return;
         _ = ShowWarningDialogAsync("Language servers", new InvalidOperationException(summary));
     }
 

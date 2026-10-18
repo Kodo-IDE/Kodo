@@ -179,7 +179,7 @@ internal static class LspInstallationManager
         {
             var targetName = Path.GetFileName(expectedFileName);
             var targetWithoutExt = Path.GetFileNameWithoutExtension(targetName);
-            var candidates = Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)
+            var candidates = Directory.EnumerateFiles(dir, targetWithoutExt + "*", SearchOption.AllDirectories)
                 .Where(f =>
                 {
                     var name = Path.GetFileName(f);
@@ -320,6 +320,10 @@ internal static class LspInstallationManager
             foreach (var arg in allArgs) psi.ArgumentList.Add(arg);
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return (false, null, "Failed to start");
+            using var registration = ct.Register(() =>
+            {
+                try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch { }
+            });
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
             var stderrTask = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
@@ -1030,6 +1034,10 @@ internal static class LspRuntimeDetector
             }
             using var proc = new Process { StartInfo = psi };
             if (!proc.Start()) return (false, null, DescribeRuntimeLaunchFailure(exe, resolvedExe, null));
+            using var registration = ct.Register(() =>
+            {
+                try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch { }
+            });
             var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
             var stderrTask = proc.StandardError.ReadToEndAsync(ct);
             await proc.WaitForExitAsync(ct).ConfigureAwait(false);
