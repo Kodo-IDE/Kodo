@@ -73,7 +73,7 @@ jobs:
       - name: Install appimagetool
         run: |
           curl -L --fail --retry 3 \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
             -o "$RUNNER_TEMP/appimagetool"
           chmod +x "$RUNNER_TEMP/appimagetool"
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
