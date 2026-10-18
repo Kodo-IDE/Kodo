@@ -6193,7 +6193,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Access = FileAccess.Write,
                 Share = FileShare.None,
             };
-            if (unixMode.HasValue)
+            if (unixMode.HasValue && !OperatingSystem.IsWindows())
                 options.UnixCreateMode = unixMode.Value;
 
             using (var stream = new FileStream(tempPath, options))
@@ -6204,7 +6204,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 stream.Flush(flushToDisk: true);
             }
 
-            if (unixMode.HasValue)
+            if (unixMode.HasValue && !OperatingSystem.IsWindows())
             {
                 try { File.SetUnixFileMode(tempPath, unixMode.Value); } catch { }
             }
@@ -6221,7 +6221,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         try
         {
-            return File.Exists(path) ? File.GetUnixFileMode(path) : null;
+            if (OperatingSystem.IsWindows() || !File.Exists(path)) return null;
+            return File.GetUnixFileMode(path);
         }
         catch
         {
@@ -7943,7 +7944,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            await File.WriteAllTextAsync(path, export);
+            await WriteTextFileAtomicallyAsync(path, export, new System.Text.UTF8Encoding(false));
             DeveloperOptionsStatusText = $"Kodo data exported to {path}.";
         }
         catch (Exception ex)

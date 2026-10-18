@@ -127,8 +127,8 @@ public partial class App : Application
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(15));
                 var result = await HotfixRecovery.ConfirmStartupAsync().ConfigureAwait(false);
+                await WaitForMainWindowAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(result.NeedsRollbackTxPath))
                 {
                     KodoDiagnostics.LogDebug("Hotfix files do not match manifest after startup; handing off to updater for rollback.");
@@ -140,6 +140,19 @@ public partial class App : Application
                 KodoDiagnostics.LogDebug("Deferred hotfix confirmation failed", ex);
             }
         });
+    }
+
+    private static async Task WaitForMainWindowAsync()
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < deadline)
+        {
+            var ready = await Dispatcher.UIThread.InvokeAsync(() =>
+                Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop &&
+                desktop.MainWindow is { IsVisible: true, IsLoaded: true });
+            if (ready) return;
+            await Task.Delay(250).ConfigureAwait(false);
+        }
     }
 
     private static void DeleteKodoDataBeforeStartup()

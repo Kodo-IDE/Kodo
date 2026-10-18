@@ -830,9 +830,11 @@ internal static class UpdateService
         psi.ArgumentList.Add("--rollback");
         psi.ArgumentList.Add(transactionPath);
 
+        var launched = false;
         try
         {
             Process.Start(psi);
+            launched = true;
         }
         catch
         {
@@ -843,8 +845,17 @@ internal static class UpdateService
                 UseShellExecute = true,
                 WorkingDirectory = exeDir,
             };
-            try { Process.Start(fallback); }
+            try { Process.Start(fallback); launched = true; }
             catch (Exception ex) { KodoDiagnostics.LogDebug($"KodoUpdater rollback shell fallback failed: {ex.Message}"); }
+        }
+
+        if (!launched)
+        {
+            KodoDiagnostics.LogWarning(
+                "UpdateService.LaunchUpdaterForRollback",
+                new InvalidOperationException($"KodoUpdater could not be started from '{updaterPath}'."),
+                operation: "hotfix rollback");
+            return;
         }
 
         KodoDiagnostics.LogDebug($"KodoUpdater launched for rollback of {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
