@@ -13,6 +13,7 @@ internal static class Program
     private const int InstallerTimeoutMinutes = 15;
     private const int StaleTransactionHours = 24;
     private const int ConfirmationTimeoutSeconds = 180;
+    private const int ConfirmationGraceSeconds = 120;
 
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -771,26 +772,21 @@ internal static class Program
         catch { return ""; }
     }
 
-    private static async Task<int> SuperviseHotfixConfirmationAsync(
-        Kodo.HotfixShared.HotfixTransaction tx,
+    private static async Task<HotfixConfirmationOutcome> WatchHotfixConfirmationAsync(
         string transactionPath,
-        string expectedDir,
-        Process? kodoProcess)
+        Process? kodoProcess,
+        int windowSeconds)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(ConfirmationTimeoutSeconds);
-        while (DateTime.UtcNow < deadline)
+        var until = DateTime.UtcNow.AddSeconds(windowSeconds);
+        while (DateTime.UtcNow < until)
         {
             if (string.Equals(ReadTxStatus(transactionPath),
                 Kodo.HotfixShared.HotfixTransactionStatus.Confirmed, StringComparison.OrdinalIgnoreCase))
-            {
-                Log("Hotfix committed (startup confirmed by Kodo).");
-                CleanupHotfixPartials(expectedDir);
-                return 0;
-            }
+                return HotfixConfirmationOutcome.Confirmed;
             if (kodoProcess is null)
             {
                 Log("Hotfix confirmation failed: Kodo could not be started.");
-                return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "Kodo failed to start after hotfix", 30).ConfigureAwait(false);
+                return HotfixConfirmationOutcome.StartupFailed;
             }
             try
             {
@@ -799,16 +795,45 @@ internal static class Program
                     int code;
                     try { code = kodoProcess.ExitCode; } catch { code = -1; }
                     Log($"Hotfix confirmation failed: Kodo exited (code {code}) before confirming startup.");
-                    return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "Kodo exited before startup confirmation", 30).ConfigureAwait(false);
+                    return HotfixConfirmationOutcome.StartupFailed;
                 }
             }
             catch (Exception ex)
             {
                 Log($"Hotfix supervision error: {ex.Message}");
-                return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "supervision error", 30).ConfigureAwait(false);
+                return HotfixConfirmationOutcome.StartupFailed;
             }
             await Task.Delay(1000).ConfigureAwait(false);
         }
+        return HotfixConfirmationOutcome.DeadlineReached;
+    }
+
+    private static async Task<int> SuperviseHotfixConfirmationAsync(
+        Kodo.HotfixShared.HotfixTransaction tx,
+        string transactionPath,
+        string expectedDir,
+        Process? kodoProcess)
+    {
+        var outcome = await WatchHotfixConfirmationAsync(transactionPath, kodoProcess, ConfirmationTimeoutSeconds).ConfigureAwait(false);
+        if (outcome == HotfixConfirmationOutcome.Confirmed)
+        {
+            Log("Hotfix committed (startup confirmed by Kodo).");
+            CleanupHotfixPartials(expectedDir);
+            return 0;
+        }
+        if (outcome == HotfixConfirmationOutcome.StartupFailed)
+            return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "Kodo failed to start after hotfix", 30).ConfigureAwait(false);
+
+        Log($"Hotfix startup confirmation did not complete within {ConfirmationTimeoutSeconds}s and Kodo is still running; waiting up to {ConfirmationGraceSeconds}s more before treating it as a timeout.");
+        outcome = await WatchHotfixConfirmationAsync(transactionPath, kodoProcess, ConfirmationGraceSeconds).ConfigureAwait(false);
+        if (outcome == HotfixConfirmationOutcome.Confirmed)
+        {
+            Log("Hotfix committed (startup confirmed by Kodo during the confirmation grace period).");
+            CleanupHotfixPartials(expectedDir);
+            return 0;
+        }
+        if (outcome == HotfixConfirmationOutcome.StartupFailed)
+            return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "Kodo exited before startup confirmation", 30).ConfigureAwait(false);
 
         try
         {
@@ -827,7 +852,7 @@ internal static class Program
         {
             Log($"Hotfix timeout handling error: {ex.Message}");
         }
-        return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "startup confirmation timed out", 31).ConfigureAwait(false);
+        return await RollbackAndRestartAsync(tx, transactionPath, expectedDir, "startup confirmation timed out", 31, countHotfixFailure: false).ConfigureAwait(false);
     }
 
     private static async Task<int> RollbackAndRestartAsync(
@@ -835,7 +860,8 @@ internal static class Program
         string transactionPath,
         string expectedDir,
         string reason,
-        int rollbackExitCode)
+        int rollbackExitCode,
+        bool countHotfixFailure = true)
     {
         Log("Rollback started");
         string manifestJson;
@@ -906,9 +932,16 @@ internal static class Program
             Log($"Failed to mark transaction rolledBack: {ex.Message}");
         }
 
-        var failures = Kodo.HotfixShared.HotfixShared.RecordFailure(expectedDir, tx.BaseVersion, tx.HotfixLevel);
-        if (failures >= Kodo.HotfixShared.HotfixFailurePolicy.MaxAttempts)
-            Log($"Hotfix marked failed: {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} failed {failures} times and will no longer be offered.");
+        if (countHotfixFailure)
+        {
+            var failures = Kodo.HotfixShared.HotfixShared.RecordFailure(expectedDir, tx.BaseVersion, tx.HotfixLevel);
+            if (failures >= Kodo.HotfixShared.HotfixFailurePolicy.MaxAttempts)
+                Log($"Hotfix marked failed: {Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} failed {failures} times and will no longer be offered.");
+        }
+        else
+        {
+            Log("Hotfix startup confirmation timed out. This is a slow or busy environment, not a hotfix defect: the failure counter is unchanged, so this hotfix is not blocked and stays available for a retry.");
+        }
         Log("Rollback completed");
 
         RestartKodo(tx.KodoExePath, tx.RestartAfterUpdate);
@@ -1036,10 +1069,11 @@ internal static class Program
         var rollbackable =
             string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.Applied, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.AwaitingConfirmation, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.Confirmed, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.Failed, StringComparison.OrdinalIgnoreCase);
         if (!rollbackable)
         {
-            Log($"Transaction {tx.TransactionId} is '{status}': only applied/awaitingConfirmation/failed hotfixes can be rolled back.");
+            Log($"Transaction {tx.TransactionId} is '{status}': only applied/awaitingConfirmation/confirmed/failed hotfixes can be rolled back.");
             return 33;
         }
 
@@ -1221,6 +1255,13 @@ internal static class Program
         catch { }
         try { Console.WriteLine(line); } catch { }
         try { Debug.WriteLine(line); } catch { }
+    }
+
+    private enum HotfixConfirmationOutcome
+    {
+        DeadlineReached,
+        Confirmed,
+        StartupFailed,
     }
 
     private sealed class UpdaterMutex : IDisposable

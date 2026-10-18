@@ -14,7 +14,17 @@ internal static class HotfixShared
     public static void WriteTextAtomically(string path, string contents) =>
         WriteBytesAtomically(path, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));
 
-    public static void WriteBytesAtomically(string path, byte[] contents)
+    public static void WriteBytesAtomically(string path, byte[] contents) =>
+        WriteAtomically(path, temp => temp.Write(contents, 0, contents.Length));
+
+    public static void CopyFileAtomically(string source, string path) =>
+        WriteAtomically(path, temp =>
+        {
+            using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81920);
+            input.CopyTo(temp, 81920);
+        });
+
+    private static void WriteAtomically(string path, Action<FileStream> write)
     {
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath);
@@ -26,7 +36,7 @@ internal static class HotfixShared
             using (var stream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
                 81920, FileOptions.WriteThrough))
             {
-                stream.Write(contents, 0, contents.Length);
+                write(stream);
                 stream.Flush(flushToDisk: true);
             }
             File.Move(tempPath, fullPath, overwrite: true);
@@ -35,6 +45,26 @@ internal static class HotfixShared
         {
             try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
         }
+    }
+
+    internal static UnixFileMode? TryGetUnixFileMode(string path)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows() || !File.Exists(path)) return null;
+            return File.GetUnixFileMode(path);
+        }
+        catch { return null; }
+    }
+
+    internal static void TrySetUnixFileMode(string path, UnixFileMode mode)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows()) return;
+            File.SetUnixFileMode(path, mode);
+        }
+        catch { }
     }
 
     public static bool ValidateTransactionPaths(HotfixTransaction tx, string transactionPath, string updateRoot, string installRoot, out string? error)
@@ -483,7 +513,9 @@ internal static class HotfixShared
             foreach (var (entry, payload, dest) in planned)
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
-                File.Copy(payload, dest, overwrite: true);
+                var previousMode = TryGetUnixFileMode(dest);
+                CopyFileAtomically(payload, dest);
+                if (previousMode is not null) TrySetUnixFileMode(dest, previousMode.Value);
                 if (entry.Executable && !EnsureExecutable(dest))
                     throw new InvalidOperationException($"Executable permission could not be set: '{entry.Path}'.");
                 result.ReplacedFiles.Add(dest);
@@ -1288,18 +1320,67 @@ internal static class HotfixShared
         }
         catch (IOException)
         {
-            CopyDirectoryRecursive(source, dest);
+        }
+
+        var staging = BuildStagingSiblingPath(dest);
+        try
+        {
+            CopyDirectoryRecursive(source, staging);
+            if (!Directory.Exists(staging) || Directory.GetFileSystemEntries(staging).Length == 0)
+                throw new IOException($"Staged copy of '{source}' is incomplete.");
+            if (Directory.Exists(dest)) Directory.Delete(dest, recursive: true);
+            Directory.Move(staging, dest);
             Directory.Delete(source, recursive: true);
+        }
+        catch
+        {
+            CleanupQuietly(staging);
+            throw;
         }
     }
 
+    private static string BuildStagingSiblingPath(string dest)
+    {
+        var full = Path.GetFullPath(dest).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parent = Path.GetDirectoryName(full) ?? "";
+        return Path.Combine(parent, "." + Path.GetFileName(full) + ".kodo-swap-" + Guid.NewGuid().ToString("N"));
+    }
+
+    private const int MaxDirectoryCopyDepth = 64;
+
     internal static void CopyDirectoryRecursive(string source, string dest)
+    {
+        CopyDirectoryRecursive(source, dest, 0);
+    }
+
+    private static void CopyDirectoryRecursive(string source, string dest, int depth)
     {
         Directory.CreateDirectory(dest);
         foreach (var file in Directory.GetFiles(source))
-            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), overwrite: true);
+        {
+            var target = Path.Combine(dest, Path.GetFileName(file));
+            var mode = TryGetUnixFileMode(file);
+            File.Copy(file, target, overwrite: true);
+            if (mode is not null) TrySetUnixFileMode(target, mode.Value);
+        }
+        if (depth >= MaxDirectoryCopyDepth) return;
         foreach (var dir in Directory.GetDirectories(source))
-            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)));
+        {
+            if (IsDirectoryLink(dir)) continue;
+            CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)), depth + 1);
+        }
+    }
+
+    private static bool IsDirectoryLink(string directory)
+    {
+        try
+        {
+            return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     internal static void CleanupQuietly(string? path)

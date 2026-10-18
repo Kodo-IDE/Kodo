@@ -1224,6 +1224,9 @@ internal static class HotfixStaging
 
 internal static class HotfixRecovery
 {
+    private const int RetainedBackupMaxTransactions = 3;
+    private const int RetainedBackupMaxDays = 14;
+
     internal sealed class ConfirmResult
     {
         public List<string> Confirmed { get; } = new();
@@ -1263,6 +1266,8 @@ internal static class HotfixRecovery
                     KodoDiagnostics.LogDebug($"Hotfix confirmation error for {txPath}: {ex.Message}");
                 }
             }
+
+            PruneRetainedBackups(updateRoot);
         }
         catch (Exception ex)
         {
@@ -1387,7 +1392,7 @@ internal static class HotfixRecovery
         KodoDiagnostics.LogDebug("Hotfix startup confirmed");
         KodoDiagnostics.LogDebug($"Hotfix committed: {HotfixVersion.Format(tx.BaseVersion, tx.HotfixLevel)}");
         HotfixFileReconciler.RetainManifest(updateRoot, tx.BaseVersion, tx.HotfixLevel, manifestJson);
-        DeleteStageDir(txPath, updateRoot);
+        RetainConfirmedBackup(txPath, updateRoot);
         result.Confirmed.Add(tx.TransactionId);
     }
 
@@ -1408,10 +1413,8 @@ internal static class HotfixRecovery
     {
         try
         {
-            var stageDir = Path.GetFullPath(Path.GetDirectoryName(txPath) ?? "");
-            var hotfixRoot = Path.GetFullPath(Path.Combine(updateRoot, "hotfix"));
-            if (!Shared.IsInsideDirectory(stageDir, hotfixRoot) || string.Equals(stageDir, hotfixRoot, StringComparison.OrdinalIgnoreCase))
-                return;
+            var stageDir = ResolveStageDir(txPath, updateRoot);
+            if (stageDir is null) return;
             if (Directory.Exists(stageDir))
             {
                 Directory.Delete(stageDir, recursive: true);
@@ -1421,6 +1424,100 @@ internal static class HotfixRecovery
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug($"Hotfix staging cleanup failed: {ex.Message}");
+        }
+    }
+
+    private static string? ResolveStageDir(string txPath, string updateRoot)
+    {
+        try
+        {
+            var stageDir = Path.GetFullPath(Path.GetDirectoryName(txPath) ?? "");
+            var hotfixRoot = Path.GetFullPath(Path.Combine(updateRoot, "hotfix"));
+            if (!Shared.IsInsideDirectory(stageDir, hotfixRoot) || string.Equals(stageDir, hotfixRoot, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return stageDir;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void RetainConfirmedBackup(string txPath, string updateRoot)
+    {
+        var stageDir = ResolveStageDir(txPath, updateRoot);
+        if (stageDir is null)
+        {
+            DeleteStageDir(txPath, updateRoot);
+            return;
+        }
+
+        try
+        {
+            var payloadDir = Path.Combine(stageDir, "payload");
+            if (Directory.Exists(payloadDir)) Directory.Delete(payloadDir, recursive: true);
+            var packagePath = Path.Combine(stageDir, "package.zip");
+            if (File.Exists(packagePath)) File.Delete(packagePath);
+            KodoDiagnostics.LogDebug($"Hotfix staging data removed: {payloadDir}");
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Hotfix staging cleanup failed: {ex.Message}");
+        }
+
+        KodoDiagnostics.LogDebug($"Hotfix backup retained for manual rollback: {Path.Combine(stageDir, "backup")}");
+    }
+
+    private static void PruneRetainedBackups(string updateRoot)
+    {
+        try
+        {
+            var hotfixRoot = Path.GetFullPath(Path.Combine(updateRoot, "hotfix"));
+            if (!Directory.Exists(hotfixRoot)) return;
+
+            var cutoff = DateTime.UtcNow.AddDays(-RetainedBackupMaxDays);
+            var retained = new List<(string TxPath, DateTime Stamp)>();
+            var expired = new List<string>();
+            foreach (var dir in Directory.GetDirectories(hotfixRoot))
+            {
+                try
+                {
+                    var txPath = Path.Combine(dir, "transaction.json");
+                    if (!File.Exists(txPath)) continue;
+                    if (!Shared.TryParseTransaction(File.ReadAllText(txPath), out var tx, out _) || tx is null) continue;
+                    var stamp = (tx.ConfirmedAtUtc ?? tx.RolledBackAtUtc ?? tx.AppliedAtUtc ?? tx.CreatedAtUtc)
+                        .ToUniversalTime();
+                    var status = tx.Status ?? "";
+                    if (string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.Confirmed, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.RolledBack, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(status, Kodo.HotfixShared.HotfixTransactionStatus.Failed, StringComparison.OrdinalIgnoreCase))
+                    {
+                        retained.Add((txPath, stamp));
+                        continue;
+                    }
+                    if (stamp < cutoff) expired.Add(txPath);
+                }
+                catch (Exception ex)
+                {
+                    KodoDiagnostics.LogDebug($"Hotfix transaction unreadable during retention sweep: {dir} ({ex.Message})");
+                }
+            }
+
+            retained.Sort((a, b) => b.Stamp.CompareTo(a.Stamp));
+            for (var i = 0; i < retained.Count; i++)
+                if (i >= RetainedBackupMaxTransactions || retained[i].Stamp < cutoff)
+                    expired.Add(retained[i].TxPath);
+
+            foreach (var txPath in expired)
+            {
+                var prunedDir = Path.GetDirectoryName(txPath);
+                DeleteStageDir(txPath, updateRoot);
+                KodoDiagnostics.LogDebug($"Hotfix transaction data outside the rollback retention window removed: {prunedDir}");
+            }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Hotfix retained backup pruning failed: {ex.Message}");
         }
     }
 }

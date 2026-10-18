@@ -450,7 +450,14 @@ internal static class UpdateService
             if (r != l) return r > l;
         }
         if (remoteHotfix != localHotfix) return remoteHotfix > localHotfix;
-        return !IsBetaVersionTag(remote) && IsBetaVersionTag(local);
+        return ChannelRank(remote) > ChannelRank(local);
+    }
+
+    private static int ChannelRank(string? tag)
+    {
+        var channel = Shared.ChannelSuffix(tag);
+        if (channel.Length == 0) return 2;
+        return channel.Equals("-BETA", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
     }
 
     private static bool TryParseComparableVersion(string tag, out int[] parts, out int hotfixLevel)
@@ -758,9 +765,12 @@ internal static class UpdateService
         };
         psi.ArgumentList.Add(transactionPath);
 
+        var launched = false;
+        Process? started = null;
         try
         {
-            Process.Start(psi);
+            started = Process.Start(psi);
+            launched = true;
         }
         catch
         {
@@ -771,13 +781,24 @@ internal static class UpdateService
                 UseShellExecute = true,
                 WorkingDirectory = exeDir,
             };
-            try { Process.Start(fallback); }
+            try { started = Process.Start(fallback); launched = true; }
             catch (Exception ex) { KodoDiagnostics.LogDebug($"KodoUpdater shell fallback failed: {ex.Message}"); }
         }
 
+        if (!launched)
+            throw new InvalidOperationException($"KodoUpdater could not be started from '{updaterPath}'.");
+
         KodoDiagnostics.LogDebug($"KodoUpdater launched for {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
         Thread.Sleep(400);
+        if (HasAlreadyExited(started))
+            throw new InvalidOperationException($"KodoUpdater exited before taking over the update staged at '{transactionPath}'.");
         Environment.Exit(0);
+    }
+
+    private static bool HasAlreadyExited(Process? process)
+    {
+        try { return process is not null && process.HasExited; }
+        catch { return false; }
     }
 
     internal static string ResolveUpdaterPath()
