@@ -11,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
@@ -20,6 +21,7 @@ public partial class MainWindow
 {
     private int _settingsNavigationRequestId;
     private double? _settingsNavigationTargetOffset;
+    private FoldingMargin? _foldingMargin;
 
     private void RaiseMany(params string[] names) { foreach (var n in names) OnPropertyChanged(n); }
 
@@ -120,6 +122,7 @@ public partial class MainWindow
         EditorTextBox.Background = EditorBackgroundBrush;
         EditorTextBox.Foreground = PrimaryTextBrush;
         EditorTextBox.LineNumbersForeground = MutedTextBrush;
+        ApplyFoldingMarginTheme();
         EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
             ? new SolidColorBrush(b.Color, 0.3)
             : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
@@ -145,6 +148,27 @@ public partial class MainWindow
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
         EditorTextBox.TextArea.TextView.Redraw();
 
+    }
+
+    private void ApplyFoldingMarginTheme()
+    {
+        if (EditorTextBox is null) return;
+        _foldingMargin ??= InstallFoldingMargin();
+        if (_foldingMargin is null) return;
+        _foldingMargin.FoldingMarkerBackgroundBrush = Brushes.Transparent;
+        _foldingMargin.FoldingMarkerBrush = MutedTextBrush;
+        _foldingMargin.SelectedFoldingMarkerBackgroundBrush = ButtonHoverBrush;
+        _foldingMargin.SelectedFoldingMarkerBrush = AccentBrush;
+    }
+
+    private FoldingMargin? InstallFoldingMargin()
+    {
+        if (EditorTextBox is null) return null;
+        foreach (var existing in EditorTextBox.TextArea.LeftMargins.OfType<FoldingMargin>())
+            return existing;
+        var marker = new FoldingMargin();
+        EditorTextBox.TextArea.LeftMargins.Add(marker);
+        return marker;
     }
 
     private static Color GetTerminalThemeColor(IBrush brush, Color fallback) =>
