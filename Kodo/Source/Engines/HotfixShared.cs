@@ -1251,9 +1251,13 @@ internal static class HotfixShared
                 return TarballInstallResult.Fail($"Tarball cannot be extracted: {ex.GetType().Name}: {ex.Message}. Installation untouched.");
             }
 
-            var stagedRoot = Directory.Exists(Path.Combine(stageDir, "kodo"))
-                ? Path.Combine(stageDir, "kodo")
-                : stageDir;
+            var stagedRoot = stageDir;
+            foreach (var directory in Directory.GetDirectories(stageDir))
+            {
+                if (!string.Equals(Path.GetFileName(directory), "kodo", StringComparison.OrdinalIgnoreCase)) continue;
+                stagedRoot = directory;
+                break;
+            }
             if (!File.Exists(Path.Combine(stagedRoot, kodoName)) ||
                 !File.Exists(Path.Combine(stagedRoot, updaterName)))
             {
@@ -1358,24 +1362,32 @@ internal static class HotfixShared
         Directory.CreateDirectory(dest);
         foreach (var file in Directory.GetFiles(source))
         {
+            if (IsReparsePoint(file))
+                throw new IOException($"Directory copy cannot safely preserve file link '{file}'.");
             var target = Path.Combine(dest, Path.GetFileName(file));
             var mode = TryGetUnixFileMode(file);
             File.Copy(file, target, overwrite: true);
             if (mode is not null) TrySetUnixFileMode(target, mode.Value);
         }
-        if (depth >= MaxDirectoryCopyDepth) return;
-        foreach (var dir in Directory.GetDirectories(source))
+        var directories = Directory.GetDirectories(source);
+        if (depth >= MaxDirectoryCopyDepth && directories.Length > 0)
+            throw new IOException($"Directory copy exceeded the maximum depth of {MaxDirectoryCopyDepth} at '{source}'.");
+        foreach (var dir in directories)
         {
-            if (IsDirectoryLink(dir)) continue;
+            if (IsDirectoryLink(dir))
+                throw new IOException($"Directory copy cannot safely preserve directory link '{dir}'.");
             CopyDirectoryRecursive(dir, Path.Combine(dest, Path.GetFileName(dir)), depth + 1);
         }
     }
 
     private static bool IsDirectoryLink(string directory)
+        => IsReparsePoint(directory);
+
+    private static bool IsReparsePoint(string path)
     {
         try
         {
-            return (File.GetAttributes(directory) & FileAttributes.ReparsePoint) != 0;
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
         }
         catch
         {

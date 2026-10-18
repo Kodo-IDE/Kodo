@@ -568,6 +568,7 @@ public partial class MainWindow
             }
             if (shouldInstall)
             {
+                using var loading = BeginAppLoading($"Installing {providerName}");
                 SetExtensionsStatus($"Installing {providerName}...");
                 lspExt.LspStatus = LspDependencyStatus.Installing;
                 if (!string.IsNullOrWhiteSpace(providerId))

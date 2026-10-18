@@ -758,6 +758,7 @@ public partial class MainWindow
 
         IsSearchBusy = true;
         SearchStatusText = "Searching...";
+        using var loading = BeginAppLoading(_searchMode == SearchMode.FileByName ? "Searching files" : "Searching project");
 
         var matchCase = IsSearchMatchCaseEnabled;
         var wholeWord = IsSearchWholeWordEnabled;
@@ -775,7 +776,8 @@ public partial class MainWindow
                 results = await Task.Run(() =>
                 {
                     var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-                    return SearchEngine.SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token);
+                    return SearchEngine.SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token,
+                        progress => loading.Report(progress));
                 }, token);
             }
             else
@@ -783,7 +785,8 @@ public partial class MainWindow
                 var (projectResults, wasTruncated) = await Task.Run(() =>
                 {
                     var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-                    return SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token);
+                    return SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token,
+                        progress => loading.Report(progress));
                 }, token);
                 results = projectResults;
                 truncated = wasTruncated;
@@ -852,7 +855,7 @@ public partial class MainWindow
         return _searchFileCache.Value;
     }
 
-    private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token)
+    private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token, Action<double>? reportProgress = null)
     {
         const int maxResults = 2000;
         const long maxFileBytes = 1_500_000;
@@ -873,9 +876,12 @@ public partial class MainWindow
 
         var results = new List<SearchResultItem>();
         var truncated = false;
-        foreach (var file in files)
+        for (var fileIndex = 0; fileIndex < files.Count; fileIndex++)
         {
             token.ThrowIfCancellationRequested();
+            if (fileIndex % 16 == 0)
+                reportProgress?.Invoke((double)fileIndex / Math.Max(1, files.Count));
+            var file = files[fileIndex];
             if (IsImagePreviewFile(file) || IsBinaryContent(file)) continue;
             try
             {
@@ -940,6 +946,7 @@ public partial class MainWindow
             {
             }
         }
+        reportProgress?.Invoke(1);
         return (results, truncated);
     }
 

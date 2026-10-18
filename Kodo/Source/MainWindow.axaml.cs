@@ -1037,6 +1037,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
         ApplyThemeBrushes(_requestedThemeName);
 
+        var extensionStartupLoading = BeginAppLoading("Loading extensions");
         _ = Task.Run(async () =>
         {
             try
@@ -1050,6 +1051,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }, DispatcherPriority.Background);
             }
             catch (Exception ex) { KodoDiagnostics.LogDebug("Deferred LoadExtensions failed", ex); }
+            finally { extensionStartupLoading.Dispose(); }
         });
 
         Closed += (_, _) =>
@@ -5736,6 +5738,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Opened -= MainWindow_OnOpened;
 
         ApplyThemeToEditor();
+        var startupRestoreLoading = IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0
+            ? BeginAppLoading("Restoring startup session")
+            : null;
 
         try
         {
@@ -5852,6 +5857,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 SaveSettings(immediate: true);
             }
+            startupRestoreLoading?.Dispose();
         }
 
         InitializeDeferredStartupWork();
@@ -5981,6 +5987,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task OpenFolderFromPathAsync(string path)
     {
+        using var loading = BeginAppLoading($"Opening {Path.GetFileName(path)}");
         _currentFolderPath = path;
         _searchFileCache = null;
         InvalidateLspResolutionCaches();

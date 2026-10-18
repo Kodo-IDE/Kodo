@@ -1388,7 +1388,12 @@ internal static class HotfixRecovery
         }
 
         Shared.ClearFailures(updateRoot, tx.BaseVersion, tx.HotfixLevel);
-        await WriteBackAsync(txPath, Shared.MarkConfirmed(rawJson, DateTime.UtcNow)).ConfigureAwait(false);
+        if (!await WriteBackAsync(txPath, Shared.MarkConfirmed(rawJson, DateTime.UtcNow)).ConfigureAwait(false))
+        {
+            result.NeedsRollbackTxPath ??= txPath;
+            KodoDiagnostics.LogDebug($"Hotfix confirmation could not be persisted for {tx.TransactionId}; rollback required.");
+            return;
+        }
         KodoDiagnostics.LogDebug("Hotfix startup confirmed");
         KodoDiagnostics.LogDebug($"Hotfix committed: {HotfixVersion.Format(tx.BaseVersion, tx.HotfixLevel)}");
         HotfixFileReconciler.RetainManifest(updateRoot, tx.BaseVersion, tx.HotfixLevel, manifestJson);
@@ -1396,17 +1401,18 @@ internal static class HotfixRecovery
         result.Confirmed.Add(tx.TransactionId);
     }
 
-    private static Task WriteBackAsync(string txPath, string json)
+    private static Task<bool> WriteBackAsync(string txPath, string json)
     {
         try
         {
             Shared.WriteTextAtomically(txPath, json);
+            return Task.FromResult(true);
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug($"Hotfix transaction write-back failed: {ex.Message}");
+            return Task.FromResult(false);
         }
-        return Task.CompletedTask;
     }
 
     internal static void DeleteStageDir(string txPath, string updateRoot)

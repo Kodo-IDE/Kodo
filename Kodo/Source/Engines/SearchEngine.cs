@@ -58,7 +58,7 @@ internal static class SearchEngine
         }
     }
 
-    internal static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token)
+    internal static List<SearchResultItem> SearchFilesByName(string query, string root, bool matchCase, bool useRegex, List<string> files, CancellationToken token, Action<double>? reportProgress = null)
     {
         Regex? regex = null;
         if (useRegex)
@@ -75,9 +75,12 @@ internal static class SearchEngine
         }
 
         var scoredResults = new List<(SearchResultItem Item, int Score)>();
-        foreach (var file in files)
+        for (var fileIndex = 0; fileIndex < files.Count; fileIndex++)
         {
             token.ThrowIfCancellationRequested();
+            if (fileIndex % 16 == 0)
+                reportProgress?.Invoke((double)fileIndex / Math.Max(1, files.Count));
+            var file = files[fileIndex];
             var name = Path.GetFileName(file);
 
             if (regex is not null)
@@ -119,6 +122,8 @@ internal static class SearchEngine
                 }, score));
             }
         }
+
+        reportProgress?.Invoke(1);
 
         scoredResults.Sort((a, b) => b.Score.CompareTo(a.Score));
         return scoredResults.Select(r => r.Item).ToList();

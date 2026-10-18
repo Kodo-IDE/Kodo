@@ -75,13 +75,15 @@ public partial class MainWindow
         });
     }
 
-    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false)
+    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false, bool showLoadingIndicator = true)
     {
         if (_isRefreshingExtensions)
             return;
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
             return;
+
+        using var loading = showLoadingIndicator ? BeginAppLoading("Refreshing extensions") : null;
         this._cachedThemeScan = null;
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)

@@ -1316,7 +1316,7 @@ public partial class MainWindow
             if (existing.SvgData is not null && incoming.SvgData is null) incoming.SvgData = existing.SvgData;
         });
 
-    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension, HashSet<string>? installChain = null)
+    private async Task InstallMarketplaceExtensionAsync(MarketplaceExtension marketplaceExtension, HashSet<string>? installChain = null, bool showLoadingIndicator = true)
     {
         if (marketplaceExtension.IsInstalling || (marketplaceExtension.IsInstalled && !marketplaceExtension.IsUpdateAvailable))
             return;
@@ -1336,6 +1336,9 @@ public partial class MainWindow
         }
 
         RefreshMarketplaceConnectivityState();
+        using var loading = showLoadingIndicator
+            ? BeginAppLoading($"Installing {marketplaceExtension.Name}")
+            : null;
         marketplaceExtension.IsInstalling = true;
         NotifyExtensionActionStateChanged();
         var action = marketplaceExtension.IsUpdateAvailable ? "Updating" : "Installing";
@@ -1386,7 +1389,7 @@ public partial class MainWindow
             }
             NormalizeKoxManifestVersion(installPath);
 
-            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
+            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true, showLoadingIndicator: false);
             ExtensionsStatusText = $"{marketplaceExtension.Name} {(wasUpdate ? "updated" : "installed")}.";
 
             if (marketplaceExtension.Dependencies.Length > 0)
@@ -1397,7 +1400,7 @@ public partial class MainWindow
                     if (dep is null) continue;
                     if (dep.IsInstalled) continue;
                     ExtensionsStatusText = $"Installing dependency {dep.Name} for {marketplaceExtension.Name}...";
-                    await InstallMarketplaceExtensionAsync(dep, installChain);
+                    await InstallMarketplaceExtensionAsync(dep, installChain, showLoadingIndicator);
                 }
             }
 
@@ -1724,6 +1727,8 @@ public partial class MainWindow
             return;
         }
 
+        using var loading = BeginAppLoading($"Uninstalling {extension.Name}");
+
         try
         {
             var providerIds = extension.AllLspConfigurations.Select(c => c.EffectiveProviderId).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -1747,7 +1752,7 @@ public partial class MainWindow
                     File.Delete(resolvedPath);
             }
 
-            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
+            await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true, showLoadingIndicator: false);
 
             foreach (var pid in providerIds)
             {
@@ -2051,6 +2056,7 @@ public partial class MainWindow
         }
 
         IsUpdatingAllExtensions = true;
+        using var loading = BeginAppLoading("Updating extensions");
         var successfulUpdates = 0;
         var failedUpdates = 0;
 
@@ -2066,7 +2072,9 @@ public partial class MainWindow
                     continue;
 
                 ExtensionsStatusText = $"Updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}...";
-                await InstallMarketplaceExtensionAsync(marketplaceExtension);
+                loading.Report((double)index / pendingUpdateIds.Count,
+                    $"Updating {index + 1} of {pendingUpdateIds.Count}: {marketplaceExtension.Name}");
+                await InstallMarketplaceExtensionAsync(marketplaceExtension, showLoadingIndicator: false);
 
                 var refreshedExtension = MarketplaceExtensions.FirstOrDefault(entry =>
                     entry.Id.Equals(extensionId, StringComparison.OrdinalIgnoreCase));
@@ -2075,6 +2083,7 @@ public partial class MainWindow
                     successfulUpdates++;
                 else
                     failedUpdates++;
+                loading.Report((double)(index + 1) / pendingUpdateIds.Count, "Updating extensions");
             }
 
             ExtensionsStatusText = failedUpdates == 0

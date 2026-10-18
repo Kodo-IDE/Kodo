@@ -375,6 +375,8 @@ public partial class MainWindow
             return;
         }
 
+        using var loading = BeginAppLoading($"Opening {Path.GetFileName(path)}");
+
         string content;
         bool isCorrupted;
         try

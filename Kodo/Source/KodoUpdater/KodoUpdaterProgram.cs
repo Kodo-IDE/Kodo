@@ -112,9 +112,7 @@ internal static class Program
         if (args.Length > 1)
             transactionPath = string.Join(" ", args).Trim().Trim('"');
 
-        var mutexName = OperatingSystem.IsWindows()
-            ? $"Global\\Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}"
-            : $"Kodo-Updater-{SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath))}";
+        var mutexName = BuildTransactionMutexName(transactionPath);
         using var guard = UpdaterMutex.TryAcquire(mutexName);
         if (guard is null)
         {
@@ -972,9 +970,7 @@ internal static class Program
             return 33;
         }
 
-        var mutexName = OperatingSystem.IsWindows()
-            ? $"Global\\Kodo-Updater-rollback-{SanitizeForMutex(Path.GetFileNameWithoutExtension(resolved) + Path.GetFileName(Path.GetDirectoryName(resolved) ?? ""))}"
-            : $"Kodo-Updater-rollback-{SanitizeForMutex(Path.GetFileNameWithoutExtension(resolved) + Path.GetFileName(Path.GetDirectoryName(resolved) ?? ""))}";
+        var mutexName = BuildTransactionMutexName(resolved);
         using var guard = UpdaterMutex.TryAcquire(mutexName);
         if (guard is null)
         {
@@ -995,6 +991,14 @@ internal static class Program
         {
             Log("KodoUpdater exit");
         }
+    }
+
+    private static string BuildTransactionMutexName(string transactionPath)
+    {
+        var suffix = SanitizeForMutex(Path.GetFileNameWithoutExtension(transactionPath));
+        return OperatingSystem.IsWindows()
+            ? $"Global\\Kodo-Updater-{suffix}"
+            : $"Kodo-Updater-{suffix}";
     }
 
     private static string? ResolveRollbackTransaction(string idOrPath)
