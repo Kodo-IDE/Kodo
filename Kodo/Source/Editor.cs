@@ -76,7 +76,7 @@ public partial class MainWindow
         _InsightRefreshTimer.Stop();
         if (!IsActive) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
-        if (len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
+        if (LspEnabled && len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
         await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
     }
 
@@ -607,7 +607,7 @@ public partial class MainWindow
         if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
         else if (curLen > 80_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
         else _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(150);
-        var largeLspDocument = curLen > LspPresentationLimit &&
+        var largeLspDocument = LspEnabled && curLen > LspPresentationLimit &&
             !string.IsNullOrWhiteSpace(_currentFilePath) &&
             ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (largeLspDocument)
@@ -1152,7 +1152,7 @@ public partial class MainWindow
         {
             _rainbowBracketColorizer.InvalidateCache();
             _interpolatedStringColorizer.InvalidateCache();
-            var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
+            var hasLsp = LspEnabled && !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
             if (!hasLsp)
             {
                 _markdownColorizer.InvalidateCache();

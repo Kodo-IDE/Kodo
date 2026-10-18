@@ -864,13 +864,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HideDiagnosticPopup();
             RestartLspPresentationDebounceTimer();
             QueueRefreshState();
-            try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
+            if (_caretVisibilityRefreshPending)
+            {
+                return;
+            }
+            _caretVisibilityRefreshPending = true;
             Dispatcher.UIThread.Post(() =>
             {
-                try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
+                _caretVisibilityRefreshPending = false;
+                var caret = EditorTextBox.TextArea.Caret;
                 try
                 {
-                    var caret = EditorTextBox.TextArea.Caret;
+                    caret.BringCaretToView();
+                }
+                catch { }
+                try
+                {
                     if (caret.Column <= 8)
                     {
                         var sv = EditorHorizontalScrollViewer();
@@ -1788,6 +1797,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private ScrollViewer? _editorHorizontalScrollViewer;
     private bool _editorHorizontalScrollViewerResolved;
+    private bool _caretVisibilityRefreshPending;
 
     private ScrollViewer? EditorHorizontalScrollViewer()
     {
@@ -9178,7 +9188,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task UpdateErrorHighlightingAsync()
     {
-        var hasLspForFile = ResolveLspExtensionForFile(_currentFilePath) is not null;
+        var hasLspForFile = LspEnabled && ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
