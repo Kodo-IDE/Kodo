@@ -359,7 +359,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         ApplyBrush(lineOffset, 0, text.Length, _mutedBrush);
 
         var trimmedStart = text.Length - text.TrimStart().Length;
-        var markerLength = delimiter.MarkerLength;
+        var markerLength = Math.Min(delimiter.MarkerLength, text.Length - trimmedStart);
         ApplyBrush(lineOffset, trimmedStart, trimmedStart + markerLength, _punctuationBrush);
 
         if (!string.IsNullOrWhiteSpace(delimiter.LanguageLabel))
