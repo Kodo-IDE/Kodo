@@ -1,19 +1,7 @@
 // Licensed under the GNU GPL-v3.0
 using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Input;
-using Avalonia.Input.Platform;
-using Avalonia.Media;
-using Avalonia.Threading;
-using Kodo.Models;
 
 namespace Kodo;
 

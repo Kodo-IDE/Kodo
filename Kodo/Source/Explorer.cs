@@ -8,7 +8,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Text;
 using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
@@ -28,6 +27,9 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private readonly object _projectFolderChangeLock = new();
+    private readonly HashSet<string> _pendingProjectFolderChangedPaths = new(FileSystemPaths.Comparer);
+    private bool _projectFolderChangeDispatchPending;
 
     private static double NormalizeExplorerPanelWidth(double value) =>
         double.IsFinite(value)
@@ -516,12 +518,34 @@ public partial class MainWindow
 
     private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
     {
-        if (e.ChangeType == WatcherChangeTypes.Changed)
+        lock (_projectFolderChangeLock)
         {
-            var changedPath = e.FullPath;
-            Dispatcher.UIThread.Post(() => MarkExternallyChangedTab(changedPath));
+            if (e.ChangeType == WatcherChangeTypes.Changed)
+                _pendingProjectFolderChangedPaths.Add(e.FullPath);
+
+            if (_projectFolderChangeDispatchPending)
+                return;
+
+            _projectFolderChangeDispatchPending = true;
         }
-        Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+
+        Dispatcher.UIThread.Post(ProcessProjectFolderChanges);
+    }
+
+    private void ProcessProjectFolderChanges()
+    {
+        string[] changedPaths;
+        lock (_projectFolderChangeLock)
+        {
+            changedPaths = _pendingProjectFolderChangedPaths.ToArray();
+            _pendingProjectFolderChangedPaths.Clear();
+            _projectFolderChangeDispatchPending = false;
+        }
+
+        foreach (var path in changedPaths)
+            MarkExternallyChangedTab(path);
+
+        RestartFileTreeRefreshTimer();
     }
 
     private void MarkExternallyChangedTab(string path)

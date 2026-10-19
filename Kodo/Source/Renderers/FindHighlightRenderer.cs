@@ -1,9 +1,5 @@
 // Licensed under the GNU GPL-v3.0
-using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.IO;
-using System.Runtime.CompilerServices;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;

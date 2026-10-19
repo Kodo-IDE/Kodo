@@ -1,13 +1,7 @@
 // Licensed under the GNU GPL-v3.0
 using System;
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Avalonia.Threading;
 using AvaloniaEdit.Document;
-using AvaloniaEdit.Rendering;
 
 namespace Kodo;
 

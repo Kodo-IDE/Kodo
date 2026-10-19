@@ -1,9 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Compression;
-using System.Text.Json;
 
 namespace Kodo.HotfixShared;
 

@@ -212,13 +212,18 @@ public partial class MainWindow
 
     private void HideDiagnosticPopup()
     {
+        var textView = EditorTextBox?.TextArea?.TextView;
+        if (!_diagnosticPopupHideTimer.IsEnabled && !_diagnosticPopupShowTimer.IsEnabled &&
+            _pendingDiagnosticMessage is null && !DiagnosticPopup.IsOpen &&
+            (textView is null || ToolTip.GetTip(textView) is null))
+            return;
+
         _diagnosticPopupHideTimer.Stop();
         _diagnosticPopupShowTimer.Stop();
         _pendingDiagnosticMessage = null;
         if (DiagnosticPopup.IsOpen)
             DiagnosticPopup.IsOpen = false;
-        var textView = EditorTextBox?.TextArea?.TextView;
-        if (textView is not null)
+        if (textView is not null && ToolTip.GetTip(textView) is not null)
             ToolTip.SetTip(textView, null);
     }
 
@@ -642,7 +647,6 @@ public partial class MainWindow
             ActiveEditorTab.IsDirty = true;
         }
         QueueRefreshState(fullRefresh: !largeLspDocument);
-        if (!largeLspDocument) QueueWordCountRefresh();
         RestartAutoSaveTimerIfNeeded();
         if (!largeLspDocument)
             QueueInsightRefresh();

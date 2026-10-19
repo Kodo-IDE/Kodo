@@ -1,26 +1,14 @@
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Runtime.InteropServices;
-using System.Text.Json;
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Avalonia.Platform.Storage;
-using Microsoft.Win32;
 using Kodo.Models;
-using System.Text.RegularExpressions;
-using System.Threading;
 
 namespace Kodo;
 

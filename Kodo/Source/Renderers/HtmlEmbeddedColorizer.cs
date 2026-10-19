@@ -5,8 +5,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Avalonia.Media;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
@@ -67,11 +65,13 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             {
                 var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
                 var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
-                const int buffer = 80;
-                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
         }
+
+        if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
+            return;
 
         var text = document.GetText(line.Offset, line.Length);
         var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));

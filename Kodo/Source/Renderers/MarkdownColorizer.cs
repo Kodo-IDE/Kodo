@@ -5,8 +5,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Avalonia.Media;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
@@ -138,13 +136,18 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             {
                 var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
                 var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
-                const int buffer = 80;
-                if (line.LineNumber < first - buffer || line.LineNumber > last + buffer)
+                if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
         }
 
         var text = document.GetText(line.Offset, line.Length);
+        if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
+        {
+            ColorizeMarkdownLine(text, line.Offset);
+            return;
+        }
+
         var state = (_snapshot ??= BuildSnapshot(DocumentTextCache.Get(document))).GetLineState(line.LineNumber);
 
         if (state.Delimiter is not null)

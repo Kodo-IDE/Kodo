@@ -1,8 +1,5 @@
 // Licensed under the GNU GPL-v3.0
 #pragma warning disable CA1416
-using Avalonia.Threading;
-using Avalonia.Controls;
-using Avalonia.Layout;
 using Kodo.Models;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -12,8 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
-using System.Text.Json;
-using System.Text;
 using System.Threading.Tasks;
 using System.Threading;
 using System;

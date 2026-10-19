@@ -863,7 +863,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             HideDiagnosticPopup();
             RestartLspPresentationDebounceTimer();
-            QueueRefreshState();
+            if (!_pendingFullStateRefresh || !_editorStateRefreshTimer.IsEnabled)
+                QueueRefreshState();
             if (_caretVisibilityRefreshPending)
             {
                 return;
@@ -9207,7 +9208,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var text = EditorTextBox.Document.Text;
+        var document = EditorTextBox.Document;
+        if (document.TextLength > 120_000 && !hasLspForFile)
+        {
+            ClearErrorHighlighting();
+            HideDiagnosticPopup();
+            return;
+        }
+
+        var text = document.Text;
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
