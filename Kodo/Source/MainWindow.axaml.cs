@@ -7855,8 +7855,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _suppressSettingsSave = true;
         _settingsSaveDebounceTimer.Stop();
 
-        var exePath = Environment.ProcessPath ?? System.Reflection.Assembly.GetEntryAssembly()?.Location ?? "";
-        if (!string.IsNullOrEmpty(exePath))
+        var exeFileName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            exePath = Path.Combine(AppContext.BaseDirectory, exeFileName);
+        if (File.Exists(exePath))
         {
             try
             {
