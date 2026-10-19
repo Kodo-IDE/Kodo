@@ -38,8 +38,8 @@ covered in [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md).
 pure data, has no build step, cannot crash the editor, and updates instantly when you edit the
 file.
 
-**Move to LangRules** when highlighting is not enough — you want completions, hover, or navigation
-— and no language server exists for your language. Be honest about the cost before you start:
+**Move to LangRules** when highlighting is not enough - you want completions, hover, or navigation
+- and no language server exists for your language. Be honest about the cost before you start:
 
 - You are writing a parser. Every edge case in the language is your problem.
 - Your code runs in Kodo's process. An infinite loop or runaway allocation in a provider will hang
@@ -58,7 +58,7 @@ If a language has a server, use LSP. Do not reimplement a parser that already ex
 
 ## 1. Legacy
 
-Legacy packages contain no code at all — just `language.json`. Kodo's built-in tokenizers read it
+Legacy packages contain no code at all - just `language.json`. Kodo's built-in tokenizers read it
 and color your file. This is the whole engine.
 
 Shipped examples of this shape: **Shine**, HolyC, KSP-Module-Manager-Config.
@@ -88,7 +88,7 @@ Create a folder with `manifest.json` (above) and `language.json`:
 ```
 
 Drop the folder into `%LocalAppData%\Kodo\Extensions\`. Kodo picks up a new folder or a new `.kox`
-without a restart, but **editing `language.json` in place does not reload it** — the folder watcher
+without a restart, but **editing `language.json` in place does not reload it** - the folder watcher
 only reacts to created, deleted, and renamed files, and it ignores `language.json` by name. Use the
 Extensions page's refresh button, or restart Kodo, to see colour edits.
 
@@ -96,7 +96,7 @@ Extensions page's refresh button, or restart Kodo, to see colour edits.
 
 Every field is optional.
 
-**Token lists** — each is an array of strings, matched on word boundaries, so `"int"` will not
+**Token lists** - each is an array of strings, matched on word boundaries, so `"int"` will not
 match inside `"integer"`.
 
 | Field | Colors as | Notes |
@@ -172,7 +172,7 @@ This is how one package covers several related file types. A real example is the
 map.
 
 ```json
-// language2.json — scoped to project files only
+// language2.json - scoped to project files only
 {
   "extensions": [".csproj", ".props", ".targets"],
   "keywords": ["Project", "PropertyGroup", "ItemGroup", "Target", "PackageReference"],
@@ -185,7 +185,7 @@ map.
 
 ## 2. LangRules
 
-LangRules is for a language that has **no language server** — typically a community or
+LangRules is for a language that has **no language server** - typically a community or
 smaller language. You write a .NET assembly; Kodo loads it and calls into it.
 
 Shipped examples: Python, Rust, TOML, SQL, Bash, Batch, JSON, Markdown, PowerShell, and others.
@@ -216,7 +216,7 @@ assembly is also scanned for `IKodoPlugin` implementations, so a single DLL can 
 LangRules engine and host UI integration.
 
 > **Development note:** the LangRules assembly is loaded into a **non-collectible**
-> `AssemblyLoadContext`. Replacing or rebuilding your DLL requires restarting Kodo — live reload
+> `AssemblyLoadContext`. Replacing or rebuilding your DLL requires restarting Kodo - live reload
 > does not apply to it. Plan your edit/build/restart loop accordingly.
 
 ### The contract
@@ -258,7 +258,7 @@ If any of these fail, the assembly loads and the provider is silently ignored.
 
 ### Declaring capabilities
 
-`LangRulesCapability` is a `[Flags]` enum. Declare exactly what you implement — a flag you claim
+`LangRulesCapability` is a `[Flags]` enum. Declare exactly what you implement - a flag you claim
 but do not honour produces an empty or misleading command.
 
 ```csharp
@@ -290,7 +290,7 @@ public LangRulesProviderInfo Info { get; } = new(
 | `EmbeddedRegions` | Nested languages | `GetEmbeddedRegions` |
 
 Every method on the interface has a **default implementation** that returns empty or `null`, so Kodo
-offers a feature only when your type actually overrides the matching method — an unoverridden member
+offers a feature only when your type actually overrides the matching method - an unoverridden member
 is never advertised.
 
 Every method on the interface has a **default implementation** that returns empty or `null`. You
@@ -304,7 +304,7 @@ Add one flag at a time, and only after the matching method works on incomplete i
 - Ranges are a `Start` plus a `Length`. `Start + Length` must stay within the string.
 - `Line` is zero-based.
 - Out-of-range values are filtered rather than crashing, but they make diagnostics silently
-  disappear — clamp defensively.
+  disappear - clamp defensively.
 
 ### The result types
 
@@ -379,7 +379,7 @@ the list short.
 
 ### Worked examples
 
-**Identifier scanning helper** — most providers need this:
+**Identifier scanning helper** - most providers need this:
 
 ```csharp
 private static string WordAt(string code, int offset)
@@ -453,7 +453,7 @@ public IReadOnlyList<LangRuleCodeAction> GetCodeActions(string code, int offset)
 
 Return only fixes that are safe and local. The `Title` is what the user sees.
 
-**Formatting — read this before you write it:**
+**Formatting - read this before you write it:**
 
 ```csharp
 public string? FormatDocument(string code)
@@ -466,7 +466,7 @@ public string? FormatDocument(string code)
 }
 ```
 
-Formatting must be **idempotent** — running it twice should not keep changing the file. Real
+Formatting must be **idempotent** - running it twice should not keep changing the file. Real
 formatters need a parser: preserve comments and string contents, and never reflow inside a
 literal.
 
@@ -488,7 +488,7 @@ Return only the inner region. Never overlap regions or return an unterminated on
 ### The `RecoveryAnalyzer` convention
 
 Shipped language packages commonly include a `RecoveryAnalyzer` class alongside the provider. It
-is not part of Kodo's API — it is a convention for the *syntax recovery* pass: cheap, dependency-free
+is not part of Kodo's API - it is a convention for the *syntax recovery* pass: cheap, dependency-free
 checks that keep the editor useful while code is half-written.
 
 A recovery analyzer reports structural problems like unbalanced braces or brackets, unterminated
@@ -620,7 +620,7 @@ That is enough for a server already on `PATH`. To let Kodo install it, add insta
 | `manual` | nothing; Kodo never installs it | Toolchains the user installs by hand |
 | *(omit)* | nothing; expects the server on `PATH` | System-provided servers |
 
-npm installs are **not global** — Kodo stages them into a private prefix and promotes the result into
+npm installs are **not global** - Kodo stages them into a private prefix and promotes the result into
 `%LocalAppData%\Kodo\Lsp`, so nothing is written to a machine-wide npm root.
 
 `allowSystem: true` lets Kodo use a server already installed. `allowAutoInstall: true` lets Kodo
@@ -750,8 +750,8 @@ log file.
 | LangRules features missing | `plugin` names your DLL, **not** `languagePlugin` | the type is non-abstract and has a public parameterless constructor (`public` on the type is not required); the method is actually overridden rather than left as the interface default |
 | A feature is offered but returns nothing | the method is implemented, not just declared | ranges are within the document |
 | LangRules changes have no effect | restart Kodo | the LangRules assembly is loaded non-collectibly and is never hot-reloaded |
-| Signature help never appears | — | `GetSignatureHelp` has no UI entry point in Kodo; signature help is LSP-only |
-| Document outline is empty | — | the outline is LSP-only; `AnalyzeSymbols` feeds declaration discovery, not an outline |
+| Signature help never appears | - | `GetSignatureHelp` has no UI entry point in Kodo; signature help is LSP-only |
+| Document outline is empty | - | the outline is LSP-only; `AnalyzeSymbols` feeds declaration discovery, not an outline |
 | `language.json` edits do not appear | use the Extensions page refresh, or restart | the folder watcher ignores in-place edits and ignores `language.json` by name |
 | LSP starts but has no features | the language id in `languages` | `fileExtensions`; workspace root via `rootMarkers` |
 | LSP never starts | run the command manually | `allowSystem`; the server is installed under `%LocalAppData%` for managed installs |
@@ -762,8 +762,8 @@ log file.
 
 ## Related guides
 
-- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) — every `manifest.json` field, packaging, marketplace
-- [THEME-EXTENSIONS.md](THEME-EXTENSIONS.md) — syntax colors can be overridden per theme
-- [PLUGINS.md](PLUGINS.md) — add host UI to a language package
-- [COMPILERS.md](COMPILERS.md) — run and build the language
-- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) — which kind of extension to build
+- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) - every `manifest.json` field, packaging, marketplace
+- [THEME-EXTENSIONS.md](THEME-EXTENSIONS.md) - syntax colors can be overridden per theme
+- [PLUGINS.md](PLUGINS.md) - add host UI to a language package
+- [COMPILERS.md](COMPILERS.md) - run and build the language
+- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) - which kind of extension to build
