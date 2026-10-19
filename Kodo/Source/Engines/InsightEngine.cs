@@ -97,9 +97,11 @@ public sealed class InsightEngine
         if (lineText.IndexOfAny(['"', '\'']) < 0)
             return lineText;
 
-        var chars = lineText.ToCharArray();
+        var chars = System.Buffers.ArrayPool<char>.Shared.Rent(lineText.Length);
+        lineText.AsSpan().CopyTo(chars);
+        var n = lineText.Length;
         char? quote = null;
-        for (var i = 0; i < chars.Length; i++)
+        for (var i = 0; i < n; i++)
         {
             var c = chars[i];
             if (quote is null)
@@ -109,7 +111,7 @@ public sealed class InsightEngine
                 continue;
             }
 
-            if (c == '\\' && i + 1 < chars.Length)
+            if (c == '\\' && i + 1 < n)
             {
                 chars[i] = ' ';
                 chars[i + 1] = ' ';
@@ -126,7 +128,9 @@ public sealed class InsightEngine
             chars[i] = ' ';
         }
 
-        return new string(chars);
+        var result = new string(chars, 0, n);
+        System.Buffers.ArrayPool<char>.Shared.Return(chars);
+        return result;
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int hash, string masked)> _maskedCache = new(StringComparer.Ordinal);
@@ -147,9 +151,11 @@ public sealed class InsightEngine
         var multiDelims = extension?.MultiLineStringDelimiters is { Length: > 0 } mls ? mls : Array.Empty<string>();
         var disableSingle = extension?.DisableSingleQuoteStrings ?? false;
 
-        var chars = documentText.ToCharArray();
-        var masked = new char[chars.Length];
-        for (var i = 0; i < chars.Length; i++) masked[i] = chars[i];
+        var docLen = documentText.Length;
+        var chars = System.Buffers.ArrayPool<char>.Shared.Rent(docLen);
+        documentText.AsSpan().CopyTo(chars);
+        var masked = System.Buffers.ArrayPool<char>.Shared.Rent(docLen);
+        Array.Copy(chars, masked, docLen);
 
         var inLineComment = false;
         var inBlockComment = false;
@@ -161,7 +167,7 @@ public sealed class InsightEngine
         var inInterpolationCode = false;
         var interpolationDepth = 0;
 
-        for (var i = 0; i < chars.Length; i++)
+        for (var i = 0; i < docLen; i++)
         {
             var c = chars[i];
 
@@ -182,7 +188,7 @@ public sealed class InsightEngine
             {
                 if (MatchesAt(documentText, i, blockEnd))
                 {
-                    for (var k = 0; k < blockEnd.Length && i + k < chars.Length; k++)
+                    for (var k = 0; k < blockEnd.Length && i + k < docLen; k++)
                         if (masked[i + k] != '\n' && masked[i + k] != '\r')
                             masked[i + k] = ' ';
                     inBlockComment = false;
@@ -202,14 +208,14 @@ public sealed class InsightEngine
                 {
                     if (inInterpolationCode)
                     {
-                        if (c == '{' && i + 1 < chars.Length && chars[i + 1] == '{')
+                        if (c == '{' && i + 1 < docLen && chars[i + 1] == '{')
                         {
                             masked[i] = ' ';
                             masked[i + 1] = ' ';
                             i++;
                             continue;
                         }
-                        if (c == '}' && i + 1 < chars.Length && chars[i + 1] == '}')
+                        if (c == '}' && i + 1 < docLen && chars[i + 1] == '}')
                         {
                             masked[i] = ' ';
                             masked[i + 1] = ' ';
@@ -239,14 +245,14 @@ public sealed class InsightEngine
                     }
                     else
                     {
-                        if (c == '{' && i + 1 < chars.Length && chars[i + 1] == '{')
+                        if (c == '{' && i + 1 < docLen && chars[i + 1] == '{')
                         {
                             masked[i] = ' ';
                             masked[i + 1] = ' ';
                             i++;
                             continue;
                         }
-                        if (c == '}' && i + 1 < chars.Length && chars[i + 1] == '}')
+                        if (c == '}' && i + 1 < docLen && chars[i + 1] == '}')
                         {
                             masked[i] = ' ';
                             masked[i + 1] = ' ';
@@ -265,7 +271,7 @@ public sealed class InsightEngine
                 if (c == '\\' && !inMulti && !isVerbatim)
                 {
                     masked[i] = ' ';
-                    if (i + 1 < chars.Length && chars[i + 1] != '\n' && chars[i + 1] != '\r')
+                    if (i + 1 < docLen && chars[i + 1] != '\n' && chars[i + 1] != '\r')
                     {
                         masked[i + 1] = ' ';
                         i++;
@@ -288,7 +294,7 @@ public sealed class InsightEngine
                     closing = multiDelims.FirstOrDefault(d => MatchesAt(documentText, i, d));
                 else if (delim != '\0' && MatchesAt(documentText, i, delim.ToString()))
                 {
-                    if (isVerbatim && i + 1 < chars.Length && chars[i + 1] == delim)
+                    if (isVerbatim && i + 1 < docLen && chars[i + 1] == delim)
                     {
                         masked[i] = ' ';
                         masked[i + 1] = ' ';
@@ -316,7 +322,7 @@ public sealed class InsightEngine
 
             if (MatchesAt(documentText, i, commentLine))
             {
-                for (var k = 0; k < commentLine.Length && i + k < chars.Length; k++)
+                for (var k = 0; k < commentLine.Length && i + k < docLen; k++)
                     if (masked[i + k] != '\n' && masked[i + k] != '\r')
                         masked[i + k] = ' ';
                 inLineComment = true;
@@ -326,7 +332,7 @@ public sealed class InsightEngine
 
             if (MatchesAt(documentText, i, blockStart))
             {
-                for (var k = 0; k < blockStart.Length && i + k < chars.Length; k++)
+                for (var k = 0; k < blockStart.Length && i + k < docLen; k++)
                     if (masked[i + k] != '\n' && masked[i + k] != '\r')
                         masked[i + k] = ' ';
                 inBlockComment = true;
@@ -377,7 +383,9 @@ public sealed class InsightEngine
             }
         }
 
-        var result = new string(masked);
+        var result = new string(masked, 0, docLen);
+        System.Buffers.ArrayPool<char>.Shared.Return(chars);
+        System.Buffers.ArrayPool<char>.Shared.Return(masked);
         _maskedCache[cacheKey] = (hash, result);
         if (_maskedCache.Count > 32) { foreach (var k in new System.Collections.Generic.List<string>(_maskedCache.Keys)) { if (_maskedCache.Count <= 24) break; _maskedCache.TryRemove(k, out _); } }
         return result;
@@ -576,10 +584,11 @@ public sealed class InsightEngine
         return found is null ? [] : found.Distinct(StringComparer.Ordinal);
     }
 
-    public void ScanDocument(string fileKey, string documentText, LoadedExtension? languageExtension = null)
+    public void ScanDocument(string fileKey, string documentText, LoadedExtension? languageExtension = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(fileKey))
             return;
+        cancellationToken.ThrowIfCancellationRequested();
 
         var variables = new HashSet<string>(StringComparer.Ordinal);
         var declarationNames = Array.Empty<string>();
@@ -605,10 +614,11 @@ public sealed class InsightEngine
             var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
             var lines = documentText.Split('\n');
             var maskedLines = maskedDoc.Split('\n');
-            ComputeDepths(maskedLines, out var depthAtLine, out var parenDepthAtLine, out var bracketDepthAtLine);
+            ComputeDepths(maskedLines, out var depthAtLine, out var parenDepthAtLine, out var bracketDepthAtLine, cancellationToken);
 
             for (var i = 0; i < lines.Length; i++)
             {
+                if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
                 var maskedLine = i < maskedLines.Length ? maskedLines[i] : lines[i];
                 var maskedLineTrimmed = maskedLine.Trim();
                 if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
@@ -722,18 +732,19 @@ public sealed class InsightEngine
         return count;
     }
     private static bool IsVarDeclPrefix(string t) => t.StartsWith("var ", StringComparison.Ordinal) || t.StartsWith("let ", StringComparison.Ordinal) || t.StartsWith("const ", StringComparison.Ordinal) || t.StartsWith("val ", StringComparison.Ordinal);
-    private static void ComputeDepths(string[] maskedLines, out int[] brace, out int[] paren, out int[] bracket)
+    private static void ComputeDepths(string[] maskedLines, out int[] brace, out int[] paren, out int[] bracket, CancellationToken cancellationToken = default)
     {
         brace = new int[maskedLines.Length]; paren = new int[maskedLines.Length]; bracket = new int[maskedLines.Length];
         var cb = 0; var cp = 0; var ck = 0;
-        for (var i = 0; i < maskedLines.Length; i++) { brace[i] = cb; paren[i] = cp; bracket[i] = ck; cb += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}'); cp += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')'); ck += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']'); }
+        for (var i = 0; i < maskedLines.Length; i++) { if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested(); brace[i] = cb; paren[i] = cp; bracket[i] = ck; cb += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}'); cp += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')'); ck += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']'); }
     }
 
-    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null)
+    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null, CancellationToken cancellationToken = default)
     {
         var spans = new List<DeadCodeSpan>();
         if (string.IsNullOrEmpty(documentText))
             return spans;
+        cancellationToken.ThrowIfCancellationRequested();
 
         var ignoreNames = languageExtension?.DeadCodeIgnore is { Length: > 0 } ignoreArr
             ? new HashSet<string>(ignoreArr, StringComparer.OrdinalIgnoreCase)
@@ -753,14 +764,17 @@ public sealed class InsightEngine
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
 
         var wordFreq = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
+        var freqCount = 0;
         foreach (var m in WordIdentifier.EnumerateMatches(maskedDoc))
         {
+            if ((freqCount++ & 4095) == 0) cancellationToken.ThrowIfCancellationRequested();
             var word = maskedDoc.Substring(m.Index, m.Length);
             wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
         }
         if (folderMaskedText is not null)
             foreach (var m in WordIdentifier.EnumerateMatches(folderMaskedText))
             {
+                if ((freqCount++ & 4095) == 0) cancellationToken.ThrowIfCancellationRequested();
                 var word = folderMaskedText.Substring(m.Index, m.Length);
                 wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
             }
@@ -775,6 +789,7 @@ public sealed class InsightEngine
         var curBracketDepthForVar = 0;
         for (var i = 0; i < lineCount; i++)
         {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
             depthAtLine[i] = curDepthForVar;
             parenDepthAtLine[i] = curParenDepthForVar;
             bracketDepthAtLine[i] = curBracketDepthForVar;
@@ -786,6 +801,7 @@ public sealed class InsightEngine
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
         for (var i = 0; i < lineCount; i++)
         {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
             foreach (var name in IdentifyVariableInitializations(masked[i]))
             {
                 if (!seenVariable.Add(name)) continue;
@@ -838,6 +854,7 @@ public sealed class InsightEngine
 
         for (var i = 0; i < lineCount; i++)
         {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
             var line = masked[i];
             string? name = null;
 
@@ -880,6 +897,7 @@ public sealed class InsightEngine
 
         for (var i = 0; i < lineCount; i++)
         {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
             if (!BlockTerminatorStatement.IsMatch(masked[i]))
                 continue;
             if (IsConditionalTerminator(masked, i))

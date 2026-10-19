@@ -1734,11 +1734,19 @@ public partial class MainWindow
         }
         else
         {
-            suggestions = await Task.Run(() =>
+            try
             {
-                _InsightEngine.ScanDocument(fileKey, text, languageExtension);
-                return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
-            });
+                suggestions = await Task.Run(() =>
+                {
+                    var scanToken = _insightAnalysisCancellation.Token;
+                    _InsightEngine.ScanDocument(fileKey, text, languageExtension, scanToken);
+                    return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
         }
         if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
 
@@ -1845,10 +1853,18 @@ public partial class MainWindow
         var folderPath = _currentFolderPath;
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
+        var scanToken = _insightAnalysisCancellation.Token;
 
         var documentText = document.Text;
-        var rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath));
-
+        List<DeadCodeSpan> rawSpans;
+        try
+        {
+            rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath, scanToken), scanToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
         if (scanVersion != _insightDocVersion) return;
         if (EditorTextBox?.Document is null) return;
 
