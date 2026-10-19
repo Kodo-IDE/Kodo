@@ -557,8 +557,13 @@ public sealed class InsightEngine
         List<string>? found = null;
         foreach (var pattern in DeclarationPatterns)
         {
-            foreach (Match match in pattern.Matches(scanText))
+            var searchFrom = 0;
+            while (searchFrom <= scanText.Length)
             {
+                var match = pattern.Match(scanText, searchFrom);
+                if (!match.Success || match.Groups.Count < 2)
+                    break;
+                searchFrom = match.Index + Math.Max(1, match.Length);
                 var name = match.Groups[1].Value;
                 if (string.IsNullOrEmpty(name) || ReservedWords.Contains(name) || !IsPlausibleVariableName(name))
                     continue;
@@ -605,11 +610,12 @@ public sealed class InsightEngine
             for (var i = 0; i < lines.Length; i++)
             {
                 var maskedLine = i < maskedLines.Length ? maskedLines[i] : lines[i];
-                if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLine.Trim())) continue;
-                if (depthAtLine[i] > 0 && maskedLine.Trim().Length > 0 && char.IsUpper(maskedLine.Trim()[0]) && maskedLine.Contains("=") && !IsVarDeclPrefix(maskedLine.Trim())) continue;
+                var maskedLineTrimmed = maskedLine.Trim();
+                if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
+                if (depthAtLine[i] > 0 && maskedLineTrimmed.Length > 0 && char.IsUpper(maskedLineTrimmed[0]) && maskedLine.Contains("=") && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
                 if (depthAtLine[i] > 0 && maskedLine.Contains("=") && maskedLine.TrimEnd().EndsWith(","))
                 {
-                    var t = maskedLine.Trim();
+                    var t = maskedLineTrimmed;
                     if (!IsVarDeclPrefix(t) && !t.Contains(";"))
                     {
                         var eqIdx = t.IndexOf('=');
@@ -686,6 +692,23 @@ public sealed class InsightEngine
 
     private static int ContentLength(string line) => line.EndsWith('\r') ? line.Length - 1 : line.Length;
 
+    private static int[] BuildLineStartOffsets(string text)
+    {
+        var starts = new List<int>(64) { 0 };
+        for (var i = 0; i < text.Length; i++)
+            if (text[i] == '\n')
+                starts.Add(i + 1);
+        return starts.ToArray();
+    }
+
+    private static int LineContentLength(string text, int contentStart, int exclusiveEnd)
+    {
+        var end = exclusiveEnd;
+        if (end > contentStart && text[end - 1] == '\n') end--;
+        if (end > contentStart && text[end - 1] == '\r') end--;
+        return end - contentStart;
+    }
+
     private static readonly HashSet<string> EntryPointNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "main", "wmain", "winmain", "wwinmain", "dllmain", "_start",
@@ -719,14 +742,8 @@ public sealed class InsightEngine
             ? new HashSet<string>(entryArr, StringComparer.OrdinalIgnoreCase)
             : null;
 
-        var lines = documentText.Split('\n');
-        var lineStart = new int[lines.Length];
-        var offset = 0;
-        for (var i = 0; i < lines.Length; i++)
-        {
-            lineStart[i] = offset;
-            offset += lines[i].Length + 1;
-        }
+        var lineStart = BuildLineStartOffsets(documentText);
+        var lineCount = lineStart.Length;
 
         var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
         var masked = maskedDoc.Split('\n');
@@ -750,13 +767,13 @@ public sealed class InsightEngine
 
         int CountWholeWord(string name) => wordFreq.TryGetValue(name, out var cnt) ? cnt : 0;
 
-        var depthAtLine = new int[lines.Length];
-        var parenDepthAtLine = new int[lines.Length];
-        var bracketDepthAtLine = new int[lines.Length];
+        var depthAtLine = new int[lineCount];
+        var parenDepthAtLine = new int[lineCount];
+        var bracketDepthAtLine = new int[lineCount];
         var curDepthForVar = 0;
         var curParenDepthForVar = 0;
         var curBracketDepthForVar = 0;
-        for (var i = 0; i < lines.Length; i++)
+        for (var i = 0; i < lineCount; i++)
         {
             depthAtLine[i] = curDepthForVar;
             parenDepthAtLine[i] = curParenDepthForVar;
@@ -767,7 +784,7 @@ public sealed class InsightEngine
         }
 
         var seenVariable = new HashSet<string>(StringComparer.Ordinal);
-        for (var i = 0; i < lines.Length; i++)
+        for (var i = 0; i < lineCount; i++)
         {
             foreach (var name in IdentifyVariableInitializations(masked[i]))
             {
@@ -812,11 +829,14 @@ public sealed class InsightEngine
                 }
 
                 if (CountWholeWord(name) <= 1)
-                    spans.Add(new DeadCodeSpan(lineStart[i], ContentLength(lines[i]), "Unused variable"));
+                {
+                    var lineEnd = i + 1 < lineCount ? lineStart[i + 1] : documentText.Length;
+                    spans.Add(new DeadCodeSpan(lineStart[i], LineContentLength(documentText, lineStart[i], lineEnd), "Unused variable"));
+                }
             }
         }
 
-        for (var i = 0; i < lines.Length; i++)
+        for (var i = 0; i < lineCount; i++)
         {
             var line = masked[i];
             string? name = null;
@@ -845,20 +865,20 @@ public sealed class InsightEngine
             if (depth > 0)
             {
                 var j = i + 1;
-                while (j < lines.Length && depth > 0)
+                while (j < lineCount && depth > 0)
                 {
                     depth += CountChar(masked[j], '{') - CountChar(masked[j], '}');
                     j++;
                 }
-                endLine = Math.Min(j - 1, lines.Length - 1);
+                endLine = Math.Min(j - 1, lineCount - 1);
             }
 
             var start = lineStart[i];
-            var end = lineStart[endLine] + ContentLength(lines[endLine]);
+            var end = lineStart[endLine] + LineContentLength(documentText, lineStart[endLine], endLine + 1 < lineCount ? lineStart[endLine + 1] : documentText.Length);
             spans.Add(new DeadCodeSpan(start, end - start, "Unused function"));
         }
 
-        for (var i = 0; i < lines.Length; i++)
+        for (var i = 0; i < lineCount; i++)
         {
             if (!BlockTerminatorStatement.IsMatch(masked[i]))
                 continue;
@@ -869,7 +889,7 @@ public sealed class InsightEngine
             var deadStart = -1;
             var deadEnd = -1;
             var j = i + 1;
-            while (j < lines.Length)
+            while (j < lineCount)
             {
                 var trimmed = masked[j].Trim();
                 if (trimmed.Length == 0) { j++; continue; }
@@ -888,7 +908,7 @@ public sealed class InsightEngine
             if (deadStart >= 0 && deadEnd >= deadStart)
             {
                 var start = lineStart[deadStart];
-                var end = lineStart[deadEnd] + ContentLength(lines[deadEnd]);
+                var end = lineStart[deadEnd] + LineContentLength(documentText, lineStart[deadEnd], deadEnd + 1 < lineCount ? lineStart[deadEnd + 1] : documentText.Length);
                 spans.Add(new DeadCodeSpan(start, end - start, "Unreachable code"));
                 i = deadEnd;
             }
