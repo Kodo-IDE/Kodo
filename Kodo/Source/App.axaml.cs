@@ -461,7 +461,10 @@ public partial class App : Application
 
             if (owner is not null)
             {
-                await dialog.ShowDialog(owner);
+                using (PerformanceBudget.TrackModal())
+                {
+                    await dialog.ShowDialog(owner);
+                }
             }
             else
             {

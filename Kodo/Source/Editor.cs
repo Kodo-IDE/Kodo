@@ -1583,7 +1583,10 @@ public partial class MainWindow
                 EditorTextBox.Focus();
             };
             window.Opened += (_, _) => list.Focus();
-            await window.ShowDialog(this);
+            using (PerformanceBudget.TrackModal())
+            {
+                await window.ShowDialog(this);
+            }
         });
     }
 

@@ -8604,7 +8604,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Content = outer,
         };
 
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
 
         if (chosen is null) return;
 
@@ -8770,7 +8773,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Content = outer,
         };
 
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
 
         if (chosen is null) return;
         if (chosen.Value == _currentLineEnding) return;
@@ -8938,7 +8944,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Content = outer,
         };
 
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
 
         if (chosen is null) return;
         var (chosenUseSpaces, chosenSize) = chosen.Value;

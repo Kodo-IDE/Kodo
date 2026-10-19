@@ -700,7 +700,10 @@ public partial class MainWindow
         };
 
         dialog.Opened += (_, _) => { hexInput.Focus(); hexInput.SelectAll(); };
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
 
         if (!confirmed) return;
         var hex = hexInput.Text?.Trim() ?? string.Empty;

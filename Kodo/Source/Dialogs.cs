@@ -127,7 +127,10 @@ public partial class MainWindow
                     () => { result = UnsavedTabAction.Cancel; dialog!.Close(); }))
         };
 
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
         return result;
     }
 
@@ -347,7 +350,10 @@ public partial class MainWindow
 
             removeButton.Click += (_, _) => { RemoveRecentFile(path); dialog!.Close(); };
             dismissButton.Click += (_, _) => dialog!.Close();
-            await dialog.ShowDialog(this);
+            using (PerformanceBudget.TrackModal())
+            {
+                await dialog.ShowDialog(this);
+            }
         }
         catch (Exception dialogEx)
         {
@@ -499,7 +505,10 @@ public partial class MainWindow
             var result = false;
             cancelButton.Click += (_, _) => { result = false; dialog!.Close(); };
             confirmButton.Click += (_, _) => { result = true; dialog!.Close(); };
-            await dialog.ShowDialog(this);
+            using (PerformanceBudget.TrackModal())
+            {
+                await dialog.ShowDialog(this);
+            }
             return result;
         }
         catch (Exception dialogEx)
@@ -827,7 +836,10 @@ public partial class MainWindow
             };
 
             dismissButton.Click += (_, _) => dialog!.Close();
-            await dialog.ShowDialog(this);
+            using (PerformanceBudget.TrackModal())
+            {
+                await dialog.ShowDialog(this);
+            }
         }
         catch (Exception dialogEx)
         {

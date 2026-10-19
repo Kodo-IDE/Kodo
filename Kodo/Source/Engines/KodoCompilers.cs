@@ -3531,7 +3531,10 @@ public partial class MainWindow
             inputBox.SelectAll();
         };
 
-        await dialog.ShowDialog(this);
+        using (PerformanceBudget.TrackModal())
+        {
+            await dialog.ShowDialog(this);
+        }
         return result;
     }
 
