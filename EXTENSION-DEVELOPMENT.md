@@ -1,7 +1,7 @@
 # Kodo extension development
 
 Kodo is extended with `.kox` packages. A `.kox` file is just a ZIP archive with a different
-extension — there is no proprietary format, no signing, and no installer.
+extension - there is no proprietary format, no signing, and no installer.
 
 This page tells you **which kind of extension to build** and gets you started. Each guide below
 then covers its area in full.
@@ -16,14 +16,14 @@ then covers its area in full.
 | Syntax highlighting and editor intelligence for a language | **Language extension** | [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) |
 | Panels, commands, menus, previews, or any host integration | **Plugin** | [PLUGINS.md](PLUGINS.md) |
 | A toolchain Kodo can run or build with | **Compiler entry** | [COMPILERS.md](COMPILERS.md) |
-| Understanding what goes inside the package | — | [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) |
+| Understanding what goes inside the package | - | [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) |
 
 Everything is declared with a `type` field in `manifest.json`:
 
 | `type` | What Kodo loads |
 |---|---|
 | `language` | A language association plus an engine (see below) |
-| `theme` | `theme.json` — colors |
+| `theme` | `theme.json` - colors |
 | `plugin` | A .NET assembly implementing `IKodoPlugin` |
 
 Compilers are **not** `.kox` extensions. They are separate command-line tools registered in a
@@ -35,8 +35,8 @@ central index. See [COMPILERS.md](COMPILERS.md).
 
 A language extension always does two things:
 
-1. **Claims file extensions** — so Kodo knows that `.myl` is a MyLang file.
-2. **Provides an engine** — so Kodo knows what to do with it.
+1. **Claims file extensions** - so Kodo knows that `.myl` is a MyLang file.
+2. **Provides an engine** - so Kodo knows what to do with it.
 
 Pick exactly one engine:
 
@@ -51,7 +51,7 @@ Guidance on choosing:
 - **Start with Legacy.** If `language.json` gets you highlighting you are happy with, stop there.
   It is pure data, has no build step, and cannot crash the editor.
 - **Use LangRules** for a language nobody has written a server for. You own the parsing, so you own
-  the bugs — see the [honest trade-offs](LANGUAGE-EXTENSIONS.md#choosing-an-engine) before
+  the bugs - see the [honest trade-offs](LANGUAGE-EXTENSIONS.md#choosing-an-engine) before
   committing to it.
 - **Use LSP** whenever a server exists. You write configuration, not a parser, and the server is
   maintained by the language's community.
@@ -77,7 +77,7 @@ Kodo scans these locations:
 | `%LocalAppData%\Kodo\Compilers\` | Where managed compilers are installed. Do not write here. |
 
 > **Note:** Kodo used to keep extensions in `%AppData%\Kodo\Extensions\`. That path is still read as a
-> **fallback**, but only when `%LocalAppData%\Kodo\Extensions\` does not exist — and Kodo creates that
+> **fallback**, but only when `%LocalAppData%\Kodo\Extensions\` does not exist - and Kodo creates that
 > folder on first launch, so in practice the old path is ignored. If you installed extensions before
 > the move, copy them across once: `%LocalAppData%\Kodo\Extensions\` is the path that counts.
 
@@ -135,7 +135,7 @@ Drop the folder into `%LocalAppData%\Kodo\Extensions\`, and it appears in Kodo's
 immediately. That is a working extension. [THEME-EXTENSIONS.md](THEME-EXTENSIONS.md) covers every
 supported color key.
 
-A first language extension is nearly as quick — see
+A first language extension is nearly as quick - see
 [the Legacy walkthrough](LANGUAGE-EXTENSIONS.md#legacy-walkthrough).
 
 ---
@@ -167,10 +167,10 @@ Full packaging rules and the complete manifest reference: [KODO-FILE-FORMAT.md](
 
 Real, complete packages live in two sibling repositories:
 
-- **[Kodo-Extensions](https://github.com/Kodo-IDE/Kodo-Extensions)** — the published marketplace.
+- **[Kodo-Extensions](https://github.com/Kodo-IDE/Kodo-Extensions)** - the published marketplace.
   Contains 29 shipped `.kox` files covering every type: theme packs, Legacy-only packages (Shine,
   HolyC), LangRules packages (Python, Rust, TOML…), LSP packages, and the marketplace index files.
-- **[Kodo-Extension-Template](https://github.com/Kodo-IDE/Kodo-Extension-Template)** — small,
+- **[Kodo-Extension-Template](https://github.com/Kodo-IDE/Kodo-Extension-Template)** - small,
   deliberately minimal examples of each type, plus two example plugins. Start here.
 
 Reading a real package is the fastest way to learn. Any `.kox` is a ZIP:

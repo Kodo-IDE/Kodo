@@ -34,7 +34,7 @@ Kodo finds your plugin by reflection. The class must be:
 - implement `Kodo.IKodoPlugin`
 - have a **public parameterless constructor**
 
-The type itself does **not** need to be `public` — Kodo filters on `IsAbstract` and the interface
+The type itself does **not** need to be `public` - Kodo filters on `IsAbstract` and the interface
 only, so an `internal` plugin class works fine. (The constructor does need to be public, because Kodo
 instantiates via `Activator.CreateInstance`.)
 
@@ -155,7 +155,7 @@ public sealed class HelloPlugin : IKodoPlugin
 ```
 
 `plugin` must be the **exact filename** of your assembly inside the package. If it is missing or
-wrong, a `type: plugin` package loads inertly — no error, no code runs.
+wrong, a `type: plugin` package loads inertly - no error, no code runs.
 
 ---
 
@@ -165,11 +165,11 @@ wrong, a `type: plugin` package loads inertly — no error, no code runs.
    also extracts `*.so` and `*.dylib` and marks them executable, so a plugin can carry a native
    dependency.
 2. It creates an `AssemblyLoadContext` with `isCollectible: true`.
-3. The main assembly is loaded from a **shadow copy** — the bytes are read into memory and loaded
+3. The main assembly is loaded from a **shadow copy** - the bytes are read into memory and loaded
    from a stream, so the file on disk is never locked and can be replaced while Kodo runs.
 4. Sibling assemblies are resolved from the plugin folder, also shadow-copied.
 5. Every `IKodoPlugin` implementation in the assembly is constructed and `OnLoad` is called.
-   Kodo filters on `IsAbstract` and the interface only — it does **not** require the type to be
+   Kodo filters on `IsAbstract` and the interface only - it does **not** require the type to be
    `public`, so an `internal` plugin class works. There is no "pick one entry point" mechanism, so
    every implementation in the assembly runs.
 6. On unload, Kodo calls `OnUnload` on each instance and then unloads the context.
@@ -177,7 +177,7 @@ wrong, a `type: plugin` package loads inertly — no error, no code runs.
 Consequences worth designing around:
 
 - Because files are shadow-copied, you can rebuild and reinstall without fighting file locks.
-  Because the context is collectible, a clean unload is possible — **if your `OnUnload` releases
+  Because the context is collectible, a clean unload is possible - **if your `OnUnload` releases
   your references.** A plugin that roots itself through a static event or a running timer will not
   actually be collected.
 - An unpacked plugin folder is used in place rather than extracted.
@@ -211,7 +211,7 @@ your own UI over relying on diagnostics.
 
 ## Plugins that ship with a language
 
-A language package can carry a plugin for host integration — extra buttons, panels, or commands —
+A language package can carry a plugin for host integration - extra buttons, panels, or commands -
 without giving up the language engine. Name the assembly in `languagePlugin`:
 
 ```json
@@ -241,7 +241,7 @@ plugin shipped alongside a language. See
 timer, `OnUnload` must undo all of it. Otherwise reloading the extension duplicates UI or leaks a
 running background task.
 
-**Be defensive at the boundaries.** Find controls with `FindControl<T>(...)` and handle `null` —
+**Be defensive at the boundaries.** Find controls with `FindControl<T>(...)` and handle `null` -
 the UI may change, or the control may not exist in the page you expected. Never assume a control
 named in this guide is present forever.
 
@@ -285,13 +285,13 @@ To submit to the marketplace, add the `.kox` to `Extensions/` and an entry to
 ## Testing
 
 1. Build Kodo, then build your plugin in `Release`.
-2. Confirm the output DLL name — the manifest must match it exactly.
+2. Confirm the output DLL name - the manifest must match it exactly.
 3. Copy the folder (or `.kox`) into `%LocalAppData%\Kodo\Extensions\`.
 4. Start Kodo and confirm the plugin loaded.
 5. Exercise the feature.
 6. **Reload the extension and confirm the UI did not duplicate.** This is the single most common
    bug, and it only shows up here.
-7. Restart Kodo and confirm nothing is left running — no orphaned processes, no growing memory.
+7. Restart Kodo and confirm nothing is left running - no orphaned processes, no growing memory.
 
 Turn on verbose logging in Kodo's settings if you need to see plugin load failures; load errors
 are logged rather than shown as dialogs.
@@ -306,7 +306,7 @@ are logged rather than shown as dialogs.
 | Nothing loads at all | the type is non-abstract, implements `IKodoPlugin`, and has a public parameterless constructor (`public` on the type is not required) |
 | `TypeLoadException` or missing-type errors | `TargetFramework` is not `net10.0`; a dependency DLL is missing from the package |
 | Reloading duplicates UI | `OnUnload` did not remove the controls or unsubscribe the handlers it added |
-| Memory grows on reload | something is rooted — a static event subscription, a running timer, or an unobserved task |
+| Memory grows on reload | something is rooted - a static event subscription, a running timer, or an unobserved task |
 | The editor freezes | blocking work on the UI thread in `OnLoad` or a handler |
 | `FindControl` returns null | the control name changed, or the page is not currently realised |
 
@@ -314,6 +314,6 @@ are logged rather than shown as dialogs.
 
 ## Related guides
 
-- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) — which kind of extension to build
-- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) — manifest fields, packaging, marketplace
-- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) — the `languagePlugin` field in context
+- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) - which kind of extension to build
+- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) - manifest fields, packaging, marketplace
+- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) - the `languagePlugin` field in context

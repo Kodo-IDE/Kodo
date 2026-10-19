@@ -13,12 +13,12 @@ and how to publish.
 
 ```text
 my-extension/
-├── manifest.json          required — the only file Kodo cannot start without
+├── manifest.json          required - the only file Kodo cannot start without
 ├── language.json          language extensions
-├── language1.json         optional — additional scoped profiles (…through language5.json)
+├── language1.json         optional - additional scoped profiles (…through language5.json)
 ├── theme.json             theme extensions (single object, or an array of them)
-├── icon.png               optional — preferred
-├── icon.svg               optional — fallback
+├── icon.png               optional - preferred
+├── icon.svg               optional - fallback
 ├── MyLangRules.dll        language extensions using the LangRules engine
 ├── MyPlugin.dll           plugin extensions
 └── LICENSE.txt            recommended
@@ -30,7 +30,7 @@ Rules:
   the single most common packaging mistake.
 - **Keep it flat.** The extension folder watcher does not recurse.
 - **Only `manifest.json` is strictly required.** Every other field has a default, so a package
-  containing just a manifest loads — it will simply do nothing useful.
+  containing just a manifest loads - it will simply do nothing useful.
 - File names are matched case-insensitively on load, but use lowercase by convention.
 
 ### What Kodo recognizes
@@ -147,9 +147,9 @@ Declares commands Kodo can run or build against the active file. Use these to of
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `id` | string | `command` | Identifier for this tool. |
-| `command` | string | — | **Required.** Executable name or path. |
+| `command` | string | - | **Required.** Executable name or path. |
 | `arguments` | string[] | `["{file}"]` | Arguments passed to the command. |
-| `format` | string | — | `compiler` groups the tool with the Run/Build menu. |
+| `format` | string | - | `compiler` groups the tool with the Run/Build menu. |
 | `enabled` | bool | `true` | `false` hides the tool. |
 | `requiresProject` | bool | `false` | `true` hides the tool for standalone files. |
 | `projectFiles` | string[] | `[]` | Glob patterns used to find the owning project, e.g. `["*.csproj", "*.sln"]`. |
@@ -164,7 +164,7 @@ Declares commands Kodo can run or build against the active file. Use these to of
 Kodo parses tool output for diagnostics and shows them in the editor. Emitting
 `file(line,col): severity: message` on stderr or stdout is the convention.
 
-> For a whole toolchain Kodo should *install* — a compiler, a runtime — see
+> For a whole toolchain Kodo should *install* - a compiler, a runtime - see
 > [COMPILERS.md](COMPILERS.md). That is a different mechanism with a central index.
 
 ### `lsp` / `lsps`
@@ -220,7 +220,7 @@ independently, and the top-level `extensions` act as a fallback.
 #### Servers that are not directly executable
 
 Some language servers ship as a bundle that a runtime consumes rather than as a program Kodo can
-exec — a JVM language server published as a `.jar`, most obviously. A bare `.jar` has no shebang and
+exec - a JVM language server published as a `.jar`, most obviously. A bare `.jar` has no shebang and
 is not an ELF binary, so setting `command` to it fails with `Exec format error`, and no download URL
 changes that.
 
@@ -255,9 +255,9 @@ How it behaves:
 - **Version probing** uses the same prefix, so `--version` is asked the way the server will actually
   be started rather than by executing the bundle directly.
 - **Opt-in, and backwards compatible.** `runtime` only becomes the launcher when `runtimeArgs` or
-  `mainClass` is present. Existing providers — where `runtime` is merely a prerequisite, as in
+  `mainClass` is present. Existing providers - where `runtime` is merely a prerequisite, as in
   `runtime: dotnet` with `command: csharp-ls` or `runtime: node` with
-  `command: pyright-langserver.cmd` — are unaffected.
+  `command: pyright-langserver.cmd` - are unaffected.
 
 Point `downloadUrl` at a **self-contained** artifact. LemMinX's plain `org.eclipse.lemminx-*.jar`
 omits its LSP4J dependencies and dies with `NoClassDefFoundError`; the `-uber.jar` alongside it bundles
@@ -283,7 +283,7 @@ compares the **numeric parts**, so `1.10.0` is newer than `1.9.0`.
 A version in the **filename** is used when it is higher than the one in `manifest.json`, so
 re-uploading `MyLang-Kodo-Extension-v1.1.0.kox` upgrades an installed `v1.0.0`.
 
-Convention is `{Id}-Kodo-Extension-v{version}.kox`, but nothing enforces it — `fileName` and
+Convention is `{Id}-Kodo-Extension-v{version}.kox`, but nothing enforces it - `fileName` and
 `downloadUrl` in the marketplace index must simply agree with each other.
 
 ---
@@ -315,7 +315,7 @@ whole folder.
 - [ ] `manifest.json` is at the archive **root**.
 - [ ] `id`, `version`, `name`, `type`, `author`, `description` are all filled in.
 - [ ] `extensions` entries include the leading dot.
-- [ ] Every referenced file — DLL, JSON, icon — is actually in the package.
+- [ ] Every referenced file - DLL, JSON, icon - is actually in the package.
 - [ ] No `bin/`, `obj/`, `.pdb`, secrets, or absolute developer paths.
 - [ ] No stale copy of Kodo's own assembly.
 - [ ] The package still works after being extracted somewhere unrelated.
@@ -329,7 +329,7 @@ Kodo extracts the DLLs to `%LocalAppData%\Kodo\PluginCache\` and loads them in a
 `AssemblyLoadContext` with shadow copying, so the files are never locked and can be replaced while
 Kodo is running.
 
-To develop iteratively, work in a folder instead of a `.kox` — Kodo accepts an unpacked directory
+To develop iteratively, work in a folder instead of a `.kox` - Kodo accepts an unpacked directory
 with `manifest.json` at its root and picks it up without a restart. In-place edits to the JSON are
 **not** watched, so use the Extensions page's refresh button or restart Kodo after changing a file in
 place. See [where extensions live](EXTENSION-DEVELOPMENT.md#3-where-extensions-live).
@@ -353,7 +353,7 @@ Open a pull request against it containing:
 |---|---|
 | `Indexs/ExtensionsIndex.json` | `language` and `theme` packages |
 | `Indexs/PluginsIndex.json` | `plugin` packages |
-| `Indexs/CompilerIndex.json` | Compilers — see [COMPILERS.md](COMPILERS.md) |
+| `Indexs/CompilerIndex.json` | Compilers - see [COMPILERS.md](COMPILERS.md) |
 
 Each index file is an object with a single array key: `extensions`, `plugins`, or `compilers`.
 
@@ -389,7 +389,7 @@ Each index file is an object with a single array key: `extensions`, `plugins`, o
 | `downloadUrl` | yes | Raw URL to the `.kox`. |
 | `iconUrl` | recommended | Raw URL to a PNG. |
 | `extensions` | recommended | File extensions, for search and association. |
-| `os` / `platforms` | optional | `["windows"]`, `["linux"]`, `["macos"]`. Honored — incompatible entries show "Not available". |
+| `os` / `platforms` | optional | `["windows"]`, `["linux"]`, `["macos"]`. Honored - incompatible entries show "Not available". |
 | `arch` / `architectures` | optional | `["x64"]`, `["arm64"]`. |
 | `dependencies` | optional | IDs that must be installed first. |
 | `sha256` | recommended | Hex checksum of the `.kox`. |
@@ -401,8 +401,8 @@ from the index, not from inside your package.
 
 ## Related guides
 
-- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) — which kind of extension to build
-- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) — language engines in full
-- [THEME-EXTENSIONS.md](THEME-EXTENSIONS.md) — every theme color key
-- [PLUGINS.md](PLUGINS.md) — writing an `IKodoPlugin`
-- [COMPILERS.md](COMPILERS.md) — registering a run/build toolchain
+- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) - which kind of extension to build
+- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) - language engines in full
+- [THEME-EXTENSIONS.md](THEME-EXTENSIONS.md) - every theme color key
+- [PLUGINS.md](PLUGINS.md) - writing an `IKodoPlugin`
+- [COMPILERS.md](COMPILERS.md) - registering a run/build toolchain

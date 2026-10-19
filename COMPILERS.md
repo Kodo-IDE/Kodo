@@ -1,7 +1,7 @@
 # Compilers
 
 A compiler entry tells Kodo how to **run** and **build** a language. It is not a `.kox`
-extension — compilers are command-line tools registered in a central index file and, when Kodo can
+extension - compilers are command-line tools registered in a central index file and, when Kodo can
 install them itself, downloaded into `%LocalAppData%\Kodo\Compilers\`.
 
 Shipped examples: .NET SDK, Go, Temurin JDK, LLVM/Clang, MinGW-w64, Node.js, Strawberry Perl,
@@ -94,7 +94,7 @@ See [`externalTools`](KODO-FILE-FORMAT.md#externaltools) for the extension-side 
 
 > **`{project}` is not substituted here.** It exists only in an extension's `externalTools`, where the
 > owning project file is resolved from the manifest. A compiler entry that writes `{project}` gets that
-> literal text in its command — use `{folder}` if you need the directory, and let the tool discover the
+> literal text in its command - use `{folder}` if you need the directory, and let the tool discover the
 > project itself from there. See
 > [`externalTools`](KODO-FILE-FORMAT.md#externaltools) for the extension-side placeholder set.
 
@@ -103,7 +103,7 @@ See [`externalTools`](KODO-FILE-FORMAT.md#externaltools) for the extension-side 
 ## Resolvers
 
 A resolver answers one question: *what is the newest version, and where do I download it?* It
-returns a version, a download URL, and a file name — or nothing, in which case Kodo falls back.
+returns a version, a download URL, and a file name - or nothing, in which case Kodo falls back.
 
 Resolution is throttled and runs off the UI thread with a ten-second timeout, so a slow or dead
 URL degrades to the fallback rather than hanging.
@@ -280,6 +280,6 @@ nothing fails loudly. Work through this in order:
 
 ## Related guides
 
-- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) — which kind of extension to build
-- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md#externaltools) — `externalTools` on a language extension
-- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) — the `languageExtensions` a compiler pairs with
+- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) - which kind of extension to build
+- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md#externaltools) - `externalTools` on a language extension
+- [LANGUAGE-EXTENSIONS.md](LANGUAGE-EXTENSIONS.md) - the `languageExtensions` a compiler pairs with

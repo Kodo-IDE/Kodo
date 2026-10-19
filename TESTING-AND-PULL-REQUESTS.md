@@ -7,7 +7,7 @@ input you did not anticipate.
 
 ## The rule
 
-> **A feature is not ready until the built package — the actual `.kox` a user receives — has been
+> **A feature is not ready until the built package - the actual `.kox` a user receives - has been
 > installed into a clean Kodo profile and used.**
 
 Almost every extension bug comes from testing the development folder instead of the artifact.
@@ -39,7 +39,7 @@ Users type constantly, and they type broken code. Every one of these is a case y
 | **Empty file** | Zero-length documents hit index and bounds code paths. |
 | **Incomplete syntax** | An unclosed bracket, a half-typed keyword, a dangling string. Every provider method is called constantly in this state. |
 | **Malformed input** | Binary content, mixed encodings, a stray null byte. |
-| **Unicode** | Emoji, CJK, RTL text, combining marks. Offsets are **UTF-16**, so a character outside the BMP occupies two units — get this wrong and ranges land mid-surrogate. |
+| **Unicode** | Emoji, CJK, RTL text, combining marks. Offsets are **UTF-16**, so a character outside the BMP occupies two units - get this wrong and ranges land mid-surrogate. |
 | **Mixed line endings** | CRLF, LF, and a file with both. A formatter that normalises line endings rewrites the whole file; that is a bug, not a feature. |
 | **Boundary edits** | Insert at the very start, at the very end, across a line boundary, deleting a whole line. |
 | **Large document** | At least a few MB, to exercise the viewport and size thresholds Kodo uses to stay responsive. |
@@ -54,7 +54,7 @@ For plugins and themes, additionally test **startup, reload, clean installation,
 
 1. Create the `.kox` exactly as a user would receive it.
 2. Copy it into `%LocalAppData%\Kodo\Extensions\`.
-3. Start Kodo **from a clean profile** — not your own, where you have settings and other extensions
+3. Start Kodo **from a clean profile** - not your own, where you have settings and other extensions
    that may be masking a problem.
 4. Follow your own guide from start to finish, as a first-time user would.
 5. Exercise every feature you declared.
@@ -64,7 +64,7 @@ For plugins and themes, additionally test **startup, reload, clean installation,
 
 ## 4. Reload testing
 
-The extension folder is watched, so you can iterate quickly — but reload is where most lifecycle
+The extension folder is watched, so you can iterate quickly - but reload is where most lifecycle
 bugs surface.
 
 - [ ] Edit the JSON or DLL, save, and confirm the change appears **without a restart**.
@@ -106,7 +106,7 @@ Explain:
 Include screenshots for anything visual.
 
 If your change alters a contract or adds a manifest field, update the relevant guide in the same
-pull request — see [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md).
+pull request - see [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md).
 
 ---
 
@@ -116,7 +116,7 @@ Open a pull request against
 [Kodo-Extensions](https://github.com/Kodo-IDE/Kodo-Extensions):
 
 1. Your `.kox` in `Extensions/`.
-2. An entry in the matching index file — `Indexs/ExtensionsIndex.json` for languages and themes,
+2. An entry in the matching index file - `Indexs/ExtensionsIndex.json` for languages and themes,
    `Indexs/PluginsIndex.json` for plugins, `Indexs/CompilerIndex.json` for compilers.
 
 Full details, including required fields and the `os`/`arch` gating, are in
@@ -144,5 +144,5 @@ Full details, including required fields and the `os`/`arch` gating, are in
 
 ## Related guides
 
-- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) — the complete documentation index
-- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) — manifest reference and packaging
+- [EXTENSION-DEVELOPMENT.md](EXTENSION-DEVELOPMENT.md) - the complete documentation index
+- [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md) - manifest reference and packaging
