@@ -17,7 +17,7 @@ internal enum SearchMode
 
 internal sealed class SearchIgnoreRules
 {
-    private static readonly HashSet<string> DefaultIgnoreDirectories = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> DefaultIgnoreDirectories = new(FileSystemPaths.Comparer)
     {
         ".git", "node_modules", "bin", "obj", "dist", ".vs",
     };
