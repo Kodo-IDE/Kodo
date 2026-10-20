@@ -1740,10 +1740,30 @@ public partial class MainWindow
         {
             try
             {
-                suggestions = await Task.Run(() =>
+                suggestions = await Task.Run(async () =>
                 {
                     var scanToken = _insightAnalysisCancellation.Token;
-                    _InsightEngine.ScanDocument(fileKey, text, languageExtension, scanToken);
+                    var gateway = InsightWorkerGateway.Default;
+                    if (gateway.Healthy)
+                    {
+                        try
+                        {
+                            await gateway.ScanRoundAsync(_InsightEngine, fileKey, text, languageExtension, scanToken).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            KodoDiagnostics.LogDebug("Insight worker scan unavailable; running in-process scan.", ex);
+                            _InsightEngine.ScanDocument(fileKey, text, languageExtension, scanToken);
+                        }
+                    }
+                    else
+                    {
+                        _InsightEngine.ScanDocument(fileKey, text, languageExtension, scanToken);
+                    }
                     return _InsightEngine.GetSuggestions(prefix, fileKey, languageExtension, text, offset);
                 });
             }
@@ -1863,7 +1883,7 @@ public partial class MainWindow
         List<DeadCodeSpan> rawSpans;
         try
         {
-            rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath, scanToken, filePath), scanToken);
+            rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, scanToken);
         }
         catch (OperationCanceledException)
         {

@@ -1363,6 +1363,22 @@ public sealed class InsightEngine
             return _variablesByFile.TryGetValue(fileKey, out var vars) ? vars : Array.Empty<string>();
     }
 
+    public void AdoptFileVariables(string fileKey, IEnumerable<string>? variables)
+    {
+        lock (_fileCacheLock)
+        {
+            if (variables is null)
+            {
+                _variablesByFile.Remove(fileKey);
+                return;
+            }
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var n in variables)
+                if (!string.IsNullOrEmpty(n)) set.Add(n);
+            _variablesByFile[fileKey] = set;
+        }
+    }
+
     private IReadOnlyList<string> GetDeclarationNames(string fileKey, string documentText, LangRulesAdapter rules)
     {
         lock (_fileCacheLock)

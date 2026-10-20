@@ -17,7 +17,7 @@ class Program
     private static extern bool AttachConsole(uint dwProcessId);
 
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -25,11 +25,14 @@ class Program
         }
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
+        if (InsightWorker.IsWorkerRequest(args))
+            return InsightWorker.Run(args);
+
         if (!SingleInstance.TryAcquire())
         {
             var handoffPath = args.Length > 0 ? args[0] : null;
             SingleInstance.SendActivationRequest(handoffPath);
-            return;
+            return 0;
         }
 
         AptabaseClient.Initialize();
@@ -45,6 +48,7 @@ class Program
             Task.Run(async () => await AptabaseClient.FlushAsync()).Wait(TimeSpan.FromSeconds(2));
             SingleInstance.Release();
         }
+        return 0;
     }
 
     public static AppBuilder BuildAvaloniaApp()

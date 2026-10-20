@@ -816,6 +816,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? trimmedStartupPath
             : null;
         InitializeComponent();
+        InsightWorkerGateway.Default.SetRegistryProvider(() =>
+        {
+            lock (LoadedExtensionsLock)
+            {
+                var snapshot = new List<LoadedExtension>(LoadedExtensions.Count);
+                foreach (var ext in LoadedExtensions) snapshot.Add(ext);
+                return (IReadOnlyList<LoadedExtension>)snapshot;
+            }
+        });
         AddHandler(PointerPressedEvent, OnWindowPointerPressedToDismissFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
         NotifySettingsSearchChanged();
@@ -5087,8 +5096,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         try
         {
-            var spans = await Task.Run(() => InsightEngine.FindErrors(text, ext, ResolveFenceLanguageExtension, CancellationToken.None));
-            var deadSpans = await Task.Run(() => InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path, CancellationToken.None, tab.Path));
+            var spans = await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, ext, CancellationToken.None);
+            var deadSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, text, ext, _currentFolderPath, tab.Path, CancellationToken.None);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;
@@ -9270,9 +9279,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    rawSpans = await Task.Run(
-                        () => InsightEngine.FindErrors(text, languageExtension, ResolveFenceLanguageExtension, scanToken),
-                        scanToken);
+                    rawSpans = await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, languageExtension, scanToken);
                     KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count} hasConfiguredLsp={hasConfiguredLsp}");
                 }
                 IReadOnlyList<ExternalToolDiagnostic> externalDiagnostics;

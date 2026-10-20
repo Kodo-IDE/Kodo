@@ -262,7 +262,7 @@ public partial class MainWindow
         if (closingActiveTab)
             CloseCompletionWindow();
         if (!tab.IsUntitled) _ = LspNotifyDidCloseAsync(tab.Path);
-        _InsightEngine.ForgetFile(tab.Path);
+        _ = InsightWorkerGateway.Default.ForgetAsync(_InsightEngine, tab.Path);
         OpenTabs.RemoveAt(index);
         _corruptedTabs.Remove(tab);
 

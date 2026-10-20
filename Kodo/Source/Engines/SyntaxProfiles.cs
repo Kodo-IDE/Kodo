@@ -1011,3 +1011,94 @@ public static class InlineCodeLanguageDetector
 
     private static bool IsTokenChar(char c) => c == '_' || char.IsLetter(c) || char.IsDigit(c);
 }
+
+public static class FenceLanguageResolver
+{
+    public static LoadedExtension? Resolve(IEnumerable<LoadedExtension> extensions, string fenceLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(fenceLanguage))
+            return null;
+
+        var token = fenceLanguage.Trim();
+        if (token.StartsWith("{", StringComparison.Ordinal) && token.EndsWith("}", StringComparison.Ordinal) && token.Length > 2)
+            token = token[1..^1];
+
+        token = token.Split([' ', '\t', ',', ';', ':'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? token;
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var normalized = token.Trim().TrimStart('.').ToLowerInvariant();
+        LoadedExtension? bestMatch = null;
+        var bestScore = 0;
+        foreach (var extension in extensions)
+        {
+            if (extension.Type != "language" || KodoExtensionIds.IsMarkdown(extension.Id)) continue;
+            var score = ScoreFenceLanguageMatch(extension, normalized, token);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestMatch = extension;
+            }
+        }
+        return bestMatch;
+    }
+
+    private static int ScoreFenceLanguageMatch(LoadedExtension extension, string normalizedFenceLanguage, string rawFenceLanguage)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedFenceLanguage))
+            return 0;
+        var score = 0;
+        var normalizedCompact = normalizedFenceLanguage.Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
+        var rawCompact = rawFenceLanguage.Trim().TrimStart('.').Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
+
+        if (extension.Extensions.Any(ext =>
+                ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = Math.Max(score, 100);
+        }
+
+        var normalizedId = extension.Id
+            .Replace("-kodo-extension", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("-language-support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("-", string.Empty, StringComparison.OrdinalIgnoreCase);
+        if (normalizedId.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
+            normalizedId.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = Math.Max(score, 90);
+        }
+
+        var compactName = extension.Name
+            .Replace("Language Support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace("Support", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase)
+            .Trim();
+        if (compactName.Equals(normalizedCompact, StringComparison.OrdinalIgnoreCase) ||
+            compactName.Equals(rawCompact, StringComparison.OrdinalIgnoreCase))
+        {
+            score = Math.Max(score, 80);
+        }
+
+        if (extension.SyntaxProfiles.Any(profile =>
+                profile.Extensions.Any(ext =>
+                    ext.TrimStart('.').Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase))))
+        {
+            score = Math.Max(score, 70);
+        }
+
+        if (extension.Types.Any(type =>
+                type.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
+                type.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = Math.Max(score, 60);
+        }
+
+        if (extension.Keywords.Any(keyword =>
+                keyword.Equals(rawFenceLanguage, StringComparison.OrdinalIgnoreCase) ||
+                keyword.Equals(normalizedFenceLanguage, StringComparison.OrdinalIgnoreCase)))
+        {
+            score = Math.Max(score, 40);
+        }
+
+        return score;
+    }
+}
