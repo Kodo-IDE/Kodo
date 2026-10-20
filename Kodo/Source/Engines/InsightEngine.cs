@@ -133,16 +133,34 @@ public sealed class InsightEngine
         return result;
     }
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int hash, string masked)> _maskedCache = new(StringComparer.Ordinal);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, (string ext, string masked)> _maskedCache = new();
+
+    private static ulong HashText64(string text, string extKey)
+    {
+        ulong h = 0xcbf29ce484222325UL;
+        for (var i = 0; i < text.Length; i++)
+        {
+            h ^= text[i];
+            h *= 0x100000001b3UL;
+        }
+        for (var i = 0; i < extKey.Length; i++)
+        {
+            h ^= (ulong)extKey[i] + 0x9e3779b97f4a7c15UL;
+            h *= 0x100000001b3UL;
+        }
+        h ^= (ulong)(uint)text.Length;
+        h *= 0x100000001b3UL;
+        return h;
+    }
+
     private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
     {
         if (string.IsNullOrEmpty(documentText))
             return documentText;
 
         var extKey = extension?.Id ?? "plain";
-        var hash = documentText.Length ^ documentText.GetHashCode() ^ extKey.GetHashCode();
-        var cacheKey = extKey + "|" + documentText.Length;
-        if (_maskedCache.TryGetValue(cacheKey, out var cached) && cached.hash == hash)
+        var hash = HashText64(documentText, extKey);
+        if (_maskedCache.TryGetValue(hash, out var cached) && cached.ext == extKey)
             return cached.masked;
 
         var commentLine = extension?.CommentLine is { Length: > 0 } cl ? cl : "//";
@@ -386,8 +404,8 @@ public sealed class InsightEngine
         var result = new string(masked, 0, docLen);
         System.Buffers.ArrayPool<char>.Shared.Return(chars);
         System.Buffers.ArrayPool<char>.Shared.Return(masked);
-        _maskedCache[cacheKey] = (hash, result);
-        if (_maskedCache.Count > 32) { foreach (var k in new System.Collections.Generic.List<string>(_maskedCache.Keys)) { if (_maskedCache.Count <= 24) break; _maskedCache.TryRemove(k, out _); } }
+        _maskedCache[hash] = (extKey, result);
+        if (_maskedCache.Count > 32) { foreach (var k in new System.Collections.Generic.List<ulong>(_maskedCache.Keys)) { if (_maskedCache.Count <= 24) break; _maskedCache.TryRemove(k, out _); } }
         return result;
     }
 
