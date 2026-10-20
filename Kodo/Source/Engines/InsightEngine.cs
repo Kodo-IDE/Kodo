@@ -630,27 +630,31 @@ public sealed class InsightEngine
         if (!string.IsNullOrEmpty(documentText))
         {
             var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
-            var lines = documentText.Split('\n');
             var maskedLines = maskedDoc.Split('\n');
             ComputeDepths(maskedLines, out var depthAtLine, out var parenDepthAtLine, out var bracketDepthAtLine, cancellationToken);
 
-            for (var i = 0; i < lines.Length; i++)
+            for (var i = 0; i < maskedLines.Length; i++)
             {
                 if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-                var maskedLine = i < maskedLines.Length ? maskedLines[i] : lines[i];
-                var maskedLineTrimmed = maskedLine.Trim();
+                var maskedLine = maskedLines[i];
+                var maskedLineSpan = maskedLine.AsSpan();
+                var trimmedStart = 0;
+                var trimmedEnd = maskedLineSpan.Length;
+                while (trimmedStart < trimmedEnd && char.IsWhiteSpace(maskedLineSpan[trimmedStart])) trimmedStart++;
+                while (trimmedEnd > trimmedStart && char.IsWhiteSpace(maskedLineSpan[trimmedEnd - 1])) trimmedEnd--;
+                var maskedLineTrimmed = maskedLineSpan[trimmedStart..trimmedEnd];
                 if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
-                if (depthAtLine[i] > 0 && maskedLineTrimmed.Length > 0 && char.IsUpper(maskedLineTrimmed[0]) && maskedLine.Contains("=") && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
-                if (depthAtLine[i] > 0 && maskedLine.Contains("=") && maskedLine.TrimEnd().EndsWith(","))
+                if (depthAtLine[i] > 0 && maskedLineTrimmed.Length > 0 && char.IsUpper(maskedLineTrimmed[0]) && maskedLineSpan.Contains('=') && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
+                if (depthAtLine[i] > 0 && maskedLineSpan.Contains('=') && maskedLineSpan[..trimmedEnd].EndsWith(","))
                 {
                     var t = maskedLineTrimmed;
-                    if (!IsVarDeclPrefix(t) && !t.Contains(";"))
+                    if (!IsVarDeclPrefix(t) && !t.Contains(';'))
                     {
                         var eqIdx = t.IndexOf('=');
                         if (eqIdx > 0)
                         {
-                            var lhs = t.Substring(0, eqIdx).Trim();
-                            if (SimpleAssignmentTarget.IsMatch(lhs) && !lhs.Contains(" "))
+                            var lhs = t[..eqIdx].Trim().ToString();
+                            if (SimpleAssignmentTarget.IsMatch(lhs) && !lhs.Contains(' '))
                                 continue;
                         }
                     }
@@ -749,12 +753,31 @@ public sealed class InsightEngine
             if (ch == c) count++;
         return count;
     }
-    private static bool IsVarDeclPrefix(string t) => t.StartsWith("var ", StringComparison.Ordinal) || t.StartsWith("let ", StringComparison.Ordinal) || t.StartsWith("const ", StringComparison.Ordinal) || t.StartsWith("val ", StringComparison.Ordinal);
+    private static bool IsVarDeclPrefix(ReadOnlySpan<char> t)
+        => t.StartsWith("var ", StringComparison.Ordinal) || t.StartsWith("let ", StringComparison.Ordinal) ||
+           t.StartsWith("const ", StringComparison.Ordinal) || t.StartsWith("val ", StringComparison.Ordinal);
     private static void ComputeDepths(string[] maskedLines, out int[] brace, out int[] paren, out int[] bracket, CancellationToken cancellationToken = default)
     {
-        brace = new int[maskedLines.Length]; paren = new int[maskedLines.Length]; bracket = new int[maskedLines.Length];
+        var lineCount = maskedLines.Length;
+        brace = new int[lineCount]; paren = new int[lineCount]; bracket = new int[lineCount];
         var cb = 0; var cp = 0; var ck = 0;
-        for (var i = 0; i < maskedLines.Length; i++) { if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested(); brace[i] = cb; paren[i] = cp; bracket[i] = ck; cb += CountChar(maskedLines[i], '{') - CountChar(maskedLines[i], '}'); cp += CountChar(maskedLines[i], '(') - CountChar(maskedLines[i], ')'); ck += CountChar(maskedLines[i], '[') - CountChar(maskedLines[i], ']'); }
+        for (var i = 0; i < lineCount; i++)
+        {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            brace[i] = cb; paren[i] = cp; bracket[i] = ck;
+            var line = maskedLines[i].AsSpan();
+            var nb = 0; var np = 0; var nk = 0;
+            foreach (var ch in line)
+            {
+                if (ch == '{') nb++;
+                else if (ch == '}') nb--;
+                else if (ch == '(') np++;
+                else if (ch == ')') np--;
+                else if (ch == '[') nk++;
+                else if (ch == ']') nk--;
+            }
+            cb += nb; cp += np; ck += nk;
+        }
     }
 
     public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null, CancellationToken cancellationToken = default)
