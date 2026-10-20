@@ -23,6 +23,8 @@ internal sealed class WorkerRequest
     public List<WorkerExtensionSnapshot>? Registry { get; set; }
     [JsonPropertyName("t")]
     public string? Text { get; set; }
+    [JsonPropertyName("tx")]
+    public long TextByteLength { get; set; } = -1;
     [JsonPropertyName("d")]
     public string? FolderPath { get; set; }
 }

@@ -177,9 +177,13 @@ internal sealed class InsightWorkerGateway
                 Op = op,
                 Key = key,
                 Extension = extension is null ? null : WorkerExtensionSnapshot.From(extension),
-                Text = text,
                 FolderPath = folderPath
             };
+            var textBytes = text is null ? 0 : Encoding.UTF8.GetByteCount(text);
+            if (text is not null)
+            {
+                request.TextByteLength = textBytes;
+            }
             if (_registryDirty && _registryProvider is not null)
             {
                 request.Registry = new List<WorkerExtensionSnapshot>();
@@ -195,7 +199,30 @@ internal sealed class InsightWorkerGateway
             }
             var payload = JsonSerializer.Serialize(request, WorkerExtensionSnapshot.Options);
             RequestTrace?.Invoke("REQ " + (payload.Length > 300 ? payload[..300] + "…(len " + payload.Length + ")" : payload));
-            await _process.StandardInput.WriteLineAsync(payload.AsMemory(), cancellationToken).ConfigureAwait(false);
+
+            var stdin = _process.StandardInput.BaseStream;
+            await stdin.WriteAsync(Encoding.UTF8.GetBytes(payload + "\n"), cancellationToken).ConfigureAwait(false);
+            if (text is not null && textBytes > 0)
+            {
+                if (textBytes <= 1024)
+                {
+                    await stdin.WriteAsync(Encoding.UTF8.GetBytes(text), cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    var pooled = System.Buffers.ArrayPool<byte>.Shared.Rent(textBytes);
+                    try
+                    {
+                        var written = Encoding.UTF8.GetBytes(text, pooled.AsSpan(0, textBytes));
+                        await stdin.WriteAsync(pooled.AsMemory(0, written), cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        System.Buffers.ArrayPool<byte>.Shared.Return(pooled);
+                    }
+                }
+            }
+            await stdin.FlushAsync(cancellationToken).ConfigureAwait(false);
 
             while (true)
             {

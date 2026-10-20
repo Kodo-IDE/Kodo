@@ -21,10 +21,14 @@ internal static class InsightWorker
         {
             var engine = new InsightEngine();
             List<LoadedExtension>? registry = [];
-            using var stdin = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
+            using var stdin = Console.OpenStandardInput();
             using var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
 
-            while (stdin.ReadLine() is { } line)
+            var buffer = new byte[8192];
+            int bufPos = 0, bufLen = 0;
+            var headerBuilder = new StringBuilder();
+
+            while (ReadHeaderLine(stdin, buffer, ref bufPos, ref bufLen, headerBuilder) is { } line)
             {
                 if (line.Length == 0) continue;
                 WorkerRequest? request = null;
@@ -38,6 +42,8 @@ internal static class InsightWorker
                     continue;
                 }
                 if (request is null) continue;
+                if (request.TextByteLength > 0)
+                    request.Text = ReadUtf8Text(stdin, request.TextByteLength);
 
                 var response = new WorkerResponse { Id = request.Id, Ok = true };
                 try
@@ -128,4 +134,48 @@ internal static class InsightWorker
 
     private static void Write(StreamWriter stdout, WorkerResponse response)
         => stdout.WriteLine(JsonSerializer.Serialize(response, WorkerExtensionSnapshot.Options));
+
+    private static int ReadByte(Stream stdin, byte[] buffer, ref int pos, ref int len)
+    {
+        if (pos >= len)
+        {
+            len = stdin.Read(buffer, 0, buffer.Length);
+            pos = 0;
+            if (len <= 0) return -1;
+        }
+        return buffer[pos++];
+    }
+
+    private static string? ReadHeaderLine(Stream stdin, byte[] buffer, ref int pos, ref int len, StringBuilder builder)
+    {
+        builder.Clear();
+        while (true)
+        {
+            var b = ReadByte(stdin, buffer, ref pos, ref len);
+            if (b < 0) return builder.Length == 0 ? null : builder.ToString();
+            if (b == '\n') return builder.ToString();
+            if (b != '\r') builder.Append((char)b);
+        }
+    }
+
+    private static string ReadUtf8Text(Stream stdin, long byteLength)
+    {
+        if (byteLength > int.MaxValue) throw new IOException("insight worker text frame too large");
+        var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent((int)byteLength);
+        try
+        {
+            var offset = 0;
+            while (offset < byteLength)
+            {
+                var read = stdin.Read(bytes, offset, (int)(byteLength - offset));
+                if (read <= 0) throw new IOException("unexpected end of insight worker stdin");
+                offset += read;
+            }
+            return Encoding.UTF8.GetString(bytes, 0, (int)byteLength);
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<byte>.Shared.Return(bytes);
+        }
+    }
 }
