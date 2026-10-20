@@ -5088,7 +5088,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var spans = await Task.Run(() => InsightEngine.FindErrors(text, ext, ResolveFenceLanguageExtension, CancellationToken.None));
-            var deadSpans = await Task.Run(() => InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path));
+            var deadSpans = await Task.Run(() => InsightEngine.FindDeadCode(text, ext, _currentFolderPath, tab.Path, CancellationToken.None, tab.Path));
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;

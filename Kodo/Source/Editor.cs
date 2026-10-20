@@ -1863,7 +1863,7 @@ public partial class MainWindow
         List<DeadCodeSpan> rawSpans;
         try
         {
-            rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath, scanToken), scanToken);
+            rawSpans = await Task.Run(() => _InsightEngine.FindDeadCode(documentText, languageExtension, folderPath, filePath, scanToken, filePath), scanToken);
         }
         catch (OperationCanceledException)
         {

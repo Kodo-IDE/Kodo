@@ -153,6 +153,269 @@ public sealed class InsightEngine
         return h;
     }
 
+    private static ulong HashSpan64(ReadOnlySpan<char> content)
+    {
+        ulong h = 0xcbf29ce484222325UL;
+        foreach (var ch in content)
+        {
+            h ^= ch;
+            h *= 0x100000001b3UL;
+        }
+        h ^= (ulong)(uint)content.Length;
+        h *= 0x100000001b3UL;
+        return h;
+    }
+
+    private sealed class LineFacts
+    {
+        public ulong Hash;
+        public int ContentLen;
+        public Dictionary<string, int>? WordCounts;
+        public string[] VarNames = Array.Empty<string>();
+        public string? DeclName;
+        public bool DeclValid;
+        public bool TermStarts;
+        public bool BlockTerm;
+        public bool ClosingBrace;
+        public bool JumpTarget;
+        public bool CondIf;
+        public bool CondElse;
+        public bool OpenIf;
+        public bool OpenElse;
+        public bool LeadingJump;
+        public bool TrimmedEmpty;
+        public bool HasBrace;
+    }
+
+    private sealed class LineState
+    {
+        public string ExtId = "";
+        public ulong[] HashesBuf = Array.Empty<ulong>();
+        public int HashCount;
+        public readonly Dictionary<ulong, int> Multiplicity = new();
+        public readonly Dictionary<ulong, LineFacts> ByHash = new();
+        public readonly Dictionary<string, int> WordFreq = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, int> WordFolderFreq = new(StringComparer.Ordinal);
+        public readonly HashSet<string> ScanNames = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, int> ScanContrib = new(StringComparer.Ordinal);
+        public string?[] PrevContrib = Array.Empty<string?>();
+        public LineFacts[] FactsAt = Array.Empty<LineFacts>();
+        public readonly object SyncRoot = new();
+    }
+
+    private readonly Dictionary<string, LineState> _lineStates = new(StringComparer.Ordinal);
+
+    private LineState GetLineState(string fileKey, string flavor, LoadedExtension? languageExtension)
+    {
+        var key = flavor + fileKey;
+        if (!_lineStates.TryGetValue(key, out var st) || st is null)
+        {
+            st = new LineState();
+            _lineStates[key] = st;
+        }
+        var extKey = flavor[0] + ":" + (languageExtension?.Id ?? "plain");
+        if (st.ExtId != extKey)
+        {
+            lock (st.SyncRoot)
+            {
+                if (st.ExtId.Length > 0)
+                {
+                    st.Multiplicity.Clear();
+                    st.ByHash.Clear();
+                    st.WordFreq.Clear();
+                    st.ScanNames.Clear();
+                    st.ScanContrib.Clear();
+                }
+                st.ExtId = extKey;
+            }
+        }
+        return st;
+    }
+
+    private static LineFacts ComputeLineFacts(ReadOnlySpan<char> content)
+    {
+        var f = new LineFacts
+        {
+            ContentLen = content.Length,
+            Hash = HashSpan64(content),
+            HasBrace = content.Contains('{'),
+        };
+
+        var s = 0;
+        var e = content.Length;
+        while (s < e && char.IsWhiteSpace(content[s])) s++;
+        while (e > s && char.IsWhiteSpace(content[e - 1])) e--;
+        var trimmed = content[s..e];
+        f.TrimmedEmpty = s == e;
+
+        System.Collections.Generic.Dictionary<string, int>? wordCounts = null;
+        foreach (var m in WordIdentifier.EnumerateMatches(content))
+        {
+            var w = content.Slice(m.Index, m.Length).ToString();
+            (wordCounts ??= new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal))[w] =
+                wordCounts.TryGetValue(w, out var wc) ? wc + 1 : 1;
+        }
+        f.WordCounts = wordCounts;
+
+        if (content.Contains('='))
+        {
+            var unique = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var n in IdentifyVariableInitializations(content.ToString()))
+                if (seen.Add(n))
+                    unique.Add(n);
+            f.VarNames = unique.ToArray();
+        }
+
+        var hasParens = content.Contains('(');
+        var hasKeyword = content.Contains("function", StringComparison.Ordinal) ||
+                         content.Contains("def", StringComparison.Ordinal) ||
+                         content.Contains("fn", StringComparison.Ordinal) ||
+                         content.Contains("func", StringComparison.Ordinal) ||
+                         content.Contains("sub", StringComparison.Ordinal) ||
+                         content.Contains("proc", StringComparison.Ordinal);
+        if (hasParens && (hasKeyword || f.HasBrace))
+        {
+            var line = content.ToString();
+            var keywordMatch = hasKeyword ? KeywordFunctionDeclaration.Match(line) : Match.Empty;
+            if (keywordMatch.Success)
+            {
+                f.DeclName = keywordMatch.Groups[1].Value;
+                f.DeclValid = true;
+            }
+            else if (f.HasBrace)
+            {
+                var cStyleMatch = CStyleFunctionDeclaration.Match(line);
+                if (cStyleMatch.Success && !ReservedWords.Contains(cStyleMatch.Groups[1].Value))
+                {
+                    f.DeclName = cStyleMatch.Groups[1].Value;
+                    f.DeclValid = true;
+                }
+            }
+        }
+
+        f.TermStarts = trimmed.StartsWith("return", StringComparison.Ordinal) ||
+                       trimmed.StartsWith("throw", StringComparison.Ordinal) ||
+                       trimmed.StartsWith("break", StringComparison.Ordinal) ||
+                       trimmed.StartsWith("continue", StringComparison.Ordinal);
+        f.BlockTerm = BlockTerminatorStatement.IsMatch(content);
+        f.ClosingBrace = trimmed.Length > 0 && trimmed[0] == '}' && ClosingBraceOnlyLine.IsMatch(trimmed);
+        f.JumpTarget = trimmed.Length > 0 && ((trimmed[0] == 'c' || trimmed[0] == 'd') || trimmed.Contains(':')) && PossibleJumpTarget.IsMatch(trimmed);
+        f.CondIf = ConditionalTerminatorOnIf.IsMatch(trimmed);
+        f.CondElse = ConditionalTerminatorOnElse.IsMatch(trimmed);
+        f.OpenIf = OpenConditionalOnIf.IsMatch(trimmed);
+        f.OpenElse = OpenConditionalOnElse.IsMatch(trimmed);
+        f.LeadingJump = LeadingJumpStatement.IsMatch(trimmed);
+
+        return f;
+    }
+
+    private void RegisterLines(
+        LineState st,
+        string maskedDoc,
+        int[] lineStart,
+        int[] lineLen,
+        ulong[] hashes,
+        int lineCount,
+        bool patchWordFreq,
+        CancellationToken cancellationToken)
+    {
+        if (st.FactsAt.Length < lineCount)
+            st.FactsAt = new LineFacts[Math.Max(lineCount, st.FactsAt.Length * 2)];
+
+        var prev = st.HashesBuf;
+        var prevCount = st.HashCount;
+        var diff = new Dictionary<ulong, int>();
+        var minN = Math.Min(prevCount, lineCount);
+        for (var i = 0; i < minN; i++)
+        {
+            if (prev[i] != hashes[i])
+            {
+                AddRef(diff, prev[i], -1);
+                AddRef(diff, hashes[i], +1);
+            }
+        }
+        for (var i = minN; i < prevCount; i++) AddRef(diff, prev[i], -1);
+        for (var i = minN; i < lineCount; i++) AddRef(diff, hashes[i], +1);
+
+        var firstAppear = new Dictionary<ulong, int>();
+        for (var i = 0; i < lineCount; i++)
+        {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            var h = hashes[i];
+            if (diff.TryGetValue(h, out var d) && d > 0 && !firstAppear.ContainsKey(h))
+                firstAppear[h] = i;
+        }
+
+        var pending = new Dictionary<ulong, LineFacts>();
+        foreach (var kv in diff)
+        {
+            if (kv.Value <= 0 || st.ByHash.ContainsKey(kv.Key)) continue;
+            var fi = firstAppear[kv.Key];
+            cancellationToken.ThrowIfCancellationRequested();
+            pending[kv.Key] = ComputeLineFacts(maskedDoc.AsSpan(lineStart[fi], lineLen[fi]));
+        }
+
+        lock (st.SyncRoot)
+        {
+            foreach (var pf in pending)
+                st.ByHash[pf.Key] = pf.Value;
+
+            foreach (var kv in diff)
+            {
+                var h = kv.Key;
+                var d = kv.Value;
+                if (!st.ByHash.TryGetValue(h, out var facts) || facts is null)
+                    continue;
+
+                var cur = st.Multiplicity.TryGetValue(h, out var mv) ? mv : 0;
+                var next = cur + d;
+
+                if (patchWordFreq && facts.WordCounts is not null)
+                {
+                    foreach (var wc in facts.WordCounts)
+                        PatchFreq(st.WordFreq, wc.Key, wc.Value * d);
+                }
+
+                if (next <= 0)
+                {
+                    if (cur > 0)
+                        st.Multiplicity.Remove(h);
+                    st.ByHash.Remove(h);
+                }
+                else
+                {
+                    st.Multiplicity[h] = next;
+                }
+            }
+
+            for (var i = 0; i < lineCount; i++)
+                st.FactsAt[i] = st.ByHash.TryGetValue(hashes[i], out var fx) ? fx! : null!;
+
+            if (st.HashesBuf.Length < lineCount)
+                Array.Resize(ref st.HashesBuf, Math.Max(lineCount, st.HashesBuf.Length * 2));
+            hashes.AsSpan(0, lineCount).CopyTo(st.HashesBuf);
+            st.HashCount = lineCount;
+        }
+    }
+
+    private static void AddRef(Dictionary<ulong, int> diff, ulong hash, int delta)
+    {
+        diff.TryGetValue(hash, out var v);
+        var nv = v + delta;
+        if (nv == 0) diff.Remove(hash);
+        else diff[hash] = nv;
+    }
+
+    private static void PatchFreq(Dictionary<string, int> freq, string word, int delta)
+    {
+        freq.TryGetValue(word, out var v);
+        var nv = v + delta;
+        if (nv <= 0) freq.Remove(word);
+        else freq[word] = nv;
+    }
+
+
     private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
     {
         if (string.IsNullOrEmpty(documentText))
@@ -608,12 +871,12 @@ public sealed class InsightEngine
             return;
         cancellationToken.ThrowIfCancellationRequested();
 
-        var variables = new HashSet<string>(StringComparer.Ordinal);
+        var extNames = new List<string>();
         var declarationNames = Array.Empty<string>();
         if (languageExtension?.LangRules is { } generated)
         {
             foreach (var name in generated.GetVariableLikeNames(documentText))
-                variables.Add(name);
+                extNames.Add(name);
             var symbols = generated.AnalyzeSymbols(documentText);
             if (symbols.Count > 0)
             {
@@ -622,72 +885,125 @@ public sealed class InsightEngine
                 {
                     if (!symbol.IsDeclaration || string.IsNullOrWhiteSpace(symbol.Name)) continue;
                     names.Add(symbol.Name);
-                    variables.Add(symbol.Name);
+                    extNames.Add(symbol.Name);
                 }
                 declarationNames = names.ToArray();
             }
         }
-        if (!string.IsNullOrEmpty(documentText))
+
+        var st = GetLineState(fileKey, "s", languageExtension);
+        var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
+        var lineStart = BuildLineStartOffsets(maskedDoc);
+        var lineCount = lineStart.Length;
+
+        var hashes = System.Buffers.ArrayPool<ulong>.Shared.Rent(lineCount);
+        try
         {
-            var maskedDoc = BuildMaskedDocument(documentText, languageExtension);
-            var lineStart = BuildLineStartOffsets(maskedDoc);
-            var lineCount = lineStart.Length;
+            var lineLen = new int[lineCount];
             var depthAtLine = new int[lineCount];
             var parenDepthAtLine = new int[lineCount];
             var bracketDepthAtLine = new int[lineCount];
-            var cb = 0; var cp = 0; var ck = 0;
-            for (var i = 0; i < lineCount; i++)
+        var cb = 0; var cp = 0; var ck = 0;
+        for (var i = 0; i < lineCount; i++)
+        {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            depthAtLine[i] = cb; parenDepthAtLine[i] = cp; bracketDepthAtLine[i] = ck;
+            var contentEnd = i + 1 < lineCount ? lineStart[i + 1] : maskedDoc.Length;
+            var len = LineContentLength(maskedDoc, lineStart[i], contentEnd);
+            lineLen[i] = len;
+            var h = 0xcbf29ce484222325UL;
+            var nb = 0; var np = 0; var nk = 0;
+            foreach (var ch in maskedDoc.AsSpan(lineStart[i], len))
             {
-                if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-                depthAtLine[i] = cb; parenDepthAtLine[i] = cp; bracketDepthAtLine[i] = ck;
-                var contentEnd = i + 1 < lineCount ? lineStart[i + 1] : maskedDoc.Length;
-                var nb = 0; var np = 0; var nk = 0;
-                foreach (var ch in maskedDoc.AsSpan(lineStart[i], LineContentLength(maskedDoc, lineStart[i], contentEnd)))
-                {
-                    if (ch == '{') nb++;
-                    else if (ch == '}') nb--;
-                    else if (ch == '(') np++;
-                    else if (ch == ')') np--;
-                    else if (ch == '[') nk++;
-                    else if (ch == ']') nk--;
-                }
-                cb += nb; cp += np; ck += nk;
+                h ^= ch;
+                h *= 0x100000001b3UL;
+                if (ch == '{') nb++;
+                else if (ch == '}') nb--;
+                else if (ch == '(') np++;
+                else if (ch == ')') np--;
+                else if (ch == '[') nk++;
+                else if (ch == ']') nk--;
             }
+            h ^= (ulong)(uint)len;
+            h *= 0x100000001b3UL;
+            hashes[i] = h;
+            cb += nb; cp += np; ck += nk;
+        }
+        RegisterLines(st, maskedDoc, lineStart, lineLen, hashes, lineCount, patchWordFreq: false, cancellationToken);
 
-            for (var i = 0; i < lineCount; i++)
+        var localContrib = new List<(int pos, string? joined)>();
+        for (var i = 0; i < lineCount; i++)
+        {
+            if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            var contentEnd = i + 1 < lineCount ? lineStart[i + 1] : maskedDoc.Length;
+            var maskedLineSpan = maskedDoc.AsSpan(lineStart[i], LineContentLength(maskedDoc, lineStart[i], contentEnd));
+            var facts = st.FactsAt[i];
+            if (facts is null) continue;
+            if (facts.VarNames.Length == 0) continue;
+            var trimmedStart = 0;
+            var trimmedEnd = maskedLineSpan.Length;
+            while (trimmedStart < trimmedEnd && char.IsWhiteSpace(maskedLineSpan[trimmedStart])) trimmedStart++;
+            while (trimmedEnd > trimmedStart && char.IsWhiteSpace(maskedLineSpan[trimmedEnd - 1])) trimmedEnd--;
+            var maskedLineTrimmed = maskedLineSpan[trimmedStart..trimmedEnd];
+            if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
+            if (depthAtLine[i] > 0 && maskedLineTrimmed.Length > 0 && char.IsUpper(maskedLineTrimmed[0]) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
+            if (depthAtLine[i] > 0 && maskedLineSpan[..trimmedEnd].EndsWith(","))
             {
-                if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-                var contentEnd = i + 1 < lineCount ? lineStart[i + 1] : maskedDoc.Length;
-                var maskedLineSpan = maskedDoc.AsSpan(lineStart[i], LineContentLength(maskedDoc, lineStart[i], contentEnd));
-                if (!maskedLineSpan.Contains('=')) continue;
-                var trimmedStart = 0;
-                var trimmedEnd = maskedLineSpan.Length;
-                while (trimmedStart < trimmedEnd && char.IsWhiteSpace(maskedLineSpan[trimmedStart])) trimmedStart++;
-                while (trimmedEnd > trimmedStart && char.IsWhiteSpace(maskedLineSpan[trimmedEnd - 1])) trimmedEnd--;
-                var maskedLineTrimmed = maskedLineSpan[trimmedStart..trimmedEnd];
-                if ((parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
-                if (depthAtLine[i] > 0 && maskedLineTrimmed.Length > 0 && char.IsUpper(maskedLineTrimmed[0]) && !IsVarDeclPrefix(maskedLineTrimmed)) continue;
-                if (depthAtLine[i] > 0 && maskedLineSpan[..trimmedEnd].EndsWith(","))
+                var t = maskedLineTrimmed;
+                if (!IsVarDeclPrefix(t) && !t.Contains(';'))
                 {
-                    var t = maskedLineTrimmed;
-                    if (!IsVarDeclPrefix(t) && !t.Contains(';'))
+                    var eqIdx = t.IndexOf('=');
+                    if (eqIdx > 0)
                     {
-                        var eqIdx = t.IndexOf('=');
-                        if (eqIdx > 0)
-                        {
-                            var lhs = t[..eqIdx].Trim().ToString();
-                            if (SimpleAssignmentTarget.IsMatch(lhs) && !lhs.Contains(' '))
-                                continue;
-                        }
+                        var lhs = t[..eqIdx].Trim().ToString();
+                        if (SimpleAssignmentTarget.IsMatch(lhs) && !lhs.Contains(' '))
+                            continue;
                     }
                 }
-
-                foreach (var name in IdentifyVariableInitializations(maskedLineSpan.ToString()))
-                {
-                    if (name == "_" || name.StartsWith('_')) continue;
-                    variables.Add(name);
-                }
             }
+
+            var sb = new System.Text.StringBuilder();
+            foreach (var name in facts.VarNames)
+            {
+                if (name == "_" || name.StartsWith('_')) continue;
+                if (sb.Length > 0) sb.Append('\u0001');
+                sb.Append(name);
+            }
+            localContrib.Add((i, sb.ToString()));
+        }
+
+        lock (st.SyncRoot)
+        {
+            var pc = st.PrevContrib;
+            for (var pos = 0; pos < lineCount; pos++)
+            {
+                if (pos < pc.Length && pc[pos] is { } old)
+                    PatchContribDelta(st, DiffNames(old, null), -1);
+            }
+            for (var pos = lineCount; pos < pc.Length; pos++)
+            {
+                if (pc[pos] is { } old)
+                    PatchContribDelta(st, DiffNames(old, null), -1);
+            }
+
+            if (pc.Length >= lineCount)
+                for (var i = 0; i < pc.Length; i++) pc[i] = null;
+            else
+                st.PrevContrib = pc = new string?[lineCount];
+
+            foreach (var (pos, joined) in localContrib)
+            {
+                if (joined is { Length: > 0 })
+                    PatchContribDelta(st, DiffNames(joined, null), +1);
+                st.PrevContrib[pos] = joined;
+            }
+        }
+
+        var variables = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var n in extNames) variables.Add(n);
+        lock (st.SyncRoot)
+        {
+            foreach (var n in st.ScanNames) variables.Add(n);
         }
 
         lock (_fileCacheLock)
@@ -695,6 +1011,42 @@ public sealed class InsightEngine
             _variablesByFile[fileKey] = variables;
             _declarationNamesByFile[fileKey] = declarationNames;
         }
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<ulong>.Shared.Return(hashes);
+        }
+    }
+
+    private static void PatchContribDelta(LineState st, IEnumerable<string> names, int delta)
+    {
+        foreach (var n in names)
+        {
+            st.ScanContrib.TryGetValue(n, out var c);
+            var nc = c + delta;
+            if (nc <= 0)
+            {
+                if (c > 0)
+                {
+                    st.ScanContrib.Remove(n);
+                    st.ScanNames.Remove(n);
+                }
+            }
+            else
+            {
+                if (c <= 0) st.ScanNames.Add(n);
+                st.ScanContrib[n] = nc;
+            }
+        }
+    }
+
+    private static IEnumerable<string> DiffNames(string? leave, string? enter)
+    {
+        if (string.IsNullOrEmpty(leave)) yield break;
+        var set = string.IsNullOrEmpty(enter) ? null : new HashSet<string>(enter.Split('\u0001'), StringComparer.Ordinal);
+        foreach (var n in leave.Split('\u0001'))
+            if (set is null || !set.Contains(n))
+                yield return n;
     }
 
     public void ForgetFile(string fileKey)
@@ -703,6 +1055,8 @@ public sealed class InsightEngine
         {
             _variablesByFile.Remove(fileKey);
             _declarationNamesByFile.Remove(fileKey);
+            _lineStates.Remove("s" + fileKey);
+            _lineStates.Remove("d" + fileKey);
         }
     }
 
@@ -769,7 +1123,7 @@ public sealed class InsightEngine
     private static bool IsVarDeclPrefix(ReadOnlySpan<char> t)
         => t.StartsWith("var ", StringComparison.Ordinal) || t.StartsWith("let ", StringComparison.Ordinal) ||
            t.StartsWith("const ", StringComparison.Ordinal) || t.StartsWith("val ", StringComparison.Ordinal);
-    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null, CancellationToken cancellationToken = default)
+    public List<DeadCodeSpan> FindDeadCode(string documentText, LoadedExtension? languageExtension = null, string? folderPath = null, string? currentFilePath = null, CancellationToken cancellationToken = default, string? fileKey = null)
     {
         var spans = new List<DeadCodeSpan>();
         if (string.IsNullOrEmpty(documentText))
@@ -783,6 +1137,8 @@ public sealed class InsightEngine
             ? new HashSet<string>(entryArr, StringComparer.OrdinalIgnoreCase)
             : null;
 
+        var st = fileKey is { Length: > 0 } ? GetLineState(fileKey, "d", languageExtension) : new LineState();
+
         var lineStart = BuildLineStartOffsets(documentText);
         var lineCount = lineStart.Length;
 
@@ -790,27 +1146,12 @@ public sealed class InsightEngine
         var lineLen = new int[lineCount];
         var braceDelta = new int[lineCount];
 
+        var hashes = System.Buffers.ArrayPool<ulong>.Shared.Rent(lineCount);
+        try
+        {
         string? folderMaskedText = null;
         if (!string.IsNullOrWhiteSpace(folderPath) && !string.IsNullOrWhiteSpace(currentFilePath) && System.IO.Directory.Exists(folderPath))
             folderMaskedText = BuildFolderMaskedText(folderPath, currentFilePath, languageExtension);
-
-        var wordFreq = new System.Collections.Generic.Dictionary<string, int>(StringComparer.Ordinal);
-        var freqCount = 0;
-        foreach (var m in WordIdentifier.EnumerateMatches(maskedDoc))
-        {
-            if ((freqCount++ & 4095) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var word = maskedDoc.Substring(m.Index, m.Length);
-            wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
-        }
-        if (folderMaskedText is not null)
-            foreach (var m in WordIdentifier.EnumerateMatches(folderMaskedText))
-            {
-                if ((freqCount++ & 4095) == 0) cancellationToken.ThrowIfCancellationRequested();
-                var word = folderMaskedText.Substring(m.Index, m.Length);
-                wordFreq[word] = wordFreq.TryGetValue(word, out var c) ? c + 1 : 1;
-            }
-
-        int CountWholeWord(string name) => wordFreq.TryGetValue(name, out var cnt) ? cnt : 0;
 
         var depthAtLine = new int[lineCount];
         var parenDepthAtLine = new int[lineCount];
@@ -823,9 +1164,12 @@ public sealed class InsightEngine
             var contentEnd = i + 1 < lineCount ? lineStart[i + 1] : maskedDoc.Length;
             lineLen[i] = LineContentLength(maskedDoc, contentStart, contentEnd);
             depthAtLine[i] = cb; parenDepthAtLine[i] = cp; bracketDepthAtLine[i] = ck;
+            var h = 0xcbf29ce484222325UL;
             var nb = 0; var np = 0; var nk = 0;
             foreach (var ch in maskedDoc.AsSpan(contentStart, lineLen[i]))
             {
+                h ^= ch;
+                h *= 0x100000001b3UL;
                 if (ch == '{') nb++;
                 else if (ch == '}') nb--;
                 else if (ch == '(') np++;
@@ -833,9 +1177,31 @@ public sealed class InsightEngine
                 else if (ch == '[') nk++;
                 else if (ch == ']') nk--;
             }
+            h ^= (ulong)(uint)lineLen[i];
+            h *= 0x100000001b3UL;
+            hashes[i] = h;
             cb += nb; cp += np; ck += nk;
             braceDelta[i] = nb;
         }
+        RegisterLines(st, maskedDoc, lineStart, lineLen, hashes, lineCount, patchWordFreq: true, cancellationToken);
+
+        if (folderMaskedText is not null)
+        {
+            lock (st.SyncRoot)
+            {
+                st.WordFolderFreq.Clear();
+                var freqCount = 0;
+                foreach (var m in WordIdentifier.EnumerateMatches(folderMaskedText))
+                {
+                    if ((freqCount++ & 4095) == 0) cancellationToken.ThrowIfCancellationRequested();
+                    PatchFreq(st.WordFolderFreq, folderMaskedText.Substring(m.Index, m.Length), 1);
+                }
+            }
+        }
+
+        int CountWholeWord(string name) =>
+            (st.WordFreq.TryGetValue(name, out var c1) ? c1 : 0) +
+            (st.WordFolderFreq.TryGetValue(name, out var c2) ? c2 : 0);
 
         ReadOnlySpan<char> Line(int i) => maskedDoc.AsSpan(lineStart[i], lineLen[i]);
 
@@ -843,17 +1209,18 @@ public sealed class InsightEngine
         for (var i = 0; i < lineCount; i++)
         {
             if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
+            var facts = st.FactsAt[i];
+            if (facts is null) continue;
+            if (facts.VarNames.Length == 0) continue;
             var lineSpan = Line(i);
-            if (!lineSpan.Contains('=')) continue;
             var line = lineSpan.ToString();
-            foreach (var name in IdentifyVariableInitializations(line))
+            var trimmedForProp = line.Trim();
+            foreach (var name in facts.VarNames)
             {
                 if (!seenVariable.Add(name)) continue;
                 if (ignoreNames is not null && ignoreNames.Contains(name)) continue;
 
                 if (name == "_" || name.StartsWith('_')) continue;
-
-                var trimmedForProp = line.Trim();
 
                 if (parenDepthAtLine[i] > 0 || bracketDepthAtLine[i] > 0)
                 {
@@ -893,30 +1260,9 @@ public sealed class InsightEngine
         for (var i = 0; i < lineCount; i++)
         {
             if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var lineSpan = Line(i);
-            string? name = null;
-
-            var hasKeyword = lineSpan.Contains("function", StringComparison.Ordinal) ||
-                             lineSpan.Contains("def", StringComparison.Ordinal) ||
-                             lineSpan.Contains("fn", StringComparison.Ordinal) ||
-                             lineSpan.Contains("func", StringComparison.Ordinal) ||
-                             lineSpan.Contains("sub", StringComparison.Ordinal) ||
-                             lineSpan.Contains("proc", StringComparison.Ordinal);
-            if (lineSpan.Contains('(') && (hasKeyword || lineSpan.Contains('{')))
-            {
-                var line = lineSpan.ToString();
-                var keywordMatch = hasKeyword ? KeywordFunctionDeclaration.Match(line) : Match.Empty;
-                if (keywordMatch.Success)
-                {
-                    name = keywordMatch.Groups[1].Value;
-                }
-                else if (lineSpan.Contains('{'))
-                {
-                    var cStyleMatch = CStyleFunctionDeclaration.Match(line);
-                    if (cStyleMatch.Success && !ReservedWords.Contains(cStyleMatch.Groups[1].Value))
-                        name = cStyleMatch.Groups[1].Value;
-                }
-            }
+            var facts = st.FactsAt[i];
+            if (facts is null) continue;
+            string? name = facts.DeclValid ? facts.DeclName : null;
 
             if (name is null || EntryPointNames.Contains(name)) continue;
             if (entryPoints is not null && entryPoints.Contains(name)) continue;
@@ -946,20 +1292,12 @@ public sealed class InsightEngine
         for (var i = 0; i < lineCount; i++)
         {
             if ((i & 255) == 0) cancellationToken.ThrowIfCancellationRequested();
-            var lineSpan = Line(i);
-            var ls = 0;
-            var le = lineSpan.Length;
-            while (ls < le && char.IsWhiteSpace(lineSpan[ls])) ls++;
-            while (le > ls && char.IsWhiteSpace(lineSpan[le - 1])) le--;
-            var trimmedStart = lineSpan[ls..le];
-            var startsWithTerminator = trimmedStart.StartsWith("return", StringComparison.Ordinal) ||
-                                        trimmedStart.StartsWith("throw", StringComparison.Ordinal) ||
-                                        trimmedStart.StartsWith("break", StringComparison.Ordinal) ||
-                                        trimmedStart.StartsWith("continue", StringComparison.Ordinal);
-            if (!startsWithTerminator) continue;
-            if (!BlockTerminatorStatement.IsMatch(lineSpan))
+            var facts = st.FactsAt[i];
+            if (facts is null) continue;
+            if (!facts.TermStarts) continue;
+            if (!facts.BlockTerm)
                 continue;
-            if (IsConditionalTerminator(maskedDoc, lineStart, lineLen, i))
+            if (IsConditionalTerminatorCtx(st.FactsAt, i))
                 continue;
 
             var depth = 0;
@@ -968,15 +1306,11 @@ public sealed class InsightEngine
             var j = i + 1;
             while (j < lineCount)
             {
-                var jSpan = Line(j);
-                var js = 0;
-                var je = jSpan.Length;
-                while (js < je && char.IsWhiteSpace(jSpan[js])) js++;
-                while (je > js && char.IsWhiteSpace(jSpan[je - 1])) je--;
-                var trimmed = jSpan[js..je];
-                if (trimmed.Length == 0) { j++; continue; }
-                if (ClosingBraceOnlyLine.IsMatch(trimmed)) break;
-                if (PossibleJumpTarget.IsMatch(trimmed)) break;
+                var jFacts = st.FactsAt[j];
+                if (jFacts is null) { j++; continue; }
+                if (jFacts.TrimmedEmpty) { j++; continue; }
+                if (jFacts.ClosingBrace) break;
+                if (jFacts.JumpTarget) break;
 
                 if (deadStart < 0) deadStart = j;
 
@@ -997,6 +1331,30 @@ public sealed class InsightEngine
         }
 
         return spans;
+        }
+        finally
+        {
+            System.Buffers.ArrayPool<ulong>.Shared.Return(hashes);
+        }
+    }
+
+    private static bool IsConditionalTerminatorCtx(LineFacts[] factsAt, int terminatorIndex)
+    {
+        var f = factsAt[terminatorIndex];
+        if (f.CondIf || f.CondElse)
+            return true;
+        for (var k = terminatorIndex - 1; k >= 0; k--)
+        {
+            var p = factsAt[k];
+            if (p is null || p.TrimmedEmpty) continue;
+            if (p.OpenIf || p.OpenElse)
+            {
+                if (f.LeadingJump && !p.HasBrace)
+                    return true;
+            }
+            break;
+        }
+        return false;
     }
 
     public IReadOnlyCollection<string> GetVariables(string fileKey)
@@ -1017,37 +1375,6 @@ public sealed class InsightEngine
             if (symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
                 names.Add(symbol.Name);
         return names;
-    }
-
-    private static bool IsConditionalTerminator(string maskedDoc, int[] lineStart, int[] lineLen, int terminatorIndex)
-    {
-        var full = maskedDoc.AsSpan(lineStart[terminatorIndex], lineLen[terminatorIndex]);
-        var s = 0;
-        var e = full.Length;
-        while (s < e && char.IsWhiteSpace(full[s])) s++;
-        while (e > s && char.IsWhiteSpace(full[e - 1])) e--;
-        var line = full[s..e];
-        if (ConditionalTerminatorOnIf.IsMatch(line))
-            return true;
-        if (ConditionalTerminatorOnElse.IsMatch(line))
-            return true;
-        for (var k = terminatorIndex - 1; k >= 0; k--)
-        {
-            var prevFull = maskedDoc.AsSpan(lineStart[k], lineLen[k]);
-            var ps = 0;
-            var pe = prevFull.Length;
-            while (ps < pe && char.IsWhiteSpace(prevFull[ps])) ps++;
-            while (pe > ps && char.IsWhiteSpace(prevFull[pe - 1])) pe--;
-            var prev = prevFull[ps..pe];
-            if (prev.Length == 0) continue;
-            if (OpenConditionalOnIf.IsMatch(prev) || OpenConditionalOnElse.IsMatch(prev))
-            {
-                if (LeadingJumpStatement.IsMatch(line) && !prev.Contains('{'))
-                    return true;
-            }
-            break;
-        }
-        return false;
     }
 
     public List<ErrorSpan> FindErrors(
