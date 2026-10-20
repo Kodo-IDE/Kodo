@@ -77,7 +77,8 @@ public partial class MainWindow
         if (!IsActive) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         if (LspEnabled && len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
-        await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
+        var roundText = EditorTextBox?.Document.Text;
+        await Task.WhenAll(UpdateInsightAsync(roundText), UpdateDeadCodeHighlightingAsync(roundText), UpdateErrorHighlightingAsync(roundText));
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -1647,7 +1648,7 @@ public partial class MainWindow
         });
     }
 
-    private async Task UpdateInsightAsync()
+    private async Task UpdateInsightAsync(string? textSnapshot = null)
     {
         var lspCompletionSettingsRevision = _lspCompletionSettingsRevision;
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
@@ -1681,7 +1682,7 @@ public partial class MainWindow
             return;
         }
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
-        var text = doc.Text;
+        var text = textSnapshot ?? doc.Text;
 
         var wordStart = InsightEngine.FindWordStart(text, offset);
         var prefix = text[wordStart..offset];
@@ -1830,7 +1831,7 @@ public partial class MainWindow
         _completionWindow = null;
     }
 
-    private async Task UpdateDeadCodeHighlightingAsync()
+    private async Task UpdateDeadCodeHighlightingAsync(string? textSnapshot = null)
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
             EditorTextBox?.Document is null ||
@@ -1858,7 +1859,7 @@ public partial class MainWindow
         var scanVersion = _insightDocVersion;
         var scanToken = _insightAnalysisCancellation.Token;
 
-        var documentText = document.Text;
+        var documentText = textSnapshot ?? document.Text;
         List<DeadCodeSpan> rawSpans;
         try
         {

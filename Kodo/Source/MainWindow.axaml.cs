@@ -9199,7 +9199,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         RefreshStatusBarDiagnostics();
     }
 
-    private async Task UpdateErrorHighlightingAsync()
+    private async Task UpdateErrorHighlightingAsync(string? textSnapshot = null)
     {
         var hasLspForFile = LspEnabled && ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (EditorTextBox?.Document is null ||
@@ -9228,7 +9228,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var text = document.Text;
+        var text = textSnapshot ?? document.Text;
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
