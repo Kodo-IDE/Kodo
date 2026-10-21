@@ -1866,6 +1866,13 @@ public partial class MainWindow
             return;
         }
 
+        if (IsLspPrimaryForFile(_currentFilePath))
+        {
+            ClearDeadCodeHighlighting();
+            HideDiagnosticPopup();
+            return;
+        }
+
         if (EditorTextBox.Document.TextLength > 80_000)
         {
             ClearDeadCodeHighlighting();

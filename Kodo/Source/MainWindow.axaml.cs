@@ -9258,8 +9258,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
-        var cfgForFile = ResolveLspConfigurationForFile(_currentFilePath);
-        var isLspPrimary = lspForFile?.HasLsp == true && cfgForFile != null && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForFile) is { IsInitialized: true };
+        var isLspPrimary = IsLspPrimaryForFile(_currentFilePath);
         var hasConfiguredLsp = lspForFile?.HasLsp == true;
         var hasRunningLsp = HasRunningLspForFile(_currentFilePath);
 

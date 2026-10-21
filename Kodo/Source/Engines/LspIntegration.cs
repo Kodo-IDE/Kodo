@@ -35,6 +35,8 @@ public partial class MainWindow
     private readonly object _lspDiagnosticsLock = new();
     private readonly HashSet<string> _lspDiagnosticRefreshPending = new(FileSystemPaths.Comparer);
     private readonly HashSet<string> _lspPendingOpens = new(FileSystemPaths.Comparer);
+    private readonly Dictionary<string, long> _lspFullSyncChangedAt = new(FileSystemPaths.Comparer);
+    private const int LspFullSyncDelayerMilliseconds = 200;
     private readonly object _lspOpenLock = new();
     private CancellationTokenSource? _lspHoverCts;
     private readonly object _lspHoverLock = new();
@@ -382,6 +384,7 @@ public partial class MainWindow
             if (!_lspPendingChanges.TryGetValue(path, out var changes))
                 _lspPendingChanges[path] = changes = new List<LspIncrementalChange>();
             changes.Add(change);
+            _lspFullSyncChangedAt[path] = Environment.TickCount64;
         }
         Dispatcher.UIThread.Post(ArmLspDidChangeTimer);
     }
@@ -432,7 +435,11 @@ public partial class MainWindow
             return;
         }
         if (!FileSystemPaths.Equals(filePath, _currentFilePath) || EditorTextBox?.Document is null) return;
-        lock (_lspOpenLock) _lspPendingTexts[normalizedPath] = string.Empty;
+        lock (_lspOpenLock)
+        {
+            _lspPendingTexts[normalizedPath] = string.Empty;
+            _lspFullSyncChangedAt[normalizedPath] = Environment.TickCount64;
+        }
         ArmLspDidChangeTimer();
     }
 
@@ -820,6 +827,12 @@ public partial class MainWindow
         {
             await client.SendNotificationAsync("textDocument/didOpen", didOpenParams).ConfigureAwait(false);
             KodoDiagnostics.LogDebug($"LSP didOpen {uri} lang={languageId} ver={version} via {resolution.Source} {resolution.ExecutablePath}");
+            if (LspDiagnosticsEnabled && client.Supports("textDocument/diagnostic"))
+            {
+                var pullVersion = version;
+                var pullClient = client;
+                _ = Task.Run(() => LspPullDiagnosticsAsync(filePath, pullClient, uri, pullVersion));
+            }
         }
         catch (Exception ex)
         {
@@ -882,10 +895,10 @@ public partial class MainWindow
                 return;
         }
         if (Dispatcher.UIThread.CheckAccess()) _lspDidChangeTimer.Stop();
-        await LspSyncDocumentAsync(normalized, () => text).ConfigureAwait(false);
+        await LspSyncDocumentAsync(normalized, () => text, force: true).ConfigureAwait(false);
     }
 
-    private async Task LspSyncDocumentAsync(string filePath, Func<string> textFactory)
+    private async Task LspSyncDocumentAsync(string filePath, Func<string> textFactory, bool force = false)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
         filePath = NormalizeFilePath(filePath);
@@ -899,6 +912,22 @@ public partial class MainWindow
             if (text is null) return;
             await LspNotifyDidOpenAsync(filePath, text).ConfigureAwait(false);
             return;
+        }
+        if (!force)
+        {
+            LspClient? peekClient = null;
+            var lastChangedAt = 0L;
+            lock (_lspOpenLock)
+            {
+                _lspDocumentClients.TryGetValue(filePath, out peekClient);
+                _lspFullSyncChangedAt.TryGetValue(filePath, out lastChangedAt);
+            }
+            if (peekClient is not null && !peekClient.SupportsIncrementalSync() &&
+                Environment.TickCount64 - lastChangedAt < LspFullSyncDelayerMilliseconds)
+            {
+                Dispatcher.UIThread.Post(ArmLspDidChangeTimer);
+                return;
+            }
         }
         var gate = GetLspDocumentSyncGate(filePath);
         await gate.WaitAsync().ConfigureAwait(false);
@@ -972,6 +1001,14 @@ public partial class MainWindow
             syncSent = true;
             sendWatch.Stop();
             KodoDiagnostics.ReportSlowStage("LSP didChange send", sendWatch.ElapsedMilliseconds, 2000, $"len={(snapshot.Text?.Length ?? -1)}");
+            if (LspDiagnosticsEnabled && client.Supports("textDocument/diagnostic"))
+            {
+                var pullVersion = version;
+                var pullClient = client;
+                var pullPath = filePath;
+                var pullUri = uri;
+                _ = Task.Run(() => LspPullDiagnosticsAsync(pullPath, pullClient, pullUri, pullVersion));
+            }
         }
         catch (Exception ex)
         {
@@ -1000,7 +1037,7 @@ public partial class MainWindow
         if (!string.IsNullOrWhiteSpace(filePath))
         {
             var normalized = NormalizeFilePath(filePath);
-            await LspSyncDocumentAsync(normalized, static () => string.Empty).ConfigureAwait(false);
+            await LspSyncDocumentAsync(normalized, static () => string.Empty, force: true).ConfigureAwait(false);
         }
         var gate = GetLspDocumentSyncGate(filePath);
         await gate.WaitAsync().ConfigureAwait(false);
@@ -1021,6 +1058,7 @@ public partial class MainWindow
             _lspDocumentClients.Remove(filePath);
             _lspPendingOpens.Remove(filePath);
             _lspPendingTexts.Remove(filePath);
+            _lspFullSyncChangedAt.Remove(filePath);
         }
         lock (_lspDiagnosticsLock)
         {
@@ -1108,6 +1146,7 @@ public partial class MainWindow
                     _lspOpenDocuments.Remove(path);
                     _lspDocumentVersions.Remove(path);
                     _lspPendingChanges.Remove(path);
+                    _lspFullSyncChangedAt.Remove(path);
                 }
             }
             lock (_lspDiagnosticsLock)
@@ -1169,6 +1208,46 @@ public partial class MainWindow
             HandlePublishDiagnostics(@params);
     }
 
+    private bool IsLspPrimaryForFile(string? filePath)
+    {
+        if (!LspEnabled || string.IsNullOrWhiteSpace(filePath)) return false;
+        var lspExt = ResolveLspExtensionForFile(filePath);
+        if (lspExt?.HasLsp != true) return false;
+        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
+        if (cfg is null) return false;
+        return _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg) is { IsInitialized: true };
+    }
+
+    private (List<LspRawDiagnostic> Diagnostics, List<JsonElement> RawDiagnostics) ConvertLspDiagnostics(JsonElement diags)
+    {
+        var diagnostics = new List<LspRawDiagnostic>();
+        var rawDiagnostics = new List<JsonElement>();
+        if (diags.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var d in diags.EnumerateArray())
+            {
+                if (d.ValueKind != JsonValueKind.Object) continue;
+                rawDiagnostics.Add(d.Clone());
+                var range = d.TryGetProperty("range", out var r) ? r : default;
+                var start = LspDiagnosticChild(range, "start");
+                var end = LspDiagnosticChild(range, "end");
+                var sLine = LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0);
+                var sChar = LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0);
+                var eLine = LspDiagnosticInt(LspDiagnosticChild(end, "line"), sLine);
+                var eChar = LspDiagnosticInt(LspDiagnosticChild(end, "character"), sChar + 1);
+                var msg = LspDiagnosticString(d.TryGetProperty("message", out var me) ? me : default, "");
+                var sev = LspDiagnosticInt(d.TryGetProperty("severity", out var se) ? se : default, 1);
+                var severity = sev switch { 1 => "error", 2 => "warning", 3 => "info", 4 => "hint", _ => "error" };
+                var code = d.TryGetProperty("code", out var ce) ? ce.ToString() ?? "" : "";
+                if (d.TryGetProperty("code", out var ce2) && ce2.ValueKind == JsonValueKind.Object && ce2.TryGetProperty("value", out var cv)) code = cv.ToString() ?? "";
+                else if (ce2.ValueKind == JsonValueKind.Number && ce2.TryGetInt32(out var cvInt)) code = cvInt.ToString();
+                var source = LspDiagnosticString(d.TryGetProperty("source", out var se2) ? se2 : default, "lsp");
+                diagnostics.Add(new LspRawDiagnostic(sLine, sChar, eLine, eChar, msg, severity, code, source));
+            }
+        }
+        return (diagnostics, rawDiagnostics);
+    }
+
     private static JsonElement LspDiagnosticChild(JsonElement parent, string name) =>
         parent.ValueKind == JsonValueKind.Object && parent.TryGetProperty(name, out var child) ? child : default;
 
@@ -1193,31 +1272,12 @@ public partial class MainWindow
             var filePath = FixCorruptedPath(FileUriToPath(uri));
             if (string.IsNullOrWhiteSpace(filePath)) filePath = FixCorruptedPath(uri);
 
-            var diagnostics = new List<LspRawDiagnostic>();
-            var rawDiagnostics = new List<JsonElement>();
-            if (root.TryGetProperty("diagnostics", out var diags) && diags.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var d in diags.EnumerateArray())
-                {
-                    if (d.ValueKind != JsonValueKind.Object) continue;
-                    rawDiagnostics.Add(d.Clone());
-                    var range = d.TryGetProperty("range", out var r) ? r : default;
-                    var start = LspDiagnosticChild(range, "start");
-                    var end = LspDiagnosticChild(range, "end");
-                    var sLine = LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0);
-                    var sChar = LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0);
-                    var eLine = LspDiagnosticInt(LspDiagnosticChild(end, "line"), sLine);
-                    var eChar = LspDiagnosticInt(LspDiagnosticChild(end, "character"), sChar + 1);
-                    var msg = LspDiagnosticString(d.TryGetProperty("message", out var me) ? me : default, "");
-                    var sev = LspDiagnosticInt(d.TryGetProperty("severity", out var se) ? se : default, 1);
-                    var severity = sev switch { 1 => "error", 2 => "warning", 3 => "info", 4 => "hint", _ => "error" };
-                    var code = d.TryGetProperty("code", out var ce) ? ce.ToString() : "";
-                    if (d.TryGetProperty("code", out var ce2) && ce2.ValueKind == JsonValueKind.Object && ce2.TryGetProperty("value", out var cv)) code = cv.ToString();
-                    else if (ce2.ValueKind == JsonValueKind.Number && ce2.TryGetInt32(out var cvInt)) code = cvInt.ToString();
-                    var source = LspDiagnosticString(d.TryGetProperty("source", out var se2) ? se2 : default, "lsp");
-                    diagnostics.Add(new LspRawDiagnostic(sLine, sChar, eLine, eChar, msg, severity, code, source));
-                }
-            }
+            List<LspRawDiagnostic> diagnostics;
+            List<JsonElement> rawDiagnostics;
+            if (root.TryGetProperty("diagnostics", out var diags))
+                (diagnostics, rawDiagnostics) = ConvertLspDiagnostics(diags);
+            else
+                (diagnostics, rawDiagnostics) = (new List<LspRawDiagnostic>(), new List<JsonElement>());
 
             string refreshKey;
             int? publishVersion = root.TryGetProperty("version", out var versionEl) ? LspDiagnosticNullableInt(versionEl) : null;
@@ -1287,6 +1347,55 @@ public partial class MainWindow
             });
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP publishDiagnostics handling failed", ex); }
+    }
+
+    private async Task LspPullDiagnosticsAsync(string filePath, LspClient client, string uri, int capturedVersion)
+    {
+        if (!LspEnabled || !LspDiagnosticsEnabled) return;
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var parameters = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["uri"] = uri }
+            };
+            var result = await client.SendRequestAsync("textDocument/diagnostic", parameters, cts.Token).ConfigureAwait(false);
+            if (result is not JsonElement root || root.ValueKind != JsonValueKind.Object) return;
+            var kind = root.TryGetProperty("kind", out var kindEl) ? kindEl.GetString() : null;
+            if (string.Equals(kind, "unchanged", StringComparison.Ordinal)) return;
+            if (!root.TryGetProperty("items", out var items)) return;
+            var (diagnostics, rawDiagnostics) = ConvertLspDiagnostics(items);
+            var normPath = NormalizeFilePath(filePath);
+            bool isOpen;
+            int? latestVersion;
+            lock (_lspOpenLock)
+            {
+                isOpen = _lspOpenDocuments.Contains(normPath) || _lspOpenDocuments.Contains(filePath);
+                latestVersion = _lspDocumentVersions.TryGetValue(normPath, out var v) ? v : (_lspDocumentVersions.TryGetValue(filePath, out var v2) ? v2 : null);
+            }
+            if (!isOpen) return;
+            if (latestVersion.HasValue && capturedVersion < latestVersion.Value) return;
+            lock (_lspDiagnosticsLock)
+            {
+                _lspDiagnostics[normPath] = diagnostics;
+                _lspRawDiagnostics[normPath] = rawDiagnostics;
+            }
+            lock (_insightAnalysisCacheLock)
+            {
+                _cachedInsightAnalysisVersion = -1;
+                _cachedInsightAnalysisText = null;
+            }
+            if (FileSystemPaths.Equals(filePath, _currentFilePath)) _lspDiagnosticsSeenForFile = true;
+            Dispatcher.UIThread.Post(() =>
+            {
+                var isActive = IsSameDocument(_currentFilePath, filePath) || IsSameDocument(_currentFilePath, uri);
+                if (isActive)
+                    _ = UpdateErrorHighlightingAsync();
+                else
+                    UpdateInactiveTabDiagnosticsForFile(filePath);
+            });
+        }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP pull diagnostics failed for {filePath}", ex); }
     }
 
     private static string FileUriToPath(string uriOrPath) => LspPath.FileUriToPath(uriOrPath);

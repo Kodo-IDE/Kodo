@@ -122,6 +122,7 @@ internal sealed class LspClient : IDisposable
             "textDocument/hover" => "hoverProvider",
             "textDocument/references" => "referencesProvider",
             "textDocument/rename" => "renameProvider",
+            "textDocument/diagnostic" => "diagnosticProvider",
             "textDocument/formatting" => "documentFormattingProvider",
             "textDocument/rangeFormatting" => "documentRangeFormattingProvider",
             _ => null
@@ -143,7 +144,6 @@ internal sealed class LspClient : IDisposable
 
     public event Action<string, JsonElement?>? OnNotification;
     public event Func<string, JsonElement?, Task<object?>>? OnServerRequest;
-    public event Action<JsonElement>? OnResponse;
     public event Action<string>? OnStderr;
     public event Action<int>? OnExit;
 
@@ -325,6 +325,7 @@ internal sealed class LspClient : IDisposable
                             ["formats"] = new[] { "relative" }
                         },
                         ["inlayHint"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["resolveSupport"] = new Dictionary<string, object?> { ["properties"] = new[] { "tooltip", "textEdits" } } },
+                        ["diagnostic"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["dynamicRegistration"] = true, ["relatedDocumentSupport"] = true },
                         ["publishDiagnostics"] = new Dictionary<string, object?>(StringComparer.Ordinal) { ["relatedInformation"] = true }
                     }
                 },
@@ -687,8 +688,7 @@ internal sealed class LspClient : IDisposable
                             var r = await stdout.ReadAsync(bodyBuffer, bodyOffset, contentLength - bodyOffset, ct).ConfigureAwait(false);
                             if (r == 0) return; bodyOffset += r;
                         }
-                        var json = Encoding.UTF8.GetString(bodyBuffer, 0, contentLength);
-                        HandleMessage(json);
+                        HandleMessageBytes(bodyBuffer, contentLength);
                         continue;
                     }
                     if (headerAccum.Length > 8192)
@@ -731,69 +731,89 @@ internal sealed class LspClient : IDisposable
         stream.Position = remaining;
     }
 
-    private void HandleMessage(string json)
+    private void HandleMessageBytes(byte[] bytes, int length)
     {
-        JsonElement? root;
-        JsonElement? id = null;
-        string? method = null;
+        System.Text.Json.JsonDocument doc;
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            root = doc.RootElement.Clone();
-            if (root.Value.TryGetProperty("id", out var idEl) && idEl.ValueKind != JsonValueKind.Null)
-            {
-                if (idEl.ValueKind is JsonValueKind.Number or JsonValueKind.String) id = idEl.Clone();
-            }
-            if (root.Value.TryGetProperty("method", out var mEl)) method = mEl.GetString();
+            doc = System.Text.Json.JsonDocument.Parse(new ReadOnlyMemory<byte>(bytes, 0, length));
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.LogDebug($"LSP invalid JSON: {LspProtocol.Preview(json)}", ex);
+            if (KodoDiagnostics.VerboseLoggingEnabled || ErrorLoggingEnabled)
+            {
+                string preview;
+                try { preview = LspProtocol.Preview(Encoding.UTF8.GetString(bytes, 0, length)); }
+                catch { preview = "<undecodable>"; }
+                KodoDiagnostics.LogDebug($"LSP invalid JSON: {preview}", ex);
+            }
             return;
         }
-        if (id.HasValue && method is null)
+        using (doc)
         {
+            var root = doc.RootElement;
+            JsonRpcId rpcId = default;
+            var hasId = false;
+            string? method = null;
             try
+            {
+                if (root.TryGetProperty("id", out var idEl) && idEl.ValueKind != JsonValueKind.Null)
+                {
+                    if (idEl.ValueKind is JsonValueKind.Number or JsonValueKind.String)
+                        hasId = JsonRpcId.TryCreate(idEl, out rpcId);
+                }
+                if (root.TryGetProperty("method", out var mEl)) method = mEl.GetString();
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("LSP message shape invalid", ex);
+                return;
+            }
+            if (hasId && method is null)
             {
                 if (KodoDiagnostics.VerboseLoggingEnabled)
                 {
-                    var preview = json.Length > 800 ? json.Substring(0, 800) + "..." : json;
-                    KodoDiagnostics.LogDebug($"LSP response id={id} json={preview}");
+                    try
+                    {
+                        var preview = length > 800 ? Encoding.UTF8.GetString(bytes, 0, 800) + "..." : Encoding.UTF8.GetString(bytes, 0, length);
+                        KodoDiagnostics.LogDebug($"LSP response id={(rpcId.IsString ? rpcId.StringValue : rpcId.NumericValue)} json={preview}");
+                    }
+                    catch { }
                 }
-            }
-            catch { }
-            TaskCompletionSource<JsonElement>? handled = null;
-            if (JsonRpcId.TryCreate(id.Value, out var rpcId) && _pending.TryRemove(rpcId, out var pending)) handled = pending;
-            if (handled is { } tcs)
-            {
+                if (!_pending.TryRemove(rpcId, out var pending)) return;
+                if (pending.Task.IsCanceled) return;
                 try
                 {
-                    if (root.Value.TryGetProperty("error", out var err) && err.ValueKind != JsonValueKind.Null)
-                        tcs.TrySetException(new InvalidOperationException($"LSP error {err.GetRawText()}"));
-                    else if (root.Value.TryGetProperty("result", out var res))
-                        tcs.TrySetResult(res.Clone());
+                    if (root.TryGetProperty("error", out var err) && err.ValueKind != JsonValueKind.Null)
+                    {
+                        pending.TrySetException(new InvalidOperationException($"LSP error {err.GetRawText()}"));
+                        return;
+                    }
+                    if (root.TryGetProperty("result", out var res))
+                        pending.TrySetResult(res.Clone());
                     else
-                        tcs.TrySetResult(default);
-                    OnResponse?.Invoke(root.Value);
+                        pending.TrySetResult(default);
                 }
-                catch (Exception ex) { tcs.TrySetException(ex); }
+                catch (Exception ex) { pending.TrySetException(ex); }
+                return;
             }
-            return;
-        }
-        if (method is not null)
-        {
-            if (method is "client/registerCapability" or "client/unregisterCapability")
-                UpdateRegisteredCapabilities(method, root.Value);
-            if (id.HasValue)
+            if (method is not null)
             {
-                _ = HandleServerRequestAsync(method, root.Value, id.Value);
-            }
+                if (method is "client/registerCapability" or "client/unregisterCapability")
+                    UpdateRegisteredCapabilities(method, root);
+                if (hasId)
+                {
+                    if (root.TryGetProperty("id", out var serverId))
+                        _ = HandleServerRequestAsync(method, root, serverId.Clone());
+                }
 
-            JsonElement? @params = null;
-            if (root.Value.TryGetProperty("params", out var p)) @params = p.Clone();
-            OnNotification?.Invoke(method, @params);
+                JsonElement? @params = null;
+                if (root.TryGetProperty("params", out var p)) @params = p;
+                OnNotification?.Invoke(method, @params);
+            }
         }
     }
+    private static bool ErrorLoggingEnabled => KodoDiagnostics.VerboseLoggingEnabled;
 
     private async Task HandleServerRequestAsync(string method, JsonElement root, JsonElement id)
     {
