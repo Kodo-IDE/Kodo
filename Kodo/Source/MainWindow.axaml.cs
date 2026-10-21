@@ -1852,13 +1852,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private bool HandleEditorHorizontalScrollGesture(PointerWheelEventArgs e)
     {
-        var delta = e.KeyModifiers.HasFlag(KeyModifiers.Shift) || Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y)
-            ? (Math.Abs(e.Delta.X) > 0 ? e.Delta.X : e.Delta.Y)
-            : 0;
-
-        if (delta == 0) return false;
-
-        var scaled = Math.Clamp(delta, -EditorHorizontalWheelMaxDelta, EditorHorizontalWheelMaxDelta);
+        double scaled;
+        if (Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y))
+            scaled = Math.Clamp(e.Delta.X, -EditorHorizontalWheelMaxDelta, EditorHorizontalWheelMaxDelta);
+        else if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            scaled = Math.Clamp(-e.Delta.Y, -EditorHorizontalWheelMaxDelta, EditorHorizontalWheelMaxDelta);
+        else
+            return false;
+        if (scaled == 0) return false;
         return ScrollEditorHorizontally(scaled * EditorHorizontalWheelPixelsPerDelta);
     }
 
