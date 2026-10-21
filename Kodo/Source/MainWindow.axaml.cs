@@ -4607,10 +4607,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!HasDocumentOpen) return string.Empty;
         if (!string.IsNullOrWhiteSpace(_currentFilePath))
         {
+            var name = Path.GetFileName(_currentFilePath);
+            var dot = name.IndexOf('.');
+            if (dot >= 0 && dot < name.Length - 1)
+                return $"{name[dot..].ToLowerInvariant()} file";
             var ext = Path.GetExtension(_currentFilePath);
             if (!string.IsNullOrWhiteSpace(ext))
                 return $"{ext.ToLowerInvariant()} file";
-            var name = Path.GetFileName(_currentFilePath);
             return string.IsNullOrWhiteSpace(name) ? "Plain Text" : $"{name} file";
         }
         return "Plain Text";

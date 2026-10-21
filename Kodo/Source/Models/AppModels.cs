@@ -166,13 +166,17 @@ public sealed class RecentFileItem : INotifyPropertyChanged
         get
         {
             if (IsFolder) return "Folder";
-            var ext = System.IO.Path.GetExtension(Path);
-            if (string.IsNullOrEmpty(ext))
+            var name = System.IO.Path.GetFileName(Path);
+            var dot = name.IndexOf('.');
+            if (dot >= 0 && dot < name.Length - 1)
+                return $"{name[dot..].ToLowerInvariant()} file";
+            if (string.IsNullOrEmpty(name))
             {
-                var name = System.IO.Path.GetFileName(Path);
-                return string.IsNullOrWhiteSpace(name) ? "File" : $"{name} file";
+                var ext = System.IO.Path.GetExtension(Path);
+                if (!string.IsNullOrEmpty(ext)) return $"{ext.ToLowerInvariant()} file";
+                return "File";
             }
-            return $"{ext.ToLowerInvariant()} file";
+            return $"{name} file";
         }
     }
 
