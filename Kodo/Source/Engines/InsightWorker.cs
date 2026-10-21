@@ -43,7 +43,7 @@ internal static class InsightWorker
                 }
                 if (request is null) continue;
                 if (request.TextByteLength > 0)
-                    request.Text = ReadUtf8Text(stdin, request.TextByteLength);
+                    request.Text = ReadUtf8Text(stdin, buffer, ref bufPos, ref bufLen, request.TextByteLength);
 
                 var response = new WorkerResponse { Id = request.Id, Ok = true };
                 try
@@ -146,6 +146,26 @@ internal static class InsightWorker
         return buffer[pos++];
     }
 
+    private static bool ReadBytesExact(Stream stdin, byte[] buffer, ref int pos, ref int len, byte[] destination, int destinationOffset, int destinationCount)
+    {
+        var offset = destinationOffset;
+        while (offset < destinationOffset + destinationCount)
+        {
+            if (pos < len)
+            {
+                var take = Math.Min(len - pos, destinationOffset + destinationCount - offset);
+                Buffer.BlockCopy(buffer, pos, destination, offset, take);
+                pos += take;
+                offset += take;
+                continue;
+            }
+            var read = stdin.Read(destination, offset, destinationOffset + destinationCount - offset);
+            if (read <= 0) return false;
+            offset += read;
+        }
+        return true;
+    }
+
     private static string? ReadHeaderLine(Stream stdin, byte[] buffer, ref int pos, ref int len, StringBuilder builder)
     {
         builder.Clear();
@@ -158,19 +178,14 @@ internal static class InsightWorker
         }
     }
 
-    private static string ReadUtf8Text(Stream stdin, long byteLength)
+    private static string ReadUtf8Text(Stream stdin, byte[] buffer, ref int pos, ref int len, long byteLength)
     {
         if (byteLength > int.MaxValue) throw new IOException("insight worker text frame too large");
         var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent((int)byteLength);
         try
         {
-            var offset = 0;
-            while (offset < byteLength)
-            {
-                var read = stdin.Read(bytes, offset, (int)(byteLength - offset));
-                if (read <= 0) throw new IOException("unexpected end of insight worker stdin");
-                offset += read;
-            }
+            if (!ReadBytesExact(stdin, buffer, ref pos, ref len, bytes, 0, (int)byteLength))
+                throw new IOException("unexpected end of insight worker stdin");
             return Encoding.UTF8.GetString(bytes, 0, (int)byteLength);
         }
         finally
