@@ -1851,6 +1851,14 @@ public partial class MainWindow
         _completionWindow = null;
     }
 
+    private readonly object _deadCodeAnalysisCacheLock = new();
+    private long _cachedDeadCodeAnalysisVersion;
+    private string? _cachedDeadCodeAnalysisPath;
+    private string? _cachedDeadCodeAnalysisExtension;
+    private string? _cachedDeadCodeAnalysisFolder;
+    private string? _cachedDeadCodeAnalysisText;
+    private List<DeadCodeSpan>? _cachedDeadCodeAnalysisSpans;
+
     private async Task UpdateDeadCodeHighlightingAsync(string? textSnapshot = null)
     {
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
@@ -1885,19 +1893,53 @@ public partial class MainWindow
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
         var scanToken = _insightAnalysisCancellation.Token;
+        var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
+        var signature = ComputeDeadCodeSignature(scanVersion, filePath, scanExtension, folderPath);
+        if (signature == _deadCodeAppliedSignature) return;
 
         var documentText = textSnapshot ?? document.Text;
         List<DeadCodeSpan> rawSpans;
-        try
+        List<DeadCodeSpan>? cachedSpans;
+        lock (_deadCodeAnalysisCacheLock)
         {
-            rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, scanToken);
+            if (_cachedDeadCodeAnalysisVersion == scanVersion &&
+                string.Equals(_cachedDeadCodeAnalysisPath, filePath, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(_cachedDeadCodeAnalysisExtension, scanExtension, StringComparison.Ordinal) &&
+                string.Equals(_cachedDeadCodeAnalysisFolder, folderPath, StringComparison.OrdinalIgnoreCase))
+                cachedSpans = _cachedDeadCodeAnalysisSpans is null ? null : new List<DeadCodeSpan>(_cachedDeadCodeAnalysisSpans);
+            else
+                cachedSpans = null;
         }
-        catch (OperationCanceledException)
+
+        if (cachedSpans is not null)
         {
-            return;
+            rawSpans = cachedSpans;
         }
-        if (scanVersion != _insightDocVersion) return;
-        if (EditorTextBox?.Document is null) return;
+        else
+        {
+            try
+            {
+                rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, scanToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            if (scanVersion != _insightDocVersion) return;
+            if (EditorTextBox?.Document is null) return;
+            lock (_deadCodeAnalysisCacheLock)
+            {
+                if (scanVersion == _insightDocVersion && string.Equals(filePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    _cachedDeadCodeAnalysisVersion = scanVersion;
+                    _cachedDeadCodeAnalysisPath = filePath;
+                    _cachedDeadCodeAnalysisExtension = scanExtension;
+                    _cachedDeadCodeAnalysisFolder = folderPath;
+                    _cachedDeadCodeAnalysisText = documentText;
+                    _cachedDeadCodeAnalysisSpans = new List<DeadCodeSpan>(rawSpans);
+                }
+            }
+        }
 
         var spans = FilterDismissedDeadCodeSpans(rawSpans, EditorTextBox.Document, _currentFilePath);
         _deadCodeHighlightRenderer.SetSpans(spans);
@@ -1908,6 +1950,7 @@ public partial class MainWindow
             HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.Redraw();
         RefreshStatusBarDiagnostics();
+        _deadCodeAppliedSignature = signature;
     }
 
     private List<DeadCodeSpan> FilterDismissedDeadCodeSpans(List<DeadCodeSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)

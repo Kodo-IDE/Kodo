@@ -247,6 +247,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _insightErrorDeadCodeBlacklistExtensions = string.Empty;
     private HashSet<string> _insightErrorDeadCodeBlacklistSet = new(StringComparer.OrdinalIgnoreCase);
     private HashSet<string> _dismissedDiagnostics = new(StringComparer.Ordinal);
+    private static int _lspDiagnosticsRevision;
+    private int _dismissedDiagnosticsRevision;
+    private long _errorHighlightAppliedSignature = -1;
+    private long _deadCodeAppliedSignature = -1;
     private bool _suppressExplorerWidthRefresh;
     private bool _isConfirmBeforeClosingUnsavedTabsEnabled = true;
     private bool _isRestoreOpenTabsOnLaunchEnabled;
@@ -946,6 +950,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _insightErrorDeadCodeBlacklistExtensions = string.IsNullOrWhiteSpace(settings.InsightErrorDeadCodeBlacklistExtensions) ? string.Empty : settings.InsightErrorDeadCodeBlacklistExtensions;
         RebuildErrorDeadCodeBlacklist();
         _dismissedDiagnostics = new HashSet<string>(settings.DismissedDiagnostics ?? new HashSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
+        _dismissedDiagnosticsRevision++;
         _isConfirmBeforeClosingUnsavedTabsEnabled = settings.ConfirmBeforeClosingUnsavedTabsEnabled;
         _isRestoreOpenTabsOnLaunchEnabled = settings.RestoreOpenTabsOnLaunchEnabled;
         _isAutoUpdateExtensionsEnabled = settings.AutoUpdateExtensionsEnabled;
@@ -3162,6 +3167,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _lspDiagnostics.Clear();
                     _lspDiagnosticVersions.Clear();
                     _lspDiagnosticRefreshPending.Clear();
+                    BumpLspDiagnosticsRevision();
                 }
                 ClearLspHoverTooltip();
                 _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
@@ -3262,6 +3268,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _lspDiagnostics.Clear();
                     _lspDiagnosticVersions.Clear();
                     _lspDiagnosticRefreshPending.Clear();
+                    BumpLspDiagnosticsRevision();
                 }
                 _ = UpdateErrorHighlightingAsync();
                 foreach (var tab in OpenTabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path)))
@@ -3384,6 +3391,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var sig = GetDiagnosticSignature(filePath, lineText, message);
         if (_dismissedDiagnostics.Add(sig))
         {
+            _dismissedDiagnosticsRevision++;
             SaveSettings();
             QueueInsightRefresh();
         }
@@ -3393,6 +3401,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_dismissedDiagnostics.Count == 0) return;
         _dismissedDiagnostics.Clear();
+        _dismissedDiagnosticsRevision++;
         SaveSettings();
         QueueInsightRefresh();
     }
@@ -5002,6 +5011,38 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarSelectionText = string.Empty;
             StatusBarDocumentText = string.Empty;
         }
+    }
+
+    private static void BumpLspDiagnosticsRevision() => Interlocked.Increment(ref _lspDiagnosticsRevision);
+
+    private static long MixSignatureText(long hash, string? value)
+    {
+        unchecked
+        {
+            hash ^= (long)(value?.Length ?? 0) << 24;
+            if (value is null) return hash;
+            foreach (var ch in value) hash = (hash * 16777619) ^ ch;
+            return hash;
+        }
+    }
+
+    private static long MixSignatureInt(long hash, long value) => unchecked(hash * 16777619 ^ value);
+
+    private long ComputeErrorHighlightSignature(long scanVersion, string? scanPath, string scanExtension)
+    {
+        var lspRevision = Interlocked.CompareExchange(ref _lspDiagnosticsRevision, 0, 0);
+        var hash = MixSignatureInt(scanVersion, lspRevision);
+        hash = MixSignatureText(hash, scanPath);
+        hash = MixSignatureText(hash, scanExtension);
+        return MixSignatureInt(hash, _dismissedDiagnosticsRevision);
+    }
+
+    private long ComputeDeadCodeSignature(long scanVersion, string? scanPath, string scanExtension, string? folderPath)
+    {
+        var hash = MixSignatureInt(scanVersion, _dismissedDiagnosticsRevision);
+        hash = MixSignatureText(hash, scanPath);
+        hash = MixSignatureText(hash, scanExtension);
+        return MixSignatureText(hash, folderPath);
     }
 
     private void RefreshStatusBarDiagnostics()
@@ -9205,6 +9246,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ClearDeadCodeHighlighting()
     {
         var alreadyEmpty = _deadCodeHighlightRenderer.Spans.Count == 0;
+        _deadCodeAppliedSignature = -1;
         _deadCodeHighlightRenderer.SetSpans(Array.Empty<DeadCodeSpan>());
         _deadCodeTextBrightener.SetSpans(Array.Empty<DeadCodeSpan>());
         var emptyDead = Array.Empty<DeadCodeSpan>();
@@ -9212,7 +9254,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, emptyDead);
         if (!alreadyEmpty)
             EditorTextBox?.TextArea.TextView.Redraw();
-        RefreshStatusBarDiagnostics();
+        if (!alreadyEmpty)
+            RefreshStatusBarDiagnostics();
     }
 
     private async Task UpdateErrorHighlightingAsync(string? textSnapshot = null)
@@ -9249,6 +9292,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
+        var signature = ComputeErrorHighlightSignature(scanVersion, scanPath, scanExtension);
+        if (signature == _errorHighlightAppliedSignature)
+            return;
         _insightAnalysisCancellation.Dispose();
         _insightAnalysisCancellation = new CancellationTokenSource();
         var scanToken = _insightAnalysisCancellation.Token;
@@ -9318,10 +9364,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         diagnostic.Code,
                         diagnostic.Source));
                 }
-                rawSpans = rawSpans
-                    .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), Message: span.Message.Trim().ToLowerInvariant(), span.Code))
-                    .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
-                    .ToList();
+                if (rawSpans.Count > 0)
+                    rawSpans = rawSpans
+                        .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), Message: span.Message.Trim().ToLowerInvariant(), span.Code))
+                        .Select(group => group.OrderByDescending(span => span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase)).First())
+                        .ToList();
             }
             catch (OperationCanceledException)
             {
@@ -9345,13 +9392,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             var lspSpans = GetLspDiagnosticsForFile(_currentFilePath, text);
-            if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
-            rawSpans.AddRange(lspSpans);
-            rawSpans = rawSpans
-                .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
-                .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())
-                .ToList();
-            if (lspSpans.Count > 0) KodoDiagnostics.LogDebug($"LSP diagnostics after dedupe: rawAfter={rawSpans.Count}");
+            if (lspSpans.Count > 0)
+            {
+                KodoDiagnostics.LogDebug($"LSP diagnostics merged: file={_currentFilePath}, count={lspSpans.Count} rawBefore={rawSpans.Count}");
+                if (rawSpans.Count == 0)
+                {
+                    rawSpans = lspSpans;
+                }
+                else
+                {
+                    rawSpans.AddRange(lspSpans);
+                    rawSpans = rawSpans
+                        .GroupBy(span => (span.StartOffset, span.Length, Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
+                        .Select(group => group.OrderByDescending(span => span.Source.Equals("lsp", StringComparison.OrdinalIgnoreCase) ? 2 : span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())
+                        .ToList();
+                    KodoDiagnostics.LogDebug($"LSP diagnostics after dedupe: rawAfter={rawSpans.Count}");
+                }
+            }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP diagnostics merge failed", ex); }
 
@@ -9411,6 +9468,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.ReportSlowStage("diagnostics merge", mergeWatch.ElapsedMilliseconds, 500, () => $"raw={rawSpans.Count} textLen={text.Length}");
         KodoDiagnostics.ReportSlowStage("diagnostics apply+redraw", applyWatch.ElapsedMilliseconds, 500, () => $"spans={spans.Count} textLen={text.Length}");
         RefreshStatusBarDiagnostics();
+        _errorHighlightAppliedSignature = signature;
     }
 
     private List<ErrorSpan> FilterDismissedErrorSpans(List<ErrorSpan> spans, AvaloniaEdit.Document.TextDocument doc, string? filePath)
@@ -9435,6 +9493,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ClearErrorHighlighting()
     {
         var alreadyEmpty = _errorHighlightRenderer.Spans.Count == 0 && _deadCodeHighlightRenderer.Spans.Count == 0;
+        _errorHighlightAppliedSignature = -1;
         var emptyErr = Array.Empty<ErrorSpan>();
         var emptyDead = Array.Empty<DeadCodeSpan>();
         _errorHighlightRenderer.SetSpans(emptyErr);
@@ -9442,7 +9501,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorTextDarkener.SetSpans(emptyErr, emptyDead);
         if (!alreadyEmpty)
             EditorTextBox?.TextArea.TextView.Redraw();
-        RefreshStatusBarDiagnostics();
+        if (!alreadyEmpty)
+            RefreshStatusBarDiagnostics();
     }
 
     private const double InsightRowHeight = 32d;

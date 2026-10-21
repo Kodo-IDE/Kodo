@@ -1074,7 +1074,8 @@ public partial class MainWindow
             List<string>? _stale = null;
             foreach (var _k in _lspDiagnostics.Keys)
                 if (IsSameDocument(_k, filePath)) (_stale ??= new List<string>()).Add(_k);
-            if (_stale != null) foreach (var _k in _stale) { _lspDiagnostics.Remove(_k); _lspRawDiagnostics.Remove(_k); _lspDiagnosticVersions.Remove(_k); }
+            if (            _stale != null) foreach (var _k in _stale) { _lspDiagnostics.Remove(_k); _lspRawDiagnostics.Remove(_k); _lspDiagnosticVersions.Remove(_k); }
+            BumpLspDiagnosticsRevision();
         }
         Dispatcher.UIThread.Post(() => UpdateInactiveTabDiagnosticsForFile(filePath));
 
@@ -1158,6 +1159,7 @@ public partial class MainWindow
                     _lspDiagnosticVersions.Remove(path);
                     _lspDiagnosticRefreshPending.Remove(path);
                 }
+                BumpLspDiagnosticsRevision();
             }
             Dispatcher.UIThread.Post(() =>
             {
@@ -1297,8 +1299,10 @@ public partial class MainWindow
             lock (_lspDiagnosticsLock)
             {
                 if (publishVersion.HasValue && _lspDiagnosticVersions.TryGetValue(normPath, out var knownVersion) && publishVersion.Value < knownVersion) return;
+                var diagnosticsChanged = !_lspDiagnostics.TryGetValue(normPath, out var previousDiagnostics) || !LspDiagnosticsEqual(previousDiagnostics, diagnostics);
                 _lspDiagnostics[normPath] = diagnostics;
                 _lspRawDiagnostics[normPath] = rawDiagnostics;
+                if (diagnosticsChanged) BumpLspDiagnosticsRevision();
                 if (publishVersion.HasValue)
                     _lspDiagnosticVersions[normPath] = publishVersion.Value;
                 else
@@ -1377,8 +1381,10 @@ public partial class MainWindow
             if (latestVersion.HasValue && capturedVersion < latestVersion.Value) return;
             lock (_lspDiagnosticsLock)
             {
+                var diagnosticsChanged = !_lspDiagnostics.TryGetValue(normPath, out var previousDiagnostics) || !LspDiagnosticsEqual(previousDiagnostics, diagnostics);
                 _lspDiagnostics[normPath] = diagnostics;
                 _lspRawDiagnostics[normPath] = rawDiagnostics;
+                if (diagnosticsChanged) BumpLspDiagnosticsRevision();
             }
             lock (_insightAnalysisCacheLock)
             {
@@ -1399,6 +1405,16 @@ public partial class MainWindow
     }
 
     private static string FileUriToPath(string uriOrPath) => LspPath.FileUriToPath(uriOrPath);
+
+    private static bool LspDiagnosticsEqual(List<LspRawDiagnostic> previous, List<LspRawDiagnostic> next)
+    {
+        if (previous.Count != next.Count) return false;
+        for (var i = 0; i < previous.Count; i++)
+        {
+            if (!previous[i].Equals(next[i])) return false;
+        }
+        return true;
+    }
 
     private List<ErrorSpan> GetLspDiagnosticsForFile(string? filePath, string text)
     {
