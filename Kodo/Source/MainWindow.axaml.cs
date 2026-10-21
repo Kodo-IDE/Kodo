@@ -9287,7 +9287,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        var text = textSnapshot ?? document.Text;
         var languageExtension = CurrentLanguageExtension;
         var scanVersion = _insightDocVersion;
         var scanPath = _currentFilePath;
@@ -9295,6 +9294,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var signature = ComputeErrorHighlightSignature(scanVersion, scanPath, scanExtension);
         if (signature == _errorHighlightAppliedSignature)
             return;
+        var text = textSnapshot ?? document.Text;
         _insightAnalysisCancellation.Dispose();
         _insightAnalysisCancellation = new CancellationTokenSource();
         var scanToken = _insightAnalysisCancellation.Token;

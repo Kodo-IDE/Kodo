@@ -77,8 +77,16 @@ public partial class MainWindow
         if (!IsActive) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         if (LspEnabled && len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
-        var roundText = EditorTextBox?.Document.Text;
-        await Task.WhenAll(UpdateInsightAsync(roundText), UpdateDeadCodeHighlightingAsync(roundText), UpdateErrorHighlightingAsync(roundText));
+        var languageExtension = CurrentLanguageExtension;
+        var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
+        var errorSignature = ComputeErrorHighlightSignature(_insightDocVersion, _currentFilePath, scanExtension);
+        var deadSignature = ComputeDeadCodeSignature(_insightDocVersion, _currentFilePath, scanExtension, _currentFolderPath);
+        if (errorSignature == _errorHighlightAppliedSignature && deadSignature == _deadCodeAppliedSignature)
+        {
+            await UpdateInsightAsync();
+            return;
+        }
+        await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -1897,7 +1905,6 @@ public partial class MainWindow
         var signature = ComputeDeadCodeSignature(scanVersion, filePath, scanExtension, folderPath);
         if (signature == _deadCodeAppliedSignature) return;
 
-        var documentText = textSnapshot ?? document.Text;
         List<DeadCodeSpan> rawSpans;
         List<DeadCodeSpan>? cachedSpans;
         lock (_deadCodeAnalysisCacheLock)
@@ -1917,6 +1924,7 @@ public partial class MainWindow
         }
         else
         {
+            var documentText = textSnapshot ?? document.Text;
             try
             {
                 rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, scanToken);
