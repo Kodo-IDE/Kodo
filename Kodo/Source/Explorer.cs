@@ -287,7 +287,7 @@ public partial class MainWindow
         CurrentLanguageExtension = null;
         CurrentImagePreview = null;
         SetFileCorrupted(false);
-        EditorTextBox.SyntaxHighlighting = null;
+        ClearEditorSyntaxState();
         ConfigureRainbowBrackets(null);
         SetEditorContent(string.Empty);
         OnPropertyChanged(nameof(LineEndingDisplayText));

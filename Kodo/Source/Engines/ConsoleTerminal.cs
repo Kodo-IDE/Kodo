@@ -886,6 +886,8 @@ public sealed class ConsoleTerminal : Control
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true,
+                StandardOutputEncoding = new System.Text.UTF8Encoding(false),
+                StandardErrorEncoding = new System.Text.UTF8Encoding(false)
             };
             psi.Environment["TERM"] = psi.Environment.TryGetValue("TERM", out var term) && !string.IsNullOrWhiteSpace(term) ? term : "xterm-256color";
 

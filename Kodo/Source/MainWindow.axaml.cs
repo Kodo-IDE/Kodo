@@ -1828,8 +1828,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private const double EditorHorizontalScrollStep = 120;
     private const double EditorHorizontalScrollPageStep = 480;
+    private const double EditorHorizontalWheelPixelsPerDelta = 360;
+    private const double EditorHorizontalWheelMaxDelta = 4;
 
-    private bool ScrollEditorHorizontally(double steps)
+    private bool ScrollEditorHorizontally(double pixels)
     {
         var viewer = EditorHorizontalScrollViewer();
         if (viewer is null) return false;
@@ -1838,16 +1840,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (max <= 0) return false;
 
         var current = viewer.Offset.X;
-        var target = Math.Clamp(current + steps * EditorHorizontalScrollStep, 0, max);
+        var target = Math.Clamp(current + pixels, 0, max);
         if (Math.Abs(target - current) < 0.5) return false;
 
         viewer.Offset = new Vector(target, viewer.Offset.Y);
-        try { EditorTextBox.TextArea.Caret.BringCaretToView(); } catch { }
         return true;
     }
 
     private bool ScrollEditorHorizontallyByPage(double pages) =>
-        ScrollEditorHorizontally(pages * (EditorHorizontalScrollPageStep / EditorHorizontalScrollStep));
+        ScrollEditorHorizontally(pages * EditorHorizontalScrollPageStep);
 
     private bool HandleEditorHorizontalScrollGesture(PointerWheelEventArgs e)
     {
@@ -1857,8 +1858,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (delta == 0) return false;
 
-        var notches = delta > 0 ? 1 : -1;
-        return ScrollEditorHorizontally(notches * 3);
+        var scaled = Math.Clamp(delta, -EditorHorizontalWheelMaxDelta, EditorHorizontalWheelMaxDelta);
+        return ScrollEditorHorizontally(scaled * EditorHorizontalWheelPixelsPerDelta);
     }
 
     private void ApplyEditorSettings()
@@ -6364,6 +6365,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var contentWatch = System.Diagnostics.Stopwatch.StartNew();
         _suppressDirtyTracking = true;
+        _editorHorizontalScrollViewerResolved = false;
+        _editorHorizontalScrollViewer = null;
         try
         {
             if (!string.Equals(EditorTextBox.Document.Text, content, StringComparison.Ordinal))
@@ -6371,6 +6374,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             EditorTextBox.Document.UndoStack.ClearAll();
             EditorTextBox.TextArea.ClearSelection();
             EditorTextBox.TextArea.Caret.Offset = 0;
+            RefreshCurrentFileSyntaxHighlighting();
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+            EditorTextBox.TextArea.TextView.Redraw();
         }
         finally
         {

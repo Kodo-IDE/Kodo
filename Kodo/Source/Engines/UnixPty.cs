@@ -1,5 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -161,12 +162,73 @@ internal static class UnixPty
 
     private static string BuildInnerCommand(string shellPath, string arguments, string workingDirectory, string slavePath)
     {
-        var slave = Quote(slavePath);
-        var cd = string.Empty;
-        if (!string.IsNullOrWhiteSpace(workingDirectory))
-            cd = $"cd {Quote(workingDirectory)} 2>/dev/null; ";
+        var parts = new List<string> { "exec", Quote(shellPath) };
+        foreach (var token in SplitArguments(arguments))
+            parts.Add(Quote(token));
+        parts.Add("<");
+        parts.Add(Quote(slavePath));
+        parts.Add(">");
+        parts.Add(Quote(slavePath));
+        parts.Add("2>&1");
 
-        return $"{cd}exec {Quote(shellPath)} {arguments} < {slave} > {slave} 2>&1";
+        var command = string.Join(' ', parts);
+        if (!string.IsNullOrWhiteSpace(workingDirectory))
+            command = $"cd {Quote(workingDirectory)} 2>/dev/null; {command}";
+        return command;
+    }
+
+    private static List<string> SplitArguments(string arguments)
+    {
+        var tokens = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var escaped = false;
+        char? quote = null;
+
+        foreach (var ch in arguments)
+        {
+            if (escaped)
+            {
+                current.Append(ch);
+                escaped = false;
+                continue;
+            }
+            switch (quote)
+            {
+                case '\'':
+                    if (ch == '\'') quote = null; else current.Append(ch);
+                    continue;
+                case '"':
+                    if (ch == '\\') escaped = true;
+                    else if (ch == '"') quote = null;
+                    else current.Append(ch);
+                    continue;
+            }
+            switch (ch)
+            {
+                case '\\':
+                    escaped = true;
+                    break;
+                case '\'':
+                case '"':
+                    quote = ch;
+                    break;
+                case ' ':
+                case '\t':
+                    if (current.Length > 0)
+                    {
+                        tokens.Add(current.ToString());
+                        current.Clear();
+                    }
+                    break;
+                default:
+                    current.Append(ch);
+                    break;
+            }
+        }
+
+        if (current.Length > 0)
+            tokens.Add(current.ToString());
+        return tokens;
     }
 
     private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";

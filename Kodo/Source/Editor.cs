@@ -2007,10 +2007,10 @@ public partial class MainWindow
 
     private bool TryHandleEditorHorizontalScrollKey(KeyEventArgs e)
     {
-        if (MatchesKeybind(e, "ScrollEditorLeft") && ScrollEditorHorizontally(-1))
+        if (MatchesKeybind(e, "ScrollEditorLeft") && ScrollEditorHorizontally(-EditorHorizontalScrollStep))
             return ConsumeKey(e);
 
-        if (MatchesKeybind(e, "ScrollEditorRight") && ScrollEditorHorizontally(1))
+        if (MatchesKeybind(e, "ScrollEditorRight") && ScrollEditorHorizontally(EditorHorizontalScrollStep))
             return ConsumeKey(e);
 
         if (MatchesKeybind(e, "ScrollEditorPageLeft") && ScrollEditorHorizontallyByPage(-1))
