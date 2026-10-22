@@ -75,6 +75,9 @@ public static class TerminalShellSupport
         export PROMPT_COMMAND='printf "\033]1337;CurrentDir=%s\007" "$(pwd -W)"'; exec bash --login -i
         """;
 
+    private static readonly string BashCwdHookArgumentsWindows =
+        $"--login -i -c \"{BashCwdHookCommand.Replace("\"", "\\\"")}\"";
+
     private const string LinuxBashCwdHookArguments =
         @"-i -c ""export PROMPT_COMMAND='printf \""\033]1337;CurrentDir=%s\007\"" \""\$(pwd)\""'; exec bash -i""";
 
@@ -145,10 +148,8 @@ public static class TerminalShellSupport
             AddShell(
                 "bash",
                 "Git Bash",
-                ResolveExecutable("bash.exe",
-                    @"C:\Program Files\Git\bin\bash.exe",
-                    @"C:\Program Files\Git\usr\bin\bash.exe"),
-                $"--login -i -c \"{BashCwdHookCommand}\"");
+                ResolveGitBashWindows(),
+                BashCwdHookArgumentsWindows);
         }
         else
         {
@@ -227,6 +228,45 @@ public static class TerminalShellSupport
 
         return null;
     }
+
+    private static string? ResolveGitBashWindows()
+    {
+        var localApps = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var programFiles = Environment.ExpandEnvironmentVariables("%ProgramFiles%");
+        var programFiles64 = Environment.ExpandEnvironmentVariables("%ProgramW6432%");
+        var candidates = new[]
+        {
+            Path.Combine(localApps, @"Programs\Git\bin\bash.exe"),
+            Path.Combine(localApps, @"Programs\Git\usr\bin\bash.exe"),
+            Path.Combine(programFiles, @"Git\bin\bash.exe"),
+            Path.Combine(programFiles, @"Git\usr\bin\bash.exe"),
+            Path.Combine(programFiles64, @"Git\bin\bash.exe"),
+            Path.Combine(programFiles64, @"Git\usr\bin\bash.exe"),
+        };
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        var systemDir = Path.TrimEndingDirectorySeparator(Environment.SystemDirectory);
+        var windowsApps = Path.TrimEndingDirectorySeparator(Path.Combine(localApps, @"Microsoft\WindowsApps"));
+        var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var dir in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var candidate = Path.Combine(dir, "bash.exe");
+            if (!File.Exists(candidate))
+                continue;
+            var owningDir = Path.TrimEndingDirectorySeparator(Path.GetDirectoryName(Path.GetFullPath(candidate)) ?? "");
+            if (ownerDirEquals(owningDir, systemDir) || ownerDirEquals(owningDir, windowsApps))
+                continue;
+            return candidate;
+        }
+        return null;
+    }
+
+    private static bool ownerDirEquals(string owningDir, string expectDir) =>
+        !string.IsNullOrEmpty(expectDir) && string.Equals(owningDir, Path.TrimEndingDirectorySeparator(expectDir), StringComparison.OrdinalIgnoreCase);
 
     public static string GetClearCommandForShell(string shellId) =>
         shellId switch
