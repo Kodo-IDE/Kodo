@@ -76,3 +76,8 @@ As a thank you, check out the new Arduino extension available in the Marketplace
 > 2026-10-19
 Kodo now runs natively on Linux on both x64 and ARM64, alongside a completely rewritten cross-platform updater and independent hotfixes that verify before they are applied and roll back if something goes wrong. Extensions get a major `.kox` overhaul with language-server support, and the editor gains a reworked status bar, new editor and terminal tab options, individually editable keyboard shortcuts, and substantial responsiveness and large-file handling improvements.
 ---
+
+## v2.1.1 is here!
+> 2026-10-22
+LSP editor lag fixes, making Kodo handle 100,000+ line files smoother, alongside reduced constant CPU load, Linux fixes for highlighting, fixes for scrolling and terminal output, and a much wider set of file icons.
+---
