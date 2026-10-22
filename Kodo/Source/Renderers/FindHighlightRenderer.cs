@@ -16,6 +16,8 @@ internal sealed class FindHighlightRenderer : IBackgroundRenderer
 
     public void AddMatch(int offset, int length) => _matches.Add((offset, length));
 
+    public bool HasMatches => _matches.Count > 0;
+
     public void Clear() => _matches.Clear();
 
     public void Draw(TextView textView, DrawingContext drawingContext)

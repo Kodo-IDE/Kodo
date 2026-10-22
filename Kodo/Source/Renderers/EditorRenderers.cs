@@ -17,6 +17,8 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
     private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
     private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
 
+    public bool HasHints => _hints.Count > 0;
+
     public void SetHints(IReadOnlyList<(int Offset, string Label)> hints)
     {
         var normalized = new List<(int Offset, string Label)>(hints.Count);
@@ -82,6 +84,7 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
     private IReadOnlyList<(int Offset, int Length, IBrush Brush)> _tokens = Array.Empty<(int, int, IBrush)>();
     private readonly Segment _segment = new();
     public KnownLayer Layer => KnownLayer.Background;
+    public bool HasTokens => _tokens.Count > 0;
     public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens)
     {
         Avalonia.Threading.Dispatcher.UIThread.VerifyAccess();

@@ -997,14 +997,20 @@ public partial class MainWindow
 
     private async Task UpdateLspDocumentHighlightsAsync(LspPresentationContext ctx)
     {
-        _lspHighlightRenderer.Clear();
-        EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
         if (!LspDocumentHighlightsEnabled)
         {
+            if (_lspHighlightRenderer.HasMatches)
+            {
+                _lspHighlightRenderer.Clear();
+                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            }
             return;
         }
-        if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return;
+        var wasHighlighted = _lspHighlightRenderer.HasMatches;
+        _lspHighlightRenderer.Clear();
+        if (wasHighlighted) EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        if (IsLargeLspDocument(LspNavigationHighlightLimit)) return;
         var text = ctx.Text;
         var result = await GetLspDocumentHighlightsAsync(ctx.FilePath, ctx.Caret, text).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array) return;
@@ -1033,14 +1039,28 @@ public partial class MainWindow
     {
         if (!LspEnabled || !LspInlayHintsEnabled)
         {
-            _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
-            EditorTextBox?.TextArea?.TextView?.Redraw();
+            if (_lspInlayHintRenderer.HasHints)
+            {
+                _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+                EditorTextBox.TextArea.TextView.Redraw();
+            }
             return true;
         }
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
-        _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
-        EditorTextBox.TextArea.TextView.Redraw();
-        if (IsLargeLspDocument()) return true;
+        if (IsLargeLspDocument())
+        {
+            if (_lspInlayHintRenderer.HasHints)
+            {
+                _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+                EditorTextBox.TextArea.TextView.Redraw();
+            }
+            return true;
+        }
+        if (_lspInlayHintRenderer.HasHints)
+        {
+            _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
+            EditorTextBox.TextArea.TextView.Redraw();
+        }
         if (LspMethodUnavailable(ctx, "textDocument/inlayHint")) return true;
         var result = await GetLspInlayHintsAsync(ctx.FilePath, ctx.LineCount).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array) return false;
@@ -1094,12 +1114,18 @@ public partial class MainWindow
     {
         if (!LspEnabled || !LspSemanticHighlightingEnabled)
         {
-            _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-            EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            if (_lspSemanticTokenRenderer.HasTokens)
+            {
+                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            }
             return true;
         }
-        _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-        EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        if (_lspSemanticTokenRenderer.HasTokens)
+        {
+            _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+            EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        }
         if (IsLargeLspDocument()) return true;
         if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
         if (LspMethodUnavailable(ctx, "textDocument/semanticTokens/full")) return true;
