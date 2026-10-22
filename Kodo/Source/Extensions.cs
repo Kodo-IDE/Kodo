@@ -75,7 +75,7 @@ public partial class MainWindow
         });
     }
 
-    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false, bool showLoadingIndicator = true)
+    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false, bool showLoadingIndicator = true, bool skipInstalledScan = false)
     {
         if (_isRefreshingExtensions)
             return;
@@ -129,12 +129,28 @@ public partial class MainWindow
         BeginExtensionFilterBatch();
         try
         {
-            var extensionScan = await Task.Run(ScanInstalledExtensions);
-            await InvokeExtensionUiAsync(() => ApplyLoadedExtensionsResult(extensionScan));
-            await Task.WhenAll(
-                LoadMarketplaceExtensionsAsync(),
-                LoadPluginsIndexAsync(),
-                LoadCompilerExtensionsAsync(forceResolve: force));
+            if (!skipInstalledScan)
+            {
+                var extensionScan = await Task.Run(ScanInstalledExtensions);
+                await InvokeExtensionUiAsync(() => ApplyLoadedExtensionsResult(extensionScan));
+            }
+
+            var stageErrors = new List<string>();
+            await RunExtensionLoadStageAsync("marketplace extensions", LoadMarketplaceExtensionsAsync, stageErrors);
+            await RunExtensionLoadStageAsync("plugins", LoadPluginsIndexAsync, stageErrors);
+            await RunExtensionLoadStageAsync("compilers", () => LoadCompilerExtensionsAsync(forceResolve: force), stageErrors);
+            if (stageErrors.Count > 0)
+            {
+                await InvokeExtensionUiAsync(() =>
+                {
+                    SyncObservableCollection(
+                        ExtensionLoadErrors,
+                        ExtensionLoadErrors.Concat(stageErrors).Distinct().ToList(),
+                        error => error);
+                    OnPropertyChanged(nameof(ExtensionLoadErrors));
+                });
+            }
+
             var actions = TakeDeferredExtensionUiActions();
             if (actions.Count > 0)
             {
@@ -200,6 +216,19 @@ public partial class MainWindow
             }
             await watchdogCts.CancelAsync();
             await Dispatcher.UIThread.InvokeAsync(() => IsRefreshingExtensions = false);
+        }
+    }
+
+    private static async Task RunExtensionLoadStageAsync(string name, Func<Task> load, List<string> errors)
+    {
+        try
+        {
+            await load();
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Failed to load {name}: {ex.Message}");
+            KodoDiagnostics.LogDebug($"Staggered load failed for {name}", ex);
         }
     }
 

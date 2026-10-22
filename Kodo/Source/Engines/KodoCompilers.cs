@@ -43,7 +43,7 @@ public partial class MainWindow
         if (!_hasRunCompilerAutoDetect)
         {
             _hasRunCompilerAutoDetect = true;
-            _ = AutoDetectDefaultCompilersAsync();
+            await AutoDetectDefaultCompilersAsync();
         }
 
         _compilerIndexETag ??= TryReadCacheFile(CompilerIndexETagPath)?.Trim();
@@ -214,7 +214,7 @@ public partial class MainWindow
         {
             _ = FetchMarketplaceIconsAsync(compilerIconMap, CompilerExtensions);
         }
-        _ = RefreshCompilerResolutionsAsync(compilerEntries, compilerExtensions, effectiveForceResolve);
+        await RefreshCompilerResolutionsAsync(compilerEntries, compilerExtensions, effectiveForceResolve);
     }
 
     private static string? TryReadCacheFile(string path)
@@ -1022,10 +1022,9 @@ public partial class MainWindow
             return;
 
         var extensionById = liveExtensions.ToDictionary(e => e.Id, StringComparer.OrdinalIgnoreCase);
-        var cacheLock = new object();
         var anyChanged = false;
 
-        var tasks = toResolve.Select(async entry =>
+        foreach (var entry in toResolve)
         {
             var resolution = await ResolveCompilerAsync(entry.Id, entry.Resolver!).ConfigureAwait(false);
 
@@ -1034,29 +1033,24 @@ public partial class MainWindow
             var downloadUrl = resolution?.DownloadUrl ?? (wasCached ? previouslyCached!.DownloadUrl : entry.FallbackDownloadUrl);
             var fileName = resolution?.FileName ?? (wasCached ? previouslyCached!.FileName : entry.FallbackFileName);
 
-            lock (cacheLock)
+            cache[entry.Id] = new ResolvedCompilerCacheEntry
             {
-                cache[entry.Id] = new ResolvedCompilerCacheEntry
-                {
-                    Version = version,
-                    DownloadUrl = downloadUrl,
-                    FileName = fileName,
-                    ResolvedUtc = DateTime.UtcNow
-                };
-            }
+                Version = version,
+                DownloadUrl = downloadUrl,
+                FileName = fileName,
+                ResolvedUtc = DateTime.UtcNow
+            };
             anyChanged = true;
 
             if (!extensionById.TryGetValue(entry.Id, out var live))
-                return;
+                continue;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 live.Version = version;
                 live.DownloadUrl = downloadUrl;
                 live.FileName = fileName;
             });
-        });
-
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
 
         if (anyChanged)
             SaveCompilerResolutionCache(cache);

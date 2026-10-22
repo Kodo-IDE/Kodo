@@ -214,6 +214,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDiscordImprovedRpcEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
+    private Task? _initialExtensionScanTask;
     private bool _isUpdatingAllExtensions;
     private bool _isAutoUpdatingExtensions;
     private bool _isAutoUpdateExtensionsEnabled;
@@ -359,7 +360,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan WarningDialogCooldown = TimeSpan.FromSeconds(3);
 
-    private static readonly TimeSpan GitHubOperationTimeout = TimeSpan.FromSeconds(7);
+    private static readonly TimeSpan GitHubOperationTimeout = TimeSpan.FromSeconds(30);
     private static readonly HashSet<string> ImagePreviewExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png", ".apng", ".jpg", ".jpeg", ".jpe", ".jfif", ".bmp", ".dib", ".gif",
@@ -1062,7 +1063,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ApplyThemeBrushes(_requestedThemeName);
 
         var extensionStartupLoading = BeginAppLoading("Loading extensions");
-        _ = Task.Run(async () =>
+        _initialExtensionScanTask = Task.Run(async () =>
         {
             try
             {
@@ -5803,6 +5804,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         Opened -= MainWindow_OnOpened;
 
+        if (_initialExtensionScanTask is not null)
+            await _initialExtensionScanTask;
+
         ApplyThemeToEditor();
         var startupRestoreLoading = IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0
             ? BeginAppLoading("Restoring startup session")
@@ -6031,12 +6035,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(3));
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    _ = RefreshExtensionsAndAutoUpdateAsync();
-                    _ = RefreshLatestReleaseAsync(forceNetwork: false);
-                    _ = FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
-                });
+                await Dispatcher.UIThread.InvokeAsync(async () =>
+                    await RunStaggeredStartupLoadingAsync());
             }
             catch { }
         });

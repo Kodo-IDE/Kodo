@@ -2117,9 +2117,11 @@ public partial class MainWindow
         await RefreshExtensionsDataAsync(force: true, suppressWatchdog: true);
     }
 
-    private async Task RefreshExtensionsAndAutoUpdateAsync()
+    private async Task RunStaggeredStartupLoadingAsync()
     {
-        await RefreshExtensionsDataAsync();
+        await RefreshExtensionsDataAsync(skipInstalledScan: true);
+        await RefreshLatestReleaseAsync(forceNetwork: false);
+        await FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
         await AutoUpdateExtensionsIfEnabledAsync();
     }
 
