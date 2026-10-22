@@ -75,7 +75,7 @@ public partial class MainWindow
         });
     }
 
-    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false, bool showLoadingIndicator = true, bool skipInstalledScan = false)
+    private async Task RefreshExtensionsDataAsync(bool force = false, bool suppressWatchdog = false, bool showLoadingIndicator = true, bool skipInstalledScan = false, bool staggerLoadStages = false)
     {
         if (_isRefreshingExtensions)
             return;
@@ -136,8 +136,11 @@ public partial class MainWindow
             }
 
             var stageErrors = new List<string>();
+            if (staggerLoadStages) await Task.Delay(150);
             await RunExtensionLoadStageAsync("marketplace extensions", LoadMarketplaceExtensionsAsync, stageErrors);
+            if (staggerLoadStages) await Task.Delay(150);
             await RunExtensionLoadStageAsync("plugins", LoadPluginsIndexAsync, stageErrors);
+            if (staggerLoadStages) await Task.Delay(150);
             await RunExtensionLoadStageAsync("compilers", () => LoadCompilerExtensionsAsync(forceResolve: force), stageErrors);
             if (stageErrors.Count > 0)
             {

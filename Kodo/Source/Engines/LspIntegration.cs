@@ -18,6 +18,7 @@ namespace Kodo;
 public partial class MainWindow
 {
     private readonly LspManager _lspManager = new();
+    private readonly SemaphoreSlim _lspStartupGate = new(1, 1);
     private static StringComparer LspPathComparer => FileSystemPaths.Comparer;
     private readonly Dictionary<string, int> _lspDocumentVersions = new(FileSystemPaths.Comparer);
     private readonly HashSet<string> _lspOpenDocuments = new(FileSystemPaths.Comparer);
@@ -713,17 +714,29 @@ public partial class MainWindow
             return;
         }
 
+        await _lspStartupGate.WaitAsync().ConfigureAwait(false);
         var settings = BuildLspResolverSettings();
-        var resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);
+        LspResolution resolution;
+        try
+        {
+            resolution = await LspServerResolver.ResolveAsync(targetCfg, settings, lspExt.Id).ConfigureAwait(false);
+        }
+        catch
+        {
+            _lspStartupGate.Release();
+            throw;
+        }
         if (!LspEnabled)
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+            _lspStartupGate.Release();
             return;
         }
         KodoDiagnostics.LogDebug($"LSP resolve {lspExt.Id} source={resolution.Source} exe={resolution.ExecutablePath} canInstall={resolution.CanInstall} err={resolution.Error}");
         if (!resolution.IsReady)
         {
             lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+            _lspStartupGate.Release();
             await HandleLspNotReadyAsync(lspExt, resolution, filePath).ConfigureAwait(false);
             return;
         }
@@ -742,55 +755,58 @@ public partial class MainWindow
         LspClient client;
         try
         {
-            client = await _lspManager.GetOrStartAsync(workspace, resolvedConfig).ConfigureAwait(false);
-            SetupLspClientHandlers(client);
-            if (!LspEnabled)
+            try
             {
-                lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
-                await _lspManager.ShutdownAsync(workspace, resolvedConfig, "LSP disabled").ConfigureAwait(false);
-                return;
-            }
-        }
-        catch (FileNotFoundException ex)
-        {
-            lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
-            if (_lspMissingNotified.Add(lspExt.Id))
-            {
-                KodoDiagnostics.LogDebug($"LSP start missing for '{lspExt.Id}'", ex);
-                await Dispatcher.UIThread.InvokeAsync(async () =>
+                client = await _lspManager.GetOrStartAsync(workspace, resolvedConfig).ConfigureAwait(false);
+                SetupLspClientHandlers(client);
+                if (!LspEnabled)
                 {
-                    ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start for '{lspExt.Name}'. Highlighting still works.";
-                    await ShowWarningDialogAsync($"{lspExt.Name} – language server failed to start",
-                        new InvalidOperationException($"{lspExt.Name} language server could not be started.\n\n{ex.InnerException?.Message ?? ex.Message}\n\nHighlighting remains available.", ex));
-                });
+                    lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+                    await _lspManager.ShutdownAsync(workspace, resolvedConfig, "LSP disabled").ConfigureAwait(false);
+                    return;
+                }
             }
-            return;
-        }
-        catch (Exception ex)
-        {
-            lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
-            KodoDiagnostics.LogDebug($"LSP start failed for '{lspExt.Id}'", ex);
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start: {ex.Message}");
-            return;
-        }
-
-        try
-        {
-            await client.InitializeAsync().ConfigureAwait(false);
-            if (!LspEnabled)
+            catch (FileNotFoundException ex)
             {
                 lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
-                await _lspManager.ShutdownAsync(workspace, resolvedConfig, "LSP disabled").ConfigureAwait(false);
+                if (_lspMissingNotified.Add(lspExt.Id))
+                {
+                    KodoDiagnostics.LogDebug($"LSP start missing for '{lspExt.Id}'", ex);
+                    await Dispatcher.UIThread.InvokeAsync(async () =>
+                    {
+                        ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start for '{lspExt.Name}'. Highlighting still works.";
+                        await ShowWarningDialogAsync($"{lspExt.Name} – language server failed to start",
+                            new InvalidOperationException($"{lspExt.Name} language server could not be started.\n\n{ex.InnerException?.Message ?? ex.Message}\n\nHighlighting remains available.", ex));
+                    });
+                }
+                return;
+            }
+            catch (Exception ex)
+            {
+                lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+                KodoDiagnostics.LogDebug($"LSP start failed for '{lspExt.Id}'", ex);
+                await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' failed to start: {ex.Message}");
+                return;
+            }
+            try
+            {
+                await client.InitializeAsync().ConfigureAwait(false);
+                if (!LspEnabled)
+                {
+                    lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+                    await _lspManager.ShutdownAsync(workspace, resolvedConfig, "LSP disabled").ConfigureAwait(false);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
+                KodoDiagnostics.LogDebug($"LSP initialize failed for '{lspExt.Id}'", ex);
+                await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' initialization failed: {ex.Message}");
                 return;
             }
         }
-        catch (Exception ex)
-        {
-            lock (_lspOpenLock) _lspPendingOpens.Remove(filePath);
-            KodoDiagnostics.LogDebug($"LSP initialize failed for '{lspExt.Id}'", ex);
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = $"Language server '{resolvedConfig.Command}' initialization failed: {ex.Message}");
-            return;
-        }
+        finally { _lspStartupGate.Release(); }
 
         var activeText = await Dispatcher.UIThread.InvokeAsync(() =>
             FileSystemPaths.Equals(_currentFilePath, filePath) ? EditorTextBox?.Document?.Text : null);

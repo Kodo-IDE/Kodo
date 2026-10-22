@@ -2119,9 +2119,12 @@ public partial class MainWindow
 
     private async Task RunStaggeredStartupLoadingAsync()
     {
-        await RefreshExtensionsDataAsync(skipInstalledScan: true);
+        await RefreshExtensionsDataAsync(skipInstalledScan: true, staggerLoadStages: true);
+        await Task.Delay(150);
         await RefreshLatestReleaseAsync(forceNetwork: false);
+        await Task.Delay(150);
         await FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
+        await Task.Delay(150);
         await AutoUpdateExtensionsIfEnabledAsync();
     }
 
