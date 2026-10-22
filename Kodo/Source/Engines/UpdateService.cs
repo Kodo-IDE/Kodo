@@ -782,7 +782,9 @@ internal static class UpdateService
         KodoDiagnostics.LogDebug($"KodoUpdater launched for {transactionPath} – exiting Kodo PID {Environment.ProcessId}");
         Thread.Sleep(400);
         if (HasAlreadyExited(started))
-            throw new InvalidOperationException($"KodoUpdater exited before taking over the update staged at '{transactionPath}'.");
+            throw new InvalidOperationException(
+                $"KodoUpdater exited before taking over the update staged at '{transactionPath}'. "
+                + $"Another update may already be in progress on this machine; details: '{Path.Combine(UpdateRoot, "updater.log")}'.");
         Environment.Exit(0);
     }
 

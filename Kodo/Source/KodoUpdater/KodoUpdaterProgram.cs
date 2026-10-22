@@ -14,12 +14,38 @@ internal static class Program
     private const int StaleTransactionHours = 24;
     private const int ConfirmationTimeoutSeconds = 180;
     private const int ConfirmationGraceSeconds = 120;
+    private const int RelaunchHoldMilliseconds = 1500;
+    private const int SourceUpdaterWaitTimeoutSeconds = 10;
+    private static int _sourceUpdaterPid;
 
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
     private static string UpdaterTempFileName =>
         OperatingSystem.IsWindows() ? "KodoUpdater-temp.exe" : "KodoUpdater-temp";
+
+    private static async Task WaitForSourceUpdaterExitAsync()
+    {
+        if (_sourceUpdaterPid <= 0 || _sourceUpdaterPid == Environment.ProcessId)
+            return;
+        try
+        {
+            var source = Process.GetProcessById(_sourceUpdaterPid);
+            if (source.HasExited)
+                return;
+            Log($"Waiting for source updater PID {_sourceUpdaterPid} to exit (timeout {SourceUpdaterWaitTimeoutSeconds}s)...");
+            var sw = Stopwatch.StartNew();
+            while (!source.HasExited && sw.Elapsed.TotalSeconds < SourceUpdaterWaitTimeoutSeconds)
+                await Task.Delay(200).ConfigureAwait(false);
+            Log(source.HasExited
+                ? $"Source updater PID {_sourceUpdaterPid} exited after {sw.Elapsed.TotalSeconds:0.0}s"
+                : $"Source updater PID {_sourceUpdaterPid} did not exit within {SourceUpdaterWaitTimeoutSeconds}s – proceeding anyway");
+        }
+        catch
+        {
+            Log($"Source updater PID {_sourceUpdaterPid} not running – continuing");
+        }
+    }
 
     private static string UpdaterUsageName =>
         OperatingSystem.IsWindows() ? "KodoUpdater.exe" : "KodoUpdater";
@@ -36,6 +62,13 @@ internal static class Program
             _trustedInstallRoot = Path.GetFullPath(args[forwardedInstallRoot + 1]);
             args = args.Where((_, i) => i != forwardedInstallRoot && i != forwardedInstallRoot + 1).ToArray();
         }
+        var forwardedSourcePid = Array.FindIndex(args, a => string.Equals(a, "--source-updater-pid", StringComparison.OrdinalIgnoreCase));
+        if (forwardedSourcePid >= 0 && forwardedSourcePid + 1 < args.Length
+            && int.TryParse(args[forwardedSourcePid + 1], out var parsedSourcePid) && parsedSourcePid > 0)
+        {
+            _sourceUpdaterPid = parsedSourcePid;
+            args = args.Where((_, i) => i != forwardedSourcePid && i != forwardedSourcePid + 1).ToArray();
+        }
         else
         {
             var localUpdate = Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo", "update"));
@@ -44,6 +77,8 @@ internal static class Program
                 _trustedInstallRoot = Path.GetFullPath(AppContext.BaseDirectory);
         }
         Log($"KodoUpdater start args=[{string.Join(" ", args)}] pid={Environment.ProcessId}");
+
+        await WaitForSourceUpdaterExitAsync().ConfigureAwait(false);
 
         try
         {
@@ -65,12 +100,15 @@ internal static class Program
                         Directory.CreateDirectory(Path.GetDirectoryName(tempCopy)!);
                         File.Copy(selfPath, tempCopy, overwrite: true);
                         Log($"Relocating self to temp: {selfPath} -> {tempCopy}");
-                        var psi = new ProcessStartInfo { FileName = tempCopy, UseShellExecute = false, CreateNoWindow = true };
-                        psi.ArgumentList.Add("--install-root");
-                        psi.ArgumentList.Add(appDir);
-                        foreach (var a in args) psi.ArgumentList.Add(a);
-                        var p = Process.Start(psi);
-                        Log($"Relaunched from temp PID {p?.Id}, exiting original");
+                        var tempPsi = new ProcessStartInfo { FileName = tempCopy, UseShellExecute = false, CreateNoWindow = true };
+                        tempPsi.ArgumentList.Add("--install-root");
+                        tempPsi.ArgumentList.Add(appDir);
+                        tempPsi.ArgumentList.Add("--source-updater-pid");
+                        tempPsi.ArgumentList.Add(Environment.ProcessId.ToString());
+                        foreach (var a in args) tempPsi.ArgumentList.Add(a);
+                        var relaunched = Process.Start(tempPsi);
+                        Log($"Relaunched from temp PID {relaunched?.Id}, exiting original");
+                        relaunched?.WaitForExit(RelaunchHoldMilliseconds);
                         return 0;
                     }
                     catch (Exception ex) { Log($"Self-relocation failed, continuing in-place: {ex.Message}"); }
