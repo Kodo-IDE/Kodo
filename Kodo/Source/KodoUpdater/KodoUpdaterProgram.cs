@@ -17,6 +17,7 @@ internal static class Program
     private const int RelaunchHoldMilliseconds = 1500;
     private const int SourceUpdaterWaitTimeoutSeconds = 10;
     private static int _sourceUpdaterPid;
+    private static int _rollbackKodoPid;
 
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -75,6 +76,13 @@ internal static class Program
             var self = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(self) || !Kodo.HotfixShared.HotfixShared.IsInsideDirectory(Path.GetFullPath(self), localUpdate))
                 _trustedInstallRoot = Path.GetFullPath(AppContext.BaseDirectory);
+        }
+        var forwardedRollbackPid = Array.FindIndex(args, a => string.Equals(a, "--kodo-pid", StringComparison.OrdinalIgnoreCase));
+        if (forwardedRollbackPid >= 0 && forwardedRollbackPid + 1 < args.Length
+            && int.TryParse(args[forwardedRollbackPid + 1], out var parsedRollbackPid) && parsedRollbackPid > 0)
+        {
+            _rollbackKodoPid = parsedRollbackPid;
+            args = args.Where((_, i) => i != forwardedRollbackPid && i != forwardedRollbackPid + 1).ToArray();
         }
         Log($"KodoUpdater start args=[{string.Join(" ", args)}] pid={Environment.ProcessId}");
 
@@ -531,6 +539,20 @@ internal static class Program
         }
     }
 
+    private static async Task WaitForOtherKodoExitAsync(string kodoExePath)
+    {
+        if (!IsKodoRunning(kodoExePath))
+            return;
+        Log($"Waiting for other Kodo instances running from '{kodoExePath}' to exit (timeout {PidWaitTimeoutSeconds}s)...");
+        var sw = Stopwatch.StartNew();
+        while (IsKodoRunning(kodoExePath) && sw.Elapsed.TotalSeconds < PidWaitTimeoutSeconds)
+            await Task.Delay(500).ConfigureAwait(false);
+        if (IsKodoRunning(kodoExePath))
+            Log($"Other Kodo instance(s) still running after {PidWaitTimeoutSeconds}s – proceeding anyway; file replacement may fail and roll back.");
+        else
+            Log($"Other Kodo instance(s) exited after {sw.Elapsed.TotalSeconds:0.0}s");
+    }
+
     private static void RestartKodo(string kodoExePath, bool restartAfterUpdate)
     {
         if (!restartAfterUpdate)
@@ -643,6 +665,7 @@ internal static class Program
         Log($"Hotfix transaction {tx.TransactionId} version={Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)} platform={tx.PlatformRid} kodo={tx.KodoExePath} restart={tx.RestartAfterUpdate}");
 
         await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
+        await WaitForOtherKodoExitAsync(tx.KodoExePath).ConfigureAwait(false);
         await Task.Delay(800).ConfigureAwait(false);
 
         string manifestJson;
@@ -1120,7 +1143,12 @@ internal static class Program
         }
 
         Log($"Manual rollback of hotfix transaction {tx.TransactionId} version={Kodo.HotfixShared.HotfixShared.FormatVersion(tx.BaseVersion, tx.HotfixLevel)}");
-        await WaitForKodoExitAsync(tx.KodoPid, tx.KodoExePath).ConfigureAwait(false);
+        var waitPid = _rollbackKodoPid > 0 ? _rollbackKodoPid : tx.KodoPid;
+        Log(waitPid > 0
+            ? $"Rollback waiting for Kodo PID {waitPid} ({(_rollbackKodoPid > 0 ? "handoff" : "staged")})"
+            : "Rollback has no Kodo PID to wait for");
+        await WaitForKodoExitAsync(waitPid, tx.KodoExePath).ConfigureAwait(false);
+        await WaitForOtherKodoExitAsync(tx.KodoExePath).ConfigureAwait(false);
         if (IsKodoRunning(tx.KodoExePath))
         {
             Log("Kodo is still running; close it before manual rollback and retry.");

@@ -824,6 +824,8 @@ internal static class UpdateService
         };
         psi.ArgumentList.Add("--rollback");
         psi.ArgumentList.Add(transactionPath);
+        psi.ArgumentList.Add("--kodo-pid");
+        psi.ArgumentList.Add(Environment.ProcessId.ToString());
 
         var launched = false;
         try
@@ -836,7 +838,7 @@ internal static class UpdateService
             var fallback = new ProcessStartInfo
             {
                 FileName = updaterPath,
-                Arguments = $"--rollback \"{transactionPath}\"",
+                Arguments = $"--rollback \"{transactionPath}\" --kodo-pid {Environment.ProcessId}",
                 UseShellExecute = true,
                 WorkingDirectory = exeDir,
             };
