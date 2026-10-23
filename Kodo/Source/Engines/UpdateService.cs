@@ -655,6 +655,8 @@ internal static class UpdateService
         await fileStream.FlushAsync(ct).ConfigureAwait(false);
         fileStream.Close();
 
+        progress?.Report(new UpdateDownloadProgress(1.0, "Verifying update…"));
+
         var partialInfo = new FileInfo(partialPath);
         if (!partialInfo.Exists || partialInfo.Length < 1024 * 1024)
             throw new InvalidDataException($"Download incomplete or too small ({partialInfo.Length} bytes): {partialPath}");

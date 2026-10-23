@@ -764,6 +764,8 @@ internal static class HotfixStaging
             await fileStream.FlushAsync(ct).ConfigureAwait(false);
             fileStream.Close();
 
+            progress?.Report(new UpdateDownloadProgress(1.0, "Verifying hotfix…"));
+
             var partialInfo = new FileInfo(partialPath);
             if (!partialInfo.Exists || partialInfo.Length == 0)
                 throw new InvalidDataException($"Hotfix download produced an empty file: {partialPath}");

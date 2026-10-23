@@ -279,7 +279,7 @@ internal sealed class UpdateDialog : Window
         var progress = new Progress<UpdateDownloadProgress>(p =>
         {
             _progressBar.Value = p.Fraction;
-            _statusText.Text = $"Downloading… {p.Label}";
+            _statusText.Text = p.Fraction >= 1.0 ? p.Label : $"Downloading… {p.Label}";
         });
 
         try
@@ -287,7 +287,7 @@ internal sealed class UpdateDialog : Window
             _stagedInstallerPath = await UpdateService.DownloadInstallerAsync(_update!, progress);
             _isDownloading = false;
             _isReady = true;
-            _progressBar.IsVisible = false;
+            _progressBar.Value = 1;
             if (_linuxManualOnly)
             {
                 _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
@@ -302,6 +302,8 @@ internal sealed class UpdateDialog : Window
             _laterButton.IsEnabled = true;
             _laterButton.Content = "Later";
             _canClose = true;
+            await Task.Delay(400);
+            _progressBar.IsVisible = false;
         }
         catch (Exception ex)
         {
@@ -390,7 +392,7 @@ internal sealed class UpdateDialog : Window
         var progress = new Progress<UpdateDownloadProgress>(p =>
         {
             _progressBar.Value = p.Fraction;
-            _statusText.Text = $"Downloading… {p.Label}";
+            _statusText.Text = p.Fraction >= 1.0 ? p.Label : $"Downloading… {p.Label}";
         });
 
         try
@@ -401,34 +403,41 @@ internal sealed class UpdateDialog : Window
                 _stagedManualHotfixPackagePath = prepared.ManualPackagePath;
                 _isDownloading = false;
                 _isReady = true;
-                _progressBar.IsVisible = false;
+                _progressBar.Value = 1;
                 _statusText.Text = "Critical hotfix package downloaded and checksum verified. Open its folder to install it.";
                 _primaryButton.Content = "Show in Folder";
                 _primaryButton.IsEnabled = true;
                 _laterButton.IsEnabled = true;
                 _canClose = true;
+                await Task.Delay(400);
+                _progressBar.IsVisible = false;
                 return;
             }
             if (prepared.AlreadyInstalled || prepared.TransactionPath is null)
             {
+                _progressBar.Value = 1;
                 _statusText.Text = "This hotfix is already installed.";
                 _primaryButton.Content = "Close";
                 _primaryButton.IsEnabled = true;
                 _laterButton.IsEnabled = true;
                 _canClose = true;
                 _isDownloading = false;
+                await Task.Delay(200);
+                _progressBar.IsVisible = false;
                 return;
             }
             _stagedHotfixTxPath = prepared.TransactionPath;
             _isDownloading = false;
             _isReady = true;
-            _progressBar.IsVisible = false;
+            _progressBar.Value = 1;
             _statusText.Text = "Hotfix downloaded and verified. Ready to apply – choose Restart & Update when you're ready.";
             _primaryButton.Content = "Restart & Update";
             _primaryButton.IsEnabled = true;
             _laterButton.IsEnabled = true;
             _laterButton.Content = "Later";
             _canClose = true;
+            await Task.Delay(400);
+            _progressBar.IsVisible = false;
         }
         catch (Exception ex)
         {
