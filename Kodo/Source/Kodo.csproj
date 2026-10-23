@@ -14,8 +14,8 @@
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\Assets\kodo_logo.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
-    <Version>2.1.2-DEV</Version>
-    <InformationalVersion>v2.1.2-DEV</InformationalVersion>
+  <Version>2.1.3-DEV</Version>
+  <InformationalVersion>v2.1.3-DEV</InformationalVersion>
     <HotfixStampBaseVersion>$([System.Text.RegularExpressions.Regex]::Replace($([System.Text.RegularExpressions.Regex]::Replace('$(Version)', '-(DEV|BETA)$', '')), '[a-zA-Z]+$', ''))$([System.Text.RegularExpressions.Regex]::Match('$(Version)', '-(DEV|BETA)$').Value)</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
