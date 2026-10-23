@@ -39,7 +39,20 @@ internal sealed class InsightWorkerGateway
         _process is { HasExited: false };
 
     private static bool RunsFromDll
-        => !(Assembly.GetEntryAssembly()?.Location is { Length: > 0 } entry && entry.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+    {
+        get
+        {
+            var proc = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(proc)) return true;
+            var fileName = Path.GetFileNameWithoutExtension(proc);
+            return fileName.Equals("dotnet", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static string? EntryAssemblyPath =>
+        Assembly.GetEntryAssembly()?.GetName().Name is { Length: > 0 } name
+            ? Path.Combine(AppContext.BaseDirectory, name + ".dll")
+            : null;
 
     public void SetRegistryProvider(Func<IReadOnlyList<LoadedExtension>> provider)
     {
@@ -315,7 +328,7 @@ internal sealed class InsightWorkerGateway
     private static (string? Path, (string Payload, string Flag) Args) ResolveSpawnTarget()
     {
         var executable = Environment.ProcessPath;
-        var entry = Assembly.GetEntryAssembly()?.Location;
+        var entry = EntryAssemblyPath;
         if (SpawnEntryPointOverride is { } overrideEntry && overrideEntry() is { Length: > 0 } customEntry)
         {
             entry = customEntry;
