@@ -13,19 +13,19 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout selected Kodo ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: Kodo
 
       - name: Checkout release tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: Kodo-IDE/Kodo-Development
           path: dev
           token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -37,7 +37,7 @@ jobs:
         run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE/Kodo" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
 
       - name: Upload Windows installer and checksum
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Kodo-Windows-release
           path: ${{ runner.temp }}/kodo-release/
@@ -49,19 +49,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout selected Kodo ref
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: Kodo
 
       - name: Checkout release tooling
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: Kodo-IDE/Kodo-Development
           path: dev
           token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -85,7 +85,7 @@ jobs:
         run: bash dev/Release-Scripts/build-linux-release.sh "${RUNNER_TEMP}/kodo-release"
 
       - name: Upload Linux archives, AppImages, Debian packages, and checksums
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Kodo-Linux-release
           path: ${{ runner.temp }}/kodo-release/

@@ -16,10 +16,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -30,7 +30,7 @@ jobs:
         run: dotnet publish Kodo/Source/KodoUpdater/KodoUpdater.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/KodoUpdater-windows-x64
 
       - name: Upload Windows build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Kodo-windows-x64
           path: artifacts/
@@ -67,10 +67,10 @@ jobs:
           fi
 
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
 
@@ -87,7 +87,7 @@ jobs:
         run: tar -czf "Kodo-${{ matrix.id }}.tar.gz" -C artifacts .
 
       - name: Upload Linux build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: Kodo-${{ matrix.id }}
           path: Kodo-${{ matrix.id }}.tar.gz
