@@ -81,3 +81,8 @@ Kodo now runs natively on Linux on both x64 and ARM64, alongside a completely re
 > 2026-10-22
 LSP editor lag fixes, making Kodo handle 100,000+ line files smoother, alongside reduced constant CPU load, Linux fixes for highlighting, fixes for scrolling and terminal output, and a much wider set of file icons.
 ---
+
+## v2.1.2 is here!
+> 2026-10-23
+This patch fixes freezing in the editor by optimizing how results and live panels are pulled, fixes Git Bash failing to start, as well as minor CI bugs and optimizations.
+---
