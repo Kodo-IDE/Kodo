@@ -37,7 +37,7 @@ jobs:
         run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE/Kodo" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
 
       - name: Upload Windows installer and checksum
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: Kodo-Windows-release
           path: ${{ runner.temp }}/kodo-release/
@@ -85,7 +85,7 @@ jobs:
         run: bash dev/Release-Scripts/build-linux-release.sh "${RUNNER_TEMP}/kodo-release"
 
       - name: Upload Linux archives, AppImages, Debian packages, and checksums
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: Kodo-Linux-release
           path: ${{ runner.temp }}/kodo-release/
