@@ -238,6 +238,7 @@ public partial class MainWindow
             return;
 
         var count = CountCurrentMatches();
+        if (_findRegexInvalid) return;
         if (count == 0)
         {
             SearchStatusText = "No matches to replace.";
@@ -262,6 +263,11 @@ public partial class MainWindow
         var text = EditorTextBox.Document.Text;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
+        if (_findRegexInvalid)
+        {
+            SearchStatusText = "Invalid regular expression.";
+            return 0;
+        }
         var count = 0;
         var searchIndex = 0;
         while (searchIndex <= text.Length)
@@ -965,6 +971,11 @@ public partial class MainWindow
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
+        if (_findRegexInvalid)
+        {
+            SearchStatusText = "Invalid regular expression.";
+            return;
+        }
         var match = SearchEngine.FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
         if (match.Offset < 0)
             return;
@@ -994,6 +1005,11 @@ public partial class MainWindow
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var replacement = ReplaceText ?? string.Empty;
         var regex = BuildFindRegex();
+        if (_findRegexInvalid)
+        {
+            SearchStatusText = "Invalid regular expression.";
+            return;
+        }
 
         var matches = SearchEngine.EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex).ToList();
 
@@ -1047,6 +1063,11 @@ public partial class MainWindow
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var regex = BuildFindRegex();
+        if (_findRegexInvalid)
+        {
+            SearchStatusText = "Invalid regular expression.";
+            return;
+        }
         (int Offset, int Length) match;
         try
         {
@@ -1098,6 +1119,16 @@ public partial class MainWindow
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var wholeWord = IsSearchWholeWordEnabled;
         var regex = BuildFindRegex();
+
+        if (_findRegexInvalid)
+        {
+            _findHighlightRenderer.Clear();
+            _findMatchOffsets.Clear();
+            _currentFindMatchIndex = -1;
+            SearchStatusText = "Invalid regular expression.";
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            return;
+        }
 
         if (!snapshotMode || string.IsNullOrEmpty(snapshotFind))
         {
@@ -1169,13 +1200,19 @@ public partial class MainWindow
     private bool _cachedFindMatchCase;
     private bool _cachedFindRegexEnabled;
     private bool _cachedFindWholeWord;
+    private bool _findRegexInvalid;
 
     private Regex? BuildFindRegex()
     {
-        if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText)) return null;
+        if (!IsSearchRegexEnabled || string.IsNullOrEmpty(FindText))
+        {
+            _findRegexInvalid = false;
+            return null;
+        }
         if (_cachedFindText == FindText && _cachedFindMatchCase == IsSearchMatchCaseEnabled && _cachedFindRegexEnabled == IsSearchRegexEnabled && _cachedFindWholeWord == IsSearchWholeWordEnabled)
         {
-            return _cachedFindRegex!;
+            _findRegexInvalid = _cachedFindRegex is null;
+            return _cachedFindRegex;
         }
         _cachedFindText = FindText;
         _cachedFindMatchCase = IsSearchMatchCaseEnabled;
@@ -1186,10 +1223,13 @@ public partial class MainWindow
             var options = IsSearchMatchCaseEnabled ? RegexOptions.None : RegexOptions.IgnoreCase;
             var regex = new Regex(FindText, options | RegexOptions.Compiled, TimeSpan.FromSeconds(2));
             _cachedFindRegex = regex;
+            _findRegexInvalid = false;
             return regex;
         }
         catch
         {
+            _cachedFindRegex = null;
+            _findRegexInvalid = true;
             return null;
         }
     }

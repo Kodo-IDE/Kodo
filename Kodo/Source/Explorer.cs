@@ -597,7 +597,7 @@ public partial class MainWindow
         try
         {
             var info = new FileInfo(tab.Path);
-            if (!info.Exists) return false;
+            if (!info.Exists) return true;
             return info.LastWriteTimeUtc != tab.LastKnownWriteTimeUtc || info.Length != tab.LastKnownLength;
         }
         catch
