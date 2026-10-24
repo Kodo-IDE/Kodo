@@ -21,7 +21,7 @@ internal sealed class AppUpdateScheduler
         {
             var full = await UpdateService.CheckAndHandleUpdateAsync(installInBackground: _installInBackground()).ConfigureAwait(true);
             if (full is null)
-                await UpdateService.CheckAndHandleHotfixAsync(installInBackground: _installInBackground()).ConfigureAwait(true);
+                await UpdateService.CheckAndHandleHotfixAsync().ConfigureAwait(true);
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("Periodic update check failed", ex); }
     }

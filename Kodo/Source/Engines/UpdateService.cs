@@ -252,31 +252,11 @@ internal static class UpdateService
     }
 
     public static async Task<HotfixCandidate?> CheckAndHandleHotfixAsync(
-        bool installInBackground = false,
         CancellationToken ct = default,
         bool includeBeta = false)
     {
         var hotfix = await CheckForHotfixAsync(ct, includeBeta).ConfigureAwait(false);
         if (hotfix is null) return null;
-        var isBetaHotfix = HotfixVersion.NormalizeBaseVersion(hotfix.BaseVersion)?
-            .EndsWith("-BETA", StringComparison.OrdinalIgnoreCase) == true;
-        if (installInBackground && !isBetaHotfix && !hotfix.RequiresManualPackageInstall)
-        {
-            try
-            {
-                var prepared = await HotfixStaging.PrepareAsync(hotfix, progress: null, ct).ConfigureAwait(false);
-                if (!prepared.AlreadyInstalled && prepared.TransactionPath is not null)
-                {
-                    LaunchUpdaterAndExit(prepared.TransactionPath);
-                    return hotfix;
-                }
-                if (prepared.AlreadyInstalled) return null;
-            }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug("Background hotfix staging failed; showing manual dialog", ex);
-            }
-        }
         UpdateDialog.ShowForHotfix(hotfix);
         return hotfix;
     }
@@ -739,6 +719,15 @@ internal static class UpdateService
 
     public static void LaunchUpdaterAndExit(string transactionPath)
     {
+        var transactionJson = File.ReadAllText(transactionPath);
+        if (Shared.IsHotfixTransactionJson(transactionJson))
+        {
+            if (!Shared.TryParseTransaction(transactionJson, out var hotfixTx, out var parseError) || hotfixTx is null)
+                throw new InvalidDataException(parseError ?? "The staged hotfix transaction is invalid.");
+            if (!Shared.ValidateTransactionPaths(hotfixTx, transactionPath, UpdateRoot, AppContext.BaseDirectory, out var pathError))
+                throw new InvalidOperationException(pathError ?? "The staged hotfix targets a different Kodo installation.");
+        }
+
         var updaterPath = ResolveUpdaterPath();
         var exeDir = AppContext.BaseDirectory;
 

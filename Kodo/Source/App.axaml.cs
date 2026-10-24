@@ -195,7 +195,7 @@ public partial class App : Application
                     if (fullUpdate is not null) return;
                 }
 
-                await UpdateService.CheckAndHandleHotfixAsync(installInBackground: true);
+                await UpdateService.CheckAndHandleHotfixAsync();
             }
             catch (Exception ex)
             {
