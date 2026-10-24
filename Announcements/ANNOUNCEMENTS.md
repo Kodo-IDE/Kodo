@@ -86,3 +86,7 @@ LSP editor lag fixes, making Kodo handle 100,000+ line files smoother, alongside
 > 2026-10-23
 This patch fixes freezing in the editor by optimizing how results and live panels are pulled, fixes Git Bash failing to start, as well as minor CI bugs and optimizations.
 ---
+
+## Kodo Hotfix Testing
+> 2026-10-24
+Expect frequent hotfix tests and patch updates over the next several hours while we test the hotfix framework.
