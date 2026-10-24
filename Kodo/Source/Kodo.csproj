@@ -15,7 +15,7 @@
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
     <Version>2.1.5-DEV</Version>
-    <InformationalVersion>v2.1.5-DEV</InformationalVersion>
+    <InformationalVersion>v2.1.5a-DEV</InformationalVersion>
     <HotfixStampBaseVersion>2.1.5-DEV</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
