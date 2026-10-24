@@ -90,3 +90,9 @@ This patch fixes freezing in the editor by optimizing how results and live panel
 ## Kodo Hotfix Testing
 > 2026-10-24
 Expect frequent hotfix tests and patch updates over the next several hours while we test the hotfix framework.
+
+---
+
+## Kodo Hotfix Testing Complete
+> 2026-10-24
+Hotfix testing is now complete and all bugs have been addressed
