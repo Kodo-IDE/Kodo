@@ -13,7 +13,7 @@ on:
         required: true
         type: number
       git_base_ref:
-        description: Optional parent tag or Git ref; defaults to v<base_version>
+        description: Optional parent tag or Git ref; defaults to v<base_version> (v prefix is optional when entering the base tag)
         required: false
         type: string
 
@@ -43,6 +43,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
       - name: Package Windows hotfix
         shell: pwsh
         env:
@@ -50,21 +53,24 @@ jobs:
           HOTFIX: ${{ inputs.hotfix }}
           GIT_BASE_REF: ${{ inputs.git_base_ref }}
         run: |
-          $arguments = @(
-            '-BaseVersion', $env:BASE_VERSION,
-            '-Hotfix', $env:HOTFIX,
-            '-AutoDetectFiles',
-            '-RuntimeIds', 'win-x64',
-            '-KodoRoot', "$env:GITHUB_WORKSPACE/Kodo",
-            '-OutputDirectory', "$env:RUNNER_TEMP/hotfix"
-          )
-          if (-not [string]::IsNullOrWhiteSpace($env:GIT_BASE_REF)) {
-            $arguments += @('-GitBaseRef', $env:GIT_BASE_REF)
+          $gitBaseRef = $env:GIT_BASE_REF
+          if ($gitBaseRef -eq $env:BASE_VERSION) { $gitBaseRef = "v$gitBaseRef" }
+          $packageParameters = @{
+            BaseVersion = $env:BASE_VERSION
+            Hotfix = [int]$env:HOTFIX
+            AutoDetectFiles = $true
+            BuildWindowsInstaller = $true
+            RuntimeIds = @('win-x64')
+            KodoRoot = "$env:GITHUB_WORKSPACE/Kodo"
+            OutputDirectory = "$env:RUNNER_TEMP/hotfix"
           }
-          & ./dev/Release-Scripts/New-Hotfix.ps1 @arguments
+          if (-not [string]::IsNullOrWhiteSpace($gitBaseRef)) {
+            $packageParameters.GitBaseRef = $gitBaseRef
+          }
+          & ./dev/Release-Scripts/New-Hotfix.ps1 @packageParameters
           if ($LASTEXITCODE -ne 0) { throw "Hotfix packaging failed ($LASTEXITCODE)." }
 
-      - name: Upload Windows hotfix packages
+      - name: Upload Windows hotfix patch and full installer
         uses: actions/upload-artifact@v7
         with:
           name: Kodo-Windows-hotfix
@@ -115,18 +121,20 @@ jobs:
           GIT_BASE_REF: ${{ inputs.git_base_ref }}
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
-          $arguments = @(
-            '-BaseVersion', $env:BASE_VERSION,
-            '-Hotfix', $env:HOTFIX,
-            '-AutoDetectFiles',
-            '-RuntimeIds', 'linux-x64', 'linux-arm64',
-            '-KodoRoot', "$env:GITHUB_WORKSPACE/Kodo",
-            '-OutputDirectory', "$env:RUNNER_TEMP/hotfix"
-          )
-          if (-not [string]::IsNullOrWhiteSpace($env:GIT_BASE_REF)) {
-            $arguments += @('-GitBaseRef', $env:GIT_BASE_REF)
+          $gitBaseRef = $env:GIT_BASE_REF
+          if ($gitBaseRef -eq $env:BASE_VERSION) { $gitBaseRef = "v$gitBaseRef" }
+          $packageParameters = @{
+            BaseVersion = $env:BASE_VERSION
+            Hotfix = [int]$env:HOTFIX
+            AutoDetectFiles = $true
+            RuntimeIds = @('linux-x64', 'linux-arm64')
+            KodoRoot = "$env:GITHUB_WORKSPACE/Kodo"
+            OutputDirectory = "$env:RUNNER_TEMP/hotfix"
           }
-          & ./dev/Release-Scripts/New-Hotfix.ps1 @arguments
+          if (-not [string]::IsNullOrWhiteSpace($gitBaseRef)) {
+            $packageParameters.GitBaseRef = $gitBaseRef
+          }
+          & ./dev/Release-Scripts/New-Hotfix.ps1 @packageParameters
           if ($LASTEXITCODE -ne 0) { throw "Hotfix packaging failed ($LASTEXITCODE)." }
 
       - name: Upload Linux hotfix packages
