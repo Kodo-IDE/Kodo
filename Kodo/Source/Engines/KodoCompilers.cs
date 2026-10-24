@@ -2440,26 +2440,15 @@ public partial class MainWindow
             var current = Path.GetFullPath(startFolder);
             while (!string.IsNullOrWhiteSpace(current))
             {
-                if (HasDotnetProject(current) ||
-                    File.Exists(Path.Combine(current, "Cargo.toml")) ||
-                    File.Exists(Path.Combine(current, "go.mod")) ||
-                    File.Exists(Path.Combine(current, "package.json")) ||
-                    File.Exists(Path.Combine(current, "pom.xml")) ||
-                    File.Exists(Path.Combine(current, "build.gradle")) ||
-                    File.Exists(Path.Combine(current, "build.gradle.kts")) ||
-                    File.Exists(Path.Combine(current, "CMakeLists.txt")) ||
-                    File.Exists(Path.Combine(current, "Makefile")) ||
-                    File.Exists(Path.Combine(current, "makefile")) ||
-                    File.Exists(Path.Combine(current, "GNUmakefile")) ||
-                    File.Exists(Path.Combine(current, "pyproject.toml")) ||
-                    File.Exists(Path.Combine(current, "requirements.txt")) ||
-                    File.Exists(Path.Combine(current, "setup.py")) ||
-                    File.Exists(Path.Combine(current, "Pipfile")))
+                if (HasProjectFiles(current))
                 {
                     return current;
                 }
 
                 var parent = Directory.GetParent(current);
+                if (parent is not null && HasProjectFiles(parent.FullName, current))
+                    return parent.FullName;
+
                 if (parent is null)
                     break;
 
@@ -2471,6 +2460,63 @@ public partial class MainWindow
         }
 
         return null;
+    }
+
+    private bool HasProjectFiles(string folder, string? excludedChild = null)
+    {
+        if (HasDotnetProject(folder) ||
+            File.Exists(Path.Combine(folder, "Cargo.toml")) ||
+            File.Exists(Path.Combine(folder, "go.mod")) ||
+            File.Exists(Path.Combine(folder, "package.json")) ||
+            File.Exists(Path.Combine(folder, "pom.xml")) ||
+            File.Exists(Path.Combine(folder, "build.gradle")) ||
+            File.Exists(Path.Combine(folder, "build.gradle.kts")) ||
+            File.Exists(Path.Combine(folder, "CMakeLists.txt")) ||
+            File.Exists(Path.Combine(folder, "Makefile")) ||
+            File.Exists(Path.Combine(folder, "makefile")) ||
+            File.Exists(Path.Combine(folder, "GNUmakefile")) ||
+            File.Exists(Path.Combine(folder, "pyproject.toml")) ||
+            File.Exists(Path.Combine(folder, "requirements.txt")) ||
+            File.Exists(Path.Combine(folder, "setup.py")) ||
+            File.Exists(Path.Combine(folder, "Pipfile")))
+            return true;
+
+        try
+        {
+            foreach (var child in Directory.EnumerateDirectories(folder))
+            {
+                if (excludedChild is not null && child.Equals(excludedChild, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var name = Path.GetFileName(child);
+                if (name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
+                    name.Equals("packages", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (HasDotnetProject(child) ||
+                    File.Exists(Path.Combine(child, "Cargo.toml")) ||
+                    File.Exists(Path.Combine(child, "go.mod")) ||
+                    File.Exists(Path.Combine(child, "package.json")) ||
+                    File.Exists(Path.Combine(child, "pom.xml")) ||
+                    File.Exists(Path.Combine(child, "build.gradle")) ||
+                    File.Exists(Path.Combine(child, "build.gradle.kts")) ||
+                    File.Exists(Path.Combine(child, "CMakeLists.txt")) ||
+                    File.Exists(Path.Combine(child, "Makefile")) ||
+                    File.Exists(Path.Combine(child, "makefile")) ||
+                    File.Exists(Path.Combine(child, "GNUmakefile")) ||
+                    File.Exists(Path.Combine(child, "pyproject.toml")) ||
+                    File.Exists(Path.Combine(child, "requirements.txt")) ||
+                    File.Exists(Path.Combine(child, "setup.py")) ||
+                    File.Exists(Path.Combine(child, "Pipfile")))
+                    return true;
+            }
+        }
+        catch { }
+
+        return false;
     }
 
     private static readonly HashSet<string> DotnetProjectExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -3018,6 +3064,13 @@ public partial class MainWindow
         }
 
         var workingDirectory = ResolveWorkingDirectory();
+        if (compiler?.Id.StartsWith("project:", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var fileFolder = Path.GetDirectoryName(_currentFilePath ?? string.Empty);
+            workingDirectory = !string.IsNullOrWhiteSpace(fileFolder)
+                ? FindProjectRoot(fileFolder) ?? workingDirectory
+                : workingDirectory;
+        }
 
         if (ext.Equals(".go", StringComparison.OrdinalIgnoreCase) &&
             compiler is not null &&
