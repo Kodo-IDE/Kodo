@@ -95,4 +95,4 @@ Expect frequent hotfix tests and patch updates over the next several hours while
 
 ## Kodo Hotfix Testing Complete
 > 2026-10-24
-Hotfix testing is now complete and all bugs have been addressed
+Hotfix testing is now complete and all bugs have been addressed.
