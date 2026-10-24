@@ -6310,7 +6310,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             File.Move(tempPath, targetPath, overwrite: true);
             return;
         }
-        catch (IOException) when (OperatingSystem.IsWindows() && File.Exists(targetPath))
+        catch (Exception ex) when (OperatingSystem.IsWindows() && File.Exists(targetPath) && (ex is IOException or UnauthorizedAccessException))
         {
             KodoDiagnostics.LogDebug($"Atomic replace of '{targetPath}' was blocked by an open handle - falling back to an in-place write.");
         }
