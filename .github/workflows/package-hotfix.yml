@@ -1,0 +1,138 @@
+# Licensed under GPL-v3.0
+name: Package Hotfix
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: Parent release version (for example 2.1.0 or 2.1.0-BETA)
+        required: true
+        type: string
+      hotfix:
+        description: Positive hotfix level (for example 1)
+        required: true
+        type: number
+      git_base_ref:
+        description: Optional parent tag or Git ref; defaults to v<base_version>
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows hotfix package
+    runs-on: windows-latest
+    steps:
+      - name: Checkout selected Kodo ref
+        uses: actions/checkout@v5
+        with:
+          path: Kodo
+          fetch-depth: 0
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v5
+        with:
+          repository: Kodo-IDE/Kodo-Development
+          path: dev
+          token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Package Windows hotfix
+        shell: pwsh
+        env:
+          BASE_VERSION: ${{ inputs.base_version }}
+          HOTFIX: ${{ inputs.hotfix }}
+          GIT_BASE_REF: ${{ inputs.git_base_ref }}
+        run: |
+          $arguments = @(
+            '-BaseVersion', $env:BASE_VERSION,
+            '-Hotfix', $env:HOTFIX,
+            '-AutoDetectFiles',
+            '-RuntimeIds', 'win-x64',
+            '-KodoRoot', "$env:GITHUB_WORKSPACE/Kodo",
+            '-OutputDirectory', "$env:RUNNER_TEMP/hotfix"
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:GIT_BASE_REF)) {
+            $arguments += @('-GitBaseRef', $env:GIT_BASE_REF)
+          }
+          & ./dev/Release-Scripts/New-Hotfix.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Hotfix packaging failed ($LASTEXITCODE)." }
+
+      - name: Upload Windows hotfix packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kodo-Windows-hotfix
+          path: ${{ runner.temp }}/hotfix/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux hotfix packages
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout selected Kodo ref
+        uses: actions/checkout@v5
+        with:
+          path: Kodo
+          fetch-depth: 0
+
+      - name: Checkout release tooling
+        uses: actions/checkout@v5
+        with:
+          repository: Kodo-IDE/Kodo-Development
+          path: dev
+          token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install Linux package dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl libicu-dev libssl-dev fontconfig dpkg
+
+      - name: Install appimagetool
+        run: |
+          curl -L --fail --retry 3 \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage \
+            -o "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Package Linux hotfixes and full packages
+        shell: pwsh
+        env:
+          BASE_VERSION: ${{ inputs.base_version }}
+          HOTFIX: ${{ inputs.hotfix }}
+          GIT_BASE_REF: ${{ inputs.git_base_ref }}
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          $arguments = @(
+            '-BaseVersion', $env:BASE_VERSION,
+            '-Hotfix', $env:HOTFIX,
+            '-AutoDetectFiles',
+            '-RuntimeIds', 'linux-x64', 'linux-arm64',
+            '-KodoRoot', "$env:GITHUB_WORKSPACE/Kodo",
+            '-OutputDirectory', "$env:RUNNER_TEMP/hotfix"
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:GIT_BASE_REF)) {
+            $arguments += @('-GitBaseRef', $env:GIT_BASE_REF)
+          }
+          & ./dev/Release-Scripts/New-Hotfix.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) { throw "Hotfix packaging failed ($LASTEXITCODE)." }
+
+      - name: Upload Linux hotfix packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: Kodo-Linux-hotfix
+          path: ${{ runner.temp }}/hotfix/
+          if-no-files-found: error
+          retention-days: 30
