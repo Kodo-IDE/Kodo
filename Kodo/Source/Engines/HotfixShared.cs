@@ -78,7 +78,16 @@ internal static class HotfixShared
             var stage = Path.GetFullPath(Path.GetDirectoryName(transactionPath) ?? "");
             var expectedTx = Path.Combine(stage, "transaction.json");
             var stageParent = Directory.GetParent(stage)?.FullName ?? "";
-            bool Same(string a, string b) => string.Equals(Path.GetFullPath(a), Path.GetFullPath(b),
+            string NormalizePath(string path)
+            {
+                var fullPath = Path.GetFullPath(path);
+                var root = Path.GetPathRoot(fullPath);
+                if (!string.IsNullOrEmpty(root) && string.Equals(fullPath, root,
+                    OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    return fullPath;
+                return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            bool Same(string a, string b) => string.Equals(NormalizePath(a), NormalizePath(b),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
             if (!Same(transactionPath, expectedTx) || !Same(stageParent, hotfix) ||

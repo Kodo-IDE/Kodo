@@ -14,9 +14,9 @@
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\Assets\kodo_logo.ico</ApplicationIcon>
     <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
-    <Version>2.1.4-DEV</Version>
-    <InformationalVersion>v2.1.4a-DEV</InformationalVersion>
-    <HotfixStampBaseVersion>2.1.4-DEV</HotfixStampBaseVersion>
+    <Version>2.1.5-DEV</Version>
+    <InformationalVersion>v2.1.5-DEV</InformationalVersion>
+    <HotfixStampBaseVersion>2.1.5-DEV</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
