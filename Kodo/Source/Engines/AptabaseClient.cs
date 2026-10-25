@@ -160,7 +160,7 @@ internal static class AptabaseClient
         _appKey = GetAptabaseKey();
 
         Console.WriteLine($"[Aptabase] Initialized with session: {_sessionId}");
-        Console.WriteLine($"[Aptabase] App Key: {_appKey}");
+        Console.WriteLine("[Aptabase] Initialized.");
 
     }
 
@@ -288,7 +288,7 @@ internal static class AptabaseClient
                 return;
 
             var json = JsonSerializer.Serialize(events);
-            Console.WriteLine($"[Aptabase] Payload: {json}");
+            Console.WriteLine($"[Aptabase] Sending {events.Count} event(s).");
 
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             var url = "https://us.aptabase.com/api/v0/events";

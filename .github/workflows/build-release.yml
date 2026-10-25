@@ -24,6 +24,14 @@ jobs:
           path: dev
           token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
 
+      - name: Inject private Aptabase keys
+        shell: pwsh
+        run: |
+          $privateKeys = Join-Path $env:GITHUB_WORKSPACE 'dev/BuildSecrets/KEYS.cs'
+          $targetKeys = Join-Path $env:GITHUB_WORKSPACE 'Kodo/Kodo/Source/KEYS.cs'
+          if (-not (Test-Path -LiteralPath $privateKeys)) { throw 'Private Aptabase KEYS.cs was not checked out.' }
+          Copy-Item -LiteralPath $privateKeys -Destination $targetKeys -Force
+
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
         with:
@@ -59,6 +67,13 @@ jobs:
           repository: Kodo-IDE/Kodo-Development
           path: dev
           token: ${{ secrets.KODO_DEVELOPMENT_READ_TOKEN }}
+
+      - name: Inject private Aptabase keys
+        run: |
+          private_keys="$GITHUB_WORKSPACE/dev/BuildSecrets/KEYS.cs"
+          target_keys="$GITHUB_WORKSPACE/Kodo/Kodo/Source/KEYS.cs"
+          test -f "$private_keys"
+          install -m 0644 "$private_keys" "$target_keys"
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
