@@ -29,6 +29,8 @@ public partial class MainWindow
 {
     private CancellationTokenSource? _lspCompletionCts;
     private CancellationTokenSource? _lspPresentationCancellation;
+    private bool _editorInsightsRefreshRunning;
+    private bool _editorInsightsRefreshPending;
     private const int LspMaxFoldingsApplied = 4_000;
     private const int LocalInsightSkipThreshold = 80_000;
 
@@ -73,6 +75,12 @@ public partial class MainWindow
     {
         _InsightRefreshTimer.Stop();
         if (!IsActive) return;
+        if (_editorInsightsRefreshRunning)
+        {
+            _editorInsightsRefreshPending = true;
+            return;
+        }
+        _editorInsightsRefreshRunning = true;
         _ = RefreshEditorInsightsSafelyAsync();
     }
 
@@ -88,6 +96,19 @@ public partial class MainWindow
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug("Editor insight refresh failed.", ex);
+        }
+        finally
+        {
+            _editorInsightsRefreshRunning = false;
+            if (_editorInsightsRefreshPending && IsActive)
+            {
+                _editorInsightsRefreshPending = false;
+                QueueInsightRefresh();
+            }
+            else
+            {
+                _editorInsightsRefreshPending = false;
+            }
         }
     }
 
