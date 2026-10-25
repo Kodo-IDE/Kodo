@@ -157,6 +157,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.ReportSlowStage(stage, elapsed, threshold, $"len={editor?.Document?.TextLength ?? 0}");
     }
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
+    private readonly DispatcherTimer _editorMinimapRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
@@ -239,6 +240,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
+    private bool _isMinimapVisible = true;
     private bool _isInsightEnabled = true;
     private bool _isInsightCodeSuggestionsEnabled = true;
     private bool _isInsightDeadCodeEnabled = true;
@@ -864,7 +866,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.TextArea.TextView.PointerExited += EditorTextView_OnPointerExited;
         EditorTextBox.TextArea.TextView.PointerPressed += (_, _) => HideDiagnosticPopup();
         EditorTextBox.TextArea.TextView.PointerWheelChanged += EditorTextView_OnPointerWheelChanged;
-        EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) => HideDiagnosticPopup(), RoutingStrategies.Bubble);
+        EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) =>
+        {
+            HideDiagnosticPopup();
+            UpdateEditorMinimapViewport();
+        }, RoutingStrategies.Bubble);
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
         TerminalHostControl.WorkingDirectoryChanged += TerminalHostControl_OnWorkingDirectoryChanged;
@@ -874,6 +880,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
+        EditorMinimapView.LineSelected += EditorMinimapView_OnLineSelected;
+        _editorMinimapRefreshTimer.Tick += EditorMinimapRefreshTimer_OnTick;
+        ScheduleEditorMinimapRefresh();
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
         {
             HideDiagnosticPopup();
@@ -943,6 +952,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
+        _isMinimapVisible = settings.MinimapVisible;
         _isInsightEnabled = settings.InsightEnabled;
         _isInsightCodeSuggestionsEnabled = settings.InsightCodeSuggestionsEnabled;
         _isInsightDeadCodeEnabled = settings.InsightDeadCodeEnabled;
@@ -3063,6 +3073,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplyEditorSettings();
             SaveSettings();
         }
+    }
+
+    public bool IsMinimapVisible
+    {
+        get => _isMinimapVisible;
+        set
+        {
+            if (_isMinimapVisible == value) return;
+            _isMinimapVisible = value;
+            OnPropertyChanged();
+            SaveSettings();
+            if (value) ScheduleEditorMinimapRefresh();
+        }
+    }
+
+    private void ScheduleEditorMinimapRefresh()
+    {
+        _editorMinimapRefreshTimer.Stop();
+        if (IsMinimapVisible)
+            _editorMinimapRefreshTimer.Start();
+    }
+
+    private void EditorMinimapRefreshTimer_OnTick(object? sender, EventArgs e)
+    {
+        _editorMinimapRefreshTimer.Stop();
+        if (!IsMinimapVisible)
+        {
+            EditorMinimapView?.SetDocument(null);
+            return;
+        }
+
+        EditorMinimapView?.SetDocument(EditorTextBox?.Document);
+        UpdateEditorMinimapViewport();
+    }
+
+    private void UpdateEditorMinimapViewport()
+    {
+        if (!IsMinimapVisible || EditorTextBox?.Document is not { } document || EditorTextBox.TextArea?.TextView is not { } textView)
+            return;
+
+        if (textView.VisualLinesValid && textView.VisualLines.Count > 0)
+        {
+            var top = textView.VisualLines[0].FirstDocumentLine.LineNumber;
+            var bottom = textView.VisualLines[^1].FirstDocumentLine.LineNumber;
+            EditorMinimapView?.SetViewport(top, Math.Max(top, bottom));
+            return;
+        }
+
+        var topPosition = textView.GetPositionFloor(new Point(textView.ScrollOffset.X, textView.ScrollOffset.Y));
+        var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
+        var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
+        EditorMinimapView?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
+    }
+
+    private void EditorMinimapView_OnLineSelected(int line)
+    {
+        if (EditorTextBox?.Document is not { } document) return;
+        EditorTextBox.ScrollToLine(Math.Clamp(line, 1, document.LineCount));
     }
 
     public bool IsInsightEnabled
@@ -5599,6 +5667,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return PaletteMode.Files;
     }
 
+    private static bool IsKodoTaglineQuery(string? text)
+    {
+        var normalized = string.Concat((text ?? string.Empty).Where(char.IsLetterOrDigit));
+        return normalized.Equals("Codefaststaylight", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void ShowCommandPalette(bool commandsOnly = false, string? prefix = null)
     {
         if (!IsEditorPageVisible)
@@ -6194,6 +6268,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, Keywords: "sidebar"),
             new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console"),
+            new(IsMinimapVisible ? "Hide Minimap" : "Show Minimap", "View", "", () => { IsMinimapVisible = !IsMinimapVisible; return Task.CompletedTask; }, Keywords: "toggle overview code map"),
             new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel"),
             new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
             new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
@@ -6566,7 +6641,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         string? message = null;
         var totalMatches = 0;
         List<PaletteCommand> entries;
-        switch (mode)
+        if (IsKodoTaglineQuery(_commandPaletteSearchBox.Text))
+        {
+            totalMatches = 1;
+            entries =
+            [
+                new PaletteCommand("You're speaking our language!", "Kodo", string.Empty,
+                    () => Task.CompletedTask, Detail: "Code fast, stay light", KeepOpen: true)
+            ];
+        }
+        else switch (mode)
         {
             case PaletteMode.Commands:
                 entries = BuildCommandModeEntries(query, out totalMatches);
@@ -7090,6 +7174,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             VerboseLoggingEnabled = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
             WordWrapEnabled = IsWordWrapEnabled,
+            MinimapVisible = IsMinimapVisible,
             InsightEnabled = IsInsightEnabled,
             InsightCodeSuggestionsEnabled = IsInsightCodeSuggestionsEnabled,
             InsightDeadCodeEnabled = IsInsightDeadCodeEnabled,

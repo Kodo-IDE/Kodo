@@ -19,6 +19,7 @@ internal sealed class AppSettings
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;
     public bool WordWrapEnabled { get; set; }
+    public bool MinimapVisible { get; set; } = true;
     public bool InsightEnabled { get; set; } = true;
     public bool InsightCodeSuggestionsEnabled { get; set; } = true;
     public bool InsightDeadCodeEnabled { get; set; } = true;

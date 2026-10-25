@@ -624,6 +624,7 @@ public partial class MainWindow
         lock (_lspHoverLock) _lspHoverCts?.Cancel();
         HideDiagnosticPopup();
         var curLen = EditorTextBox?.Document?.TextLength ?? 0;
+        ScheduleEditorMinimapRefresh();
         if (curLen > 120_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(400);
         else if (curLen > 80_000) _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
         else _syntaxHighlightDebounceTimer.Interval = TimeSpan.FromMilliseconds(150);

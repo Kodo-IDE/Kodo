@@ -7,6 +7,7 @@
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         xmlns:kodo="clr-namespace:Kodo"
         xmlns:kodoModels="clr-namespace:Kodo.Models"
+        xmlns:kodoRenderers="clr-namespace:Kodo.Renderers"
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
         x:DataType="kodo:MainWindow"
@@ -1916,9 +1917,11 @@
                 </Border>
 
                 <Grid Grid.Row="2"
+                      ColumnDefinitions="*,Auto"
                       Background="{Binding EditorBackgroundBrush}"
                       IsVisible="{Binding IsDocumentViewVisible}">
-                    <avaloniaEdit:TextEditor x:Name="EditorTextBox"
+                    <avaloniaEdit:TextEditor Grid.Column="0"
+                                             x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
                                              FontSize="14"
@@ -1988,6 +1991,16 @@
                             </ContextMenu>
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
+                    <Grid Grid.Column="1" IsVisible="{Binding IsTextEditorVisible}">
+                        <Border Width="96"
+                                Background="{Binding EditorBackgroundBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1,0,0,0"
+                                IsVisible="{Binding IsMinimapVisible}"
+                                ToolTip.Tip="Editor minimap. Click or drag to navigate.">
+                            <kodoRenderers:EditorMinimapControl x:Name="EditorMinimapView" />
+                        </Border>
+                    </Grid>
                     <Popup x:Name="DiagnosticPopup"
                             Placement="AnchorAndGravity"
                             PlacementAnchor="TopLeft"
@@ -5836,6 +5849,10 @@
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
+                                <CheckBox IsChecked="{Binding IsMinimapVisible, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Show a code overview beside the editor for quick navigation"
+                                          Content="Show minimap" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"

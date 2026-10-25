@@ -106,6 +106,7 @@ public partial class MainWindow
 
     private void ApplyThemeToEditor()
     {
+        EditorMinimapView?.SetTheme(EditorBackgroundBrush, MutedTextBrush, AccentBrush);
         if (TerminalHostControl is not null)
         {
             TerminalHostControl.ApplyKodoTheme(
