@@ -1163,7 +1163,7 @@
                                                     Click="OpenEditorTabButton_OnClick"
                                                     ToolTip.Tip="{Binding Path}"
                                                     HorizontalContentAlignment="Stretch">
-                                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                                <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                                     <Viewbox Grid.Column="0"
                                                              Width="30" Height="14"
                                                              Margin="0,0,7,0"
@@ -1184,7 +1184,22 @@
                                                                Text="{Binding DisplayName}"
                                                                TextTrimming="CharacterEllipsis"
                                                                VerticalAlignment="Center" />
-                                                    <Viewbox Grid.Column="2"
+                                                    <Border Grid.Column="2"
+                                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="4"
+                                                            Padding="4,0"
+                                                            Margin="4,0"
+                                                            IsVisible="{Binding HasErrorDiagnostics}"
+                                                            ToolTip.Tip="{Binding DiagnosticsTooltip}">
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                   Text="{Binding ErrorCount}"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <Viewbox Grid.Column="3"
                                                              Width="7" Height="7"
                                                              Margin="6,0,0,0"
                                                              VerticalAlignment="Center"
@@ -1401,6 +1416,21 @@
                                                     </MultiBinding>
                                                 </TextBlock.MaxWidth>
                                             </TextBlock>
+                                            <Border Background="{Binding #RootWindow.ButtonBrush}"
+                                                    BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="4"
+                                                    Padding="4,0"
+                                                    Margin="6,0,0,0"
+                                                    VerticalAlignment="Center"
+                                                    IsVisible="{Binding HasErrorDiagnostics}"
+                                                    ToolTip.Tip="{Binding ErrorCountTooltip}">
+                                                <TextBlock FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding #RootWindow.DangerBrush}"
+                                                           Text="{Binding ErrorCount}"
+                                                           VerticalAlignment="Center" />
+                                            </Border>
                                         </StackPanel>
                                     </Grid>
                                 </Button>
@@ -1747,6 +1777,19 @@
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
                                                                Text="{Binding DisplayName}" />
+                                                    <Border Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="4"
+                                                            Padding="4,0"
+                                                            IsVisible="{Binding HasErrorDiagnostics}"
+                                                            ToolTip.Tip="{Binding DiagnosticsTooltip}">
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                   Text="{Binding ErrorCount}"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
                                                      <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
                                                               IsVisible="{Binding IsDirty}">
                                                         <Canvas Width="24" Height="24">

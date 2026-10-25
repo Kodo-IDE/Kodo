@@ -395,7 +395,7 @@ public partial class MainWindow
         offset = Math.Clamp(offset, 0, document.TextLength);
         var line = document.GetLineByOffset(offset);
         var columnOffset = Math.Clamp(offset - line.Offset, 0, line.Length);
-        var columnText = document.GetText(line.Offset, columnOffset);
+        var columnText = document.GetTextAsMemory(line.Offset, columnOffset).Span;
         return (line.LineNumber - 1, LspPath.PositionLength(columnText, encoding));
     }
 

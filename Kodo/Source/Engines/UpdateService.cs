@@ -22,6 +22,12 @@ internal static class UpdateService
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions TransactionJsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = false };
 
+    // Development builds must never check, stage, or apply released app updates. AppVersion
+    // has already had build metadata (for example +commit-hash) removed by KodoDiagnostics.
+    internal static bool IsDevelopmentBuild =>
+        KodoDiagnostics.AppVersion.Trim().TrimStart('v', 'V')
+            .EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);
+
     private static HttpClient CreateHttpClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
@@ -32,6 +38,7 @@ internal static class UpdateService
 
     public static async Task<UpdateInfo?> CheckForUpdateAsync(CancellationToken ct = default, bool includeBeta = false)
     {
+        if (IsDevelopmentBuild) return null;
         LastIncompatibleReason = null;
         var fromLatest = await TryCheckLatestAsync(ct).ConfigureAwait(false);
         if (fromLatest is not null) return fromLatest;
@@ -189,6 +196,7 @@ internal static class UpdateService
 
     public static async Task<HotfixCandidate?> CheckForHotfixAsync(CancellationToken ct = default, bool includeBeta = false)
     {
+        if (IsDevelopmentBuild) return null;
         KodoDiagnostics.LogDebug("Hotfix check started");
         var (installedBase, installedLevel) = ResolveInstalledHotfix();
         KodoDiagnostics.LogDebug($"Installed base version: {installedBase}");
@@ -268,6 +276,7 @@ internal static class UpdateService
         IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken ct = default)
     {
+        ThrowIfDevelopmentBuild();
         var safeTag = candidate.TagName.Trim().Replace('/', '-').Replace('\\', '-');
         foreach (var c in Path.GetInvalidFileNameChars()) safeTag = safeTag.Replace(c, '_');
         var destPath = Path.Combine(HotfixStaging.DownloadsRoot, safeTag, "package.zip");
@@ -280,6 +289,7 @@ internal static class UpdateService
         IProgress<UpdateDownloadProgress>? progress = null,
         CancellationToken ct = default)
     {
+        ThrowIfDevelopmentBuild();
         var prepared = await HotfixStaging.PrepareAsync(candidate, progress, ct).ConfigureAwait(false);
         if (prepared.AlreadyInstalled || prepared.TransactionPath is null)
             throw new InvalidOperationException($"Hotfix {candidate.TagName} is already installed.");
@@ -585,6 +595,7 @@ internal static class UpdateService
         IProgress<UpdateDownloadProgress>? progress,
         CancellationToken ct = default)
     {
+        ThrowIfDevelopmentBuild();
         var versionDir = Path.Combine(StagingRoot, SanitizeVersionForPath(update.Version));
         Directory.CreateDirectory(versionDir);
 
@@ -683,6 +694,7 @@ internal static class UpdateService
 
     public static string CreateUpdateTransaction(string installerPath, string version, bool restartAfterUpdate = true, string? expectedSha256 = null)
     {
+        ThrowIfDevelopmentBuild();
         if (!File.Exists(installerPath)) throw new FileNotFoundException("Staged installer not found", installerPath);
         var fi = new FileInfo(installerPath);
         if (fi.Length < 1024 * 1024) throw new InvalidDataException($"Staged installer too small ({fi.Length} bytes)");
@@ -719,6 +731,7 @@ internal static class UpdateService
 
     public static void LaunchUpdaterAndExit(string transactionPath)
     {
+        ThrowIfDevelopmentBuild();
         var transactionJson = File.ReadAllText(transactionPath);
         if (Shared.IsHotfixTransactionJson(transactionJson))
         {
@@ -851,6 +864,7 @@ internal static class UpdateService
 
     public static void PrepareAndLaunchUpdate(string installerPath, string version, bool restartAfterUpdate = true, string? expectedSha256 = null)
     {
+        ThrowIfDevelopmentBuild();
         var txPath = CreateUpdateTransaction(installerPath, version, restartAfterUpdate, expectedSha256);
         LaunchUpdaterAndExit(txPath);
     }
@@ -861,6 +875,7 @@ internal static class UpdateService
         CancellationToken ct = default,
         bool includeBeta = false)
     {
+        if (IsDevelopmentBuild) return null;
         CleanupStaleArtifacts();
         var update = await CheckForUpdateAsync(ct, includeBeta).ConfigureAwait(false);
         if (update is null) return null;
@@ -885,6 +900,12 @@ internal static class UpdateService
             UpdateDialog.ShowFor(update);
         }
         return update;
+    }
+
+    private static void ThrowIfDevelopmentBuild()
+    {
+        if (IsDevelopmentBuild)
+            throw new InvalidOperationException("App updates are disabled for -DEV builds.");
     }
 
 }

@@ -368,6 +368,7 @@ public class FileTreeItem : INotifyPropertyChanged
     private bool _isExpanded;
     private bool _isRenaming;
     private string _renameText = string.Empty;
+    private int _errorCount;
 
     public string Name { get; set; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
@@ -414,6 +415,20 @@ public class FileTreeItem : INotifyPropertyChanged
     }
 
     public string Icon => IsDirectory ? (_isExpanded ? "\U0001F4C2" : "\U0001F4C1") : GetFileIcon(Name);
+
+    public int ErrorCount => _errorCount;
+    public bool HasErrorDiagnostics => _errorCount > 0;
+    public string ErrorCountTooltip => _errorCount == 1 ? "1 error" : $"{_errorCount} errors";
+
+    public void UpdateErrorCount(int errors)
+    {
+        errors = Math.Max(0, errors);
+        if (_errorCount == errors) return;
+        _errorCount = errors;
+        OnPropertyChanged(nameof(ErrorCount));
+        OnPropertyChanged(nameof(HasErrorDiagnostics));
+        OnPropertyChanged(nameof(ErrorCountTooltip));
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 

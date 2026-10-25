@@ -9,6 +9,17 @@ namespace Kodo;
 
 internal sealed class LspFileResolver
 {
+    private static readonly string[] CommonWorkspaceRootMarkers =
+    [
+        "*.sln", "*.slnx", "*.csproj", "*.fsproj", "*.vbproj",
+        "package.json", "pnpm-workspace.yaml", "yarn.lock", "bun.lock", "bun.lockb",
+        "tsconfig.json", "jsconfig.json", "deno.json", "deno.jsonc",
+        "pyproject.toml", "setup.py", "setup.cfg", "Pipfile", "poetry.lock",
+        "Cargo.toml", "go.mod", "go.work", "pom.xml", "build.gradle", "build.gradle.kts",
+        "settings.gradle", "settings.gradle.kts", "composer.json", "Gemfile", "mix.exs",
+        "CMakeLists.txt", "Makefile", "project.godot", ".git"
+    ];
+
     private sealed class Caches
     {
         public readonly Dictionary<string, LoadedExtension?> ExtensionsByFileExtension = new(StringComparer.OrdinalIgnoreCase);
@@ -124,14 +135,14 @@ internal sealed class LspFileResolver
         Func<string?, LoadedExtension?> resolveExtension,
         Func<string, string, bool> isPathInsideDirectory)
     {
-        var markers = resolveConfiguration(filePath)?.RootMarkers ?? resolveExtension(filePath)?.Lsp?.RootMarkers;
-        if (markers != null && markers.Length > 0)
+        var markers = GetWorkspaceRootMarkers(filePath, resolveConfiguration, resolveExtension);
+        if (markers.Length > 0)
         {
             var dir = Path.GetDirectoryName(filePath);
             while (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
             {
                 foreach (var m in markers)
-                    if (File.Exists(Path.Combine(dir, m)) || Directory.Exists(Path.Combine(dir, m)))
+                    if (HasWorkspaceRootMarker(dir, m))
                         return dir;
                 var parent = Path.GetDirectoryName(dir);
                 if (parent == dir) break;
@@ -146,5 +157,31 @@ internal sealed class LspFileResolver
         if (!string.IsNullOrWhiteSpace(currentFolderPath) && Directory.Exists(currentFolderPath))
             return currentFolderPath;
         return Environment.CurrentDirectory;
+    }
+
+    private static string[] GetWorkspaceRootMarkers(
+        string filePath,
+        Func<string?, LspConfiguration?> resolveConfiguration,
+        Func<string?, LoadedExtension?> resolveExtension)
+    {
+        var configuredMarkers = resolveConfiguration(filePath)?.RootMarkers
+                                ?? resolveExtension(filePath)?.Lsp?.RootMarkers
+                                ?? [];
+        return configuredMarkers
+            .Concat(CommonWorkspaceRootMarkers)
+            .Where(marker => !string.IsNullOrWhiteSpace(marker))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool HasWorkspaceRootMarker(string directory, string marker)
+    {
+        var path = Path.Combine(directory, marker);
+        if (File.Exists(path) || Directory.Exists(path)) return true;
+        if (!marker.Contains('*') && !marker.Contains('?')) return false;
+
+        try { return Directory.EnumerateFileSystemEntries(directory, marker, SearchOption.TopDirectoryOnly).Any(); }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
     }
 }

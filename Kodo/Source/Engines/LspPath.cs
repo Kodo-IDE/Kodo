@@ -222,8 +222,9 @@ internal static class LspPath
         return encoding == "utf-8" ? scalar <= 0x7f ? 1 : scalar <= 0x7ff ? 2 : scalar <= 0xffff ? 3 : 4 : 1;
     }
 
-    private static int PositionLength(ReadOnlySpan<char> text, string encoding)
+    public static int PositionLength(ReadOnlySpan<char> text, string? encoding)
     {
+        encoding = NormalizePositionEncoding(encoding);
         if (encoding == "utf-16") return text.Length;
         var length = 0;
         for (var index = 0; index < text.Length;)

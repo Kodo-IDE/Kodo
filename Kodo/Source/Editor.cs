@@ -77,6 +77,7 @@ public partial class MainWindow
         if (!IsActive) return;
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         if (LspEnabled && len > 250_000 && ResolveLspExtensionForFile(_currentFilePath) is not null) return;
+        var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
         var languageExtension = CurrentLanguageExtension;
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
         var errorSignature = ComputeErrorHighlightSignature(_insightDocVersion, _currentFilePath, scanExtension);
@@ -84,9 +85,13 @@ public partial class MainWindow
         if (errorSignature == _errorHighlightAppliedSignature && deadSignature == _deadCodeAppliedSignature)
         {
             await UpdateInsightAsync();
+            refreshWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("editor insight refresh", refreshWatch.ElapsedMilliseconds, 250, $"len={len} suggestionsOnly=true");
             return;
         }
         await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
+        refreshWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("editor insight refresh", refreshWatch.ElapsedMilliseconds, 250, $"len={len} suggestionsAndDiagnostics=true");
     }
 
     private void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -610,6 +615,7 @@ public partial class MainWindow
 
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
+        var textChangeStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         _insightDocVersion++;
         _lspCompletionCts?.Cancel();
         _lspDocumentRefreshPending = true;
@@ -649,13 +655,14 @@ public partial class MainWindow
 
         if (_suppressDirtyTracking) return;
         ClearAutoSaveStatus();
+        var wasDirty = _isDirty;
         _isDirty = true;
         OnPropertyChanged(nameof(IsDocumentDirty));
         if (ActiveEditorTab is not null)
         {
             ActiveEditorTab.IsDirty = true;
         }
-        QueueRefreshState(fullRefresh: !largeLspDocument);
+        QueueRefreshState(fullRefresh: !largeLspDocument && !wasDirty);
         RestartAutoSaveTimerIfNeeded();
         if (!largeLspDocument)
             QueueInsightRefresh();
@@ -664,6 +671,8 @@ public partial class MainWindow
             _findHighlightDebounceTimer.Stop();
             _findHighlightDebounceTimer.Start();
         }
+        var textChangeElapsed = System.Diagnostics.Stopwatch.GetElapsedTime(textChangeStartedAt);
+        KodoDiagnostics.ReportSlowStage("editor text change handling", (long)textChangeElapsed.TotalMilliseconds, 16, $"len={curLen}");
     }
 
     private sealed class LspPresentationContext
@@ -1186,6 +1195,7 @@ public partial class MainWindow
     {
         _syntaxHighlightDebounceTimer.Stop();
         if (!IsActive) return;
+        var syntaxWatch = System.Diagnostics.Stopwatch.StartNew();
         var len = EditorTextBox?.Document?.TextLength ?? 0;
         if (len > 80_000)
         {
@@ -1199,6 +1209,8 @@ public partial class MainWindow
                 EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             }
             EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+            syntaxWatch.Stop();
+            KodoDiagnostics.ReportSlowStage("syntax refresh scheduling", syntaxWatch.ElapsedMilliseconds, 16, $"len={len} lsp={hasLsp}");
             return;
         }
         _rainbowBracketColorizer.InvalidateCache();
@@ -1207,6 +1219,8 @@ public partial class MainWindow
         _htmlEmbeddedColorizer.InvalidateCache();
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
         EditorTextBox?.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        syntaxWatch.Stop();
+        KodoDiagnostics.ReportSlowStage("syntax refresh scheduling", syntaxWatch.ElapsedMilliseconds, 16, $"len={len} lsp=false");
     }
 
     private void FindHighlightDebounceTimer_OnTick(object? sender, EventArgs e)

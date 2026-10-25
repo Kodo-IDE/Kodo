@@ -684,6 +684,7 @@ public partial class MainWindow
             OnPropertyChanged(nameof(FileTreeItems));
             OnPropertyChanged(nameof(ExplorerPanelWidth));
         }
+        UpdateFileTreeErrorCountsForOpenTabs();
     }
 
     private void ReplaceFileTreeItems(IReadOnlyList<FileTreeItem> items)
@@ -709,6 +710,26 @@ public partial class MainWindow
         {
             _suppressExplorerWidthRefresh = false;
             OnPropertyChanged(nameof(ExplorerPanelWidth));
+        }
+        UpdateFileTreeErrorCountsForOpenTabs();
+    }
+
+    private void UpdateFileTreeErrorCount(string? filePath, int errors)
+    {
+        if (string.IsNullOrWhiteSpace(filePath)) return;
+        foreach (var item in FileTreeItems)
+        {
+            if (!item.IsDirectory && FileSystemPaths.Equals(item.FullPath, filePath))
+                item.UpdateErrorCount(errors);
+        }
+    }
+
+    private void UpdateFileTreeErrorCountsForOpenTabs()
+    {
+        foreach (var tab in OpenTabs)
+        {
+            if (!tab.IsUntitled)
+                UpdateFileTreeErrorCount(tab.Path, tab.ErrorCount);
         }
     }
 

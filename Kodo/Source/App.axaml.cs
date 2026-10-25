@@ -181,6 +181,7 @@ public partial class App : Application
 
     private static void CheckForUpdatesInBackground()
     {
+        if (UpdateService.IsDevelopmentBuild) return;
         _ = Task.Run(async () =>
         {
             try

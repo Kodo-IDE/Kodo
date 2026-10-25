@@ -2242,7 +2242,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private const double MinExplorerPanelWidth = 180;
     private const double MaxExplorerPanelWidth = 600;
 
-    internal const double FileTreeRowFixedOverhead = 16 + 2 + 32 + 6 + 8 + 10;
+    internal const double FileTreeRowFixedOverhead = 16 + 2 + 32 + 6 + 8 + 10 + 36;
 
     public bool IsFileExplorerVisible
     {
@@ -2480,8 +2480,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _updateBannerDismissed;
     private bool _extensionUpdateBannerDismissed;
 
-    private static bool IsDevBuild =>
-        CurrentAppVersion.Contains("-DEV", StringComparison.OrdinalIgnoreCase);
+    private static bool IsDevBuild => UpdateService.IsDevelopmentBuild;
 
     private static int VersionPriority(string tag)
     {
@@ -4961,14 +4960,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var selection = EditorTextBox?.TextArea?.Selection;
                 if (selection is not null && !selection.IsEmpty && document is not null)
                 {
-                    var selectedText = selection.GetText();
-                    var selChars = selectedText.Length;
-                    var nlCount = selectedText.Count(c => c == '\n');
-                    var selLines = nlCount + (selectedText.EndsWith("\n") ? 0 : 1);
-                    if (selLines <= 0) selLines = 1;
+                    var seg = selection.SurroundingSegment;
+                    var selChars = seg?.Length ?? 0;
+                    var selLines = 1;
                     try
                     {
-                        var seg = selection.SurroundingSegment;
                         if (seg is not null && seg.Length > 0)
                         {
                             var startLine = document.GetLineByOffset(seg.Offset).LineNumber;
@@ -5083,6 +5079,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var infos = errorSpans.Count - errors - warnings;
         var dead = deadSpans.Count;
         tab.UpdateDiagnostics(errors, warnings, infos, dead);
+        UpdateFileTreeErrorCount(tab.Path, errors);
     }
 
     private void UpdateActiveTabDiagnostics()
@@ -5128,6 +5125,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _ = RefreshInactiveTabInsightDiagnosticsAsync(tab);
             }
         }
+        UpdateFileTreeErrorCount(filePath, errors);
     }
 
     private async Task RefreshInactiveTabInsightDiagnosticsAsync(Kodo.Models.EditorTab tab)
@@ -7054,6 +7052,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task CheckForUpdatesManuallyAsync()
     {
+        if (IsDevBuild)
+        {
+            CheckForUpdatesStatusText = "App updates are disabled for -DEV builds.";
+            return;
+        }
         if (IsCheckingForUpdatesManually) return;
 
         IsCheckingForUpdatesManually = true;
@@ -7102,6 +7105,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void DownloadUpdateButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsDevBuild) return;
         var button = sender as Button;
         var originalContent = button?.Content;
 
