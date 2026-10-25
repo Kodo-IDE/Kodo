@@ -66,6 +66,19 @@
         <Style Selector="TextBox:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
+        <Style Selector="TextBox.quickaccesssearch">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.quickaccesssearch:focus">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.quickaccesssearch:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
         <Style Selector="ComboBox:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
@@ -887,9 +900,9 @@
     </Window.Styles>
 
     
-    <Grid ColumnDefinitions="60,Auto,Auto,*">
+    <Grid ColumnDefinitions="60,Auto,Auto,*" RowDefinitions="Auto,*">
 
-        <Border Grid.Column="0"
+        <Border Grid.Row="1" Grid.Column="0"
                 Background="{Binding SidebarBrush}"
                 BorderBrush="{Binding SurfaceBorderBrush}"
                 BorderThickness="0,0,1,0">
@@ -988,7 +1001,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Column="1"
+        <Border Grid.Row="1" Grid.Column="1"
                 Width="{Binding ExplorerPanelWidth}"
                 MinWidth="{Binding ExplorerPanelMinWidth}"
                 MaxWidth="600"
@@ -1441,7 +1454,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.Column="2"
+        <Border Grid.Row="1" Grid.Column="2"
                 x:Name="ExplorerPanelSplitter"
                 Width="4"
                 Background="Transparent"
@@ -1454,7 +1467,7 @@
                 PointerCaptureLost="ExplorerPanelSplitter_OnPointerCaptureLost"
                 DoubleTapped="ExplorerPanelSplitter_OnDoubleTapped" />
 
-        <Grid Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
+        <Grid Grid.Row="1" Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
 
             <StackPanel Grid.Row="0" Spacing="1">
                 
@@ -1572,6 +1585,7 @@
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="18,12">
+                    <Grid>
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Border Width="28"
@@ -1688,6 +1702,64 @@
                             </Button>
                         </StackPanel>
                     </Grid>
+<Border x:Name="QuickAccessSearchFrame"
+                                Classes="quickaccessframe"
+
+                                Width="520"
+                                MaxWidth="640"
+                                Height="36"
+                                Margin="8,0"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding QuickAccessSearchBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                Padding="10,0"
+                                PointerPressed="QuickAccessSearchFrame_OnPointerPressed">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+                                <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Fill="{Binding MutedTextBrush}"
+                                              Data="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBox x:Name="QuickAccessSearchBox"
+                                         Grid.Column="1"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Center"
+                                         PlaceholderText="Search files (&gt; commands, : line, @ symbol)"
+                                         FontSize="13"
+                                         Padding="2,0"
+                                         Classes="quickaccesssearch"
+                                         Background="Transparent"
+                                         Foreground="{Binding PrimaryTextBrush}"
+                                         BorderBrush="Transparent"
+                                         BorderThickness="0"
+                                         FocusAdorner="{x:Null}"
+                                         CornerRadius="0"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="QuickAccessSearchBox_OnTextChanged"
+                                         GotFocus="QuickAccessSearchBox_OnGotFocus"
+                                         LostFocus="QuickAccessSearchBox_OnLostFocus"
+                                         KeyDown="CommandPaletteSearch_OnKeyDown" />
+                                <Border Grid.Column="2"
+                                        Background="{Binding WindowBackgroundBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                        Padding="5,2"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding QuickAccessShortcutText}"
+                                               FontSize="10"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        </Grid>
+
                 </Border>
 
                 <Border Grid.Row="1"
