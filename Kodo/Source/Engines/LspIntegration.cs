@@ -2256,7 +2256,16 @@ startLine.ValueKind != JsonValueKind.Number || startCharacter.ValueKind != JsonV
                 await FlushLspDocumentAsync(filePath, string.Empty).ConfigureAwait(false);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
-            var result = await client.SendRequestAsync(method, parameters, timeout.Token).ConfigureAwait(false);
+            var requestWatch = System.Diagnostics.Stopwatch.StartNew();
+            JsonElement? result;
+            try
+            {
+                result = await client.SendRequestAsync(method, parameters, timeout.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                KodoDiagnostics.ReportSlowStage("LSP request", requestWatch.ElapsedMilliseconds, 250, $"method={method}");
+            }
             return await Dispatcher.UIThread.InvokeAsync(() =>
                 FileSystemPaths.Equals(_currentFilePath, filePath) && ReferenceEquals(EditorTextBox?.Document, snapshot.Document) && _insightDocVersion == snapshot.Version
                     ? result

@@ -409,11 +409,13 @@ public partial class MainWindow
         var orderedFoldings = foldings.OrderBy(f => f.StartOffset).ToArray();
         var updates = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null)
+            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is not { } currentDocument)
                 return null;
 
             var changes = new List<Action>();
             var existing = manager.AllFoldings.ToArray();
+            if (FoldingsMatchByLineRanges(currentDocument, existing, orderedFoldings))
+                return changes;
             var existingIndex = 0;
             foreach (var folding in orderedFoldings)
             {
@@ -479,6 +481,25 @@ public partial class MainWindow
             applied = true;
         }, DispatcherPriority.Background);
         return applied;
+    }
+
+    private static bool FoldingsMatchByLineRanges(
+        TextDocument document,
+        IReadOnlyList<AvaloniaEdit.Folding.FoldingSection> existing,
+        IReadOnlyList<AvaloniaEdit.Folding.NewFolding> requested)
+    {
+        if (existing.Count != requested.Count) return false;
+        for (var index = 0; index < existing.Count; index++)
+        {
+            var current = existing[index];
+            var next = requested[index];
+            var currentStartLine = document.GetLineByOffset(Math.Clamp(current.StartOffset, 0, document.TextLength)).LineNumber;
+            var nextStartLine = document.GetLineByOffset(Math.Clamp(next.StartOffset, 0, document.TextLength)).LineNumber;
+            var currentEndLine = document.GetLineByOffset(Math.Clamp(current.EndOffset - 1, 0, document.TextLength)).LineNumber;
+            var nextEndLine = document.GetLineByOffset(Math.Clamp(next.EndOffset - 1, 0, document.TextLength)).LineNumber;
+            if (currentStartLine != nextStartLine || currentEndLine != nextEndLine) return false;
+        }
+        return true;
     }
 
     private async Task UpdateLspDocumentHighlightsAsync(LspPresentationContext ctx)

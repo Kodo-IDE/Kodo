@@ -899,7 +899,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
         EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        EditorMinimapView.LineSelected += EditorMinimapView_OnLineSelected;
+        EditorMinimapView.ScrollRequested += EditorMinimapView_OnScrollRequested;
         _editorMinimapRefreshTimer.Tick += EditorMinimapRefreshTimer_OnTick;
         ScheduleEditorMinimapRefresh();
         EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
@@ -3145,9 +3145,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorMinimapView?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
     }
 
-    private void EditorMinimapView_OnLineSelected(int line)
+    private void EditorMinimapView_OnScrollRequested(double fraction)
     {
         if (EditorTextBox?.Document is not { } document) return;
+        var scrollViewer = EditorHorizontalScrollViewer();
+        if (scrollViewer is not null)
+        {
+            var maximumOffset = Math.Max(0, scrollViewer.Extent.Height - scrollViewer.Viewport.Height);
+            if (maximumOffset > 0)
+            {
+                scrollViewer.Offset = new Vector(scrollViewer.Offset.X, Math.Clamp(fraction, 0, 1) * maximumOffset);
+                return;
+            }
+        }
+
+        var line = 1 + (int)Math.Round(Math.Clamp(fraction, 0, 1) * Math.Max(0, document.LineCount - 1));
         EditorTextBox.ScrollToLine(Math.Clamp(line, 1, document.LineCount));
     }
 

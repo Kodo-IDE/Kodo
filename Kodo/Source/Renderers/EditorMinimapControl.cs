@@ -17,6 +17,7 @@ public sealed class EditorMinimapControl : Control
     private int _viewportTopLine = 1;
     private int _viewportBottomLine = 1;
     private bool _isDragging;
+    private double _dragGrabOffset;
     private TextDocument? _document;
     private ITextSourceVersion? _documentVersion;
     private IBrush _backgroundBrush = Brushes.Transparent;
@@ -24,7 +25,7 @@ public sealed class EditorMinimapControl : Control
     private IBrush _viewportBrush = Brushes.Transparent;
     private IBrush _viewportBorderBrush = Brushes.Gray;
 
-    public event Action<int>? LineSelected;
+    public event Action<double>? ScrollRequested;
 
     public EditorMinimapControl()
     {
@@ -186,9 +187,14 @@ public sealed class EditorMinimapControl : Control
     {
         base.OnPointerPressed(e);
         if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        var y = e.GetPosition(this).Y;
+        var viewport = GetViewportBounds();
+        _dragGrabOffset = y >= viewport.Top && y <= viewport.Top + viewport.Height
+            ? y - viewport.Top
+            : viewport.Height / 2;
         _isDragging = true;
         e.Pointer.Capture(this);
-        SelectLine(e.GetPosition(this).Y);
+        RequestScroll(y - _dragGrabOffset);
         e.Handled = true;
     }
 
@@ -196,7 +202,7 @@ public sealed class EditorMinimapControl : Control
     {
         base.OnPointerMoved(e);
         if (!_isDragging) return;
-        SelectLine(e.GetPosition(this).Y);
+        RequestScroll(e.GetPosition(this).Y - _dragGrabOffset);
         e.Handled = true;
     }
 
@@ -209,11 +215,26 @@ public sealed class EditorMinimapControl : Control
         e.Handled = true;
     }
 
-    private void SelectLine(double y)
+    private (double Top, double Height) GetViewportBounds()
+    {
+        var height = Bounds.Height;
+        if (_lineCount <= 0 || height <= 0) return (0, 0);
+        var top = Math.Clamp((_viewportTopLine - 1d) / _lineCount * height, 0, height);
+        var bottom = Math.Clamp(_viewportBottomLine / (double)_lineCount * height, top, height);
+        var viewportHeight = Math.Min(height, Math.Max(12, bottom - top));
+        top = Math.Clamp(top, 0, Math.Max(0, height - viewportHeight));
+        return (top, viewportHeight);
+    }
+
+    private void RequestScroll(double viewportTop)
     {
         if (_lineCount <= 0 || Bounds.Height <= 0) return;
-        var fraction = Math.Clamp(y / Bounds.Height, 0, 0.999999);
-        LineSelected?.Invoke(1 + (int)(fraction * _lineCount));
+        var viewport = GetViewportBounds();
+        var travel = Math.Max(0, Bounds.Height - viewport.Height);
+        var fraction = travel <= 0
+            ? 0
+            : Math.Clamp(viewportTop / travel, 0, 1);
+        ScrollRequested?.Invoke(fraction);
     }
 
     private static IBrush WithOpacity(IBrush brush, double opacity) =>
