@@ -166,7 +166,10 @@ public partial class MainWindow
     {
         if (EditorTextBox is null) return null;
         foreach (var existing in EditorTextBox.TextArea.LeftMargins.OfType<FoldingMargin>())
+        {
+            _foldingMargin = existing;
             return existing;
+        }
         var marker = new FoldingMargin();
         EditorTextBox.TextArea.LeftMargins.Add(marker);
         return marker;

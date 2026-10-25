@@ -9,6 +9,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit.Document;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -16,6 +17,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Kodo.Editor;
 
 namespace Kodo;
 
@@ -132,16 +134,11 @@ public partial class MainWindow
         }
     }
 
-    private sealed record CodeActionSnapshot(string FilePath, string Text, int Caret, int Start, int Length);
+    private sealed record CodeActionSnapshot(string FilePath, string Text, TextDocument Document, long Revision, int Caret, int Start, int Length);
 
     private async Task<CodeActionSnapshot?> CaptureCodeActionSnapshotAsync(string filePath)
     {
-        var currentText = await Dispatcher.UIThread.InvokeAsync(() =>
-            FileSystemPaths.Equals(_currentFilePath, filePath) ? EditorTextBox?.Document?.Text : null);
-        if (currentText is null) return null;
-        await FlushLspDocumentAsync(filePath, currentText).ConfigureAwait(false);
-
-        var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
+        var captured = await Dispatcher.UIThread.InvokeAsync<(TextDocument Document, EditorTextSnapshot Text, long Revision, CancellationToken RevisionToken, int Caret, int Start, int Length)?>(() =>
         {
             var doc = EditorTextBox?.Document;
             if (doc is null || !FileSystemPaths.Equals(_currentFilePath, filePath)) return null;
@@ -153,14 +150,25 @@ public partial class MainWindow
 
             start = Math.Clamp(start, 0, doc.TextLength);
             length = Math.Clamp(length, 1, Math.Max(1, doc.TextLength - start));
-            return new CodeActionSnapshot(filePath, doc.Text, caret, start, length);
+            return (Document: doc, Text: EditorTextSnapshotStore.GetSnapshot(doc), Revision: EditorSession.Revision,
+                RevisionToken: EditorSession.RevisionCancellationToken, Caret: caret, Start: start, Length: length);
         });
-        if (snapshot is null) return null;
+        if (captured is null) return null;
+        string text;
+        try { text = await captured.Value.Text.GetTextAsync(captured.Value.RevisionToken).ConfigureAwait(false); }
+        catch (OperationCanceledException) { return null; }
+        var stillCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+            ReferenceEquals(EditorTextBox?.Document, captured.Value.Document) && EditorSession.Revision == captured.Value.Revision &&
+            FileSystemPaths.Equals(_currentFilePath, filePath));
+        if (!stillCurrent) return null;
+        await FlushLspDocumentAsync(filePath, text).ConfigureAwait(false);
+        var snapshot = new CodeActionSnapshot(filePath, text, captured.Value.Document, captured.Value.Revision,
+            captured.Value.Caret, captured.Value.Start, captured.Value.Length);
         if (CurrentLspDocumentVersion(filePath) is int version)
             await WaitForLspDiagnosticsVersionAsync(NormalizeFilePath(filePath), version, CodeActionDiagnosticsWait).ConfigureAwait(false);
         var isCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
-            FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is not null &&
-            string.Equals(EditorTextBox.Document.Text, snapshot.Text, StringComparison.Ordinal));
+            FileSystemPaths.Equals(_currentFilePath, filePath) && ReferenceEquals(EditorTextBox?.Document, snapshot.Document) &&
+            EditorSession.Revision == snapshot.Revision);
         if (!isCurrent) return null;
         return snapshot;
     }
@@ -425,20 +433,8 @@ public partial class MainWindow
         WorkspaceEdit
     }
 
-    private async Task<bool> ApplyExternalWorkspaceEditAsync(JsonElement edit, string filePath, string text)
+    private async Task<bool> ApplyExternalWorkspaceEditAsync(JsonElement edit, CodeActionSnapshot snapshot)
     {
-        var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
-        {
-            var doc = EditorTextBox?.Document;
-            if (doc is null || !FileSystemPaths.Equals(_currentFilePath, filePath)) return null;
-            if (!string.Equals(doc.Text, text, StringComparison.Ordinal)) return null;
-            return new CodeActionSnapshot(filePath, text, EditorTextBox!.TextArea.Caret.Offset, 0, 1);
-        });
-        if (snapshot is null)
-        {
-            KodoDiagnostics.LogDebug("Workspace edit abandoned: the document changed before it could be applied");
-            return false;
-        }
         return await ApplyWorkspaceEditAsync(edit, snapshot, EditScope.WorkspaceEdit).ConfigureAwait(false)
             == CodeActionOutcome.Applied;
     }
@@ -450,11 +446,29 @@ public partial class MainWindow
     {
         var plan = new List<CodeActionPlan>();
 
-        var openTabs = await Dispatcher.UIThread.InvokeAsync(() =>
+        var openTabSources = await Dispatcher.UIThread.InvokeAsync(() =>
             OpenTabs
                 .Where(t => !string.IsNullOrWhiteSpace(t.Path))
                 .GroupBy(t => t.Path!, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Content ?? string.Empty, StringComparer.OrdinalIgnoreCase));
+                .Select(group =>
+                {
+                    var tab = group.First();
+                    var document = tab.Document;
+                    return (Path: group.Key, Tab: tab, Snapshot: document is null ? null : EditorTextSnapshotStore.GetSnapshot(document),
+                        Document: document, Version: document?.Version, Content: tab.Content ?? string.Empty);
+                })
+                .ToList());
+        var openTabs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var openTabDocuments = new Dictionary<string, (AvaloniaEdit.Document.TextDocument Document, AvaloniaEdit.Document.ITextSourceVersion Version)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in openTabSources)
+        {
+            var content = source.Snapshot is null
+                ? source.Content
+                : await source.Snapshot.GetTextAsync().ConfigureAwait(false);
+            openTabs[source.Path] = content;
+            if (source.Document is not null && source.Version is not null)
+                openTabDocuments[source.Path] = (source.Document, source.Version);
+        }
 
         if (edit.TryGetProperty("documentChanges", out var documentChanges) && documentChanges.ValueKind == JsonValueKind.Array)
         {
@@ -527,7 +541,8 @@ public partial class MainWindow
         var activeStillCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var doc = EditorTextBox?.Document;
-            return doc is not null && string.Equals(doc.Text, snapshot.Text, StringComparison.Ordinal);
+            return ReferenceEquals(doc, snapshot.Document) && EditorSession.Revision == snapshot.Revision &&
+                FileSystemPaths.Equals(_currentFilePath, snapshot.FilePath);
         });
         if (!activeStillCurrent)
         {
@@ -536,12 +551,7 @@ public partial class MainWindow
             return CodeActionOutcome.Failed;
         }
 
-        var openTabSnapshot = await Dispatcher.UIThread.InvokeAsync(() =>
-            plan
-                .Select(entry => (entry.Path, Tab: OpenTabs.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t.Path) && IsSameDocument(t.Path, entry.Path))))
-                .Where(pair => pair.Tab is not null)
-                .GroupBy(pair => pair.Path, StringComparer.OrdinalIgnoreCase)
-                .ToDictionary(g => g.Key, g => g.First().Tab!.Content ?? string.Empty, StringComparer.OrdinalIgnoreCase));
+        var openTabSnapshot = openTabs;
 
         var diskCommit = await Task.Run<string?>(() =>
         {
@@ -590,8 +600,8 @@ public partial class MainWindow
         var committed = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             var doc = EditorTextBox?.Document;
-            if (doc is null) return false;
-            if (!string.Equals(doc.Text, snapshot.Text, StringComparison.Ordinal))
+            if (!ReferenceEquals(doc, snapshot.Document) || EditorSession.Revision != snapshot.Revision ||
+                !FileSystemPaths.Equals(_currentFilePath, snapshot.FilePath))
             {
                 KodoDiagnostics.LogDebug("Code action abandoned: the active document changed before the edit could be applied");
                 SetLspFeatureStatus("The file changed - the fix was not applied.");
@@ -603,7 +613,10 @@ public partial class MainWindow
                 var tab = OpenTabs.FirstOrDefault(t => !string.IsNullOrWhiteSpace(t.Path) && IsSameDocument(t.Path, entry.Path));
                 if (tab is not null)
                 {
-                    if (!string.Equals(tab.Content, entry.Original, StringComparison.Ordinal))
+                    var isUnchanged = openTabDocuments.TryGetValue(entry.Path, out var capturedDocument)
+                        ? ReferenceEquals(tab.Document, capturedDocument.Document) && ReferenceEquals(capturedDocument.Document.Version, capturedDocument.Version)
+                        : string.Equals(tab.Content, entry.Original, StringComparison.Ordinal);
+                    if (!isUnchanged)
                     {
                         KodoDiagnostics.LogDebug($"Code action abandoned: tab {entry.Path} changed since the edit was computed");
                         SetLspFeatureStatus("Another open file changed - the fix was not applied.");
@@ -623,6 +636,7 @@ public partial class MainWindow
                 if (tab is not null)
                 {
                     tab.Content = entry.Updated;
+                    tab.Document = null;
                     tab.IsDirty = true;
                     var path = NormalizeFilePath(entry.Path);
                     lock (_lspOpenLock)

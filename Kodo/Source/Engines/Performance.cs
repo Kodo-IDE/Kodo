@@ -10,6 +10,8 @@ public static class PerformanceBudget
 {
     public const int ViewportCullThreshold = 30_000;
 
+    public const int MaximumCustomColorizationLineLength = 16_384;
+
     public const int SnapshotSkipThreshold = 80_000;
 
     public static bool IsLargeFile(TextDocument? doc, int threshold = SnapshotSkipThreshold) => (doc?.TextLength ?? 0) > threshold;
@@ -47,8 +49,6 @@ public sealed class UiStallWatchdog : IDisposable
             _lastTickMs = now;
             if (gap < 2500 || gap > MaxReportableGapMs) return;
             if (PerformanceBudget.ModalOpen) return;
-            var queued = Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background).GetTask();
-            if (!queued.IsCompleted) return;
             KodoDiagnostics.ReportSlowStage("UI-thread stall (no dispatch)", gap, 2500);
         };
         _timer.Tick += _onTick;

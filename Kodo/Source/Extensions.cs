@@ -1681,12 +1681,12 @@ public partial class MainWindow
 
     private CompiledSyntaxProfile ResolveCompiledSyntaxProfile(LoadedExtension extension)
     {
-        if (_compiledSyntaxProfileCache.TryGetValue(extension, out var cached))
-            return cached;
-
-        var profile = CompiledSyntaxProfile.Create(extension);
-        _compiledSyntaxProfileCache[extension] = profile;
-        return profile;
+        var profile = _compiledSyntaxProfileCache.GetOrAdd(
+            extension,
+            static item => new Lazy<CompiledSyntaxProfile>(
+                () => CompiledSyntaxProfile.Create(item),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        return profile.Value;
     }
 
     private void ConfigureHtmlEmbeddedHighlighting(LoadedExtension? extension)
@@ -1701,7 +1701,9 @@ public partial class MainWindow
 
     private CompiledSyntaxProfile? FindLanguageSyntaxProfileForFileExtension(string extension)
     {
-        var loadedExtension = LoadedExtensions.FirstOrDefault(loadedExtension =>
+        List<LoadedExtension> snapshot;
+        lock (LoadedExtensionsLock) snapshot = LoadedExtensions.ToList();
+        var loadedExtension = snapshot.FirstOrDefault(loadedExtension =>
             string.Equals(loadedExtension.Type, "language", StringComparison.OrdinalIgnoreCase) &&
             loadedExtension.Extensions.Any(ext => string.Equals(ext, extension, StringComparison.OrdinalIgnoreCase)));
 

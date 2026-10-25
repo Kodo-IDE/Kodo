@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia.Media;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
+using Kodo.Editor;
 
 namespace Kodo;
 
@@ -27,10 +29,8 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     private static readonly Regex TypeAttributeRegex =
         new(@"\btype\s*=\s*(?:""(?<value>[^""]*)""|'(?<value>[^']*)'|(?<value>[^\s>]+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private HtmlSnapshot? _snapshot;
+    private readonly AsyncDocumentSnapshot<HtmlSnapshot> _snapshot = new();
     private Func<string, string?, CompiledSyntaxProfile?>? _languageResolver;
     private readonly Dictionary<string, EmbeddedSyntaxProfile?> _profileCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -38,13 +38,12 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
 
     public void InvalidateCache()
     {
-        _snapshot = null;
-        DocumentTextCache.Invalidate();
+        _snapshot.Invalidate();
     }
 
     public void UpdateSyntax(LoadedExtension? extension, Func<string, string?, CompiledSyntaxProfile?>? languageResolver)
     {
-        _snapshot = null;
+        _snapshot.Invalidate();
         _profileCache.Clear();
         _languageResolver = languageResolver;
         IsEnabled = extension is not null && SupportsEmbeddedLanguageTags(extension);
@@ -56,25 +55,28 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             return;
 
         var document = CurrentContext.Document;
-        if (document is null || line.Length <= 0)
+        if (document is null || line.Length <= 0 || line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
             return;
         if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
             {
-                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
-                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                var first = tv.VisualLines[0].FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines[^1].FirstDocumentLine.LineNumber;
                 if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
         }
 
-        if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
-            return;
-
-        var text = document.GetText(line.Offset, line.Length);
-        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
+        var text = EditorLineTextCache.GetText(document, line);
+        var textView = CurrentContext.TextView;
+        var resolver = _languageResolver;
+        var snapshot = _snapshot.GetOrSchedule(
+            document,
+            (source, lineCount, token) => BuildSnapshot(source, lineCount, token, resolver),
+            () => textView?.InvalidateLayer(KnownLayer.Text));
+        if (snapshot is null) return;
         var state = snapshot.GetLineState(line.LineNumber);
 
         foreach (var segment in state.Segments)
@@ -114,34 +116,42 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         }
     }
 
-    private HtmlSnapshot BuildSnapshot(string text)
+    private HtmlSnapshot BuildSnapshot(string text, int lineCount, CancellationToken cancellationToken, Func<string, string?, CompiledSyntaxProfile?>? resolver)
     {
+        var profileCache = new Dictionary<string, EmbeddedSyntaxProfile?>(StringComparer.OrdinalIgnoreCase);
         if (text.IndexOf("<script", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<style", StringComparison.OrdinalIgnoreCase) < 0 &&
             text.IndexOf("<x:code", StringComparison.OrdinalIgnoreCase) < 0)
         {
-            var lineCount = 1;
-            for (var i = 0; i < text.Length; i++)
-                if (text[i] == '\n') lineCount++;
-            var emptyStates = new List<HtmlLineState>(lineCount);
-            for (var i = 0; i < lineCount; i++)
-                emptyStates.Add(new HtmlLineState([]));
-            return new HtmlSnapshot(text, emptyStates);
+            return new HtmlSnapshot(Array.Empty<HtmlLineState>());
         }
 
-        var lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
-        var states = new List<HtmlLineState>(lines.Length);
+        var states = new List<HtmlLineState>(lineCount);
         ActiveHtmlBlock? active = null;
+        var start = 0;
+        for (var i = 0; i <= text.Length; i++)
+        {
+            if (i < text.Length && text[i] is not '\r' and not '\n') continue;
+            cancellationToken.ThrowIfCancellationRequested();
+            var lineLength = i - start;
+            if (active is null && text.AsSpan(start, lineLength).IndexOf('<') < 0)
+                states.Add(EmptyHtmlLineState);
+            else
+                states.Add(BuildLineState(text.Substring(start, lineLength), ref active, resolver, profileCache));
+            if (i < text.Length && text[i] == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
+            start = i + 1;
+        }
 
-        foreach (var line in lines)
-            states.Add(BuildLineState(line, ref active));
-
-        return new HtmlSnapshot(text, states);
+        return new HtmlSnapshot(states);
     }
 
-    private HtmlLineState BuildLineState(string line, ref ActiveHtmlBlock? active)
+    private HtmlLineState BuildLineState(
+        string line,
+        ref ActiveHtmlBlock? active,
+        Func<string, string?, CompiledSyntaxProfile?>? resolver,
+        Dictionary<string, EmbeddedSyntaxProfile?> profileCache)
     {
-        var segments = new List<HtmlEmbeddedSegment>();
+        List<HtmlEmbeddedSegment>? segments = null;
         var cursor = 0;
 
         while (cursor <= line.Length)
@@ -156,7 +166,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
                     if (EmbeddedTagContent.TryExtract(line, cursor, segmentEnd, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
                     {
                         var segmentText = line[contentStart..contentEnd];
-                        segments.Add(new HtmlEmbeddedSegment(
+                        AddSegment(ref segments, new HtmlEmbeddedSegment(
                             contentStart,
                             contentEnd,
                             active.Profile,
@@ -188,7 +198,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             var tagName = openMatch.Groups["tag"].Value;
             var attrs = openMatch.Groups["attrs"].Value;
             var openEnd = openMatch.Index + openMatch.Length;
-            var profile = ResolveEmbeddedProfile(tagName, ExtractTypeAttribute(attrs));
+            var profile = ResolveEmbeddedProfile(tagName, ExtractTypeAttribute(attrs), resolver, profileCache);
             var inlineCloseMatch = BuildCloseTagRegex(tagName).Match(line, openEnd);
 
             if (inlineCloseMatch.Success)
@@ -196,7 +206,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
                 if (profile is not null && inlineCloseMatch.Index > openEnd &&
                     EmbeddedTagContent.TryExtract(line, openEnd, inlineCloseMatch.Index, EmbeddedBlockContentMode.AwaitingContent, out var inlineContentStart, out var inlineContentEnd, out _))
                 {
-                    segments.Add(new HtmlEmbeddedSegment(
+                    AddSegment(ref segments, new HtmlEmbeddedSegment(
                         inlineContentStart,
                         inlineContentEnd,
                         profile,
@@ -213,7 +223,7 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
                 if (EmbeddedTagContent.TryExtract(line, openEnd, line.Length, active.ContentMode, out var contentStart, out var contentEnd, out var nextContentMode))
                 {
                     var segmentText = line[contentStart..contentEnd];
-                    segments.Add(new HtmlEmbeddedSegment(
+                    AddSegment(ref segments, new HtmlEmbeddedSegment(
                         contentStart,
                         contentEnd,
                         profile,
@@ -232,27 +242,36 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
             break;
         }
 
-        return new HtmlLineState(segments);
+        return new HtmlLineState(segments ?? (IReadOnlyList<HtmlEmbeddedSegment>)Array.Empty<HtmlEmbeddedSegment>());
     }
 
-    private EmbeddedSyntaxProfile? ResolveEmbeddedProfile(string tagName, string? typeAttribute)
+    private static void AddSegment(ref List<HtmlEmbeddedSegment>? segments, HtmlEmbeddedSegment segment)
     {
-        if (_languageResolver is null)
+        (segments ??= new List<HtmlEmbeddedSegment>()).Add(segment);
+    }
+
+    private static EmbeddedSyntaxProfile? ResolveEmbeddedProfile(
+        string tagName,
+        string? typeAttribute,
+        Func<string, string?, CompiledSyntaxProfile?>? resolver,
+        Dictionary<string, EmbeddedSyntaxProfile?> profileCache)
+    {
+        if (resolver is null)
             return null;
 
         var cacheKey = $"{tagName}|{typeAttribute ?? string.Empty}";
-        if (_profileCache.TryGetValue(cacheKey, out var cached))
+        if (profileCache.TryGetValue(cacheKey, out var cached))
             return cached;
 
-        var syntaxProfile = _languageResolver(tagName, typeAttribute);
+        var syntaxProfile = resolver(tagName, typeAttribute);
         if (syntaxProfile is null || SupportsEmbeddedLanguageTags(syntaxProfile.Extension))
         {
-            _profileCache[cacheKey] = null;
+            profileCache[cacheKey] = null;
             return null;
         }
 
         var profile = EmbeddedSyntaxProfile.Create(syntaxProfile);
-        _profileCache[cacheKey] = profile;
+        profileCache[cacheKey] = profile;
         return profile;
     }
 
@@ -297,19 +316,23 @@ internal sealed class HtmlEmbeddedColorizer : DocumentColorizingTransformer
         {
             var properties = element.TextRunProperties.Clone();
             properties.SetForegroundBrush(brush);
-            SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            VisualLineElementAccess.SetTextRunProperties(element, properties);
         });
     }
 
-    private sealed record HtmlSnapshot(string Text, IReadOnlyList<HtmlLineState> LineStates)
+    private static readonly HtmlLineState EmptyHtmlLineState = new(Array.Empty<HtmlEmbeddedSegment>());
+
+    private sealed record HtmlSnapshot(IReadOnlyList<HtmlLineState> LineStates)
     {
+        private static readonly HtmlLineState EmptyLineState = new([]);
+
         public HtmlLineState GetLineState(int lineNumber) =>
             lineNumber > 0 && lineNumber <= LineStates.Count
                 ? LineStates[lineNumber - 1]
-                : new HtmlLineState([]);
+                : EmptyLineState;
     }
 
-    private sealed record HtmlLineState(IReadOnlyList<HtmlEmbeddedSegment> Segments);
+    private readonly record struct HtmlLineState(IReadOnlyList<HtmlEmbeddedSegment> Segments);
     private sealed record HtmlEmbeddedSegment(int Start, int End, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State);
     private sealed record ActiveHtmlBlock(string TagName, EmbeddedSyntaxProfile? Profile, EmbeddedSyntaxState State, EmbeddedBlockContentMode ContentMode);
 }

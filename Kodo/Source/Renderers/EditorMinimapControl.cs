@@ -1,6 +1,5 @@
 // Licensed under the GNU GPL-v3.0
 using System;
-using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -14,9 +13,12 @@ public sealed class EditorMinimapControl : Control
     private const int MaximumSamples = 2048;
     private int[] _lineLengths = [];
     private int _lineCount;
+    private int _maximumLineLength = 1;
     private int _viewportTopLine = 1;
     private int _viewportBottomLine = 1;
     private bool _isDragging;
+    private TextDocument? _document;
+    private ITextSourceVersion? _documentVersion;
     private IBrush _backgroundBrush = Brushes.Transparent;
     private IBrush _lineBrush = Brushes.Gray;
     private IBrush _viewportBrush = Brushes.Transparent;
@@ -42,27 +44,98 @@ public sealed class EditorMinimapControl : Control
 
     public void SetDocument(TextDocument? document)
     {
+        if (!ReferenceEquals(_document, document))
+        {
+            if (_document is not null) _document.Changed -= OnDocumentChanged;
+            _document = document;
+            if (_document is not null) _document.Changed += OnDocumentChanged;
+            _documentVersion = null;
+            _lineLengths = [];
+        }
+
         _lineCount = document?.LineCount ?? 0;
         if (document is null || _lineCount <= 0)
         {
+            _documentVersion = null;
             _lineLengths = [];
+            _maximumLineLength = 1;
             _viewportTopLine = 1;
             _viewportBottomLine = 1;
             InvalidateVisual();
             return;
         }
 
+        var version = document.Version;
+        if (ReferenceEquals(_documentVersion, version)) return;
+        _documentVersion = version;
         var sampleCount = Math.Min(MaximumSamples, _lineCount);
         var samples = new int[sampleCount];
-        for (var i = 0; i < sampleCount; i++)
+        var maximumLineLength = 1;
+        var sampleStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        for (var index = 0; index < sampleCount; index++)
         {
-            var lineNumber = 1 + (int)((long)i * _lineCount / sampleCount);
-            samples[i] = document.GetLineByNumber(lineNumber).Length;
+            var lineNumber = 1 + (int)((long)index * _lineCount / sampleCount);
+            var length = document.GetLineByNumber(lineNumber).Length;
+            samples[index] = length;
+            maximumLineLength = Math.Max(maximumLineLength, Math.Min(160, length));
         }
+        var sampleElapsed = System.Diagnostics.Stopwatch.GetElapsedTime(sampleStartedAt);
+        KodoDiagnostics.ReportSlowStage("editor minimap line sampling", (long)sampleElapsed.TotalMilliseconds, 16,
+            $"lines={_lineCount} samples={sampleCount}");
         _lineLengths = samples;
+        _maximumLineLength = maximumLineLength;
         _viewportTopLine = Math.Clamp(_viewportTopLine, 1, _lineCount);
         _viewportBottomLine = Math.Clamp(_viewportBottomLine, _viewportTopLine, _lineCount);
         InvalidateVisual();
+    }
+
+    private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
+    {
+        if (sender is not TextDocument document || !ReferenceEquals(document, _document) ||
+            _lineLengths.Length == 0 || document.LineCount != _lineCount)
+            return;
+
+        var insertedText = e.InsertedText.Text;
+        if (insertedText.IndexOfAny(['\r', '\n']) >= 0)
+            return;
+
+        var offset = Math.Clamp(e.Offset, 0, document.TextLength);
+        var line = document.GetLineByOffset(offset);
+        var sampleIndex = FindSampleIndex(line.LineNumber, _lineCount, _lineLengths.Length);
+        if (sampleIndex >= 0)
+        {
+            var previousMaximum = Math.Min(160, _lineLengths[sampleIndex]);
+            var updatedMaximum = Math.Min(160, line.Length);
+            _lineLengths[sampleIndex] = line.Length;
+            if (updatedMaximum >= _maximumLineLength)
+            {
+                _maximumLineLength = Math.Max(1, updatedMaximum);
+            }
+            else if (previousMaximum == _maximumLineLength)
+            {
+                var maximum = 1;
+                foreach (var length in _lineLengths)
+                    maximum = Math.Max(maximum, Math.Min(160, length));
+                _maximumLineLength = maximum;
+            }
+        }
+        _documentVersion = document.Version;
+        InvalidateVisual();
+    }
+
+    private static int FindSampleIndex(int lineNumber, int lineCount, int sampleCount)
+    {
+        var low = 0;
+        var high = sampleCount - 1;
+        while (low <= high)
+        {
+            var middle = low + ((high - low) >> 1);
+            var sampledLine = 1 + (int)((long)middle * lineCount / sampleCount);
+            if (sampledLine == lineNumber) return middle;
+            if (sampledLine < lineNumber) low = middle + 1;
+            else high = middle - 1;
+        }
+        return -1;
     }
 
     public void SetViewport(int topLine, int bottomLine)
@@ -88,7 +161,7 @@ public sealed class EditorMinimapControl : Control
 
         var rowCount = Math.Clamp((int)Math.Ceiling(height), 1, MaximumSamples);
         var rowHeight = height / rowCount;
-        var maximumLength = Math.Max(1, Math.Min(160, _lineLengths.Max()));
+        var maximumLength = _maximumLineLength;
         var innerWidth = Math.Max(1, width - 8);
         for (var row = 0; row < rowCount; row++)
         {

@@ -1921,7 +1921,7 @@
                       Background="{Binding EditorBackgroundBrush}"
                       IsVisible="{Binding IsDocumentViewVisible}">
                     <avaloniaEdit:TextEditor Grid.Column="0"
-                                             x:Name="EditorTextBox"
+                                                   x:Name="EditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
                                              FontSize="14"

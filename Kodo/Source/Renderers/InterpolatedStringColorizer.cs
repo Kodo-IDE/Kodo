@@ -4,16 +4,17 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia.Media;
 using AvaloniaEdit.Rendering;
+using AvaloniaEdit;
 using Kodo.Models;
+using Kodo.Editor;
 
 namespace Kodo;
 
 public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 {
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
     private const string VariableIdentifierBodyPattern =
         "[\\p{L}_][\\p{L}\\p{Nd}_]*";
     private static readonly IBrush[] RainbowBrushes =
@@ -27,7 +28,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
     ];
 
     private readonly List<SyntaxBrushRule> _rules = [];
-    private InterpolationSnapshot? _snapshot;
+    private readonly AsyncDocumentSnapshot<InterpolationSnapshot> _snapshot = new();
     private InterpolationSupport _support;
     private IBrush _keywordBrush = Brushes.White;
     private IBrush _punctuationBrush = Brushes.White;
@@ -36,14 +37,13 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
 
     public void InvalidateCache()
     {
-        _snapshot = null;
-        DocumentTextCache.Invalidate();
+        _snapshot.Invalidate();
     }
 
     public void UpdateSyntax(CompiledSyntaxProfile? syntaxProfile)
     {
         _rules.Clear();
-        _snapshot = null;
+        _snapshot.Invalidate();
         _support = default;
 
         if (syntaxProfile is null)
@@ -67,34 +67,31 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             return;
 
         var document = CurrentContext.Document;
-        if (document is null || line.Length <= 0)
+        if (document is null || line.Length <= 0 || line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
             return;
         if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
             {
-                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
-                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                var first = tv.VisualLines[0].FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines[^1].FirstDocumentLine.LineNumber;
                 if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
-            if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
-                return;
         }
 
-        var snapshot = _snapshot;
-        if (snapshot is null)
-        {
-            var snapshotWatch = System.Diagnostics.Stopwatch.StartNew();
-            snapshot = _snapshot = BuildSnapshot(DocumentTextCache.Get(document));
-            snapshotWatch.Stop();
-            KodoDiagnostics.ReportSlowStage("interpolation snapshot", snapshotWatch.ElapsedMilliseconds, 500, $"len={document.TextLength}");
-        }
+        var textView = CurrentContext.TextView;
+        var support = _support;
+        var snapshot = _snapshot.GetOrSchedule(
+            document,
+            (text, lineCount, token) => BuildSnapshot(text, lineCount, token, support),
+            () => textView?.InvalidateLayer(KnownLayer.Text));
+        if (snapshot is null) return;
 
         var lineState = snapshot.GetLineState(line.LineNumber);
-        var text = document.GetText(line.Offset, line.Length);
-        ScanLine(text, line.Offset, lineState.ActiveInterpolation);
+        var text = EditorLineTextCache.GetText(document, line);
+        ScanLine(text, line.Offset, lineState.ActiveInterpolation, support);
     }
 
     private void BuildRules(CompiledSyntaxProfile syntaxProfile)
@@ -126,13 +123,14 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         return new InterpolationSupport(supportsJavaScriptTemplate, supportsPythonStyleInterpolation, supportsDollarPrefixedInterpolation);
     }
 
-    private InterpolationSnapshot BuildSnapshot(string text)
+    private InterpolationSnapshot BuildSnapshot(string text, int lineCount, CancellationToken cancellationToken, InterpolationSupport support)
     {
-        var lineStates = new List<InterpolationLineState> { new(null) };
+        var lineStates = new List<InterpolationLineState>(lineCount) { new(null) };
         ActiveInterpolation? active = null;
 
         for (var index = 0; index < text.Length; index++)
         {
+            if ((index & 0x3fff) == 0) cancellationToken.ThrowIfCancellationRequested();
             if (TryConsumeLineBreak(text, ref index))
             {
                 lineStates.Add(new(active));
@@ -151,7 +149,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 continue;
             }
 
-            if (TryMatchInterpolationStart(text, index, out var interpolation, out var contentStart))
+            if (TryMatchInterpolationStart(text, index, support, out var interpolation, out var contentStart))
             {
                 if (interpolation.CanSpanMultipleLines)
                 {
@@ -161,10 +159,10 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
             }
         }
 
-        return new InterpolationSnapshot(text, lineStates);
+        return new InterpolationSnapshot(lineStates);
     }
 
-    private void ScanLine(string text, int lineOffset, ActiveInterpolation? initialState)
+    private void ScanLine(string text, int lineOffset, ActiveInterpolation? initialState, InterpolationSupport support)
     {
         var index = 0;
         var active = initialState;
@@ -188,7 +186,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
                 break;
             }
 
-            if (TryMatchInterpolationStart(text, index, out var interpolation, out var contentStart))
+            if (TryMatchInterpolationStart(text, index, support, out var interpolation, out var contentStart))
             {
                 ApplyInterpolationPrefix(lineOffset, index, contentStart, interpolation.Quote.Length);
                 var closingIndex = FindClosingIndex(text, contentStart, interpolation);
@@ -359,22 +357,22 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         }
     }
 
-    private bool TryMatchInterpolationStart(string text, int index, out ActiveInterpolation interpolation, out int contentStart)
+    private static bool TryMatchInterpolationStart(string text, int index, InterpolationSupport support, out ActiveInterpolation interpolation, out int contentStart)
     {
-        if (_support.SupportsJavaScriptTemplate && text[index] == '`')
+        if (support.SupportsJavaScriptTemplate && text[index] == '`')
         {
             interpolation = new ActiveInterpolation(InterpolationKind.JavaScriptTemplate, "`", false, true);
             contentStart = index + 1;
             return true;
         }
 
-        if (_support.SupportsPythonStyle && TryMatchPythonFStringStart(text, index, out var quote, out contentStart))
+        if (support.SupportsPythonStyle && TryMatchPythonFStringStart(text, index, out var quote, out contentStart))
         {
             interpolation = new ActiveInterpolation(InterpolationKind.PythonFString, quote, false, quote.Length > 1);
             return true;
         }
 
-        if (_support.SupportsDollarPrefixed && TryMatchDollarPrefixedStart(text, index, out var isVerbatim, out contentStart))
+        if (support.SupportsDollarPrefixed && TryMatchDollarPrefixedStart(text, index, out var isVerbatim, out contentStart))
         {
             interpolation = new ActiveInterpolation(InterpolationKind.DollarPrefixed, "\"", isVerbatim, isVerbatim);
             return true;
@@ -576,7 +574,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         {
             var properties = element.TextRunProperties.Clone();
             properties.SetForegroundBrush(brush);
-            SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            VisualLineElementAccess.SetTextRunProperties(element, properties);
         });
     }
 
@@ -620,7 +618,7 @@ public sealed class InterpolatedStringColorizer : DocumentColorizingTransformer
         public bool HasAny => SupportsJavaScriptTemplate || SupportsPythonStyle || SupportsDollarPrefixed;
     }
 
-    private sealed record InterpolationSnapshot(string Text, List<InterpolationLineState> LineStates)
+    private sealed record InterpolationSnapshot(List<InterpolationLineState> LineStates)
     {
         public InterpolationLineState GetLineState(int lineNumber) =>
             lineNumber > 0 && lineNumber <= LineStates.Count

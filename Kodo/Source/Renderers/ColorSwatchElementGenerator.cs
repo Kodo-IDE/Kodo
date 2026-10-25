@@ -1,7 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
+using Kodo.Editor;
 
 namespace Kodo;
 
@@ -28,6 +28,8 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
         new(@"#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?![0-9A-Fa-f])", RegexOptions.Compiled);
 
     private int _cachedLineNumber = -1;
+    private TextDocument? _cachedDocument;
+    private ITextSourceVersion? _cachedVersion;
     private string _cachedLineText = string.Empty;
     private MatchCollection _cachedMatches = default!;
 
@@ -39,48 +41,64 @@ public sealed class ColorSwatchElementGenerator : VisualLineElementGenerator
 
         var line = CurrentContext.VisualLine;
         var document = CurrentContext.Document;
-        var lineNumber = line.FirstDocumentLine.LineNumber;
-        var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
-
-        if (lineNumber != _cachedLineNumber || !string.Equals(lineText, _cachedLineText, StringComparison.Ordinal))
-        {
-            _cachedLineNumber = lineNumber;
-            _cachedLineText = lineText;
-            _cachedMatches = HexColorRegex.Matches(lineText);
-        }
+        EnsureCachedLine(document, line.FirstDocumentLine);
 
         var relativeStart = startOffset - line.FirstDocumentLine.Offset;
-        foreach (Match match in _cachedMatches)
-        {
-            if (match.Index >= relativeStart)
-                return line.FirstDocumentLine.Offset + match.Index;
-        }
-
-        return -1;
+        var index = FindMatchIndex(relativeStart, exact: false);
+        return index >= 0 ? line.FirstDocumentLine.Offset + _cachedMatches[index].Index : -1;
     }
 
     public override VisualLineElement? ConstructElement(int offset)
     {
         var line = CurrentContext.VisualLine;
         var document = CurrentContext.Document;
-        var lineNumber = line.FirstDocumentLine.LineNumber;
-        var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
-
-        if (lineNumber != _cachedLineNumber || !string.Equals(lineText, _cachedLineText, StringComparison.Ordinal))
-        {
-            _cachedLineNumber = lineNumber;
-            _cachedLineText = lineText;
-            _cachedMatches = HexColorRegex.Matches(lineText);
-        }
+        EnsureCachedLine(document, line.FirstDocumentLine);
 
         var relativeOffset = offset - line.FirstDocumentLine.Offset;
-        var match = _cachedMatches.FirstOrDefault(m => m.Index == relativeOffset);
-        if (match is null) return null;
+        var matchIndex = FindMatchIndex(relativeOffset, exact: true);
+        if (matchIndex < 0) return null;
+        var match = _cachedMatches[matchIndex];
 
         if (!TryParseHexColor(match.Value, out var color)) return null;
 
         var swatch = BuildSwatch(document, offset, match.Length, match.Value.Length == 9, color);
         return new InlineObjectElement(0, swatch);
+    }
+
+    private int FindMatchIndex(int relativeOffset, bool exact)
+    {
+        var low = 0;
+        var high = _cachedMatches.Count;
+        while (low < high)
+        {
+            var middle = low + (high - low) / 2;
+            if (_cachedMatches[middle].Index < relativeOffset) low = middle + 1;
+            else high = middle;
+        }
+
+        return low < _cachedMatches.Count && (!exact || _cachedMatches[low].Index == relativeOffset)
+            ? low
+            : -1;
+    }
+
+    private void EnsureCachedLine(TextDocument document, DocumentLine line)
+    {
+        var version = document.Version;
+        if (ReferenceEquals(_cachedDocument, document) && ReferenceEquals(_cachedVersion, version) &&
+            _cachedLineNumber == line.LineNumber)
+            return;
+
+        _cachedDocument = document;
+        _cachedVersion = version;
+        _cachedLineNumber = line.LineNumber;
+        if (line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
+        {
+            _cachedLineText = string.Empty;
+            _cachedMatches = HexColorRegex.Matches(string.Empty);
+            return;
+        }
+        _cachedLineText = EditorLineTextCache.GetText(document, line);
+        _cachedMatches = HexColorRegex.Matches(_cachedLineText);
     }
 
     private Control BuildSwatch(TextDocument document, int offset, int initialLength, bool hasAlpha, Color initialColor)

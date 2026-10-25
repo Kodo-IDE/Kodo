@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
+using AvaloniaEdit.Document;
 
 namespace Kodo.Models;
 
@@ -141,6 +142,12 @@ public class EditorTab : INotifyPropertyChanged
     public bool IsUntitled { get; set; }
 
     public LineEnding LineEnding { get; set; }
+
+    internal TextDocument? Document { get; set; }
+
+    internal ITextSourceVersion? IndentationDetectionVersion { get; set; }
+
+    internal (bool InsertSpaces, int TabSize)? DetectedIndentation { get; set; }
 
     public static readonly System.Text.Encoding DefaultEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 

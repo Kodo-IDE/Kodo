@@ -9,6 +9,7 @@ using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using AvaloniaEdit;
+using Kodo.Editor;
 
 namespace Kodo.Models;
 
@@ -16,10 +17,20 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
 {
     private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
     private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
+    private TextDocument? _document;
 
     public bool HasHints => _hints.Count > 0;
 
-    public void SetHints(IReadOnlyList<(int Offset, string Label)> hints)
+    public void SetDocument(TextDocument? document)
+    {
+        if (ReferenceEquals(_document, document)) return;
+        if (_document is not null) _document.Changed -= OnDocumentChanged;
+        _document = document;
+        if (_document is not null) _document.Changed += OnDocumentChanged;
+        _hints = Array.Empty<(int, string)>();
+    }
+
+    public (int Offset, int Length)? SetHints(IReadOnlyList<(int Offset, string Label)> hints)
     {
         var normalized = new List<(int Offset, string Label)>(hints.Count);
         foreach (var hint in hints)
@@ -31,7 +42,69 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
             else
                 normalized.Add((hint.Offset, label));
         }
+
+        var same = normalized.Count == _hints.Count;
+        if (same)
+        {
+            for (var index = 0; index < normalized.Count; index++)
+            {
+                if (normalized[index] != _hints[index])
+                {
+                    same = false;
+                    break;
+                }
+            }
+        }
+        if (same) return null;
+
+        var firstChangedOffset = int.MaxValue;
+        var lastChangedOffset = 0;
+        foreach (var hint in _hints)
+        {
+            firstChangedOffset = Math.Min(firstChangedOffset, hint.Offset);
+            lastChangedOffset = Math.Max(lastChangedOffset, hint.Offset);
+        }
+        foreach (var hint in normalized)
+        {
+            firstChangedOffset = Math.Min(firstChangedOffset, hint.Offset);
+            lastChangedOffset = Math.Max(lastChangedOffset, hint.Offset);
+        }
+
         _hints = normalized.ToArray();
+        return firstChangedOffset == int.MaxValue
+            ? null
+            : (firstChangedOffset, Math.Max(1, lastChangedOffset - firstChangedOffset + 1));
+    }
+
+    private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
+    {
+        if (_hints.Count == 0 || sender is not TextDocument document || !ReferenceEquals(document, _document))
+            return;
+
+        var insertedLength = e.InsertedText.Text.Length;
+        var oldEnd = e.Offset + e.RemovalLength;
+        var offset = Math.Clamp(e.Offset, 0, document.TextLength);
+        var changedEnd = Math.Clamp(e.Offset + insertedLength, offset, document.TextLength);
+        var firstAffectedLine = document.GetLineByOffset(offset);
+        var lastAffectedLine = document.GetLineByOffset(changedEnd);
+        var affectedStart = firstAffectedLine.Offset;
+        var affectedEnd = lastAffectedLine.EndOffset + lastAffectedLine.DelimiterLength;
+        var offsetDelta = insertedLength - e.RemovalLength;
+        var adjusted = new List<(int Offset, string Label)>(_hints.Count);
+
+        foreach (var hint in _hints)
+        {
+            var adjustedOffset = hint.Offset;
+            if (hint.Offset >= oldEnd)
+                adjustedOffset += offsetDelta;
+            else if (hint.Offset >= e.Offset)
+                continue;
+
+            if (adjustedOffset < affectedStart || adjustedOffset > affectedEnd)
+                adjusted.Add((adjustedOffset, hint.Label));
+        }
+
+        _hints = adjusted.ToArray();
     }
 
     public override int GetFirstInterestedOffset(int startOffset)
@@ -64,16 +137,13 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
             if (hint.Offset < offset) low = middle + 1;
             else high = middle - 1;
         }
-        var content = new Border
+        var content = new TextBlock
         {
-            Padding = new Thickness(3, 0),
-            Child = new TextBlock
-            {
-                Text = label,
-                Foreground = HintBrush,
-                FontSize = 11,
-                FontStyle = FontStyle.Italic
-            }
+            Text = label,
+            Foreground = HintBrush,
+            FontSize = 11,
+            FontStyle = FontStyle.Italic,
+            Margin = new Thickness(3, 0)
         };
         return new InlineObjectElement(0, content);
     }
@@ -83,6 +153,7 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
 {
     private IReadOnlyList<(int Offset, int Length, IBrush Brush)> _tokens = Array.Empty<(int, int, IBrush)>();
     private readonly Segment _segment = new();
+    private readonly Dictionary<IBrush, BackgroundGeometryBuilder> _geometryByBrush = new(ReferenceEqualityComparer.Instance);
     public KnownLayer Layer => KnownLayer.Background;
     public bool HasTokens => _tokens.Count > 0;
     public void SetTokens(IReadOnlyList<(int Offset, int Length, IBrush Brush)> tokens)
@@ -106,6 +177,7 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
             if ((long)_tokens[middle].Offset + _tokens[middle].Length <= viewStart) low = middle + 1;
             else high = middle;
         }
+        _geometryByBrush.Clear();
         for (var index = low; index < _tokens.Count && _tokens[index].Offset <= viewEnd; index++)
         {
             var token = _tokens[index];
@@ -114,12 +186,20 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
             var end = Math.Min(token.Offset + token.Length, textLength);
             if (end <= start) continue;
             if (end <= viewStart || start > viewEnd) continue;
-            var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
+            if (!_geometryByBrush.TryGetValue(token.Brush, out var geometry))
+            {
+                geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
+                _geometryByBrush.Add(token.Brush, geometry);
+            }
             _segment.Offset = start;
             _segment.Length = end - start;
             geometry.AddSegment(textView, _segment);
+        }
+
+        foreach (var (brush, geometry) in _geometryByBrush)
+        {
             var shape = geometry.CreateGeometry();
-            if (shape is not null) drawingContext.DrawGeometry(token.Brush, null, shape);
+            if (shape is not null) drawingContext.DrawGeometry(brush, null, shape);
         }
     }
     private sealed class Segment : ISegment
@@ -133,6 +213,7 @@ public sealed class LspSemanticTokenRenderer : IBackgroundRenderer
 public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 {
     private const int MaxDepthCacheEntries = 2048;
+    private const int MaxGuideIndentColumns = 512;
 
     public KnownLayer Layer => KnownLayer.Background;
 
@@ -147,8 +228,10 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     private Pen? _cachedPen;
     private IBrush? _cachedBrush;
 
-    private readonly Dictionary<int, int> _depthCache = new();
-    private ITextSourceVersion? _depthCacheVersion;
+    private const int MaxIndentationDependencyLines = 32;
+    private const int MaxIncrementalInvalidationLines = 256;
+
+    private readonly Dictionary<AvaloniaEdit.Document.DocumentLine, int> _depthCache = new();
     private AvaloniaEdit.Document.TextDocument? _depthCacheDocument;
     private int _depthCacheTabSize = -1;
 
@@ -193,7 +276,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
             for (var i = 0; i < lineCount; i++)
             {
                 var visualLine = visualLines[i];
-                var depth = GetVisibleLineDepth(document, visualLine.FirstDocumentLine.LineNumber);
+                var depth = GetVisibleLineDepth(document, visualLine.FirstDocumentLine);
                 if (depth <= 0) continue;
 
                 var top = visualLine.VisualTop - scrollY;
@@ -234,32 +317,71 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     {
         if (!ReferenceEquals(_depthCacheDocument, document) || _depthCacheTabSize != TabSize)
         {
+            if (_depthCacheDocument is not null)
+                _depthCacheDocument.Changed -= OnDepthCacheDocumentChanged;
             _depthCache.Clear();
             _depthCacheDocument = document;
-            _depthCacheVersion = null;
             _depthCacheTabSize = TabSize;
-            return;
-        }
-
-        if (_depthCacheVersion is null)
-        {
-            _depthCacheVersion = document.Version;
-            return;
-        }
-
-        if (_depthCacheVersion.CompareAge(document.Version) < 0)
-        {
-            _depthCache.Clear();
-            _depthCacheVersion = document.Version;
+            document.Changed += OnDepthCacheDocumentChanged;
         }
     }
 
-    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, int lineNumber)
+    private void OnDepthCacheDocumentChanged(object? sender, AvaloniaEdit.Document.DocumentChangeEventArgs e)
     {
-        if (_depthCache.TryGetValue(lineNumber, out var cached)) return cached;
-        var depth = ComputeVisibleLineDepth(document, lineNumber);
+        if (sender is not AvaloniaEdit.Document.TextDocument document || !ReferenceEquals(document, _depthCacheDocument))
+            return;
+
+        var insertedText = e.InsertedText.Text;
+        if (e.RemovalLength > 4096 || insertedText.Length > 4096)
+        {
+            _depthCache.Clear();
+            return;
+        }
+
+        var insertedLineBreaks = 0;
+        for (var i = 0; i < insertedText.Length; i++)
+        {
+            if (insertedText[i] == '\r')
+            {
+                insertedLineBreaks++;
+                if (i + 1 < insertedText.Length && insertedText[i + 1] == '\n') i++;
+            }
+            else if (insertedText[i] == '\n')
+            {
+                insertedLineBreaks++;
+            }
+            if (insertedLineBreaks > MaxIncrementalInvalidationLines)
+                break;
+        }
+
+        if (insertedLineBreaks > MaxIncrementalInvalidationLines)
+        {
+            _depthCache.Clear();
+            return;
+        }
+
+        var startOffset = Math.Clamp(e.Offset, 0, document.TextLength);
+        var endOffset = Math.Clamp(e.Offset + insertedText.Length, startOffset, document.TextLength);
+        var firstLine = document.GetLineByOffset(startOffset).LineNumber;
+        var lastLine = document.GetLineByOffset(endOffset).LineNumber;
+        if (lastLine - firstLine > MaxIncrementalInvalidationLines)
+        {
+            _depthCache.Clear();
+            return;
+        }
+
+        firstLine = Math.Max(1, firstLine - MaxIndentationDependencyLines);
+        lastLine = Math.Min(document.LineCount, lastLine + MaxIndentationDependencyLines);
+        for (var lineNumber = firstLine; lineNumber <= lastLine; lineNumber++)
+            _depthCache.Remove(document.GetLineByNumber(lineNumber));
+    }
+
+    private int GetVisibleLineDepth(AvaloniaEdit.Document.TextDocument document, AvaloniaEdit.Document.DocumentLine line)
+    {
+        if (_depthCache.TryGetValue(line, out var cached)) return cached;
+        var depth = ComputeVisibleLineDepth(document, line.LineNumber);
         if (_depthCache.Count >= MaxDepthCacheEntries) _depthCache.Clear();
-        _depthCache[lineNumber] = depth;
+        _depthCache[line] = depth;
         return depth;
     }
 
@@ -267,8 +389,10 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
     {
         var docLine = document.GetLineByNumber(lineNumber);
         var text = document.GetTextAsMemory(docLine.Offset, docLine.Length).Span;
-        if (!text.IsWhiteSpace())
-            return GetIndentColumns(text) / TabSize;
+        var ownColumns = GetIndentColumns(text, out var hasContent);
+        var ownDepth = ownColumns / TabSize;
+        if (hasContent || ownColumns >= MaxGuideIndentColumns)
+            return ownDepth;
 
         const int maxLookAround = 32;
         var above = 0;
@@ -276,8 +400,9 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         {
             var aboveLine = document.GetLineByNumber(a);
             var aboveText = document.GetTextAsMemory(aboveLine.Offset, aboveLine.Length).Span;
-            if (aboveText.IsWhiteSpace()) continue;
-            above = GetIndentColumns(aboveText) / TabSize;
+            var aboveColumns = GetIndentColumns(aboveText, out var aboveHasContent);
+            if (!aboveHasContent) continue;
+            above = aboveColumns / TabSize;
             break;
         }
         var below = 0;
@@ -285,8 +410,9 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         {
             var belowLine = document.GetLineByNumber(b);
             var belowText = document.GetTextAsMemory(belowLine.Offset, belowLine.Length).Span;
-            if (belowText.IsWhiteSpace()) continue;
-            below = GetIndentColumns(belowText) / TabSize;
+            var belowColumns = GetIndentColumns(belowText, out var belowHasContent);
+            if (!belowHasContent) continue;
+            below = belowColumns / TabSize;
             break;
         }
         if (above == 0 && below == 0) return 0;
@@ -295,14 +421,27 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
         return Math.Min(above, below);
     }
 
-    private int GetIndentColumns(ReadOnlySpan<char> lineText)
+    private int GetIndentColumns(ReadOnlySpan<char> lineText, out bool hasContent)
     {
         var columns = 0;
+        hasContent = false;
         foreach (var ch in lineText)
         {
-            if (ch == ' ') columns++;
-            else if (ch == '\t') columns += TabSize - (columns % TabSize);
-            else break;
+            if (ch == ' ')
+            {
+                if (columns >= MaxGuideIndentColumns) break;
+                columns++;
+            }
+            else if (ch == '\t')
+            {
+                columns = Math.Min(MaxGuideIndentColumns, columns + TabSize - (columns % TabSize));
+                if (columns >= MaxGuideIndentColumns) break;
+            }
+            else
+            {
+                hasContent = true;
+                break;
+            }
         }
         return columns;
     }
@@ -310,8 +449,6 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 
 internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 {
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
 
@@ -342,7 +479,7 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
             {
                 var properties = element.TextRunProperties.Clone();
                 properties.SetForegroundBrush(TextBrush);
-                SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+                VisualLineElementAccess.SetTextRunProperties(element, properties);
             });
         }
     }
@@ -356,13 +493,17 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
     private readonly List<int> _candidates = new();
 
     public IReadOnlyList<DeadCodeSpan> Spans => _spans;
+    internal SpanOverlapIndex SpanIndex => _spanIndex;
 
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<DeadCodeSpan> spans)
+        => SetSpans(spans, spans.Count == 0 ? SpanOverlapIndex.Empty : SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1));
+
+    public void SetSpans(IReadOnlyList<DeadCodeSpan> spans, SpanOverlapIndex spanIndex)
     {
         _spans = spans;
-        _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _spanIndex = spanIndex;
         _candidates.Clear();
     }
 
@@ -418,8 +559,6 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 
 internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
 {
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
     public IBrush TextBrush { get; set; } = Brushes.Black;
 
@@ -434,11 +573,22 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
     public void SetSpans(
         IReadOnlyList<ErrorSpan> errorSpans,
         IReadOnlyList<DeadCodeSpan> deadCodeSpans)
+        => SetSpans(
+            errorSpans,
+            errorSpans.Count == 0 ? SpanOverlapIndex.Empty : SpanOverlapIndex.Build(errorSpans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length)),
+            deadCodeSpans,
+            deadCodeSpans.Count == 0 ? SpanOverlapIndex.Empty : SpanOverlapIndex.Build(deadCodeSpans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1));
+
+    public void SetSpans(
+        IReadOnlyList<ErrorSpan> errorSpans,
+        SpanOverlapIndex errorIndex,
+        IReadOnlyList<DeadCodeSpan> deadCodeSpans,
+        SpanOverlapIndex deadCodeIndex)
     {
         _errorSpans = errorSpans;
         _deadCodeSpans = deadCodeSpans;
-        _errorIndex = SpanOverlapIndex.Build(errorSpans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length));
-        _deadCodeIndex = SpanOverlapIndex.Build(deadCodeSpans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _errorIndex = errorIndex;
+        _deadCodeIndex = deadCodeIndex;
         _candidates.Clear();
     }
 
@@ -465,7 +615,7 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
                 {
                     var properties = element.TextRunProperties.Clone();
                     properties.SetForegroundBrush(TextBrush);
-                    SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+                    VisualLineElementAccess.SetTextRunProperties(element, properties);
                 });
                 return;
             }
@@ -491,20 +641,27 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     private readonly List<int> _candidates = new();
 
     public IReadOnlyList<ErrorSpan> Spans => _spans;
+    internal SpanOverlapIndex SpanIndex => _spanIndex;
 
     public KnownLayer Layer => KnownLayer.Background;
 
     public void SetSpans(IReadOnlyList<ErrorSpan> spans)
+        => SetSpans(spans, spans.Count == 0 ? SpanOverlapIndex.Empty : SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length)));
+
+    public void SetSpans(IReadOnlyList<ErrorSpan> spans, SpanOverlapIndex spanIndex)
     {
         _spans = spans;
-        _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + Math.Max(1, span.Length));
+        _spanIndex = spanIndex;
         _candidates.Clear();
     }
 
     public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans)
+        => SetDeadCodeSpans(spans, spans.Count == 0 ? SpanOverlapIndex.Empty : SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1));
+
+    public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans, SpanOverlapIndex spanIndex)
     {
         _deadCodeSpans = spans;
-        _deadCodeIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
+        _deadCodeIndex = spanIndex;
     }
 
     public string? GetMessageForLine(int lineStart, int lineEnd)
@@ -656,19 +813,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         return _spanIndex.Overlaps(line.Offset, line.EndOffset);
     }
 
-    private string GetHighestSeverityForLine(DocumentLine line)
-    {
-        var best = "hint";
-        foreach (var span in _spans)
-        {
-            if (span.StartOffset >= line.EndOffset || span.StartOffset + span.Length <= line.Offset)
-                continue;
-            if (SeverityRank(span.Severity) > SeverityRank(best))
-                best = span.Severity;
-        }
-        return best;
-    }
-
     private IBrush BrushForSeverity(string severity) => severity switch
     {
         "warning" => WarningHighlightBrush,
@@ -688,14 +832,6 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
         "info" => InfoUnderlineBrush,
         "hint" => HintUnderlineBrush,
         _ => ErrorUnderlineBrush,
-    };
-
-    private static int SeverityRank(string severity) => severity switch
-    {
-        "error" => 4,
-        "warning" => 3,
-        "info" => 2,
-        _ => 1,
     };
 
     private void DrawStripes(DrawingContext drawingContext, double y, double height, double width)
@@ -719,6 +855,8 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
     private const string HttpPrefix = "http";
 
     private int _cachedLineNumber = -1;
+    private AvaloniaEdit.Document.TextDocument? _cachedDocument;
+    private AvaloniaEdit.Document.ITextSourceVersion? _cachedVersion;
     private string _cachedLineText = string.Empty;
     private List<(int Start, int Length)> _cachedSpans = [];
 
@@ -731,15 +869,7 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
     {
         var line = CurrentContext.VisualLine;
         var document = CurrentContext.Document;
-        var lineNumber = line.FirstDocumentLine.LineNumber;
-        var lineText = document.GetText(line.FirstDocumentLine.Offset, line.FirstDocumentLine.Length);
-
-        if (lineNumber != _cachedLineNumber || !string.Equals(lineText, _cachedLineText, StringComparison.Ordinal))
-        {
-            _cachedLineNumber = lineNumber;
-            _cachedLineText = lineText;
-            _cachedSpans = ParseUrlSpans(lineText);
-        }
+        EnsureCachedLine(document, line.FirstDocumentLine);
 
         var relativeOffset = offset - line.FirstDocumentLine.Offset;
         foreach (var span in _cachedSpans)
@@ -747,7 +877,7 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
             if (relativeOffset != span.Start)
                 continue;
 
-            var url = lineText.Substring(span.Start, span.Length).TrimEnd(TrailingPunctuation);
+            var url = _cachedLineText.Substring(span.Start, span.Length).TrimEnd(TrailingPunctuation);
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
                 return null;
 
@@ -758,6 +888,26 @@ public sealed class StrictLinkElementGenerator : LinkElementGenerator
         }
 
         return null;
+    }
+
+    private void EnsureCachedLine(AvaloniaEdit.Document.TextDocument document, AvaloniaEdit.Document.DocumentLine line)
+    {
+        var version = document.Version;
+        if (ReferenceEquals(_cachedDocument, document) && ReferenceEquals(_cachedVersion, version) &&
+            _cachedLineNumber == line.LineNumber)
+            return;
+
+        _cachedDocument = document;
+        _cachedVersion = version;
+        _cachedLineNumber = line.LineNumber;
+        if (line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
+        {
+            _cachedLineText = string.Empty;
+            _cachedSpans = [];
+            return;
+        }
+        _cachedLineText = EditorLineTextCache.GetText(document, line);
+        _cachedSpans = ParseUrlSpans(_cachedLineText);
     }
 
     internal static bool TryGetLinkSpan(string lineText, int columnOffset, out int start, out int length)

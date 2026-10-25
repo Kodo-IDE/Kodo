@@ -28,6 +28,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Kodo.Editor;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
@@ -671,6 +672,7 @@ public partial class MainWindow
 
             new("Search Files by Name…", "Navigation", "QuickAccess", () => { SetPaletteText(string.Empty); return Task.CompletedTask; }, Keywords: "quick open file path", KeepOpen: true),
             new("Go to Line…", "Navigation", "GoToLine", () => { SetPaletteText(":"); return Task.CompletedTask; }, HasDocument, "jump line number", KeepOpen: true, Badge: ":"),
+            new("Select Current Line", "Editor", "SelectCurrentLine", () => WithEditor((doc, area) => EditorSelectCurrentLine(doc, area)), HasDocument, "select line"),
             new("Go to Symbol in File…", "Navigation", "", () => { SetPaletteText("@"); return Task.CompletedTask; }, HasDocument, "outline function method class member", KeepOpen: true, Badge: "@"),
 
             new("New File", "File", "NewFile", () => { NewFile(); return Task.CompletedTask; }, Keywords: "create"),
@@ -1022,42 +1024,78 @@ public partial class MainWindow
         if (_paletteSymbols is not null || _paletteSymbolsLoading)
             return;
 
-        var text = document.Text;
-        if (CurrentLanguageExtension?.LangRules is { HasSymbolAnalyzer: true } rules)
-        {
-            try
-            {
-                var found = rules.AnalyzeSymbols(text)
-                    .Where(symbol => symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
-                    .Select(symbol => (Name: symbol.Name, Kind: symbol.Kind ?? string.Empty, Offset: Math.Clamp(symbol.Start, 0, document.TextLength)))
-                    .Distinct()
-                    .OrderBy(symbol => symbol.Offset)
-                    .ToList();
-                if (found.Count > 0)
-                {
-                    _paletteSymbols = found;
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                KodoDiagnostics.LogDebug("Palette symbol analysis failed.", ex);
-            }
-        }
-
         var filePath = _currentFilePath;
-        if (!string.IsNullOrWhiteSpace(filePath) && ResolveLspExtensionForFile(filePath) is { HasLsp: true })
+        var languageRules = CurrentLanguageExtension?.LangRules is { HasSymbolAnalyzer: true } rules ? rules : null;
+        var hasLsp = !string.IsNullOrWhiteSpace(filePath) && ResolveLspExtensionForFile(filePath) is { HasLsp: true };
+        if (languageRules is null && !hasLsp)
         {
-            _paletteSymbolsLoading = true;
-            var encoding = GetLspClientForFile(filePath)?.PositionEncoding ?? "utf-16";
-            _ = LoadPaletteLspSymbolsAsync(filePath, text, encoding, _paletteSymbolsVersion);
+            _paletteSymbols = [];
             return;
         }
 
-        _paletteSymbols = [];
+        _paletteSymbolsLoading = true;
+        var revision = EditorSession.Revision;
+        var revisionToken = EditorSession.RevisionCancellationToken;
+        var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+        var encoding = hasLsp ? GetLspClientForFile(filePath!)?.PositionEncoding ?? "utf-16" : "utf-16";
+        _ = LoadPaletteSymbolsAsync(document, snapshot, revision, revisionToken, filePath, languageRules, hasLsp, encoding, _paletteSymbolsVersion);
     }
 
-    private async Task LoadPaletteLspSymbolsAsync(string filePath, string text, string encoding, int version)
+    private async Task LoadPaletteSymbolsAsync(
+        TextDocument document,
+        EditorTextSnapshot snapshot,
+        long revision,
+        CancellationToken revisionToken,
+        string? filePath,
+        LangRulesAdapter? languageRules,
+        bool hasLsp,
+        string encoding,
+        int version)
+    {
+        try
+        {
+            var text = await snapshot.GetTextAsync(revisionToken).ConfigureAwait(false);
+            if (languageRules is not null)
+            {
+                var found = await Task.Run(() => languageRules.AnalyzeSymbols(text)
+                    .Where(symbol => symbol.IsDeclaration && !string.IsNullOrWhiteSpace(symbol.Name))
+                    .Select(symbol => (Name: symbol.Name, Kind: symbol.Kind ?? string.Empty, Offset: Math.Clamp(symbol.Start, 0, text.Length)))
+                    .Distinct()
+                    .OrderBy(symbol => symbol.Offset)
+                    .ToList(), revisionToken).ConfigureAwait(false);
+                if (found.Count > 0)
+                {
+                    await ApplyPaletteSymbolsAsync(document, revision, version, found).ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            if (hasLsp && !string.IsNullOrWhiteSpace(filePath))
+            {
+                await LoadPaletteLspSymbolsAsync(document, revision, revisionToken, filePath, text, encoding, version).ConfigureAwait(false);
+                return;
+            }
+            await ApplyPaletteSymbolsAsync(document, revision, version, []).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (version != _paletteSymbolsVersion || _commandPaletteOverlay is null)
+                    return;
+                _paletteSymbolsLoading = false;
+                _paletteSymbols = null;
+                RefreshCommandPaletteResults();
+            });
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Palette symbol analysis failed.", ex);
+            await ApplyPaletteSymbolsAsync(document, revision, version, []).ConfigureAwait(false);
+        }
+    }
+
+    private async Task LoadPaletteLspSymbolsAsync(TextDocument document, long revision, CancellationToken revisionToken, string filePath, string text, string encoding, int version)
     {
         var symbols = new List<(string Name, string Kind, int Offset)>();
         try
@@ -1096,11 +1134,26 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug("Palette LSP symbol request failed.", ex);
         }
 
-        if (version != _paletteSymbolsVersion || _commandPaletteOverlay is null)
-            return;
-        _paletteSymbols = symbols.Where(symbol => symbol.Name.Length > 0).OrderBy(symbol => symbol.Offset).ToList();
-        _paletteSymbolsLoading = false;
-        RefreshCommandPaletteResults();
+        await ApplyPaletteSymbolsAsync(document, revision, version, symbols.Where(symbol => symbol.Name.Length > 0).OrderBy(symbol => symbol.Offset).ToList(), revisionToken);
+    }
+
+    private async Task ApplyPaletteSymbolsAsync(TextDocument document, long revision, int version, List<(string Name, string Kind, int Offset)> symbols, CancellationToken revisionToken = default)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (version != _paletteSymbolsVersion || _commandPaletteOverlay is null)
+                return;
+            if (revisionToken.IsCancellationRequested || !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision)
+            {
+                _paletteSymbols = null;
+                _paletteSymbolsLoading = false;
+                RefreshCommandPaletteResults();
+                return;
+            }
+            _paletteSymbols = symbols;
+            _paletteSymbolsLoading = false;
+            RefreshCommandPaletteResults();
+        });
     }
 
     private List<PaletteCommand> BuildSymbolCommands(string query, out string? message, out int totalMatches)

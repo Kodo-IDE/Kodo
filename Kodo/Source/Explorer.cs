@@ -21,6 +21,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Kodo.Models;
+using Kodo.Editor;
 using Shared = Kodo.HotfixShared.HotfixShared;
 
 namespace Kodo;
@@ -127,7 +128,10 @@ public partial class MainWindow
             return;
         }
 
-        ActiveEditorTab.Content = EditorTextBox.Document.Text;
+        var tab = ActiveEditorTab;
+        var document = EditorTextBox.Document;
+        tab.Document = document;
+        tab.Content = string.Empty;
         ActiveEditorTab.IsDirty = _isDirty;
         ActiveEditorTab.LineEnding = _currentLineEnding;
         var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
@@ -193,6 +197,7 @@ public partial class MainWindow
         ActiveEditorTab = tab;
         _activeTabVersion++;
         _currentFilePath = tab.IsUntitled ? null : tab.Path;
+        EditorSession.SetFilePath(_currentFilePath);
         ResetLspFoldingState();
         _hasUntitledDocument = tab.IsUntitled;
         _isDirty = tab.IsDirty;
@@ -203,7 +208,16 @@ public partial class MainWindow
         ClearAutoSaveStatus();
         SetFileCorrupted(_corruptedTabs.Contains(tab));
         var activationVersion = _activeTabVersion;
-        Dispatcher.UIThread.Post(() => _ = SetEditorTabContentAsync(tab, activationVersion), DispatcherPriority.Background);
+        var activationQueuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        Dispatcher.UIThread.Post(() =>
+        {
+            KodoDiagnostics.ReportSlowStage(
+                "tab content activation dispatch",
+                (long)System.Diagnostics.Stopwatch.GetElapsedTime(activationQueuedAt).TotalMilliseconds,
+                50,
+                $"path={tab.Path}");
+            _ = SetEditorTabContentSafelyAsync(tab, activationVersion);
+        }, DispatcherPriority.Normal);
         var savedOffsetY = tab.ScrollOffsetY;
         var targetTabForScroll = tab;
         var savedOffsetVersion = _activeTabVersion;
@@ -234,7 +248,33 @@ public partial class MainWindow
         if (focusEditor)
             FocusEditor();
         activateWatch.Stop();
-        KodoDiagnostics.ReportSlowStage("tab activation", activateWatch.ElapsedMilliseconds, 1000, $"path={tab.Path} len={tab.Content?.Length ?? 0}");
+        KodoDiagnostics.ReportSlowStage("tab activation", activateWatch.ElapsedMilliseconds, 1000, $"path={tab.Path} len={tab.Document?.TextLength ?? tab.Content.Length}");
+    }
+
+    private async Task SetEditorTabContentSafelyAsync(EditorTab tab, int activationVersion)
+    {
+        var activationStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            await SetEditorTabContentAsync(tab, activationVersion);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Tab content activation failed for '{tab.Path}'", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_activeTabVersion == activationVersion && ReferenceEquals(ActiveEditorTab, tab))
+                    ExtensionsStatusText = $"Unable to finish opening {Path.GetFileName(tab.Path)}: {ex.Message}";
+            });
+        }
+        finally
+        {
+            KodoDiagnostics.ReportSlowStage(
+                "tab content activation total",
+                (long)System.Diagnostics.Stopwatch.GetElapsedTime(activationStartedAt).TotalMilliseconds,
+                100,
+                $"path={tab.Path} len={tab.Document?.TextLength ?? tab.Content.Length}");
+        }
     }
 
     private async Task SetEditorTabContentAsync(EditorTab tab, int activationVersion)
@@ -243,13 +283,46 @@ public partial class MainWindow
         await ClearLspFoldingsAsync();
         if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab)) return;
 
-        SetEditorContent(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content);
-        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath) && !string.IsNullOrEmpty(tab.Content))
-            ApplyIndentationForContent(tab.Content);
+        var tabDocument = IsImagePreviewFile(_currentFilePath) ? null : tab.Document;
+        if (tabDocument is not null)
+            SetEditorContent(tabDocument, preserveUndoHistory: true);
+        else
+            await SetEditorContentAsync(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content, activationVersion);
+        if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab)) return;
+        var activeDocument = EditorTextBox.Document;
+        tab.Document = activeDocument;
+        tab.Content = string.Empty;
+        var documentVersion = activeDocument.Version;
+        string? contentSnapshot = null;
+        if (!ReferenceEquals(tab.IndentationDetectionVersion, documentVersion))
+        {
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(activeDocument);
+            var indentationSample = await snapshot.GetTextPrefixAsync(1_048_576, EditorSession.RevisionCancellationToken);
+            if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab) ||
+                !ReferenceEquals(EditorTextBox.Document, activeDocument) || !ReferenceEquals(activeDocument.Version, documentVersion)) return;
+            tab.DetectedIndentation = await Task.Run(() => DetectIndentation(indentationSample));
+            if (_activeTabVersion != activationVersion || !ReferenceEquals(ActiveEditorTab, tab) ||
+                !ReferenceEquals(EditorTextBox.Document, activeDocument) || !ReferenceEquals(activeDocument.Version, documentVersion)) return;
+            tab.IndentationDetectionVersion = documentVersion;
+        }
+        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath))
+            ApplyIndentationForContent(tab.DetectedIndentation);
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
         EditorTextBox.ScrollToLine(tab.TopLineNumber);
-        if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
-            _ = LspNotifyDidOpenAsync(tab.Path, tab.Content ?? string.Empty);
+        if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path) && !IsLspDocumentOpenOrOpening(tab.Path))
+        {
+            contentSnapshot ??= await EditorTextSnapshotStore.GetSnapshot(activeDocument).GetTextAsync();
+            if (_activeTabVersion == activationVersion && ReferenceEquals(ActiveEditorTab, tab) &&
+                ReferenceEquals(EditorTextBox.Document, activeDocument))
+                _ = LspNotifyDidOpenAsync(tab.Path, contentSnapshot);
+        }
+    }
+
+    private async Task<string> GetEditorTabContentAsync(EditorTab tab, CancellationToken cancellationToken = default)
+    {
+        var document = await Dispatcher.UIThread.InvokeAsync(() => tab.Document);
+        if (document is null) return tab.Content ?? string.Empty;
+        return await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private void CloseTab(EditorTab tab)
@@ -281,6 +354,7 @@ public partial class MainWindow
 
         ActiveEditorTab = null;
         _currentFilePath = null;
+        EditorSession.SetFilePath(null);
         _hasUntitledDocument = false;
         _isDirty = false;
         OnPropertyChanged(nameof(IsDocumentDirty));
@@ -376,7 +450,6 @@ public partial class MainWindow
         {
             AddRecentFile(path);
             ActivateTab(existingTab);
-            if (!existingTab.IsUntitled) _ = LspNotifyDidOpenAsync(existingTab.Path, existingTab.Content);
             return;
         }
 
@@ -422,7 +495,7 @@ public partial class MainWindow
 
         if (!IsImagePreviewFile(path) && !isCorrupted && !string.IsNullOrEmpty(content))
         {
-            _currentLineEnding = DetectLineEnding(content);
+            _currentLineEnding = await Task.Run(() => DetectLineEnding(content));
         }
         else if (!IsImagePreviewFile(path) && !isCorrupted && string.IsNullOrEmpty(content))
         {

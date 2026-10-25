@@ -3,28 +3,31 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Text.RegularExpressions;
 using Avalonia.Media;
 using AvaloniaEdit.Rendering;
+using AvaloniaEdit.Document;
 using Kodo.Models;
+using Kodo.Editor;
 
 namespace Kodo;
 
 public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 {
-    private static readonly Dictionary<char, char> OpeningToClosing = new()
-    {
-        ['('] = ')',
-        ['['] = ']',
-        ['{'] = '}'
-    };
+    private static bool IsOpeningBracket(char value) => value is '(' or '[' or '{';
 
-    private static readonly Dictionary<char, char> ClosingToOpening = new()
+    private static bool TryGetOpeningBracket(char value, out char opening)
     {
-        [')'] = '(',
-        [']'] = '[',
-        ['}'] = '{'
-    };
+        opening = value switch
+        {
+            ')' => '(',
+            ']' => '[',
+            '}' => '{',
+            _ => '\0'
+        };
+        return opening != '\0';
+    }
 
     private static readonly IBrush[] RainbowBrushes =
     [
@@ -35,16 +38,21 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         Brush.Parse("#9CDCFE"),
         Brush.Parse("#D7BA7D")
     ];
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private ParseSnapshot? _snapshot;
+    private readonly AsyncDocumentSnapshot<ParseSnapshot> _snapshot = new();
     private string _commentLine = "//";
     private string _commentBlockStart = "/*";
     private string _commentBlockEnd = "*/";
     private string[] _stringDelimiters = ["\"", "'"];
     private string[] _multiLineStringDelimiters = [];
     private bool _isBatch;
+
+    private sealed record BracketParseConfiguration(
+        string CommentLine,
+        string CommentBlockStart,
+        string CommentBlockEnd,
+        string[] StringDelimiters,
+        string[] MultiLineStringDelimiters);
 
     public bool IsEnabled { get; set; } = true;
 
@@ -122,12 +130,12 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         RegexOptions.IgnoreCase | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(250));
 
-    private readonly Stack<char> _lineStack = new();
+    private char[] _lineStack = new char[64];
+    private int _lineStackCount;
 
     public void InvalidateCache()
     {
-        _snapshot = null;
-        DocumentTextCache.Invalidate();
+        _snapshot.Invalidate();
     }
 
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
@@ -136,25 +144,34 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             return;
 
         var document = CurrentContext.Document;
-        if (document is null || line.Length <= 0)
+        if (document is null || line.Length <= 0 || line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
             return;
         if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
             {
-                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
-                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                var first = tv.VisualLines[0].FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines[^1].FirstDocumentLine.LineNumber;
                 if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
-            if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
-                return;
         }
 
-        var snapshot = _snapshot ??= BuildSnapshot(DocumentTextCache.Get(document));
+        var textView = CurrentContext.TextView;
+        var configuration = new BracketParseConfiguration(
+            _commentLine,
+            _commentBlockStart,
+            _commentBlockEnd,
+            _stringDelimiters,
+            _multiLineStringDelimiters);
+        var snapshot = _snapshot.GetOrSchedule(
+            document,
+            (text, lineCount, token) => BuildSnapshot(text, lineCount, token, configuration),
+            () => textView?.InvalidateLayer(KnownLayer.Text));
+        if (snapshot is null) return;
         var lineState = snapshot.GetLineState(line.LineNumber);
-        var text = document.GetText(line.Offset, line.Length);
+        var text = EditorLineTextCache.GetText(document, line);
         int batchEchoContentStart = -1;
         if (_isBatch)
         {
@@ -166,10 +183,9 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             else if (BatchRemPattern.IsMatch(text))
                 return;
         }
-        _lineStack.Clear();
-        foreach (var ch in lineState.BracketStack)
-            _lineStack.Push(ch);
-        var stack = _lineStack;
+        EnsureLineStackCapacity(lineState.BracketStack.Length);
+        lineState.BracketStack.CopyTo(0, _lineStack, 0, lineState.BracketStack.Length);
+        _lineStackCount = lineState.BracketStack.Length;
         var mode = lineState.Mode;
         var activeDelimiter = lineState.Delimiter;
 
@@ -267,21 +283,34 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             var ch = text[index];
             var offset = line.Offset + index;
 
-            if (OpeningToClosing.ContainsKey(ch))
+            if (IsOpeningBracket(ch))
             {
-                ApplyBracketColor(offset, GetBrushForDepth(stack.Count));
-                stack.Push(ch);
+                ApplyBracketColor(offset, GetBrushForDepth(_lineStackCount));
+                EnsureLineStackCapacity(_lineStackCount + 1);
+                _lineStack[_lineStackCount++] = ch;
                 continue;
             }
 
-            if (ClosingToOpening.TryGetValue(ch, out var opening) &&
-                stack.Count > 0 &&
-                stack.Peek() == opening)
+            if (TryGetOpeningBracket(ch, out var opening) &&
+                _lineStackCount > 0 &&
+                _lineStack[_lineStackCount - 1] == opening)
             {
-                ApplyBracketColor(offset, GetBrushForDepth(stack.Count - 1));
-                stack.Pop();
+                ApplyBracketColor(offset, GetBrushForDepth(_lineStackCount - 1));
+                _lineStackCount--;
             }
         }
+    }
+
+    private void EnsureLineStackCapacity(int required)
+    {
+        if (required <= _lineStack.Length)
+            return;
+
+        var capacity = _lineStack.Length;
+        while (capacity < required)
+            capacity = checked(capacity * 2);
+
+        Array.Resize(ref _lineStack, capacity);
     }
 
     private void ApplyBracketColor(int offset, IBrush brush)
@@ -290,27 +319,25 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         {
             var properties = element.TextRunProperties.Clone();
             properties.SetForegroundBrush(brush);
-            SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            VisualLineElementAccess.SetTextRunProperties(element, properties);
         });
     }
 
     private IBrush GetBrushForDepth(int depth) => RainbowBrushes[Math.Abs(depth) % RainbowBrushes.Length];
 
-    private ParseSnapshot BuildSnapshot(string text)
+    private ParseSnapshot BuildSnapshot(string text, int lineCount, CancellationToken cancellationToken, BracketParseConfiguration configuration)
     {
+        var commentLine = configuration.CommentLine;
+        var commentBlockStart = configuration.CommentBlockStart;
+        var commentBlockEnd = configuration.CommentBlockEnd;
+        var stringDelimiters = configuration.StringDelimiters;
+        var multiLineStringDelimiters = configuration.MultiLineStringDelimiters;
         if (text.IndexOfAny(['(', ')', '[', ']', '{', '}']) < 0)
         {
-            var emptyLineCount = 1;
-            for (var c = 0; c < text.Length; c++)
-                if (text[c] == '\n') emptyLineCount++;
-            var emptyStates = new List<LineState>(emptyLineCount);
-            emptyStates.Add(new(string.Empty, ScanMode.Normal, null));
-            for (var i = 1; i < emptyLineCount; i++)
-                emptyStates.Add(new(string.Empty, ScanMode.Normal, null));
-            return new ParseSnapshot(text, emptyStates);
+            return new ParseSnapshot([], new LineState(string.Empty, ScanMode.Normal, null));
         }
 
-        var lineStates = new List<LineState> { new(string.Empty, ScanMode.Normal, null) };
+        var lineStates = new List<LineState>(lineCount) { new(string.Empty, ScanMode.Normal, null) };
         var stack = new char[256];
         var depth = 0;
         var lastEmittedStack = string.Empty;
@@ -320,6 +347,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
         for (var index = 0; index < text.Length; index++)
         {
+            if ((index & 0x3fff) == 0) cancellationToken.ThrowIfCancellationRequested();
             if (TryConsumeLineBreak(text, ref index, ref mode, ref activeDelimiter))
             {
                 if (stackDirty)
@@ -359,22 +387,22 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
                 continue;
             }
 
-            if (!string.IsNullOrEmpty(_commentLine) && MatchesAt(text, index, _commentLine))
+            if (!string.IsNullOrEmpty(commentLine) && MatchesAt(text, index, commentLine))
             {
                 mode = ScanMode.LineComment;
-                index += _commentLine.Length - 1;
+                index += commentLine.Length - 1;
                 continue;
             }
 
-            if (!string.IsNullOrEmpty(_commentBlockStart) && MatchesAt(text, index, _commentBlockStart))
+            if (!string.IsNullOrEmpty(commentBlockStart) && MatchesAt(text, index, commentBlockStart))
             {
                 mode = ScanMode.BlockComment;
-                activeDelimiter = _commentBlockEnd;
-                index += _commentBlockStart.Length - 1;
+                activeDelimiter = commentBlockEnd;
+                index += commentBlockStart.Length - 1;
                 continue;
             }
 
-            var multiLineDelimiter = MatchDelimiter(text, index, _multiLineStringDelimiters);
+            var multiLineDelimiter = MatchDelimiter(text, index, multiLineStringDelimiters);
             if (multiLineDelimiter is not null)
             {
                 mode = ScanMode.MultiLineString;
@@ -383,7 +411,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
                 continue;
             }
 
-            var stringDelimiter = MatchDelimiter(text, index, _stringDelimiters);
+            var stringDelimiter = MatchDelimiter(text, index, stringDelimiters);
             if (stringDelimiter is not null)
             {
                 mode = ScanMode.String;
@@ -393,13 +421,13 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             }
 
             var ch = text[index];
-            if (OpeningToClosing.ContainsKey(ch))
+            if (IsOpeningBracket(ch))
             {
                 if (depth == stack.Length) Array.Resize(ref stack, stack.Length * 2);
                 stack[depth++] = ch;
                 stackDirty = true;
             }
-            else if (ClosingToOpening.TryGetValue(ch, out var opening) &&
+            else if (TryGetOpeningBracket(ch, out var opening) &&
                      depth > 0 &&
                      stack[depth - 1] == opening)
             {
@@ -408,7 +436,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
             }
         }
 
-        return new ParseSnapshot(text, lineStates);
+        return new ParseSnapshot(lineStates, null);
     }
 
     private static void ExitDelimitedState(ref int index, ref ScanMode mode, ref string? activeDelimiter)
@@ -472,12 +500,12 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         return slashCount % 2 == 1;
     }
 
-    private sealed record ParseSnapshot(string Text, List<LineState> LineStates)
+    private sealed record ParseSnapshot(IReadOnlyList<LineState> LineStates, LineState? UniformLineState)
     {
         public LineState GetLineState(int lineNumber) =>
-            lineNumber > 0 && lineNumber <= LineStates.Count
+            UniformLineState ?? (lineNumber > 0 && lineNumber <= LineStates.Count
                 ? LineStates[lineNumber - 1]
-                : new LineState(string.Empty, ScanMode.Normal, null);
+                : new LineState(string.Empty, ScanMode.Normal, null));
     }
 
     private readonly record struct LineState(string BracketStack, ScanMode Mode, string? Delimiter);
@@ -495,23 +523,21 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
 {
     private static readonly Typeface EmojiTypeface = new(new FontFamily("Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji"));
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
 
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
         var document = CurrentContext.Document;
-        if (document is null || line.Length <= 0)
+        if (document is null || line.Length <= 0 || line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
             return;
 
-        var text = document.GetText(line.Offset, line.Length);
+        var text = EditorLineTextCache.GetText(document, line);
         foreach (var (start, end) in EnumerateEmojiRanges(text))
         {
             ChangeLinePart(line.Offset + start, line.Offset + end, element =>
             {
                 var properties = element.TextRunProperties.Clone();
                 properties.SetTypeface(EmojiTypeface);
-                SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+                VisualLineElementAccess.SetTextRunProperties(element, properties);
             });
         }
     }

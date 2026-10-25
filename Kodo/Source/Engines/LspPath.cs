@@ -2,7 +2,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
+using AvaloniaEdit.Document;
 using Kodo.Models;
 
 namespace Kodo;
@@ -121,48 +123,36 @@ internal static class LspPath
         return "plaintext";
     }
 
-    private const int LineIndexCacheCapacity = 8;
-    private static readonly object LineIndexCacheLock = new();
-    private static readonly (string Text, Lazy<int[]> Starts)[] LineIndexCache = new (string, Lazy<int[]>)[LineIndexCacheCapacity];
-    private static int _nextLineIndexSlot;
-
-    public static int[] GetLineStarts(string text)
+    private sealed class LineIndexEntry
     {
-        Lazy<int[]>? starts = null;
-        lock (LineIndexCacheLock)
+        public LineIndexEntry(string text)
         {
-            foreach (var entry in LineIndexCache)
+            Starts = new Lazy<int[]>(() => BuildLineStarts(text), LazyThreadSafetyMode.ExecutionAndPublication);
+        }
+
+        public Lazy<int[]> Starts { get; }
+    }
+
+    private static readonly ConditionalWeakTable<string, LineIndexEntry> LineIndexCache = new();
+
+    public static int[] GetLineStarts(string text) => LineIndexCache.GetValue(text, static value => new LineIndexEntry(value)).Starts.Value;
+
+    private static int[] BuildLineStarts(string text)
+    {
+        var offsets = new List<int> { 0 };
+        for (var offset = 0; offset < text.Length; offset++)
+        {
+            if (text[offset] == '\r')
             {
-                if (ReferenceEquals(entry.Text, text))
-                {
-                    starts = entry.Starts;
-                    break;
-                }
+                if (offset + 1 < text.Length && text[offset + 1] == '\n') { offsets.Add(offset + 2); offset++; }
+                else offsets.Add(offset + 1);
             }
-            if (starts is null)
+            else if (text[offset] == '\n')
             {
-                starts = new Lazy<int[]>(() =>
-                {
-                    var offsets = new List<int> { 0 };
-                    for (var offset = 0; offset < text.Length; offset++)
-                    {
-                        if (text[offset] == '\r')
-                        {
-                            if (offset + 1 < text.Length && text[offset + 1] == '\n') { offsets.Add(offset + 2); offset++; }
-                            else offsets.Add(offset + 1);
-                        }
-                        else if (text[offset] == '\n')
-                        {
-                            offsets.Add(offset + 1);
-                        }
-                    }
-                    return offsets.ToArray();
-                }, LazyThreadSafetyMode.ExecutionAndPublication);
-                LineIndexCache[_nextLineIndexSlot] = (text, starts);
-                _nextLineIndexSlot = (_nextLineIndexSlot + 1) % LineIndexCacheCapacity;
+                offsets.Add(offset + 1);
             }
         }
-        return starts.Value;
+        return offsets.ToArray();
     }
 
     public static int OffsetFromLspPosition(string text, int line, int character) =>
@@ -173,6 +163,17 @@ internal static class LspPath
 
     public static int OffsetFromLspPosition(string text, int line, int character, string encoding) =>
         OffsetFromLspPosition(GetLineStarts(text), text, line, character, encoding);
+
+    public static int OffsetFromLspPosition(TextDocument document, int line, int character, string encoding)
+    {
+        if (document.LineCount == 0) return 0;
+        line = Math.Clamp(line, 0, document.LineCount - 1);
+        var documentLine = document.GetLineByNumber(line + 1);
+        if (string.Equals(NormalizePositionEncoding(encoding), "utf-16", StringComparison.Ordinal))
+            return documentLine.Offset + Math.Clamp(character, 0, documentLine.Length);
+        var lineText = document.GetTextAsMemory(documentLine.Offset, documentLine.Length).Span;
+        return documentLine.Offset + Utf16UnitsForPosition(lineText, Math.Max(0, character), NormalizePositionEncoding(encoding));
+    }
 
     public static int OffsetFromLspPosition(int[] starts, string text, int line, int character, string encoding)
     {
@@ -209,7 +210,18 @@ internal static class LspPath
         return (lo, PositionLength(text.AsSpan(lineStart, safeOffset - lineStart), normalizedEncoding));
     }
 
-    private static string NormalizePositionEncoding(string? encoding) =>
+    public static (int line, int character) OffsetToLspPosition(TextDocument document, int offset, string encoding)
+    {
+        offset = Math.Clamp(offset, 0, document.TextLength);
+        var line = document.GetLineByOffset(offset);
+        var relativeOffset = Math.Clamp(offset - line.Offset, 0, line.Length);
+        if (string.Equals(NormalizePositionEncoding(encoding), "utf-16", StringComparison.Ordinal))
+            return (line.LineNumber - 1, relativeOffset);
+        var prefix = document.GetTextAsMemory(line.Offset, relativeOffset).Span;
+        return (line.LineNumber - 1, PositionLength(prefix, encoding));
+    }
+
+    public static string NormalizePositionEncoding(string? encoding) =>
         string.Equals(encoding, "utf-8", StringComparison.OrdinalIgnoreCase) ? "utf-8" :
         string.Equals(encoding, "utf-32", StringComparison.OrdinalIgnoreCase) ? "utf-32" : "utf-16";
 
@@ -241,8 +253,9 @@ internal static class LspPath
     public static int PositionLength(string text, string? encoding) =>
         PositionLength(text.AsSpan(), NormalizePositionEncoding(encoding));
 
-    private static int Utf16UnitsForPosition(ReadOnlySpan<char> text, int character, string encoding)
+    public static int Utf16UnitsForPosition(ReadOnlySpan<char> text, int character, string? encoding)
     {
+        encoding = NormalizePositionEncoding(encoding);
         var consumed = 0;
         var units = 0;
         for (var index = 0; index < text.Length;)

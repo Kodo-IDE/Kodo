@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Avalonia.Media;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
+using Kodo.Editor;
 
 namespace Kodo;
 
@@ -43,8 +45,6 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         Brush.Parse("#C586C0"),
         Brush.Parse("#FFD700"),
     ];
-    private static readonly MethodInfo? SetTextRunPropertiesMethod =
-        typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
     private static readonly Regex HeadingRegex = new(@"^(?<indent>\s{0,3})(?<marker>#{1,6})(?<space>\s+)(?<content>.+?)\s*(?:#+\s*)?$", RegexOptions.Compiled);
     private static readonly Regex SetextHeadingUnderlineRegex = new(@"^\s{0,3}(?:=+|-+)\s*$", RegexOptions.Compiled);
     private static readonly Regex HorizontalRuleRegex = new(@"^\s{0,3}(?:([-*_])(?:\s*\1){2,})\s*$", RegexOptions.Compiled);
@@ -70,7 +70,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private static readonly Regex HtmlEmbeddedTypeAttributeRegex =
         new(@"\btype\s*=\s*(?:""(?<value>[^""]*)""|'(?<value>[^']*)'|(?<value>[^\s>]+))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    private MarkdownSnapshot? _snapshot;
+    private readonly AsyncDocumentSnapshot<MarkdownSnapshot> _snapshot = new();
     private LangRulesAdapter? _langRules;
     private Func<string, CompiledSyntaxProfile?>? _languageResolver;
     private Func<string, LoadedExtension?>? _inlineLanguageResolver;
@@ -86,17 +86,23 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
     private IBrush _variableBrush = Brushes.White;
     private IBrush _mutedBrush = Brushes.White;
 
+    private sealed class SnapshotBuildContext(Func<string, CompiledSyntaxProfile?>? languageResolver)
+    {
+        public Func<string, CompiledSyntaxProfile?>? LanguageResolver { get; } = languageResolver;
+        public Dictionary<string, EmbeddedSyntaxProfile?> EmbeddedProfiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, EmbeddedSyntaxProfile?> HtmlProfiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
     public bool IsEnabled { get; private set; }
 
     public void InvalidateCache()
     {
-        _snapshot = null;
-        DocumentTextCache.Invalidate();
+        _snapshot.Invalidate();
     }
 
     public void UpdateSyntax(LoadedExtension? extension, Func<string, CompiledSyntaxProfile?>? languageResolver, Func<string, LoadedExtension?>? inlineLanguageResolver)
     {
-        _snapshot = null;
+        _snapshot.Invalidate();
         _embeddedProfileCache.Clear();
         _inlineProfileCache.Clear();
         _htmlEmbeddedProfileCache.Clear();
@@ -129,26 +135,34 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         var document = CurrentContext.Document;
         if (document is null)
             return;
+        if (line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
+            return;
         if (document.TextLength > PerformanceBudget.ViewportCullThreshold)
         {
             var tv = CurrentContext.TextView;
             if (tv != null && tv.VisualLinesValid && tv.VisualLines.Count > 0)
             {
-                var first = tv.VisualLines.First().FirstDocumentLine.LineNumber;
-                var last = tv.VisualLines.Last().FirstDocumentLine.LineNumber;
+                var first = tv.VisualLines[0].FirstDocumentLine.LineNumber;
+                var last = tv.VisualLines[^1].FirstDocumentLine.LineNumber;
                 if (line.LineNumber < first || line.LineNumber > last)
                     return;
             }
         }
 
-        var text = document.GetText(line.Offset, line.Length);
-        if (document.TextLength > PerformanceBudget.SnapshotSkipThreshold)
+        var text = EditorLineTextCache.GetText(document, line);
+        var textView = CurrentContext.TextView;
+        var resolver = _languageResolver;
+        var stateSnapshot = _snapshot.GetOrSchedule(
+            document,
+            (source, lineCount, token) => BuildSnapshot(source, lineCount, token, resolver),
+            () => textView?.InvalidateLayer(KnownLayer.Text));
+        if (stateSnapshot is null)
         {
             ColorizeMarkdownLine(text, line.Offset);
             return;
         }
 
-        var state = (_snapshot ??= BuildSnapshot(DocumentTextCache.Get(document))).GetLineState(line.LineNumber);
+        var state = stateSnapshot.GetLineState(line.LineNumber);
 
         if (state.Delimiter is not null)
         {
@@ -425,61 +439,75 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         }
     }
 
-    private MarkdownSnapshot BuildSnapshot(string text)
+    private MarkdownSnapshot BuildSnapshot(string text, int lineCount, CancellationToken cancellationToken, Func<string, CompiledSyntaxProfile?>? languageResolver)
     {
-        var lines = text.Split(["\r\n", "\n", "\r"], StringSplitOptions.None);
-        var states = new List<MarkdownLineState>(lines.Length);
+        var context = new SnapshotBuildContext(languageResolver);
+        var states = new List<MarkdownLineState>(lineCount);
         FenceState? activeFence = null;
         MarkdownHtmlBlock? activeHtmlBlock = null;
         var currentState = EmbeddedSyntaxState.Empty;
-
-        foreach (var line in lines)
+        var start = 0;
+        while (true)
         {
-            var trimmed = line.TrimStart();
-            var htmlSegments = activeFence is null
-                ? BuildMarkdownHtmlSegments(line, ref activeHtmlBlock)
-                : [];
-
-            if (activeFence is null)
+            cancellationToken.ThrowIfCancellationRequested();
+            var end = start;
+            while (end < text.Length && text[end] is not '\r' and not '\n')
             {
-                if (TryParseFenceOpening(trimmed, out var opening))
-                {
-                    states.Add(new MarkdownLineState(null, opening, htmlSegments));
-                    activeFence = new FenceState(
-                        opening.MarkerChar,
-                        opening.MarkerLength,
-                        opening.LanguageLabel,
-                        ResolveEmbeddedProfile(opening.LanguageLabel),
-                        EmbeddedSyntaxState.Empty,
-                        null);
-                    currentState = EmbeddedSyntaxState.Empty;
-                    continue;
-                }
-
-                states.Add(new MarkdownLineState(null, null, htmlSegments));
-                continue;
+                if ((end & 0x3fff) == 0) cancellationToken.ThrowIfCancellationRequested();
+                end++;
             }
-
-            if (TryParseFenceClosing(trimmed, activeFence, out var closing))
-            {
-                states.Add(new MarkdownLineState(null, closing, []));
-                activeFence = null;
-                currentState = EmbeddedSyntaxState.Empty;
-                continue;
-            }
-
-            var fenceHtmlBlock = activeFence.HtmlBlock;
-            var fenceHtmlSegments = SupportsMarkdownNestedHtml(activeFence.Profile)
-                ? BuildMarkdownHtmlSegments(line, ref fenceHtmlBlock)
-                : [];
-            var lineFenceState = activeFence with { State = currentState, HtmlBlock = fenceHtmlBlock };
-            states.Add(new MarkdownLineState(lineFenceState, null, fenceHtmlSegments));
-            activeFence = activeFence with { HtmlBlock = fenceHtmlBlock };
-            if (activeFence.Profile is not null)
-                currentState = activeFence.Profile.Advance(line, currentState);
+            var line = text[start..end];
+            states.Add(BuildSnapshotLine(line, context, ref activeFence, ref activeHtmlBlock, ref currentState));
+            if (end == text.Length) break;
+            start = end + (text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n' ? 2 : 1);
         }
 
-        return new MarkdownSnapshot(text, states);
+        return new MarkdownSnapshot(states);
+    }
+
+    private MarkdownLineState BuildSnapshotLine(
+        string line,
+        SnapshotBuildContext context,
+        ref FenceState? activeFence,
+        ref MarkdownHtmlBlock? activeHtmlBlock,
+        ref EmbeddedSyntaxState currentState)
+    {
+        var trimmed = line.TrimStart();
+        var htmlSegments = activeFence is null
+            ? BuildMarkdownHtmlSegments(line, ref activeHtmlBlock, context)
+            : [];
+
+        if (activeFence is null)
+        {
+            if (!TryParseFenceOpening(trimmed, out var opening))
+                return new MarkdownLineState(null, null, htmlSegments);
+            activeFence = new FenceState(
+                opening.MarkerChar,
+                opening.MarkerLength,
+                opening.LanguageLabel,
+                ResolveSnapshotEmbeddedProfile(opening.LanguageLabel, context),
+                EmbeddedSyntaxState.Empty,
+                null);
+            currentState = EmbeddedSyntaxState.Empty;
+            return new MarkdownLineState(null, opening, htmlSegments);
+        }
+
+        if (TryParseFenceClosing(trimmed, activeFence, out var closing))
+        {
+            activeFence = null;
+            currentState = EmbeddedSyntaxState.Empty;
+            return new MarkdownLineState(null, closing, []);
+        }
+
+        var fenceHtmlBlock = activeFence.HtmlBlock;
+        var fenceHtmlSegments = SupportsMarkdownNestedHtml(activeFence.Profile)
+            ? BuildMarkdownHtmlSegments(line, ref fenceHtmlBlock, context)
+            : [];
+        var lineFenceState = activeFence with { State = currentState, HtmlBlock = fenceHtmlBlock };
+        activeFence = activeFence with { HtmlBlock = fenceHtmlBlock };
+        if (activeFence.Profile is not null)
+            currentState = activeFence.Profile.Advance(line, currentState);
+        return new MarkdownLineState(lineFenceState, null, fenceHtmlSegments);
     }
 
     private void ColorizeInlineCode(Match match, int lineOffset)
@@ -511,6 +539,54 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             EmbeddedSyntaxState.Empty,
             (start, end, brush) => ApplyBrush(0, start, end, brush),
             GetRainbowBrush);
+    }
+
+    private static EmbeddedSyntaxProfile? ResolveSnapshotEmbeddedProfile(string? languageLabel, SnapshotBuildContext context)
+    {
+        if (string.IsNullOrWhiteSpace(languageLabel) || context.LanguageResolver is null)
+            return null;
+        return ResolveSnapshotEmbeddedProfile(context.LanguageResolver(languageLabel), context);
+    }
+
+    private static EmbeddedSyntaxProfile? ResolveSnapshotEmbeddedProfile(CompiledSyntaxProfile? syntaxProfile, SnapshotBuildContext context)
+    {
+        if (syntaxProfile is null || IsMarkdownExtension(syntaxProfile.Extension))
+            return null;
+        var cacheKey = $"{syntaxProfile.Extension.Id}|{syntaxProfile.Extension.Version}";
+        if (context.EmbeddedProfiles.TryGetValue(cacheKey, out var cached))
+            return cached;
+        var profile = EmbeddedSyntaxProfile.Create(syntaxProfile);
+        context.EmbeddedProfiles[cacheKey] = profile;
+        return profile;
+    }
+
+    private static EmbeddedSyntaxProfile? ResolveSnapshotMarkdownHtmlEmbeddedProfile(
+        string tagName,
+        string? typeAttribute,
+        SnapshotBuildContext context)
+    {
+        if (context.LanguageResolver is null)
+            return null;
+        var cacheKey = $"{tagName}|{typeAttribute ?? string.Empty}";
+        if (context.HtmlProfiles.TryGetValue(cacheKey, out var cached))
+            return cached;
+        var normalizedTag = tagName.Trim().ToLowerInvariant();
+        var normalizedType = (typeAttribute ?? string.Empty).Trim();
+        var languageLabel = normalizedTag == "style" ? "css" :
+            string.IsNullOrWhiteSpace(normalizedType) ||
+            string.Equals(normalizedType, "module", StringComparison.OrdinalIgnoreCase) ||
+            normalizedType.Contains("javascript", StringComparison.OrdinalIgnoreCase) ||
+            normalizedType.Contains("ecmascript", StringComparison.OrdinalIgnoreCase) ||
+            normalizedType.Contains("jscript", StringComparison.OrdinalIgnoreCase) ? "js" :
+            normalizedType.Contains("typescript", StringComparison.OrdinalIgnoreCase) ? "ts" :
+            normalizedType.Contains("json", StringComparison.OrdinalIgnoreCase) ||
+            normalizedType.Contains("importmap", StringComparison.OrdinalIgnoreCase) ? "json" :
+            normalizedType.Contains("css", StringComparison.OrdinalIgnoreCase) ? "css" : null;
+        var profile = languageLabel is null
+            ? null
+            : ResolveSnapshotEmbeddedProfile(context.LanguageResolver(languageLabel), context);
+        context.HtmlProfiles[cacheKey] = profile;
+        return profile;
     }
 
     private EmbeddedSyntaxProfile? ResolveEmbeddedProfile(string? languageLabel)
@@ -566,7 +642,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         return profile;
     }
 
-    private List<MarkdownHtmlSegment> BuildMarkdownHtmlSegments(string line, ref MarkdownHtmlBlock? active)
+    private List<MarkdownHtmlSegment> BuildMarkdownHtmlSegments(string line, ref MarkdownHtmlBlock? active, SnapshotBuildContext context)
     {
         var segments = new List<MarkdownHtmlSegment>();
         var cursor = 0;
@@ -609,7 +685,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
 
             var tagName = openMatch.Groups["tag"].Value;
             var openEnd = openMatch.Index + openMatch.Length;
-            var profile = ResolveMarkdownHtmlEmbeddedProfile(tagName, ExtractHtmlTypeAttribute(openMatch.Groups["attrs"].Value));
+            var profile = ResolveSnapshotMarkdownHtmlEmbeddedProfile(tagName, ExtractHtmlTypeAttribute(openMatch.Groups["attrs"].Value), context);
             var inlineCloseMatch = BuildHtmlCloseTagRegex(tagName).Match(line, openEnd);
 
             if (inlineCloseMatch.Success)
@@ -746,7 +822,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         {
             var properties = element.TextRunProperties.Clone();
             properties.SetForegroundBrush(brush);
-            SetTextRunPropertiesMethod?.Invoke(element, [properties]);
+            VisualLineElementAccess.SetTextRunProperties(element, properties);
         });
     }
 
@@ -849,7 +925,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
         }
     }
 
-    private sealed record MarkdownSnapshot(string Text, List<MarkdownLineState> LineStates)
+    private sealed record MarkdownSnapshot(List<MarkdownLineState> LineStates)
     {
         public MarkdownLineState GetLineState(int lineNumber) =>
             lineNumber > 0 && lineNumber <= LineStates.Count

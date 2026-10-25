@@ -19,6 +19,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
+using Kodo.Editor;
 
 namespace Kodo;
 
@@ -237,48 +238,70 @@ public partial class MainWindow
         if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
             return;
 
-        var count = CountCurrentMatches();
+        var document = EditorTextBox.Document;
+        var revision = EditorSession.Revision;
+        var revisionToken = EditorSession.RevisionCancellationToken;
+        var query = FindText;
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var wholeWord = IsSearchWholeWordEnabled;
+        var replacement = ReplaceText ?? string.Empty;
+        var regex = BuildFindRegex();
         if (_findRegexInvalid) return;
-        if (count == 0)
+        List<(int Offset, int Length)> matches;
+        var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+        try
+        {
+            if (regex is null)
+                matches = await EditorBackgroundWork.RunAsync(_ => SearchEngine.EnumerateFindMatches(snapshot.Source, query, comparison, wholeWord, null, revisionToken).ToList(), revisionToken);
+            else
+            {
+                var text = await snapshot.GetTextAsync(revisionToken);
+                matches = await EditorBackgroundWork.RunAsync(_ => SearchEngine.EnumerateFindMatches(text, query, comparison, wholeWord, regex, revisionToken).ToList(), revisionToken);
+            }
+        }
+        catch (OperationCanceledException) { return; }
+        catch (RegexMatchTimeoutException ex)
+        {
+            KodoDiagnostics.LogDebug("Replace all stopped: the search pattern took too long to evaluate.", ex);
+            SearchStatusText = "That pattern is too expensive to search with - try a simpler one.";
+            return;
+        }
+        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+        if (matches.Count == 0)
         {
             SearchStatusText = "No matches to replace.";
             return;
         }
 
-        var matchWord = count == 1 ? "match" : "matches";
+        var matchWord = matches.Count == 1 ? "match" : "matches";
         var confirmed = await ShowConfirmationDialogAsync(
             "Replace All?",
-            $"This will replace {count} {matchWord} in the current file. This action can be undone with Ctrl+Z.",
+            $"This will replace {matches.Count} {matchWord} in the current file. This action can be undone with Ctrl+Z.",
             confirmLabel: "Replace All");
+        if (!confirmed || !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+            !string.Equals(FindText, query, StringComparison.Ordinal)) return;
 
-        if (confirmed)
-            ReplaceAllMatches();
-    }
+        var updated = await EditorBackgroundWork.RunAsync(_ => SearchEngine.ReplaceAll(snapshot.Source, matches, replacement, revisionToken), revisionToken);
 
-    private int CountCurrentMatches()
-    {
-        if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return 0;
-
-        var text = EditorTextBox.Document.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        if (_findRegexInvalid)
+        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision) return;
+        try
         {
-            SearchStatusText = "Invalid regular expression.";
-            return 0;
+            document.Replace(0, snapshot.Source.TextLength, updated);
+            SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
         }
-        var count = 0;
-        var searchIndex = 0;
-        while (searchIndex <= text.Length)
+        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
-            var m = SearchEngine.FindNextMatch(text, FindText, searchIndex, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            if (m.Offset < 0) break;
-            count++;
-            searchIndex = m.Offset + m.Length;
-            if (m.Length == 0) break;
+            KodoDiagnostics.LogDebug("Search.ReplaceAll: Visual line race suppressed", ex);
+            Dispatcher.UIThread.Post(() =>
+            {
+                try
+                {
+                    if (ReferenceEquals(EditorTextBox?.Document, document) && EditorSession.Revision == revision)
+                        document.Replace(0, snapshot.Source.TextLength, updated);
+                }
+                catch { }
+            }, Avalonia.Threading.DispatcherPriority.Background);
         }
-        return count;
     }
 
     private void CloseSearchPanel_OnClick(object? sender, RoutedEventArgs e)
@@ -962,47 +985,17 @@ public partial class MainWindow
     private void FindPrevButton_OnClick(object? sender, RoutedEventArgs e) =>
         FindInEditor(forward: false);
 
-    private void ReplaceCurrentMatch()
+    private async void ReplaceCurrentMatch()
     {
         if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
             return;
 
-        var doc = EditorTextBox.Document.Text;
+        var document = EditorTextBox.Document;
+        var revision = EditorSession.Revision;
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var query = FindText;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var regex = BuildFindRegex();
-        if (_findRegexInvalid)
-        {
-            SearchStatusText = "Invalid regular expression.";
-            return;
-        }
-        var match = SearchEngine.FindNextMatch(doc, FindText, Math.Max(0, caretOffset - 1), forward: true, comparison, IsSearchWholeWordEnabled, regex);
-        if (match.Offset < 0)
-            return;
-
-        try
-        {
-            EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty);
-        }
-        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
-        {
-            KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
-            Dispatcher.UIThread.Post(() =>
-            {
-                try { EditorTextBox.TextArea.Document.Replace(match.Offset, match.Length, ReplaceText ?? string.Empty); } catch { }
-            }, Avalonia.Threading.DispatcherPriority.Background);
-        }
-        FindInEditor(forward: true);
-    }
-
-    private void ReplaceAllMatches()
-    {
-        if (!IsFindInFileSearchMode || string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null)
-            return;
-
-        var doc = EditorTextBox.Document;
-        var text = doc.Text;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var wholeWord = IsSearchWholeWordEnabled;
         var replacement = ReplaceText ?? string.Empty;
         var regex = BuildFindRegex();
         if (_findRegexInvalid)
@@ -1010,40 +1003,51 @@ public partial class MainWindow
             SearchStatusText = "Invalid regular expression.";
             return;
         }
-
-        var matches = SearchEngine.EnumerateFindMatches(text, FindText, comparison, IsSearchWholeWordEnabled, regex).ToList();
-
-        if (matches.Count == 0)
-            return;
-
-        var avgMatchLen = matches.Count > 0 ? (int)matches.Average(m => m.Length) : 0;
-        var sb = new System.Text.StringBuilder(text.Length + matches.Count * Math.Max(0, replacement.Length - avgMatchLen));
-        var pos = 0;
-        foreach (var match in matches)
-        {
-            if (match.Offset > pos)
-                sb.Append(text, pos, match.Offset - pos);
-            sb.Append(replacement);
-            pos = match.Offset + match.Length;
-            if (match.Length == 0) pos = Math.Min(text.Length, pos + 1);
-        }
-        if (pos < text.Length)
-            sb.Append(text, pos, text.Length - pos);
-
+        (int Offset, int Length) match;
         try
         {
-            doc.Replace(0, text.Length, sb.ToString());
-        }
-        catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
-        {
-            KodoDiagnostics.LogDebug("Search.ReplaceAll: Visual line race suppressed", ex);
-            Dispatcher.UIThread.Post(() =>
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+            if (regex is null)
+                match = await EditorBackgroundWork.RunAsync(_ => SearchEngine.FindNextMatch(snapshot.Source, query, Math.Max(0, caretOffset - 1), true, comparison, wholeWord, null), CancellationToken.None).ConfigureAwait(false);
+            else
             {
-                try { doc.Replace(0, text.Length, sb.ToString()); } catch { }
-            }, Avalonia.Threading.DispatcherPriority.Background);
+                var text = await snapshot.GetTextAsync(EditorSession.RevisionCancellationToken).ConfigureAwait(false);
+                match = await EditorBackgroundWork.RunAsync(_ => SearchEngine.FindNextMatch(text, query, Math.Max(0, caretOffset - 1), true, comparison, wholeWord, regex), CancellationToken.None).ConfigureAwait(false);
+            }
         }
+        catch (RegexMatchTimeoutException ex)
+        {
+            KodoDiagnostics.LogDebug("Replace current match stopped: the search pattern took too long to evaluate.", ex);
+            await Dispatcher.UIThread.InvokeAsync(() => SearchStatusText = "That pattern is too expensive to search with - try a simpler one.");
+            return;
+        }
+        if (match.Offset < 0)
+            return;
 
-        SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
+        var applied = false;
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+                EditorTextBox.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+            try
+            {
+                document.Replace(match.Offset, match.Length, replacement);
+                applied = true;
+            }
+            catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+            {
+                KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    try
+                    {
+                        if (ReferenceEquals(EditorTextBox?.Document, document)) document.Replace(match.Offset, match.Length, replacement);
+                    }
+                    catch { }
+                }, Avalonia.Threading.DispatcherPriority.Background);
+            }
+        });
+        if (applied) FindInEditor(forward: true);
     }
 
     private void EditorFindAllOccurrencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1056,143 +1060,221 @@ public partial class MainWindow
         OpenSearchPanel(SearchMode.FindInFile);
     }
 
-    private void FindInEditor(bool forward)
+    private async void FindInEditor(bool forward)
     {
         if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null) return;
-        var doc = EditorTextBox.Document.Text;
+        CancelSearchOperation(_findNavigationCancellation);
+        var document = EditorTextBox.Document;
+        var revision = EditorSession.Revision;
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var query = FindText;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var wholeWord = IsSearchWholeWordEnabled;
         var regex = BuildFindRegex();
         if (_findRegexInvalid)
         {
             SearchStatusText = "Invalid regular expression.";
             return;
         }
-        (int Offset, int Length) match;
+        var cancellation = _findNavigationCancellation = CancellationTokenSource.CreateLinkedTokenSource(EditorSession.RevisionCancellationToken);
+        var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+        (int Offset, int Length) match = (-1, 0);
         try
         {
-            if (forward)
+            var regexText = regex is null ? null : await snapshot.GetTextAsync(cancellation.Token).ConfigureAwait(false);
+            match = await EditorBackgroundWork.RunAsync(_ =>
             {
-                match = SearchEngine.FindNextMatch(doc, FindText, caretOffset + 1, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-                if (match.Offset < 0)
-                    match = SearchEngine.FindNextMatch(doc, FindText, 0, forward: true, comparison, IsSearchWholeWordEnabled, regex);
-            }
-            else
-            {
-                var searchTo = Math.Max(0, caretOffset - 1);
-                match = SearchEngine.FindNextMatch(doc, FindText, searchTo, forward: false, comparison, IsSearchWholeWordEnabled, regex);
-                if (match.Offset < 0)
-                    match = SearchEngine.FindNextMatch(doc, FindText, doc.Length - 1, forward: false, comparison, IsSearchWholeWordEnabled, regex);
-            }
+                var searchSource = regexText;
+                (int Offset, int Length) Find(int start, bool isForward) => searchSource is null
+                    ? SearchEngine.FindNextMatch(snapshot.Source, query, start, isForward, comparison, wholeWord, null, cancellation.Token)
+                    : SearchEngine.FindNextMatch(searchSource, query, start, isForward, comparison, wholeWord, regex, cancellation.Token);
+                if (forward)
+                {
+                    var found = Find(caretOffset + 1, true);
+                    return found.Offset < 0
+                        ? Find(0, true)
+                        : found;
+                }
+                var previous = Find(Math.Max(0, caretOffset - 1), false);
+                return previous.Offset < 0
+                    ? Find(snapshot.Source.TextLength - 1, false)
+                    : previous;
+            }, cancellation.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_findNavigationCancellation, cancellation)) _findNavigationCancellation = null;
+            cancellation.Dispose();
+            return;
         }
         catch (RegexMatchTimeoutException ex)
         {
             KodoDiagnostics.LogDebug("Find in editor stopped: the search pattern took too long to evaluate.", ex);
-            SearchStatusText = "That pattern is too expensive to search with - try a simpler one.";
+            await Dispatcher.UIThread.InvokeAsync(() => SearchStatusText = "That pattern is too expensive to search with - try a simpler one.");
+            if (ReferenceEquals(_findNavigationCancellation, cancellation)) _findNavigationCancellation = null;
+            cancellation.Dispose();
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Find in editor failed.", ex);
+            if (ReferenceEquals(_findNavigationCancellation, cancellation)) _findNavigationCancellation = null;
+            cancellation.Dispose();
             return;
         }
 
-        if (match.Offset < 0) return;
-        EditorTextBox.TextArea.Caret.Offset = match.Offset;
-        EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
-        EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
-
-        if (_findMatchOffsets.Count > 0)
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = ~_currentFindMatchIndex - 1;
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = _findMatchOffsets.Count - 1;
-            UpdateFindStatusText();
-        }
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(_findNavigationCancellation, cancellation) ||
+                !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+                EditorTextBox.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+            if (match.Offset < 0) return;
+            EditorTextBox.TextArea.Caret.Offset = match.Offset;
+            EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
+            EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
+            if (_findMatchOffsets.Count > 0)
+            {
+                _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
+                if (_currentFindMatchIndex < 0)
+                    _currentFindMatchIndex = ~_currentFindMatchIndex - 1;
+                if (_currentFindMatchIndex < 0)
+                    _currentFindMatchIndex = _findMatchOffsets.Count - 1;
+                UpdateFindStatusText();
+            }
+        });
+        if (ReferenceEquals(_findNavigationCancellation, cancellation)) _findNavigationCancellation = null;
+        cancellation.Dispose();
+    }
+
+    private CancellationTokenSource? _findHighlightCancellation;
+    private CancellationTokenSource? _findNavigationCancellation;
+
+    private static void CancelSearchOperation(CancellationTokenSource? cancellation)
+    {
+        try { cancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     private void UpdateFindHighlights()
     {
-        if (EditorTextBox?.Document is null) return;
+        CancelSearchOperation(_findHighlightCancellation);
+        _findHighlightCancellation = null;
+        if (EditorTextBox?.Document is not { } document) return;
 
-        var snapshotText = EditorTextBox.Document.Text;
-        var snapshotFind = FindText;
-        var snapshotMode = IsFindInFileSearchMode;
-        var snapshotCaret = EditorTextBox.TextArea.Caret.Offset;
-        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
-        var wholeWord = IsSearchWholeWordEnabled;
+        var query = FindText;
+        var mode = IsFindInFileSearchMode;
         var regex = BuildFindRegex();
-
         if (_findRegexInvalid)
         {
-            _findHighlightRenderer.Clear();
-            _findMatchOffsets.Clear();
-            _currentFindMatchIndex = -1;
-            SearchStatusText = "Invalid regular expression.";
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            ClearFindHighlightState("Invalid regular expression.");
             return;
         }
-
-        if (!snapshotMode || string.IsNullOrEmpty(snapshotFind))
+        if (!mode || string.IsNullOrEmpty(query))
         {
-            _findHighlightRenderer.Clear();
-            _findMatchOffsets.Clear();
-            _currentFindMatchIndex = -1;
-            SearchStatusText = string.Empty;
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            ClearFindHighlightState(string.Empty);
             return;
         }
 
-        if (snapshotText.Length > 80000)
-        {
-            var findCopy = snapshotFind;
-            var textCopy = snapshotText;
-            var compCopy = comparison;
-            var wholeCopy = wholeWord;
-            var regexCopy = regex;
-            var caretCopy = snapshotCaret;
-            var versionCopy = _insightDocVersion;
-            Task.Run(() =>
-            {
-                var matches = new List<(int Offset, int Length)>();
-                foreach (var m in SearchEngine.EnumerateFindMatches(textCopy, findCopy, compCopy, wholeCopy, regexCopy))
-                    matches.Add(m);
-                return matches;
-            }).ContinueWith(t =>
-            {
-                if (t.IsFaulted || t.IsCanceled) return;
-                if (FindText != findCopy) return;
-                if (versionCopy != _insightDocVersion) return;
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    if (EditorTextBox?.Document is null) return;
-                    _findHighlightRenderer.Clear();
-                    _findMatchOffsets.Clear();
-                    foreach (var m in t.Result) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
-                    if (_findMatchOffsets.Count > 0)
-                    {
-                        _currentFindMatchIndex = _findMatchOffsets.BinarySearch(caretCopy);
-                        if (_currentFindMatchIndex < 0) _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
-                    }
-                    else _currentFindMatchIndex = -1;
-                    UpdateFindStatusText();
-                    EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-                });
-            }, TaskScheduler.Default);
-            return;
-        }
+        var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+        var wholeWord = IsSearchWholeWordEnabled;
+        var revision = EditorSession.Revision;
+        var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+        var cancellation = _findHighlightCancellation = CancellationTokenSource.CreateLinkedTokenSource(EditorSession.RevisionCancellationToken);
+        _ = ApplyFindHighlightsAsync(document, snapshot, revision, query, comparison, wholeWord, regex, cancellation);
+    }
 
+    private void ClearFindHighlightState(string status)
+    {
         _findHighlightRenderer.Clear();
         _findMatchOffsets.Clear();
         _currentFindMatchIndex = -1;
-        foreach (var m in SearchEngine.EnumerateFindMatches(snapshotText, snapshotFind, comparison, wholeWord, regex)) { _findMatchOffsets.Add(m.Offset); _findHighlightRenderer.AddMatch(m.Offset, m.Length); }
+        SearchStatusText = status;
+        EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+    }
 
-        if (_findMatchOffsets.Count > 0)
+    private async Task ApplyFindHighlightsAsync(
+        AvaloniaEdit.Document.TextDocument document,
+        EditorTextSnapshot snapshot,
+        long revision,
+        string query,
+        StringComparison comparison,
+        bool wholeWord,
+        Regex? regex,
+        CancellationTokenSource cancellation)
+    {
+        (List<(int Offset, int Length)> Matches, List<int> Offsets) result;
+        try
         {
-            _currentFindMatchIndex = _findMatchOffsets.BinarySearch(snapshotCaret);
-            if (_currentFindMatchIndex < 0)
-                _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
+            if (regex is null)
+                result = await EditorBackgroundWork.RunAsync(_ => BuildFindHighlightResults(
+                    SearchEngine.EnumerateFindMatches(snapshot.Source, query, comparison, wholeWord, null, cancellation.Token), cancellation.Token), cancellation.Token).ConfigureAwait(false);
+            else
+            {
+                var text = await snapshot.GetTextAsync(cancellation.Token).ConfigureAwait(false);
+                result = await EditorBackgroundWork.RunAsync(_ => BuildFindHighlightResults(
+                    SearchEngine.EnumerateFindMatches(text, query, comparison, wholeWord, regex, cancellation.Token), cancellation.Token), cancellation.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (ReferenceEquals(_findHighlightCancellation, cancellation)) _findHighlightCancellation = null;
+            cancellation.Dispose();
+            return;
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (ReferenceEquals(_findHighlightCancellation, cancellation) && FindText == query)
+                    ClearFindHighlightState("That pattern is too expensive to search with - try a simpler one.");
+            });
+            if (ReferenceEquals(_findHighlightCancellation, cancellation)) _findHighlightCancellation = null;
+            cancellation.Dispose();
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Find highlight calculation failed.", ex);
+            if (ReferenceEquals(_findHighlightCancellation, cancellation)) _findHighlightCancellation = null;
+            cancellation.Dispose();
+            return;
         }
 
-        UpdateFindStatusText();
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(_findHighlightCancellation, cancellation) ||
+                !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+                !IsFindInFileSearchMode || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+
+            _findHighlightRenderer.Clear();
+            _findMatchOffsets = result.Offsets;
+            _findHighlightRenderer.SetMatches(result.Matches);
+            _currentFindMatchIndex = _findMatchOffsets.Count == 0
+                ? -1
+                : _findMatchOffsets.BinarySearch(EditorTextBox.TextArea.Caret.Offset);
+            if (_currentFindMatchIndex < 0 && _findMatchOffsets.Count > 0)
+                _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
+            UpdateFindStatusText();
+            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            _findHighlightCancellation = null;
+        });
+        if (ReferenceEquals(_findHighlightCancellation, cancellation))
+            _findHighlightCancellation = null;
+        cancellation.Dispose();
+    }
+
+    private static (List<(int Offset, int Length)> Matches, List<int> Offsets) BuildFindHighlightResults(
+        IEnumerable<(int Offset, int Length)> sourceMatches,
+        CancellationToken cancellationToken)
+    {
+        var matches = sourceMatches as List<(int Offset, int Length)> ?? sourceMatches.ToList();
+        var offsets = new List<int>(matches.Count);
+        for (var index = 0; index < matches.Count; index++)
+        {
+            if ((index & 0x3fff) == 0) cancellationToken.ThrowIfCancellationRequested();
+            offsets.Add(matches[index].Offset);
+        }
+        return (matches, offsets);
     }
 
     private Regex? _cachedFindRegex;

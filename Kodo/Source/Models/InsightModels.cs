@@ -26,6 +26,7 @@ public sealed class InsightSuggestion : ICompletionData
     public int? ReplaceStartOffset { get; }
     public int? ReplaceEndOffset { get; }
     public string? SourceText { get; }
+    public ITextSourceVersion? SourceVersion { get; }
     public IReadOnlyList<(int Start, int End, string NewText)> AdditionalEdits { get; }
     private readonly double? _priority;
     public IImage? Image => null;
@@ -50,13 +51,15 @@ public sealed class InsightSuggestion : ICompletionData
         int? replaceEndOffset = null,
         string? sourceText = null,
         IReadOnlyList<(int Start, int End, string NewText)>? additionalEdits = null,
-        double? priority = null)
+        double? priority = null,
+        ITextSourceVersion? sourceVersion = null)
     {
         Text = text;
         Kind = kind;
         ReplaceStartOffset = replaceStartOffset;
         ReplaceEndOffset = replaceEndOffset;
         SourceText = sourceText;
+        SourceVersion = sourceVersion;
         AdditionalEdits = additionalEdits ?? Array.Empty<(int Start, int End, string NewText)>();
         _priority = priority;
     }
@@ -80,7 +83,8 @@ public sealed class InsightSuggestion : ICompletionData
     private void ApplyCompletion(TextArea textArea, ISegment completionSegment)
     {
         var document = textArea.Document;
-        if (SourceText is not null && !string.Equals(document.Text, SourceText, StringComparison.Ordinal)) return;
+        if (SourceVersion is not null && !ReferenceEquals(document.Version, SourceVersion)) return;
+        if (SourceVersion is null && SourceText is not null && !string.Equals(document.Text, SourceText, StringComparison.Ordinal)) return;
         var start = ReplaceStartOffset ?? completionSegment.Offset;
         var end = ReplaceEndOffset ?? completionSegment.EndOffset;
         if (start < 0 || end < start || end > document.TextLength) return;
@@ -92,15 +96,19 @@ public sealed class InsightSuggestion : ICompletionData
             previousStart = edit.Start;
         }
         document.UndoStack.StartUndoGroup();
+        var appliedAny = false;
         try
         {
             foreach (var edit in edits)
+            {
                 document.Replace(edit.Start, edit.End - edit.Start, edit.NewText);
+                appliedAny = true;
+            }
         }
         catch
         {
             document.UndoStack.EndUndoGroup();
-            if (SourceText is not null && !string.Equals(document.Text, SourceText, StringComparison.Ordinal) && document.UndoStack.CanUndo)
+            if (appliedAny && document.UndoStack.CanUndo)
                 document.UndoStack.Undo();
             throw;
         }
