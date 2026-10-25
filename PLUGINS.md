@@ -18,13 +18,17 @@ public interface IKodoPlugin
 {
     void OnLoad(MainWindow window, LoadedExtension extension);
     void OnUnload();
+    void RegisterCommands(KodoPluginCommandRegistry commands);
 }
 ```
 
 | Member | When it runs | Notes |
 |---|---|---|
 | `OnLoad` | Once per plugin class, after Kodo loads the assembly | Runs on the UI thread. `window` is the live `MainWindow`. |
+| `RegisterCommands` | Immediately after `OnLoad` | Optional; runs on the UI thread. Override it to add commands to Ctrl+Shift+P. Kodo removes registrations automatically when the plugin unloads. |
 | `OnUnload` | Before the plugin is removed, replaced, or reloaded | No arguments. Must be safe to call even if `OnLoad` failed partway. |
+
+`RegisterCommands` has a default no-op implementation, so existing plugins do not need to add it.
 
 ### Discovery requirements
 
@@ -103,6 +107,7 @@ sibling assemblies from the plugin folder, so extra DLLs in the package are foun
 
 ```csharp
 using System;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Kodo;
@@ -125,6 +130,22 @@ public sealed class HelloPlugin : IKodoPlugin
         window.FindControl<Panel>("ActivityBarPanel")?.Children.Add(_button);
     }
 
+    public void RegisterCommands(KodoPluginCommandRegistry commands)
+    {
+        commands.Register(
+            id: "hello.greet",
+            title: "Run Hello Plugin Greeting",
+            execute: () =>
+            {
+                if (_button is not null)
+                    OnClick(_button, new RoutedEventArgs());
+                return Task.CompletedTask;
+            },
+            category: "Greeting",
+            keywords: "hello greeting sample",
+            detail: "Runs the plugin's greeting action");
+    }
+
     private void OnClick(object? sender, RoutedEventArgs e)
     {
         // Do work here. Keep it fast; this is the UI thread.
@@ -139,6 +160,12 @@ public sealed class HelloPlugin : IKodoPlugin
     }
 }
 ```
+
+Commands appear in the command palette's `>` mode and are grouped under the extension name. The
+registry also supports an optional `canExecute` predicate, display details, fuzzy-search keywords,
+and a shortcut badge (display only; it does not bind a key). `Register` returns an `IDisposable` for commands you want to remove early;
+all remaining commands are removed automatically before `OnUnload` runs. Keep command handlers
+fast and return a `Task` for asynchronous work.
 
 ### Manifest
 
@@ -168,11 +195,12 @@ wrong, a `type: plugin` package loads inertly - no error, no code runs.
 3. The main assembly is loaded from a **shadow copy** - the bytes are read into memory and loaded
    from a stream, so the file on disk is never locked and can be replaced while Kodo runs.
 4. Sibling assemblies are resolved from the plugin folder, also shadow-copied.
-5. Every `IKodoPlugin` implementation in the assembly is constructed and `OnLoad` is called.
-   Kodo filters on `IsAbstract` and the interface only - it does **not** require the type to be
-   `public`, so an `internal` plugin class works. There is no "pick one entry point" mechanism, so
-   every implementation in the assembly runs.
-6. On unload, Kodo calls `OnUnload` on each instance and then unloads the context.
+5. Every `IKodoPlugin` implementation in the assembly is constructed, `OnLoad` is called, and then
+   `RegisterCommands` is called. Kodo filters on `IsAbstract` and the interface only - it does
+   **not** require the type to be `public`, so an `internal` plugin class works. There is no "pick
+   one entry point" mechanism, so every implementation in the assembly runs.
+6. On unload, Kodo removes each instance's registered commands, calls `OnUnload`, and then unloads
+   the context.
 
 Consequences worth designing around:
 

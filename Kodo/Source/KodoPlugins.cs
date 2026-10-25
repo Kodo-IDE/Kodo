@@ -5,6 +5,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using Kodo.Models;
 
 namespace Kodo;
@@ -15,6 +16,41 @@ public partial class MainWindow
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, LoadedKodoPlugin> _activeLanguagePlugins =
         new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, (string OwnerName, KodoPluginCommand Command)> _pluginPaletteCommands = new();
+
+    private KodoPluginCommandRegistry CreatePluginCommandRegistry(string ownerName) =>
+        new(ownerName, AddPluginPaletteCommand, RemovePluginPaletteCommand);
+
+    private void AddPluginPaletteCommand(Guid token, string ownerName, KodoPluginCommand command)
+    {
+        void Add()
+        {
+            _pluginPaletteCommands[token] = (ownerName, command);
+            RefreshOpenCommandPaletteForPluginCommands();
+        }
+
+        if (Dispatcher.UIThread.CheckAccess()) Add();
+        else Dispatcher.UIThread.Post(Add);
+    }
+
+    private void RemovePluginPaletteCommand(Guid token)
+    {
+        void Remove()
+        {
+            if (_pluginPaletteCommands.Remove(token))
+                RefreshOpenCommandPaletteForPluginCommands();
+        }
+
+        if (Dispatcher.UIThread.CheckAccess()) Remove();
+        else Dispatcher.UIThread.Post(Remove);
+    }
+
+    private void RefreshOpenCommandPaletteForPluginCommands()
+    {
+        if (_commandPaletteOverlay is not { IsVisible: true }) return;
+        _commandPaletteCommands = BuildCommandPaletteCommands();
+        RefreshCommandPaletteResults();
+    }
 
     private string PluginCacheFolderPath => KodoPaths.PluginCacheDir;
 
@@ -127,6 +163,7 @@ public partial class MainWindow
 
         var loadContext = new KodoPluginLoadContext(ext.Id, ext.PluginFolderPath!);
         var instances = new List<IKodoPlugin>();
+        var commandRegistries = new List<KodoPluginCommandRegistry>();
 
         try
         {
@@ -136,21 +173,29 @@ public partial class MainWindow
                 if (type.IsAbstract || !typeof(IKodoPlugin).IsAssignableFrom(type)) continue;
                 if (Activator.CreateInstance(type) is not IKodoPlugin instance) continue;
 
-                instance.OnLoad(this, ext);
                 instances.Add(instance);
+                instance.OnLoad(this, ext);
+                var commandRegistry = CreatePluginCommandRegistry(ext.Name);
+                commandRegistries.Add(commandRegistry);
+                instance.RegisterCommands(commandRegistry);
             }
 
             _activePlugins[ext.Id] = new LoadedKodoPlugin
             {
                 Version = ext.Version,
                 LoadContext = loadContext,
-                Instances = instances
+                Instances = instances,
+                CommandRegistries = commandRegistries
             };
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Plugins] Failed to load '{ext.Id}': {ex.Message}");
             ExtensionLoadErrors.Add($"Plugin '{ext.Name}' failed to load: {ex.Message}");
+            foreach (var registry in commandRegistries)
+            {
+                try { registry.Dispose(); } catch { }
+            }
             foreach (var instance in instances)
             {
                 try { instance.OnUnload(); } catch { }
@@ -163,6 +208,11 @@ public partial class MainWindow
     {
         if (!_activePlugins.Remove(extensionId, out var plugin)) return;
 
+        foreach (var registry in plugin.CommandRegistries)
+        {
+            try { registry.Dispose(); }
+            catch (Exception ex) { Console.WriteLine($"[Plugins] '{extensionId}' command cleanup failed: {ex.Message}"); }
+        }
         foreach (var instance in plugin.Instances)
         {
             try { instance.OnUnload(); }
@@ -194,6 +244,7 @@ public partial class MainWindow
 
         var loadContext = new KodoPluginLoadContext(ext.Id + "_lp", ext.LanguagePluginFolderPath!);
         var instances = new List<IKodoPlugin>();
+        var commandRegistries = new List<KodoPluginCommandRegistry>();
 
         try
         {
@@ -203,21 +254,29 @@ public partial class MainWindow
                 if (type.IsAbstract || !typeof(IKodoPlugin).IsAssignableFrom(type)) continue;
                 if (Activator.CreateInstance(type) is not IKodoPlugin instance) continue;
 
-                instance.OnLoad(this, ext);
                 instances.Add(instance);
+                instance.OnLoad(this, ext);
+                var commandRegistry = CreatePluginCommandRegistry(ext.Name);
+                commandRegistries.Add(commandRegistry);
+                instance.RegisterCommands(commandRegistry);
             }
 
             _activeLanguagePlugins[ext.Id] = new LoadedKodoPlugin
             {
                 Version = ext.Version,
                 LoadContext = loadContext,
-                Instances = instances
+                Instances = instances,
+                CommandRegistries = commandRegistries
             };
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[LanguagePlugins] Failed to load '{ext.Id}': {ex.Message}");
             ExtensionLoadErrors.Add($"Language plugin '{ext.Name}' failed to load: {ex.Message}");
+            foreach (var registry in commandRegistries)
+            {
+                try { registry.Dispose(); } catch { }
+            }
             foreach (var instance in instances)
             {
                 try { instance.OnUnload(); } catch { }
@@ -230,6 +289,11 @@ public partial class MainWindow
     {
         if (!_activeLanguagePlugins.Remove(extensionId, out var plugin)) return;
 
+        foreach (var registry in plugin.CommandRegistries)
+        {
+            try { registry.Dispose(); }
+            catch (Exception ex) { Console.WriteLine($"[LanguagePlugins] '{extensionId}' command cleanup failed: {ex.Message}"); }
+        }
         foreach (var instance in plugin.Instances)
         {
             try { instance.OnUnload(); }

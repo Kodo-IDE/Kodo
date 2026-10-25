@@ -5692,9 +5692,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SyncLayout();
         overlay.SizeChanged += (_, _) => SyncLayout();
 
-        // Keep keyboard focus in the search box when the card itself is clicked (rows, padding, scrollbar).
+
         card.AddHandler(InputElement.PointerPressedEvent, (_, _) => _commandPaletteSearchBox?.Focus(), RoutingStrategies.Bubble);
-        // Clicking anywhere else closes the palette and the click still reaches whatever was under it.
+
         AddHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed, RoutingStrategies.Tunnel);
 
         _commandPaletteOverlay = overlay;
@@ -5764,8 +5764,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ReleasePaletteFocus();
     }
 
-    /// <summary>Moves keyboard focus out of the title-bar search box so typing no longer re-opens the palette.</summary>
-    private void ReleasePaletteFocus()
+        private void ReleasePaletteFocus()
     {
         if (IsEditorPageVisible && IsTextEditorVisible && EditorTextBox?.TextArea is { } area)
             area.Focus();
@@ -5819,7 +5818,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsQuickAccessSearchFocused = false;
         if (_commandPaletteOverlay is not { IsVisible: true } || !IsActive)
             return;
-        // Deferred so a click inside the palette (which refocuses the box) never closes it.
+
         Dispatcher.UIThread.Post(() =>
         {
             if (_commandPaletteOverlay is { IsVisible: true } && IsActive && _commandPaletteSearchBox?.IsKeyboardFocusWithin != true)
@@ -5830,7 +5829,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void QuickAccessSearchFrame_OnPointerPressed(object? sender, PointerPressedEventArgs e) =>
         _commandPaletteSearchBox?.Focus();
 
-    // ---------------------------------------------------------------- file index
+
 
     private static QuickAccessFile CreateQuickAccessFile(string path, string? root, bool? insideRoot = null)
     {
@@ -5850,7 +5849,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         if (!sameFolder)
         {
-            // Never offer files from a previously opened folder while the new one is being indexed.
+
             _quickAccessWorkspaceEntries = [];
             _quickAccessWorkspacePaths = new HashSet<string>(FileSystemPaths.Comparer);
             RebuildQuickAccessExtras();
@@ -5900,8 +5899,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
     }
 
-    /// <summary>Open tabs, recent files and (until the index is ready) explorer items that the workspace index doesn't cover.</summary>
-    private void RebuildQuickAccessExtras()
+        private void RebuildQuickAccessExtras()
     {
         var root = IsFolderOpen ? WorkspaceFolderPath : null;
         var boosts = new Dictionary<string, int>(FileSystemPaths.Comparer);
@@ -5954,7 +5952,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _quickAccessRecentEntries.RemoveAll(entry => FileSystemPaths.Equals(entry.Path, path));
     }
 
-    // ---------------------------------------------------------------- matching
+
 
     private static bool IsFuzzySubsequence(string text, string term)
     {
@@ -5967,8 +5965,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return termIndex == term.Length;
     }
 
-    /// <summary>Wraps <see cref="FuzzyMatch"/>; its score can legitimately be negative, so "no match" is an empty index list.</summary>
-    private static bool TryPaletteMatch(string term, string text, out int score, out IReadOnlyList<int> indices)
+        private static bool TryPaletteMatch(string term, string text, out int score, out IReadOnlyList<int> indices)
     {
         score = 0;
         indices = Array.Empty<int>();
@@ -6026,17 +6023,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else if (command.Category.Contains(term, StringComparison.OrdinalIgnoreCase))
                 total += 60;
-            else if (command.Keywords.Contains(term, StringComparison.OrdinalIgnoreCase))
-                total += 40;
-            else if (command.Detail.Contains(term, StringComparison.OrdinalIgnoreCase))
-                total += 20;
+            else if (TryPaletteMetadataMatch(term, command.Keywords, out var keywordScore))
+                total += keywordScore + 40;
+            else if (TryPaletteMetadataMatch(term, command.Detail, out var detailScore))
+                total += detailScore + 20;
             else
                 return int.MinValue;
         }
         return total;
     }
 
-    // ---------------------------------------------------------------- command list
+    private static bool TryPaletteMetadataMatch(string term, string metadata, out int score)
+    {
+        score = 0;
+        var matched = false;
+        foreach (var candidate in metadata.Split([' ', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryPaletteMatch(term, candidate, out var candidateScore, out _))
+                continue;
+            matched = true;
+            score = Math.Max(score, candidateScore);
+        }
+        if (!matched && metadata.Contains(term, StringComparison.OrdinalIgnoreCase))
+        {
+            matched = true;
+            score = 0;
+        }
+        return matched;
+    }
+
+
 
     private async Task OpenPaletteFileAsync(string path, int line = 0, int column = 1)
     {
@@ -6096,7 +6112,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hasLsp = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
         var rules = CurrentLanguageExtension?.LangRules;
         var hasFormatter = rules?.HasFormatter == true || hasLsp;
-        var hasReferences = rules?.HasReferenceProvider == true;
+        var hasReferences = rules?.HasReferenceProvider == true || hasLsp;
         var hasCodeActions = rules?.HasCodeActionProvider == true || hasLsp;
 
         bool HasDocument() => IsTextEditorVisible && EditorTextBox?.Document is not null;
@@ -6112,6 +6128,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             handler(null, null!);
             return Task.CompletedTask;
         }
+        async Task CloseAllTabsAsync()
+        {
+            foreach (var tab in OpenTabs.ToList())
+            {
+                if (!await RequestCloseTabAsync(tab))
+                    break;
+            }
+        }
 
         var commands = new List<PaletteCommand>
         {
@@ -6120,6 +6144,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             new("Open Settings", "Preferences", "OpenSettings", () => { NavigateTo(AppPage.Settings); return Task.CompletedTask; }, Keywords: "preferences options"),
             new("Open Marketplace", "Extensions", "OpenExtensions", () => { NavigateTo(AppPage.Extensions); RefreshMarketplaceConnectivityState(); _ = RefreshExtensionsDataAsync(); return Task.CompletedTask; }, Keywords: "plugins extensions themes"),
             new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey"),
+            new("Open Tutorial", "Help", "", () => { NavigateTo(AppPage.Tutorial); return Task.CompletedTask; }, Keywords: "getting started help guide"),
+            new("Open What's New", "Help", "", () => { NavigateTo(AppPage.WhatsNew); return Task.CompletedTask; }, Keywords: "release notes updates changelog"),
+
+            new("Search Files by Name…", "Navigation", "QuickAccess", () => { SetPaletteText(string.Empty); return Task.CompletedTask; }, Keywords: "quick open file path", KeepOpen: true),
+            new("Go to Line…", "Navigation", "GoToLine", () => { SetPaletteText(":"); return Task.CompletedTask; }, HasDocument, "jump line number", KeepOpen: true, Badge: ":"),
+            new("Go to Symbol in File…", "Navigation", "", () => { SetPaletteText("@"); return Task.CompletedTask; }, HasDocument, "outline function method class member", KeepOpen: true, Badge: "@"),
 
             new("New File", "File", "NewFile", () => { NewFile(); return Task.CompletedTask; }, Keywords: "create"),
             new("Open File…", "File", "OpenFile", async () => await OpenFileAsync(), Keywords: "browse"),
@@ -6129,12 +6159,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             new("Save As…", "File", "SaveAs", async () => { await SaveAsAsync(); }, () => ActiveEditorTab is not null),
             new("Save All", "File", "", async () => await SaveAllAsync(), () => OpenTabs.Any(tab => tab.IsDirty)),
             new("Close Active Tab", "File", "CloseTab", async () => { if (ActiveEditorTab is not null) await RequestCloseTabAsync(ActiveEditorTab); }, () => ActiveEditorTab is not null),
+            new("Close All Tabs", "File", "", CloseAllTabsAsync, () => OpenTabs.Count > 0, "close documents"),
+            new("Copy Active File Path", "File", "", async () =>
+            {
+                if (ActiveEditorTab is { IsUntitled: false } tab && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                    await clipboard.SetTextAsync(tab.Path);
+            }, () => ActiveEditorTab is { IsUntitled: false }, "copy location directory"),
 
             new("Find in File", "Search", "FindInFile", () => { OpenSearchPanel(SearchMode.FindInFile); return Task.CompletedTask; }, () => ActiveEditorTab is not null),
             new("Find in Project", "Search", "FindInProject", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search text files"),
 
-            new("Go to Line…", "Editor", "GoToLine", () => WithEditor((doc, area) => { _ = EditorGoToLineAsync(doc, area); }), HasDocument, "jump number"),
-            new("Go to Symbol in File…", "Editor", "", () => { SetPaletteText("@"); return Task.CompletedTask; }, HasDocument, "outline function method class", KeepOpen: true, Badge: "@"),
             new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => ActiveEditorTab is not null),
             new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), HasLspDocument, "language server"),
             new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), HasLspDocument, "language server"),
@@ -6154,16 +6188,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             new("Insert Line Above", "Editor", "InsertLineAbove", () => WithEditor((doc, area) => EditorInsertLine(doc, area, false)), HasDocument),
             new("Insert Line Below", "Editor", "InsertLineBelow", () => WithEditor((doc, area) => EditorInsertLine(doc, area, true)), HasDocument),
             new("Toggle Current Line Highlight", "Editor", "ToggleHighlightCurrentLine", () => { EditorToggleHighlightCurrentLine(); return Task.CompletedTask; }, HasDocument),
+            new(IsWordWrapEnabled ? "Disable Word Wrap" : "Enable Word Wrap", "Editor", "", () => { IsWordWrapEnabled = !IsWordWrapEnabled; return Task.CompletedTask; }, Keywords: "toggle wrap lines"),
+            new(IsInsightEnabled ? "Disable Insight" : "Enable Insight", "Editor", "", () => { IsInsightEnabled = !IsInsightEnabled; return Task.CompletedTask; }, Keywords: "toggle language intelligence completion errors"),
+            new(LspDiagnosticsEnabled ? "Disable Language Server Diagnostics" : "Enable Language Server Diagnostics", "Editor", "", () => { LspDiagnosticsEnabled = !LspDiagnosticsEnabled; return Task.CompletedTask; }, Keywords: "toggle lsp errors warnings"),
 
             new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, Keywords: "sidebar"),
             new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console"),
+            new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel"),
             new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
             new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
             new("Reset Zoom", "View", "ZoomReset", () => { ZoomImageReset(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
             new("New Terminal", "Terminal", "NewTerminalSession", () => { CreateTerminalSession(); return Task.CompletedTask; }, () => IsTerminalSupported, "shell console"),
+            new(IsAutoSaveEnabled ? "Disable Auto Save" : "Enable Auto Save", "File", "", () => { IsAutoSaveEnabled = !IsAutoSaveEnabled; return Task.CompletedTask; }, Keywords: "toggle automatic save"),
+            new(IsPerformanceModeEnabled ? "Disable Performance Mode" : "Enable Performance Mode", "Preferences", "", () => { IsPerformanceModeEnabled = !IsPerformanceModeEnabled; return Task.CompletedTask; }, Keywords: "toggle speed lag lightweight"),
+            new(IsStatusBarFilePathVisible ? "Show Short File Names in Status Bar" : "Show Full File Paths in Status Bar", "View", "", () => { IsStatusBarFilePathVisible = !IsStatusBarFilePathVisible; return Task.CompletedTask; }, Keywords: "toggle status path location"),
+            new("Use Dark Theme", "Appearance", "", () => { ApplyTheme("Dark"); return Task.CompletedTask; }, () => !IsDarkThemeActive, "appearance"),
+            new("Use Light Theme", "Appearance", "", () => { ApplyTheme("Light"); return Task.CompletedTask; }, () => !IsLightThemeActive, "appearance"),
+            new("Use System Theme", "Appearance", "", () => { ApplyTheme("System"); return Task.CompletedTask; }, () => !IsSystemThemeActive, "appearance operating system"),
 
             new("Check for Updates", "Help", "", async () => await CheckForUpdatesManuallyAsync(), Keywords: "update version"),
         };
+
+        foreach (var (ownerName, command) in _pluginPaletteCommands.Values
+                     .OrderBy(item => item.OwnerName, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(item => item.Command.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            var category = string.IsNullOrWhiteSpace(command.Category) ? "Plugin" : $"Plugin · {command.Category}";
+            commands.Add(new PaletteCommand(
+                command.Title,
+                category,
+                string.Empty,
+                command.Execute,
+                command.CanExecute,
+                command.Keywords,
+                command.Detail,
+                ownerName,
+                command.Shortcut,
+                command.KeepPaletteOpen));
+        }
 
         foreach (var recent in RecentFiles.Where(item => !item.IsFolder).Take(MaxRecentFiles))
         {
@@ -6485,7 +6547,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return ordered.Take(PaletteMaxResults * 2).Select(item => item.Command).ToList();
     }
 
-    // ---------------------------------------------------------------- rendering
+
 
     private void RefreshCommandPaletteResults()
     {
@@ -6790,7 +6852,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // ---------------------------------------------------------------- input and execution
+
 
     private void CommandPaletteSearch_OnKeyDown(object? sender, KeyEventArgs e)
     {
@@ -6827,8 +6889,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    /// <summary>Ctrl+P / Ctrl+Shift+P while the palette is already open switch modes (and toggle it closed when already in that mode).</summary>
-    private bool HandlePaletteHotkey(KeyEventArgs e)
+        private bool HandlePaletteHotkey(KeyEventArgs e)
     {
         var mode = GetPaletteMode(_commandPaletteSearchBox?.Text, out _);
         if (MatchesKeybind(e, "CommandPalette"))
@@ -6869,7 +6930,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     _recentPaletteCommands.RemoveRange(PaletteMaxRecentCommands, _recentPaletteCommands.Count - PaletteMaxRecentCommands);
             }
 
-            // Close first and hand focus back to the editor so the command acts on it and typing no longer reopens the palette.
+
             DismissCommandPalette(restoreFocus: false);
             ReleasePaletteFocus();
             await command.Execute();
