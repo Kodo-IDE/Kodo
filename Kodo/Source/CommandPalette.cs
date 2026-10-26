@@ -287,7 +287,7 @@ public partial class MainWindow
             ReleasePaletteFocus();
     }
 
-        private void ReleasePaletteFocus()
+    private void ReleasePaletteFocus()
     {
         if (IsEditorPageVisible && IsTextEditorVisible && EditorTextBox?.TextArea is { } area)
             area.Focus();
@@ -422,7 +422,7 @@ public partial class MainWindow
         });
     }
 
-        private void RebuildQuickAccessExtras()
+    private void RebuildQuickAccessExtras()
     {
         var root = IsFolderOpen ? WorkspaceFolderPath : null;
         var boosts = new Dictionary<string, int>(FileSystemPaths.Comparer);
@@ -488,7 +488,7 @@ public partial class MainWindow
         return termIndex == term.Length;
     }
 
-        private static bool TryPaletteMatch(string term, string text, out int score, out IReadOnlyList<int> indices)
+    private static bool TryPaletteMatch(string term, string text, out int score, out IReadOnlyList<int> indices)
     {
         score = 0;
         indices = Array.Empty<int>();
@@ -1242,20 +1242,20 @@ public partial class MainWindow
             ];
         }
         else switch (mode)
-        {
-            case PaletteMode.Commands:
-                entries = BuildCommandModeEntries(query, out totalMatches);
-                break;
-            case PaletteMode.Symbols:
-                entries = BuildSymbolCommands(query, out message, out totalMatches);
-                break;
-            case PaletteMode.Line:
-                entries = BuildLineCommands(query, out message);
-                break;
-            default:
-                entries = BuildQuickAccessFileCommands(query, out totalMatches);
-                break;
-        }
+            {
+                case PaletteMode.Commands:
+                    entries = BuildCommandModeEntries(query, out totalMatches);
+                    break;
+                case PaletteMode.Symbols:
+                    entries = BuildSymbolCommands(query, out message, out totalMatches);
+                    break;
+                case PaletteMode.Line:
+                    entries = BuildLineCommands(query, out message);
+                    break;
+                default:
+                    entries = BuildQuickAccessFileCommands(query, out totalMatches);
+                    break;
+            }
         _filteredPaletteCommands = entries;
 
         var list = _commandPaletteList;
@@ -1564,7 +1564,7 @@ public partial class MainWindow
         }
     }
 
-        private bool HandlePaletteHotkey(KeyEventArgs e)
+    private bool HandlePaletteHotkey(KeyEventArgs e)
     {
         var mode = GetPaletteMode(_commandPaletteSearchBox?.Text, out _);
         if (MatchesKeybind(e, "CommandPalette"))

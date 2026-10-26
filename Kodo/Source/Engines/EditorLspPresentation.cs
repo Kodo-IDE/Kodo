@@ -686,104 +686,104 @@ public partial class MainWindow
         }
         var tokens = await EditorBackgroundWork.RunAsync(_ =>
         {
-        var tokens = new List<(int Offset, int Length, IBrush Brush)>(dataLength / 5);
-        var textLength = ctx.TextLength;
-        var legend = GetLspSemanticTokenTypes(ctx.FilePath);
-        var palette = SemanticTokenPalette;
-        var line = 0;
-        var character = 0;
-        var groupIndex = 0;
-        var deltaLine = 0;
-        var deltaCharacter = 0;
-        var length = 0;
-        var tokenType = 0;
-        var previousOffset = -1;
-        var tokensAreOrdered = true;
-        var dataIndex = 0;
-        foreach (var valueElement in data.EnumerateArray())
-        {
-            if ((dataIndex++ & 0x1fff) == 0) ctx.CancellationToken.ThrowIfCancellationRequested();
-            if (valueElement.ValueKind != JsonValueKind.Number || !valueElement.TryGetInt32(out var value)) return null;
-            switch (groupIndex)
+            var tokens = new List<(int Offset, int Length, IBrush Brush)>(dataLength / 5);
+            var textLength = ctx.TextLength;
+            var legend = GetLspSemanticTokenTypes(ctx.FilePath);
+            var palette = SemanticTokenPalette;
+            var line = 0;
+            var character = 0;
+            var groupIndex = 0;
+            var deltaLine = 0;
+            var deltaCharacter = 0;
+            var length = 0;
+            var tokenType = 0;
+            var previousOffset = -1;
+            var tokensAreOrdered = true;
+            var dataIndex = 0;
+            foreach (var valueElement in data.EnumerateArray())
             {
-                case 0: deltaLine = value; break;
-                case 1: deltaCharacter = value; break;
-                case 2: length = value; break;
-                case 3: tokenType = value; break;
-            }
-            groupIndex++;
-            if (groupIndex < 5) continue;
-            groupIndex = 0;
-            line += deltaLine;
-            character = deltaLine == 0 ? character + deltaCharacter : deltaCharacter;
-            var endCharacter = (int)Math.Min(int.MaxValue, (long)character + length);
-            int offset;
-            int tokenLength;
-            if (useRange)
-            {
-                var visibleIndex = line - ctx.LineMapStartLine;
-                if (visibleIndex < 0 || visibleIndex >= ctx.VisibleLineOffsets.Length) continue;
-                var lineLength = ctx.VisibleLineLengths[visibleIndex];
-                var lineText = ctx.PositionEncoding == "utf-16" ? null : ctx.GetVisibleLineText(visibleIndex);
-                var startColumn = ctx.PositionEncoding == "utf-16"
-                    ? Math.Clamp(character, 0, lineLength)
-                    : LspPath.Utf16UnitsForPosition(lineText.AsSpan(), character, ctx.PositionEncoding);
-                var endColumn = ctx.PositionEncoding == "utf-16"
-                    ? Math.Clamp(endCharacter, 0, lineLength)
-                    : LspPath.Utf16UnitsForPosition(lineText.AsSpan(), endCharacter, ctx.PositionEncoding);
-                offset = ctx.VisibleLineOffsets[visibleIndex] + startColumn;
-                tokenLength = Math.Max(0, endColumn - startColumn);
-            }
-            else
-            {
-                if (fullLineStarts is null || line < 0 || line >= fullLineStarts.Length) continue;
-                if (ctx.PositionEncoding == "utf-16")
+                if ((dataIndex++ & 0x1fff) == 0) ctx.CancellationToken.ThrowIfCancellationRequested();
+                if (valueElement.ValueKind != JsonValueKind.Number || !valueElement.TryGetInt32(out var value)) return null;
+                switch (groupIndex)
                 {
-                    var lineStart = fullLineStarts[line];
-                    var lineEnd = line + 1 < fullLineStarts.Length ? fullLineStarts[line + 1] : textLength;
-                    var lineLength = Math.Max(0, lineEnd - lineStart);
-                    var startColumn = Math.Clamp(character, 0, lineLength);
-                    var endColumn = Math.Clamp(endCharacter, startColumn, lineLength);
-                    offset = lineStart + startColumn;
-                    tokenLength = endColumn - startColumn;
+                    case 0: deltaLine = value; break;
+                    case 1: deltaCharacter = value; break;
+                    case 2: length = value; break;
+                    case 3: tokenType = value; break;
+                }
+                groupIndex++;
+                if (groupIndex < 5) continue;
+                groupIndex = 0;
+                line += deltaLine;
+                character = deltaLine == 0 ? character + deltaCharacter : deltaCharacter;
+                var endCharacter = (int)Math.Min(int.MaxValue, (long)character + length);
+                int offset;
+                int tokenLength;
+                if (useRange)
+                {
+                    var visibleIndex = line - ctx.LineMapStartLine;
+                    if (visibleIndex < 0 || visibleIndex >= ctx.VisibleLineOffsets.Length) continue;
+                    var lineLength = ctx.VisibleLineLengths[visibleIndex];
+                    var lineText = ctx.PositionEncoding == "utf-16" ? null : ctx.GetVisibleLineText(visibleIndex);
+                    var startColumn = ctx.PositionEncoding == "utf-16"
+                        ? Math.Clamp(character, 0, lineLength)
+                        : LspPath.Utf16UnitsForPosition(lineText.AsSpan(), character, ctx.PositionEncoding);
+                    var endColumn = ctx.PositionEncoding == "utf-16"
+                        ? Math.Clamp(endCharacter, 0, lineLength)
+                        : LspPath.Utf16UnitsForPosition(lineText.AsSpan(), endCharacter, ctx.PositionEncoding);
+                    offset = ctx.VisibleLineOffsets[visibleIndex] + startColumn;
+                    tokenLength = Math.Max(0, endColumn - startColumn);
                 }
                 else
                 {
-                    if (fullDocumentText is null) continue;
-                    var startOffset = LspPath.OffsetFromLspPosition(fullLineStarts, fullDocumentText, line, character, ctx.PositionEncoding);
-                    var endOffset = LspPath.OffsetFromLspPosition(fullLineStarts, fullDocumentText, line, endCharacter, ctx.PositionEncoding);
-                    offset = startOffset;
-                    tokenLength = Math.Max(0, endOffset - startOffset);
+                    if (fullLineStarts is null || line < 0 || line >= fullLineStarts.Length) continue;
+                    if (ctx.PositionEncoding == "utf-16")
+                    {
+                        var lineStart = fullLineStarts[line];
+                        var lineEnd = line + 1 < fullLineStarts.Length ? fullLineStarts[line + 1] : textLength;
+                        var lineLength = Math.Max(0, lineEnd - lineStart);
+                        var startColumn = Math.Clamp(character, 0, lineLength);
+                        var endColumn = Math.Clamp(endCharacter, startColumn, lineLength);
+                        offset = lineStart + startColumn;
+                        tokenLength = endColumn - startColumn;
+                    }
+                    else
+                    {
+                        if (fullDocumentText is null) continue;
+                        var startOffset = LspPath.OffsetFromLspPosition(fullLineStarts, fullDocumentText, line, character, ctx.PositionEncoding);
+                        var endOffset = LspPath.OffsetFromLspPosition(fullLineStarts, fullDocumentText, line, endCharacter, ctx.PositionEncoding);
+                        offset = startOffset;
+                        tokenLength = Math.Max(0, endOffset - startOffset);
+                    }
+                }
+                if (tokenLength > 0 && offset < textLength)
+                {
+                    var tokenTypeName = tokenType >= 0 && tokenType < legend.Count ? legend[tokenType] : null;
+                    var paletteIndex = tokenTypeName?.ToLowerInvariant() switch
+                    {
+                        "keyword" or "modifier" => 0,
+                        "type" or "class" or "interface" or "struct" or "enum" or "typeparameter" => 1,
+                        "function" or "method" or "macro" => 2,
+                        "property" or "field" => 3,
+                        "variable" or "parameter" => 4,
+                        "string" or "regexp" => 5,
+                        "number" => 6,
+                        "comment" => 7,
+                        _ => ((tokenType % palette.Length) + palette.Length) % palette.Length
+                    };
+                    if (offset < previousOffset) tokensAreOrdered = false;
+                    previousOffset = offset;
+                    tokens.Add((offset, Math.Min(tokenLength, textLength - offset), SemanticTokenBrushes[paletteIndex]));
                 }
             }
-            if (tokenLength > 0 && offset < textLength)
-            {
-                var tokenTypeName = tokenType >= 0 && tokenType < legend.Count ? legend[tokenType] : null;
-                var paletteIndex = tokenTypeName?.ToLowerInvariant() switch
-                {
-                    "keyword" or "modifier" => 0,
-                    "type" or "class" or "interface" or "struct" or "enum" or "typeparameter" => 1,
-                    "function" or "method" or "macro" => 2,
-                    "property" or "field" => 3,
-                    "variable" or "parameter" => 4,
-                    "string" or "regexp" => 5,
-                    "number" => 6,
-                    "comment" => 7,
-                    _ => ((tokenType % palette.Length) + palette.Length) % palette.Length
-                };
-                if (offset < previousOffset) tokensAreOrdered = false;
-                previousOffset = offset;
-                tokens.Add((offset, Math.Min(tokenLength, textLength - offset), SemanticTokenBrushes[paletteIndex]));
-            }
-        }
-        if (!tokensAreOrdered) tokens.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
-        semanticDecodeWatch.Stop();
-        KodoDiagnostics.ReportSlowStage(
-            "LSP semantic token decode",
-            semanticDecodeWatch.ElapsedMilliseconds,
-            16,
-            $"tokens={tokens.Count} full={!useRange} textLen={textLength}");
-        return tokens;
+            if (!tokensAreOrdered) tokens.Sort(static (left, right) => left.Offset.CompareTo(right.Offset));
+            semanticDecodeWatch.Stop();
+            KodoDiagnostics.ReportSlowStage(
+                "LSP semantic token decode",
+                semanticDecodeWatch.ElapsedMilliseconds,
+                16,
+                $"tokens={tokens.Count} full={!useRange} textLen={textLength}");
+            return tokens;
         }, ctx.CancellationToken).ConfigureAwait(false);
         if (tokens is null) return false;
         var applied = false;

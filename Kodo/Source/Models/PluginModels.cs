@@ -15,7 +15,7 @@ public interface IKodoPlugin
     void OnLoad(MainWindow window, LoadedExtension extension);
     void OnUnload();
 
-        void RegisterCommands(KodoPluginCommandRegistry commands) { }
+    void RegisterCommands(KodoPluginCommandRegistry commands) { }
 }
 
 public sealed record KodoPluginCommand(string Id, string Title, Func<Task> Execute)

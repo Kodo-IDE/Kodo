@@ -239,15 +239,15 @@ internal sealed class InsightWorkerGateway
 
             while (true)
             {
-            var finished = await Task.WhenAny(
-                completion.Task,
-                Task.Delay(TimeSpan.FromSeconds(60), cancellationToken)).ConfigureAwait(false);
-            if (finished == completion.Task)
-            {
-                var response = await completion.Task.ConfigureAwait(false);
-                RequestTrace?.Invoke("RESP id=" + response.Id + " ok=" + response.Ok + " msg=" + response.Message + " dead=" + (response.Dead?.Count ?? -1) + " errs=" + (response.Errors?.Count ?? -1) + " vars=" + (response.Variables?.Count ?? -1));
-                return response;
-            }
+                var finished = await Task.WhenAny(
+                    completion.Task,
+                    Task.Delay(TimeSpan.FromSeconds(60), cancellationToken)).ConfigureAwait(false);
+                if (finished == completion.Task)
+                {
+                    var response = await completion.Task.ConfigureAwait(false);
+                    RequestTrace?.Invoke("RESP id=" + response.Id + " ok=" + response.Ok + " msg=" + response.Message + " dead=" + (response.Dead?.Count ?? -1) + " errs=" + (response.Errors?.Count ?? -1) + " vars=" + (response.Variables?.Count ?? -1));
+                    return response;
+                }
                 bool removed;
                 lock (_pending)
                 {
