@@ -14,7 +14,6 @@ internal sealed class AppSettings
     public string ThemeName { get; set; } = "Dark";
     public bool AutoSaveEnabled { get; set; }
     public bool DiscordRichPresenceEnabled { get; set; }
-    public bool DiscordImprovedRpcEnabled { get; set; }
     public bool DeveloperOptionsVisible { get; set; }
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;

@@ -214,7 +214,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isDirty;
     private bool _isSaving;
     private bool _isDiscordRichPresenceEnabled;
-    private bool _isDiscordImprovedRpcEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private Task? _initialExtensionScanTask;
@@ -285,7 +284,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _statusBarDiagnosticsText = "No problems";
     private string _statusBarDiagnosticsTooltip = "No problems detected";
     private bool _pendingFullStateRefresh = true;
-    private (string?, string?, int, bool, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
+    private (string?, string?, int, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private bool _hasDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     private bool _isFirstLaunch;
@@ -966,7 +965,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
-        _isDiscordImprovedRpcEnabled = settings.DiscordImprovedRpcEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
         _isVerboseLoggingEnabled = settings.VerboseLoggingEnabled;
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
@@ -2983,21 +2981,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SaveSettings();
             UpdateDiscordRichPresenceLifecycle();
             OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
-            OnPropertyChanged(nameof(IsDiscordImprovedRpcEnabled));
-        }
-    }
-
-    public bool IsDiscordImprovedRpcEnabled
-    {
-        get => _isDiscordImprovedRpcEnabled;
-        set
-        {
-            if (_isDiscordImprovedRpcEnabled == value) return;
-            _isDiscordImprovedRpcEnabled = value;
-            OnPropertyChanged();
-            SaveSettings();
-            UpdateDiscordPresence();
-            OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         }
     }
 
@@ -4782,9 +4765,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
         ? "Discord Rich Presence is turned off."
-        : IsDiscordImprovedRpcEnabled
-            ? "Discord Rich Presence with detailed status is on when the Discord desktop app is running."
-            : "Discord Rich Presence is on when the Discord desktop app is running.";
+        : "Discord Rich Presence shows your current activity when the Discord desktop app is running.";
 
     public string AutoSaveStatusText =>
         !IsAutoSaveEnabled
@@ -5404,38 +5385,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private (string? filePath, string? folderPath, int tabCount,
-             bool untitled, bool imagePreview, bool settings, bool extensions, bool home,
-             bool improved) GetDiscordPresenceKey() =>
+             bool untitled, bool imagePreview, bool settings, bool extensions, bool home) GetDiscordPresenceKey() =>
         (_currentFilePath, _currentFolderPath, OpenTabs.Count,
          _hasUntitledDocument, HasImagePreview, _isSettingsPageVisible, _isExtensionsPageVisible,
-         _isHomePageVisible, _isDiscordImprovedRpcEnabled);
+         _isHomePageVisible);
 
-    private string GetDiscordPresenceDetails() =>
-        _isDiscordImprovedRpcEnabled
-            ? GetDiscordPresenceDetailsImproved()
-            : GetDiscordPresenceDetailsClassic();
-
-    private string GetDiscordPresenceState() =>
-        _isDiscordImprovedRpcEnabled
-            ? GetDiscordPresenceStateImproved()
-            : GetDiscordPresenceStateClassic();
-
-    private string GetDiscordPresenceDetailsClassic()
+    private string GetDiscordPresenceDetails()
     {
-        if (HasDocumentOpen) return $"Editing {GetDocumentDisplayName()}";
-        return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
-    }
+        var version = KodoDiagnostics.AppVersion;
+        if (version.EndsWith("-DEV", StringComparison.OrdinalIgnoreCase))
+        {
+            var stableVersion = version[..^4];
+            var displayVersion = stableVersion.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? stableVersion : $"v{stableVersion}";
+            return $"Developing Kodo {displayVersion}";
+        }
 
-    private string GetDiscordPresenceStateClassic()
-    {
-        if (HasFileOpen) return GetDiscordWorkspaceLabel();
-        if (_hasUntitledDocument) return GetDiscordWorkspaceLabel("Editing an Unsaved file");
-        if (IsFolderOpen) return GetDiscordWorkspaceLabel();
-        return "Waiting for a file";
-    }
-
-    private string GetDiscordPresenceDetailsImproved()
-    {
         if (_isSettingsPageVisible) return "Tweaking settings";
         if (_isExtensionsPageVisible) return "Browsing extensions";
         if (_isHomePageVisible) return "On the home screen";
@@ -5443,34 +5407,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (_isWhatsNewPageVisible) return "Reading what's new";
 
         if (HasDocumentOpen)
-        {
-            var fileName = GetDocumentDisplayName();
-            var lang = GetDiscordLanguageLabel();
-            return string.IsNullOrWhiteSpace(lang)
-                ? $"Editing {fileName}"
-                : $"Editing {fileName}  \u00b7  {lang}";
-        }
+            return $"Editing {GetDocumentDisplayName()}";
 
         return IsFolderOpen ? "Browsing project files" : "Idle in Kodo";
     }
 
-    private string? GetDiscordLanguageLabel()
-    {
-        if (!HasDocumentOpen)
-            return null;
+    private string GetDiscordPresenceState() =>
+        HasFileOpen ? GetDiscordWorkspaceLabel()
+        : _hasUntitledDocument ? GetDiscordWorkspaceLabel("Editing an unsaved file")
+        : IsFolderOpen ? GetDiscordWorkspaceLabel()
+        : "Waiting for a file";
 
-        return string.IsNullOrWhiteSpace(LanguageDisplayText) ? null : LanguageDisplayText;
-    }
-
-    private string GetDiscordPresenceStateImproved()
-    {
-        if (HasFileOpen) return GetDiscordWorkspaceLabelImproved();
-        if (_hasUntitledDocument) return GetDiscordWorkspaceLabelImproved("Editing an unsaved file");
-        if (IsFolderOpen) return GetDiscordWorkspaceLabelImproved();
-        return "Waiting for a file";
-    }
-
-    private string GetDiscordWorkspaceLabelImproved(string fallback = "Working in editor")
+    private string GetDiscordWorkspaceLabel(string fallback = "Working in editor")
     {
         if (!IsFolderOpen) return fallback;
         var folderName = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
@@ -5479,13 +5427,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return tabCount > 1
             ? $"Workspace: {folderName}  ({tabCount} files open)"
             : $"Workspace: {folderName}";
-    }
-
-    private string GetDiscordWorkspaceLabel(string fallback = "Working in editor")
-    {
-        if (!IsFolderOpen) return fallback;
-        var folderName = Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar));
-        return string.IsNullOrWhiteSpace(folderName) ? fallback : $"Workspace: {folderName}";
     }
 
     private void DisposeDiscordPresence(bool clearPresence = true)
@@ -5706,7 +5647,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ThemeName = _requestedThemeName,
             AutoSaveEnabled = IsAutoSaveEnabled,
             DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
-            DiscordImprovedRpcEnabled = IsDiscordImprovedRpcEnabled,
             DeveloperOptionsVisible = IsDeveloperOptionsVisible,
             VerboseLoggingEnabled = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
@@ -8111,7 +8051,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         Section("Discord Rich Presence");
         sb.AppendLine($"Enabled: {IsDiscordRichPresenceEnabled}");
-        sb.AppendLine($"Improved RPC: {IsDiscordImprovedRpcEnabled}");
 
         var extensions = VisibleLoadedExtensions.ToList();
         Section($"Installed Extensions ({extensions.Count})");

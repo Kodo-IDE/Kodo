@@ -6300,21 +6300,6 @@ ToolTip.Tip="Increase font size" />
                                 <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable Discord Rich Presence" />
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
-                                      IsVisible="{Binding IsDiscordRichPresenceEnabled}">
-                                    <CheckBox Grid.Column="0"
-                                              IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
-                                              VerticalAlignment="Center" />
-                                    <StackPanel Grid.Column="1" Spacing="2">
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Show detailed activity" />
-                                        <TextBlock Foreground="{Binding MutedTextBrush}"
-                                                   FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Text="Shows language, page context, and open tab count." />
-                                    </StackPanel>
-                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding DiscordRichPresenceStatusText}" />

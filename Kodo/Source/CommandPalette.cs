@@ -753,7 +753,6 @@ public partial class MainWindow
         AddSettingToggle("Developer Options", () => IsDeveloperOptionsVisible, value => IsDeveloperOptionsVisible = value, "developer advanced");
         AddSettingToggle("Verbose Logging", () => IsVerboseLoggingEnabled, value => IsVerboseLoggingEnabled = value, "logs diagnostics");
         AddSettingToggle("Discord Rich Presence", () => IsDiscordRichPresenceEnabled, value => IsDiscordRichPresenceEnabled = value, "activity status discord");
-        AddSettingToggle("Improved Discord Rich Presence", () => IsDiscordImprovedRpcEnabled, value => IsDiscordImprovedRpcEnabled = value, "activity status discord rich presence", () => IsDiscordRichPresenceEnabled);
         AddSettingToggle("Code Suggestions", () => IsInsightCodeSuggestionsEnabled, value => IsInsightCodeSuggestionsEnabled = value, "insight completion autocomplete");
         AddSettingToggle("Dead Code Detection", () => IsInsightDeadCodeEnabled, value => IsInsightDeadCodeEnabled = value, "insight analysis");
         AddSettingToggle("Error Detection", () => IsInsightErrorDetectionEnabled, value => IsInsightErrorDetectionEnabled = value, "insight diagnostics errors");
