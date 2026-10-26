@@ -1983,6 +1983,7 @@ public partial class MainWindow
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsFirstRunTutorialActive) return;
         OpenExtensionsPage(showMarketplaceTab: false, forceRefresh: false);
     }
 

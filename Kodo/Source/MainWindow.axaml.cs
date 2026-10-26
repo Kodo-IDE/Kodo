@@ -539,7 +539,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(
             "",
             "Welcome to Kodo!",
-            "A fast, focused code editor built to stay out of your way. This short tutorial will walk you through the essentials - it only takes a minute.",
+            "Take a quick tour of the essentials, then make Kodo yours. It is five short steps, and you can revisit this tutorial any time from Settings.",
             "",
             "",
             "",
@@ -548,53 +548,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ),
         new(
             "Welcome",
-            "Meet your workspace",
-            "Kodo starts on Home so you can jump straight into a recent project, create a new file, or open an existing folder without hunting through menus.",
+            "Start from Home",
+            "Open a recent project, create a file, or choose a folder. Once a project is open, the explorer and editor keep your files close at hand.",
             "Ctrl+H",
-            "Home is your launchpad",
-            "Open recent files and folders in one click.",
-            "Start fresh work quickly with New File or Open Folder.",
-            "Use the keyboard shortcut chips on Home for quick access to the most common actions."
+            "Pick up where you left off",
+            "Open a recent file or project from Home.",
+            "Use New File for a quick scratch document.",
+            "Open a folder to work with a project and its file tree."
         ),
         new(
             "Editing",
-            "Create and work fast",
-            "Use the editor for scratch files or full projects, then lean on autosave, tab restore, and the file explorer when you are moving across a bigger codebase.",
+            "Make the editor yours",
+            "Open a file or create a scratch document. Work across tabs, use the file explorer to move through a project, and tune the editor to suit your workflow.",
             "Ctrl+N / Ctrl+O / Ctrl+K",
-            "Core editing flow",
-            "Create a file instantly with Ctrl+N.",
-            "Open a file with Ctrl+O or a folder with Ctrl+K.",
-            "Keep momentum with tabs, autosave, and explorer tools."
+            "A focused workspace",
+            "Create a scratch file with Ctrl+N.",
+            "Open a file with Ctrl+O or a project folder with Ctrl+K.",
+            "Keep related files open in tabs as you work."
         ),
         new(
             "Marketplace",
-            "Install language support and themes",
-            "The Marketplace is where Kodo pulls syntax highlighting packs, language definitions, and theme extensions from the web so you can tailor the app to your stack.",
+            "Add the tools you need",
+            "Find language support, themes, plugins, and compiler tools in the Marketplace. Install what you need for your stack and keep it updated from inside Kodo.",
             "Ctrl+E",
-            "Extensions, themes, updates",
-            "Browse installable extensions from inside the app.",
-            "Update installed packages when newer versions appear.",
-            "Watch for connectivity warnings if downloads cannot reach the internet."
+            "Extend Kodo",
+            "Browse language support and themes.",
+            "Install plugins to add commands and capabilities.",
+            "Manage available updates from the Marketplace."
         ),
         new(
             "Settings",
-            "Tune Kodo to your workflow",
-            "Adjust themes, font size, tab width, autosave, and other quality-of-life settings so the editor feels right for the way you work.",
+            "Shape your workflow",
+            "Set your theme, editor font, indentation, autosave, and other preferences. Settings are grouped so you can find and adjust them quickly.",
             "Ctrl+,",
-            "Personalize the experience",
-            "Switch between built-in and extension themes.",
-            "Set editor font size and tab behavior.",
-            "Control autosave and launch preferences."
+            "Make Kodo feel right",
+            "Choose a theme and accent colour.",
+            "Adjust font size, indentation, and editor options.",
+            "Set autosave and launch preferences."
         ),
         new(
             "Set up",
-            "Make Kodo yours",
-            "Pick a theme and accent colour, then tell Kodo a little about yourself so the welcome message on Home feels personal. You can change any of these later in Settings.",
+            "A few final choices",
+            "Choose a theme and accent colour. Profile details are optional and can be changed later in Settings. To finish, read the Privacy Policy and choose whether to share anonymous usage data.",
             "Ctrl+,  ·  Settings",
-            "Why personalise?",
-            "Your name makes greetings feel like they're written for you.",
-            "Country and hemisphere keep seasonal messages accurate.",
-            "Theme and accent colour apply instantly across the whole app."
+            "Finish your setup",
+            "Theme and accent colour apply throughout Kodo.",
+            "Profile details help personalize messages on Home.",
+            "Your profile is optional; the Privacy Policy and data choice must be resolved to continue."
         )
     ];
 
@@ -2125,9 +2125,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isTutorialPageVisible == value) return;
             _isTutorialPageVisible = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(AreSidebarButtonsEnabled));
             RaiseMany(EditorPageVisibilityDependents);
         }
     }
+
+    public bool AreSidebarButtonsEnabled =>
+        !(_isFirstLaunch && !_hasCompletedTutorial && IsTutorialPageVisible);
+
+    private bool IsFirstRunTutorialActive =>
+        _isFirstLaunch && !_hasCompletedTutorial && IsTutorialPageVisible;
 
     public bool IsWhatsNewPageVisible
     {
@@ -2205,6 +2212,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _hasRespondedToDataTrackingPrompt = true;
                 OnPropertyChanged(nameof(IsDataTrackingPromptVisible));
                 OnPropertyChanged(nameof(AreAllConsentPromptsResolved));
+                OnPropertyChanged(nameof(CanFinishTutorial));
+                OnPropertyChanged(nameof(CanAdvanceTutorial));
+                OnPropertyChanged(nameof(CanSkipTutorial));
+                OnPropertyChanged(nameof(TutorialSetupStatusText));
             }
 
             SaveSettings();
@@ -2217,6 +2228,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool AreAllConsentPromptsResolved => !IsDataTrackingPromptVisible && !IsPrivacyPolicyPromptVisible;
 
+    public bool CanFinishTutorial => AreAllConsentPromptsResolved;
+
+    public bool CanAdvanceTutorial => !IsTutorialSetupStep || CanFinishTutorial;
+
+    public bool CanSkipTutorial => !IsTutorialSetupStep || CanFinishTutorial;
+
+    public string TutorialSetupStatusText => CanFinishTutorial
+        ? "Setup complete. You’re ready to start coding."
+        : "Finish is locked until you reach the end of the Privacy Policy, accept it, and choose a data-sharing option.";
+
+    public string PrivacyPolicyScrollStatusText => IsPrivacyPolicyScrolledToBottom
+        ? "End reached. Accept the policy below to continue."
+        : "Keep scrolling to the bottom. Accept unlocks when you reach the end.";
+
     public bool IsPrivacyPolicyScrolledToBottom
     {
         get => _isPrivacyPolicyScrolledToBottom;
@@ -2225,6 +2250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isPrivacyPolicyScrolledToBottom == value) return;
             _isPrivacyPolicyScrolledToBottom = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(PrivacyPolicyScrollStatusText));
         }
     }
 
@@ -2903,10 +2929,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string TutorialStepLabel => $"Step {TutorialStepIndex} of {TutorialSteps.Length - 1}";
+    public string TutorialStepLabel => TutorialStepIndex == 0
+        ? "WELCOME"
+        : $"STEP {TutorialStepIndex} OF {TutorialSteps.Length - 1}";
 
     public string TutorialProgressDotsText =>
         string.Join(" ", Enumerable.Range(0, TutorialSteps.Length).Select(index => index <= TutorialStepIndex ? "●" : "○"));
+
+    public double TutorialProgressPercent => TutorialSteps.Length <= 1
+        ? 100
+        : TutorialStepIndex * 100.0 / (TutorialSteps.Length - 1);
 
     public string TutorialSectionTitle => CurrentTutorialStep.SectionTitle;
 
@@ -2918,12 +2950,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
 
-    public string TutorialSpotlightTitle => TutorialStepIndex switch
-    {
-        4 => IsAmericanEnglish ? "Personalize the experience" : "Personalise the experience",
-        5 => IsAmericanEnglish ? "Why personalize?" : "Why personalise?",
-        _ => CurrentTutorialStep.SpotlightTitle,
-    };
+    public string TutorialSpotlightTitle => CurrentTutorialStep.SpotlightTitle;
 
     public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
 
@@ -2945,7 +2972,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsTutorialHeaderVisible => _tutorialOpenedFromSettings;
 
-    public string TutorialPrimaryButtonText => TutorialStepIndex >= TutorialSteps.Length - 1 ? "Finish tutorial" : "Next";
+    public string TutorialPrimaryButtonText => IsTutorialSetupStep ? "Finish setup" : "Next step";
 
     public int TutorialStepIndex
     {
@@ -6799,12 +6826,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
-        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
     }
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsFirstRunTutorialActive) return;
         ShowEditorPage();
     }
 
@@ -6814,11 +6842,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         FocusEditor();
     }
 
-    private void HomeButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void HomeButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
         NavigateTo(AppPage.Home);
+    }
 
-    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void OpenFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
         await OpenFileAsync();
+    }
 
     private async void SaveButton_OnClick(object? sender, RoutedEventArgs e) =>
         await SaveAsync();
@@ -6902,8 +6936,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void NewFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
         NewFile();
+    }
 
     private void ToggleTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
         ToggleTerminalPanel();
@@ -7003,14 +7040,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             CloseTerminalSession(s);
     }
 
-    private async void OpenFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void OpenFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
         await OpenFolderAsync();
+    }
 
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
 
-    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
         NavigateTo(AppPage.Settings);
+    }
 
     private void InstalledTabButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsInstalledTabSelected = true;
@@ -7061,6 +7104,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _hasAcceptedPrivacyPolicy = true;
         OnPropertyChanged(nameof(IsPrivacyPolicyPromptVisible));
         OnPropertyChanged(nameof(AreAllConsentPromptsResolved));
+        OnPropertyChanged(nameof(CanFinishTutorial));
+        OnPropertyChanged(nameof(CanAdvanceTutorial));
+        OnPropertyChanged(nameof(CanSkipTutorial));
+        OnPropertyChanged(nameof(TutorialSetupStatusText));
         if (IsUpdateSplashVisible && !IsDataTrackingPromptVisible) IsUpdateSplashVisible = false;
         SaveSettings();
     }
@@ -9928,7 +9975,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OnTutorialStepChanged()
     {
-        RaiseMany(nameof(TutorialStepIndex), nameof(TutorialStepLabel), nameof(TutorialProgressDotsText), nameof(TutorialSectionTitle), nameof(TutorialTitle), nameof(TutorialBody), nameof(TutorialShortcutText), nameof(TutorialSpotlightTitle), nameof(TutorialHighlightOne), nameof(TutorialHighlightTwo), nameof(TutorialHighlightThree), nameof(CanGoToPreviousTutorialStep), nameof(TutorialPrimaryButtonText), nameof(IsTutorialSetupStep), nameof(IsNotTutorialSetupStep), nameof(IsTutorialWelcomeStep), nameof(IsNotTutorialWelcomeStep), nameof(IsTutorialHeaderVisible));
+        RaiseMany(nameof(TutorialStepIndex), nameof(TutorialStepLabel), nameof(TutorialProgressDotsText), nameof(TutorialProgressPercent), nameof(TutorialSectionTitle), nameof(TutorialTitle), nameof(TutorialBody), nameof(TutorialShortcutText), nameof(TutorialSpotlightTitle), nameof(TutorialHighlightOne), nameof(TutorialHighlightTwo), nameof(TutorialHighlightThree), nameof(CanGoToPreviousTutorialStep), nameof(TutorialPrimaryButtonText), nameof(IsTutorialSetupStep), nameof(IsNotTutorialSetupStep), nameof(IsTutorialWelcomeStep), nameof(IsNotTutorialWelcomeStep), nameof(IsTutorialHeaderVisible), nameof(CanAdvanceTutorial), nameof(CanSkipTutorial), nameof(TutorialSetupStatusText));
     }
 
     private void CompleteTutorialAndReturnHome()

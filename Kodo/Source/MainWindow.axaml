@@ -916,7 +916,8 @@
                 BorderThickness="0,0,1,0">
             <DockPanel>
                 
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch">
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch"
+                            IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
                     <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
                         <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -927,7 +928,8 @@
                     </Button>
                 </StackPanel>
 
-                <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
+                <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch"
+                            IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
                     <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -3757,13 +3759,26 @@
                                    TextWrapping="Wrap"
                                    MaxWidth="420"
                                    LineHeight="26"
-                                   Text="A fast, focused code editor built to stay out of your way. This short tutorial walks you through the essentials - it only takes a minute." />
+                                   Text="A fast, focused code editor built to stay out of your way. Take five short steps to get oriented, then jump straight into your work." />
+
+                        <Border Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.PillRadius}"
+                                Padding="12,7"
+                                HorizontalAlignment="Center"
+                                Margin="0,28,0,0">
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding AccentBrush}"
+                                       Text="5 STEPS  ·  ABOUT A MINUTE  ·  REVISIT ANYTIME IN SETTINGS" />
+                        </Border>
 
                         <TextBlock FontSize="13"
                                    Foreground="{Binding MutedTextBrush}"
                                    HorizontalAlignment="Center"
                                    Text="{Binding TutorialProgressDotsText}"
-                                   Margin="0,32,0,0" />
+                                   Margin="0,14,0,0" />
 
                         <StackPanel Orientation="Horizontal"
                                     HorizontalAlignment="Center"
@@ -3780,8 +3795,10 @@
                 </Grid>
 
                 
-                <ScrollViewer Grid.Row="1"
-                              IsVisible="{Binding IsNotTutorialWelcomeStep}"
+                <Grid Grid.Row="1"
+                      IsVisible="{Binding IsNotTutorialWelcomeStep}"
+                      RowDefinitions="*,Auto">
+                <ScrollViewer Grid.Row="0"
                               Padding="24"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
@@ -3802,9 +3819,12 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding AccentBrush}"
                                                Text="{Binding TutorialStepLabel}" />
-                                    <TextBlock FontSize="13"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               Text="{Binding TutorialProgressDotsText}" />
+                                    <ProgressBar Height="4"
+                                                 Minimum="0"
+                                                 Maximum="100"
+                                                 Value="{Binding TutorialProgressPercent}"
+                                                 Foreground="{Binding AccentBrush}"
+                                                 Background="{Binding ButtonBrush}" />
                                 </StackPanel>
 
                                 <StackPanel Spacing="10">
@@ -4269,24 +4289,39 @@
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                 <Border Width="3" Height="18" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                <TextBlock FontSize="15"
+                                                <TextBlock FontSize="18"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
                                                            VerticalAlignment="Center"
-                                                           Text="Privacy Policy" />
+                                                           Text="Required: Privacy Policy" />
                                             </StackPanel>
                                             <TextBlock FontSize="12"
-                                                       Foreground="{Binding MutedTextBrush}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding PrimaryTextBrush}"
                                                        TextWrapping="Wrap"
-                                                       Text="Please scroll to the end to enable Accept." />
+                                                       Text="Scroll through the document to its last line. Accept stays locked until you reach the end." />
+                                            <Border Background="{Binding ButtonBrush}"
+                                                    BorderBrush="{Binding AccentBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                    Padding="10,8">
+                                                <TextBlock FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Text="{Binding PrivacyPolicyScrollStatusText}" />
+                                            </Border>
                                             <Border Background="{Binding WindowBackgroundBrush}"
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                     Padding="16"
-                                                    MaxHeight="220">
+                                                    MinHeight="180"
+                                                    MaxHeight="260">
                                                 <ScrollViewer x:Name="PrivacyPolicyScrollViewerTutorial"
-                                                              ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged">
+                                                              ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged"
+                                                              VerticalScrollBarVisibility="Visible"
+                                                              HorizontalScrollBarVisibility="Disabled">
                                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                                TextWrapping="Wrap"
                                                                LineHeight="18"
@@ -4299,7 +4334,7 @@
                                                 <Button Classes="marketaction"
                                                         IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
                                                         Click="AcceptPrivacyPolicyButton_OnClick"
-                                                        Content="Accept" />
+                                                        Content="Accept Privacy Policy" />
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
@@ -4340,22 +4375,6 @@
 
                             </Panel>
 
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Right"
-                                        Spacing="10">
-                                <Button Classes="chrome"
-                                        Click="PreviousTutorialStepButton_OnClick"
-                                        IsVisible="{Binding CanGoToPreviousTutorialStep}"
-                                        Content="Back" />
-                                <Button Classes="chrome"
-                                        Click="SkipTutorialButton_OnClick"
-                                        Content="Skip Tutorial" />
-                                <Button Classes="marketaction"
-                                        Click="NextTutorialStepButton_OnClick"
-                                        MinWidth="148"
-                                        Content="{Binding TutorialPrimaryButtonText}" />
-                            </StackPanel>
-
                             </StackPanel>
 
                         </Border>
@@ -4373,7 +4392,7 @@
                                     <TextBlock FontSize="12"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding AccentBrush}"
-                                               Text="Spotlight" />
+                                               Text="WHAT TO TRY" />
                                     <TextBlock FontSize="22"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -4394,6 +4413,39 @@
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
+                <Border Grid.Row="1"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,1,0,0"
+                        Padding="24,14">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                        <TextBlock VerticalAlignment="Center"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding IsTutorialSetupStep}"
+                                   Text="{Binding TutorialSetupStatusText}" />
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="10">
+                            <Button Classes="chrome"
+                                    Click="PreviousTutorialStepButton_OnClick"
+                                    IsVisible="{Binding CanGoToPreviousTutorialStep}"
+                                    Content="Back" />
+                            <Button Classes="chrome"
+                                    Click="SkipTutorialButton_OnClick"
+                                    IsVisible="{Binding IsNotTutorialSetupStep}"
+                                    IsEnabled="{Binding CanSkipTutorial}"
+                                    Content="Skip tutorial" />
+                            <Button Classes="marketaction"
+                                    Click="NextTutorialStepButton_OnClick"
+                                    MinWidth="148"
+                                    IsEnabled="{Binding CanAdvanceTutorial}"
+                                    Content="{Binding TutorialPrimaryButtonText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                </Grid>
             </Grid>
 
             <Grid IsVisible="{Binding IsExtensionsPageVisible}"

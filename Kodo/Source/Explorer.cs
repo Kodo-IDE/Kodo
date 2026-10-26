@@ -994,6 +994,7 @@ public partial class MainWindow
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsFirstRunTutorialActive) return;
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
