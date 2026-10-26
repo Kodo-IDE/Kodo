@@ -694,6 +694,10 @@ public partial class MainWindow
             new("Find in Project", "Search", "FindInProject", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search text files"),
 
             new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => ActiveEditorTab is not null),
+            new("Go Back", "Navigation", "EditorGoBack", () => NavigateEditorHistoryAsync(true), HasDocument, "previous location history"),
+            new("Go Forward", "Navigation", "EditorGoForward", () => NavigateEditorHistoryAsync(false), HasDocument, "next location history"),
+            new("Next Problem", "Editor", "NextProblem", () => { NavigateEditorDiagnostic(1); return Task.CompletedTask; }, HasDocument, "diagnostic error warning"),
+            new("Previous Problem", "Editor", "PreviousProblem", () => { NavigateEditorDiagnostic(-1); return Task.CompletedTask; }, HasDocument, "diagnostic error warning"),
             new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), HasLspDocument, "language server"),
             new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), HasLspDocument, "language server"),
             new("Find All References", "Editor", "", () => RunMenuHandler(EditorFindReferencesMenuItem_OnClick), () => HasDocument() && hasReferences, "usages"),

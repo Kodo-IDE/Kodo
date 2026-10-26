@@ -762,9 +762,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             var previousPreview = _currentImagePreview;
             _currentImagePreview = value;
-            previousPreview?.Dispose();
             OnPropertyChanged();
             RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
+            BitmapLifetime.DisposeAfterLayout(previousPreview);
         }
     }
 
@@ -5553,6 +5553,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("FindInProject",      "Find in project",         new KeyGesture(Key.F, KeyModifiers.Control | KeyModifiers.Shift),  "Editor"),
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
         new("GoToDefinition",    "Go to Definition",        new KeyGesture(Key.F12, KeyModifiers.None),                         "Editor"),
+        new("EditorGoBack",      "Go Back in Editor Navigation", new KeyGesture(Key.Left, KeyModifiers.Control | KeyModifiers.Alt), "Navigation"),
+        new("EditorGoForward",   "Go Forward in Editor Navigation", new KeyGesture(Key.Right, KeyModifiers.Control | KeyModifiers.Alt), "Navigation"),
+        new("NextProblem",       "Go to Next Problem",      new KeyGesture(Key.F8, KeyModifiers.None),                           "Editor"),
+        new("PreviousProblem",   "Go to Previous Problem",  new KeyGesture(Key.F8, KeyModifiers.Shift),                          "Editor"),
         new("ToggleLineComment",  "Toggle line comment",     new KeyGesture(Key.Oem2, KeyModifiers.Control),                     "Editor"),
         new("MoveLineUp",         "Move line up",            new KeyGesture(Key.Up, KeyModifiers.Alt),                             "Editor"),
         new("MoveLineDown",       "Move line down",          new KeyGesture(Key.Down, KeyModifiers.Alt),                           "Editor"),
@@ -6990,20 +6994,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void StatusBarDiagnosticsButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (EditorTextBox?.Document is null) return;
-        var firstError = _errorHighlightRenderer.Spans.FirstOrDefault();
-        var firstDead = _deadCodeHighlightRenderer.Spans.FirstOrDefault();
-        var targetOffset = -1;
-        if (firstError is not null) targetOffset = firstError.StartOffset;
-        else if (firstDead is not null) targetOffset = firstDead.StartOffset;
-        if (targetOffset < 0) return;
-        try
-        {
-            EditorTextBox.TextArea.Caret.Offset = Math.Clamp(targetOffset, 0, EditorTextBox.Document.TextLength);
-            EditorTextBox.TextArea.Caret.BringCaretToView();
-            EditorTextBox.Focus();
-        }
-        catch { }
+        NavigateEditorDiagnostic(1);
     }
 
     private void CloseAllTerminalSessionsButton_OnClick(object? sender, RoutedEventArgs e)
@@ -7277,6 +7268,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             ("Enter / F3",         "Next search match (in terminal)"),
             ("Shift+Enter / Shift+F3", "Previous search match (in terminal)"),
+            ("↑ / ↓; PgUp / PgDn", "Move through command palette results"),
+            ("Enter / Esc",        "Run the selected command / close the command palette"),
+            ("Enter / Esc",        "Apply the selected quick fix / dismiss quick fixes"),
+            ("Enter / ↑ / ↓ / Esc", "Open search results, move through them, or close search"),
+            ("Ctrl+Numpad + / - / 0", "Zoom in, out, or reset in the image viewer (numpad keys)"),
         };
 
         var iconBadge = new Border

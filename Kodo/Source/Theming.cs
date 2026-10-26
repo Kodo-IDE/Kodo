@@ -11,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
@@ -31,6 +32,7 @@ public partial class MainWindow
     private void SettingsSectionButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string section }) return;
+        SetActiveSettingsNavigation(section);
         var targetName = section.ToLowerInvariant() switch
         {
             "appearance" => "SectionHeaderAppearance",
@@ -85,6 +87,30 @@ public partial class MainWindow
         if (sender is not ScrollViewer scrollViewer || Math.Abs(e.OffsetDelta.Y) < 0.1)
             return;
 
+        var settingsSections = new (string Key, string Header)[]
+        {
+            ("appearance", "SectionHeaderAppearance"),
+            ("editor", "SectionHeaderEditor"),
+            ("lsp", "SectionHeaderLsp"),
+            ("general", "SectionHeaderGeneral"),
+            ("terminal", "SectionHeaderTerminal"),
+            ("integrations", "SectionHeaderIntegrations"),
+            ("updates", "SectionHeaderUpdates"),
+            ("performance", "SectionHeaderPerformance"),
+            ("privacy", "SectionHeaderPrivacy"),
+            ("personalization", "SectionHeaderPersonalization"),
+            ("advanced", "SectionHeaderAdvanced"),
+            ("helpabout", "SectionHeaderHelpAbout")
+        };
+        var activeSection = settingsSections
+            .Select(section => (section.Key, Header: this.FindControl<Control>(section.Header)))
+            .Where(section => section.Header is { IsVisible: true })
+            .Select(section => (section.Key, Position: section.Header!.TranslatePoint(new Point(0, 0), scrollViewer)?.Y ?? double.MaxValue))
+            .Where(section => section.Position <= 160)
+            .LastOrDefault();
+        if (activeSection.Key is not null)
+            SetActiveSettingsNavigation(activeSection.Key);
+
         if (_settingsNavigationTargetOffset is { } targetOffset &&
             Math.Abs(scrollViewer.Offset.Y - targetOffset) < 1)
         {
@@ -97,6 +123,22 @@ public partial class MainWindow
             button.Classes.Contains("settingsnav"))
         {
             SettingsPageGrid.Focus();
+        }
+    }
+
+    private void SetActiveSettingsNavigation(string section)
+    {
+        foreach (var button in SettingsPageGrid.GetVisualDescendants().OfType<Button>()
+                     .Where(button => button.Classes.Contains("settingsnav")))
+        {
+            if (string.Equals(button.Tag as string, section, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!button.Classes.Contains("active")) button.Classes.Add("active");
+            }
+            else
+            {
+                button.Classes.Remove("active");
+            }
         }
     }
 

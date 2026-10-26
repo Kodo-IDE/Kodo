@@ -164,6 +164,10 @@ public partial class MainWindow
         var doc = EditorTextBox?.Document;
         if (textArea is null || doc is null) return false;
 
+        if (MatchesKeybind(e, "EditorGoBack")) { _ = NavigateEditorHistoryAsync(true); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "EditorGoForward")) { _ = NavigateEditorHistoryAsync(false); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "NextProblem")) { NavigateEditorDiagnostic(1); e.Handled = true; return true; }
+        if (MatchesKeybind(e, "PreviousProblem")) { NavigateEditorDiagnostic(-1); e.Handled = true; return true; }
         if (MatchesKeybind(e, "MoveLineUp")) { EditorMoveLines(doc, textArea, -1); e.Handled = true; return true; }
         if (MatchesKeybind(e, "MoveLineDown")) { EditorMoveLines(doc, textArea, 1); e.Handled = true; return true; }
         if (MatchesKeybind(e, "DuplicateLineUp")) { EditorDuplicateLines(doc, textArea, -1); e.Handled = true; return true; }

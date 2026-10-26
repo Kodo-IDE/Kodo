@@ -31,6 +31,9 @@ public partial class MainWindow
     private CancellationTokenSource? _lspPresentationCancellation;
     private bool _editorInsightsRefreshRunning;
     private bool _editorInsightsRefreshPending;
+    private readonly List<EditorNavigationLocation> _editorBackHistory = new();
+    private readonly List<EditorNavigationLocation> _editorForwardHistory = new();
+    private const int EditorNavigationHistoryLimit = 100;
     private const int LspMaxFoldingsApplied = 4_000;
     private const int LocalInsightSkipThreshold = 80_000;
 
@@ -82,6 +85,83 @@ public partial class MainWindow
         }
         _editorInsightsRefreshRunning = true;
         _ = RefreshEditorInsightsSafelyAsync();
+    }
+
+    private sealed record EditorNavigationLocation(string FilePath, int Offset);
+
+    private EditorNavigationLocation? CaptureEditorNavigationLocation()
+    {
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return null;
+        return new EditorNavigationLocation(_currentFilePath, Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength));
+    }
+
+    private void RecordEditorNavigation(EditorNavigationLocation? location)
+    {
+        if (location is null) return;
+        if (_editorBackHistory.Count > 0 && _editorBackHistory[^1] == location) return;
+        _editorBackHistory.Add(location);
+        if (_editorBackHistory.Count > EditorNavigationHistoryLimit)
+            _editorBackHistory.RemoveAt(0);
+        _editorForwardHistory.Clear();
+    }
+
+    private async Task NavigateEditorHistoryAsync(bool backwards)
+    {
+        var source = backwards ? _editorBackHistory : _editorForwardHistory;
+        var destination = backwards ? _editorForwardHistory : _editorBackHistory;
+        if (source.Count == 0) return;
+        var target = source[^1];
+        var current = CaptureEditorNavigationLocation();
+        if (current is null) return;
+
+        try
+        {
+            if (!FileSystemPaths.Equals(_currentFilePath, target.FilePath))
+                await OpenFileFromPathAsync(target.FilePath);
+
+            var restored = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!FileSystemPaths.Equals(_currentFilePath, target.FilePath) || EditorTextBox?.Document is null)
+                    return false;
+                NavigateTo(AppPage.Editor);
+                EditorTextBox.TextArea.Caret.Offset = Math.Clamp(target.Offset, 0, EditorTextBox.Document.TextLength);
+                EditorTextBox.TextArea.Caret.BringCaretToView();
+                EditorTextBox.Focus();
+                return true;
+            });
+            if (!restored) return;
+
+            source.RemoveAt(source.Count - 1);
+            if (destination.Count == 0 || destination[^1] != current)
+                destination.Add(current);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Editor navigation history restore failed", ex);
+        }
+    }
+
+    private void NavigateEditorDiagnostic(int direction)
+    {
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return;
+        var problems = _errorHighlightRenderer.Spans
+            .Select(span => (Offset: span.StartOffset, Message: span.Message))
+            .Concat(_deadCodeHighlightRenderer.Spans.Select(span => (Offset: span.StartOffset, Message: span.Reason)))
+            .Where(problem => problem.Offset >= 0 && problem.Offset <= EditorTextBox.Document.TextLength)
+            .Distinct()
+            .OrderBy(problem => problem.Offset)
+            .ToList();
+        if (problems.Count == 0) return;
+
+        var caret = EditorTextBox.TextArea.Caret.Offset;
+        var index = direction >= 0
+            ? problems.FindIndex(problem => problem.Offset > caret)
+            : problems.FindLastIndex(problem => problem.Offset < caret);
+        if (index < 0) index = direction >= 0 ? 0 : problems.Count - 1;
+
+        EditorTextBox.TextArea.Caret.Offset = problems[index].Offset;
+        EditorTextBox.TextArea.Caret.BringCaretToView();
+        EditorTextBox.Focus();
     }
 
     private async Task RefreshEditorInsightsSafelyAsync()
@@ -975,6 +1055,7 @@ public partial class MainWindow
     private async void GoToDefinitionAtCaret()
     {
         if (EditorTextBox?.Document is null) return;
+        var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
         var revision = EditorSession.Revision;
         var path = _currentFilePath;
@@ -986,7 +1067,10 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
             {
                 if (await TryLspGoToDefinitionAsync(path, offset))
+                {
+                    RecordEditorNavigation(origin);
                     return;
+                }
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP go-to-definition failed, falling back to LangRules", ex); }
@@ -1006,6 +1090,7 @@ public partial class MainWindow
             EditorTextBox.Select(start, length);
             EditorTextBox.TextArea.Caret.BringCaretToView();
             EditorTextBox.Focus();
+            RecordEditorNavigation(origin);
         });
     }
 
@@ -1098,11 +1183,13 @@ public partial class MainWindow
     private async void EditorTypeDefinitionMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
+        var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
         var revision = EditorSession.Revision;
         var path = _currentFilePath;
         var offset = EditorTextBox.TextArea.Caret.Offset;
         var ok = await TryLspNavigateFeatureAsync(path, offset, "textDocument/typeDefinition");
+        if (ok) RecordEditorNavigation(origin);
         if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
         if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No type definition was found by the language server.");
     }
@@ -1110,11 +1197,13 @@ public partial class MainWindow
     private async void EditorImplementationMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
+        var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
         var revision = EditorSession.Revision;
         var path = _currentFilePath;
         var offset = EditorTextBox.TextArea.Caret.Offset;
         var ok = await TryLspNavigateFeatureAsync(path, offset, "textDocument/implementation");
+        if (ok) RecordEditorNavigation(origin);
         if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
         if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No implementation was found by the language server.");
     }

@@ -279,14 +279,21 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
-            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
+            <Setter Property="Padding" Value="12,9" />
             <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
         <Style Selector="Button.settingsnav:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Button.settingsnav.active">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
         </Style>
         <Style Selector="Button.settingsnav:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
@@ -5414,74 +5421,87 @@
                   IsVisible="{Binding IsSettingsPageVisible}"
                   IsHitTestVisible="{Binding IsSettingsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
-                  RowDefinitions="Auto,Auto,*"
+                  ColumnDefinitions="232,*"
+                  RowDefinitions="*"
                   Focusable="True"
                   PointerPressed="SettingsPage_OnPointerPressed">
-                <Border Grid.Row="0"
+                <Border Grid.Column="0"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="24,18">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Spacing="4">
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <Border Width="3" Height="32" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                <TextBlock FontSize="28"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           VerticalAlignment="Center"
-                                           Text="Settings" />
-                            </StackPanel>
+                        BorderThickness="0,0,1,0"
+                        Padding="18,22">
+                    <Grid RowDefinitions="Auto,*">
+                        <StackPanel Spacing="5" Margin="4,0,4,20">
+                            <TextBlock FontSize="20"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Settings" />
+                            <TextBlock FontSize="11"
+                                       Foreground="{Binding MutedTextBrush}"
+                                       Text="Customize your workspace" />
                         </StackPanel>
-
-                        <TextBox x:Name="SettingsSearchTextBox"
-                                 Grid.Column="1"
-                                 Width="260"
-                                 VerticalAlignment="Center"
-                                 Text="{Binding SettingsSearchText, Mode=TwoWay}"
-                                 PlaceholderText="Search settings..."
-                                 Background="{Binding ButtonBrush}"
-                                 Foreground="{Binding PrimaryTextBrush}"
-                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                 Height="36"
-                                 Padding="12,0"
-                                 VerticalContentAlignment="Center"
-                                 LostFocus="SettingsSearchTextBox_OnLostFocus" />
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Spacing="4">
+                                <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
+                                <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
+                                <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
+                                <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
+                                <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
+                                <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
+                                <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
+                                <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
+                                <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
+                                <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="Personalization" />
+                                <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
+                                <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
+                            </StackPanel>
+                        </ScrollViewer>
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1"
-                        Background="{Binding TopBarBrush}"
-                        BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,0,0,1">
-                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" Margin="16,8">
-                            <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
-                            <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
-                            <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
-                            <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
-                            <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
-                            <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
-                            <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
-                            <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
-                            <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
-                            <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="Personalization" />
-                            <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
-                            <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
-                    </WrapPanel>
-                </Border>
+                <Grid Grid.Column="1" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            Background="{Binding TopBarBrush}"
+                            BorderBrush="{Binding SurfaceBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="28,14">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock FontSize="22"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Configure Kodo" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="Search and adjust how the editor works." />
+                            </StackPanel>
+                            <TextBox x:Name="SettingsSearchTextBox"
+                                     Grid.Column="1"
+                                     Width="320"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding SettingsSearchText, Mode=TwoWay}"
+                                     PlaceholderText="Search settings..."
+                                     Background="{Binding ButtonBrush}"
+                                     Foreground="{Binding PrimaryTextBrush}"
+                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                     Height="38"
+                                     Padding="12,0"
+                                     VerticalContentAlignment="Center"
+                                     LostFocus="SettingsSearchTextBox_OnLostFocus" />
+                        </Grid>
+                    </Border>
 
                 <ScrollViewer x:Name="SettingsScrollViewer"
-                              Grid.Row="2"
+                              Grid.Row="1"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled"
                               ScrollChanged="SettingsScrollViewer_OnScrollChanged">
                     <StackPanel x:Name="SettingsCardsPanel"
-                                Margin="32,28,32,36"
+                                Margin="36,28,36,36"
                                 Spacing="16"
-                                Width="760"
-                                MaxWidth="760"
-                                HorizontalAlignment="Center"
+                                MaxWidth="920"
+                                HorizontalAlignment="Stretch"
                                 VerticalAlignment="Top">
 
                         <Grid x:Name="SectionHeaderAppearance" Tag="appearance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
@@ -7058,6 +7078,7 @@ ToolTip.Tip="Increase font size" />
 
                     </StackPanel>
                 </ScrollViewer>
+                </Grid>
             </Grid>
             <Grid IsVisible="{Binding IsUpdateSplashVisible}"
                   IsHitTestVisible="{Binding IsUpdateSplashVisible}"

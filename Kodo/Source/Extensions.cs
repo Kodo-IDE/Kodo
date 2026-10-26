@@ -435,9 +435,9 @@ public partial class MainWindow
                     catch { }
                     var oldImg = ext.IconImage;
                     ext.IconImage = null;
-                    oldImg?.Dispose();
                     ext.IconBytes = null;
                     ext.NotifyIconChanged();
+                    BitmapLifetime.DisposeAfterLayout(oldImg);
                 }
                 else
                 {
@@ -485,9 +485,9 @@ public partial class MainWindow
                             }
                             var old = ext.IconImage;
                             ext.IconImage = bmp;
-                            old?.Dispose();
                             ext.IconBytes = null;
                             ext.NotifyIconChanged();
+                            BitmapLifetime.DisposeAfterLayout(old);
                         }
                     }, DispatcherPriority.Background);
 
@@ -1360,20 +1360,22 @@ public partial class MainWindow
 
     private static void ReplaceLoadedExtensionIcon(LoadedExtension extension, IconResult icon)
     {
+        Bitmap? previous = null;
         if (icon.Bitmap is not null)
         {
             if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            extension.IconImage?.Dispose();
+            previous = extension.IconImage;
             extension.IconImage = icon.Bitmap;
             extension.SvgData = null;
         }
         else if (icon.SvgData is not null)
         {
-            extension.IconImage?.Dispose();
+            previous = extension.IconImage;
             extension.IconImage = null;
             extension.SvgData = icon.SvgData;
         }
         extension.NotifyIconChanged();
+        BitmapLifetime.DisposeAfterLayout(previous);
     }
 
     private LoadedExtension? GetPreferredLoadedExtension(string extensionId) =>

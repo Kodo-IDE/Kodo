@@ -5,6 +5,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -830,12 +831,12 @@ public partial class MainWindow
                 }
             };
 
-            list.PointerPressed += (_, e) =>
+            list.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
             {
                 if (!e.GetCurrentPoint(list).Properties.IsLeftButtonPressed) return;
                 if (FindAncestor<ListBoxItem>(e.Source as Visual) is not { DataContext: CodeActionItem item }) return;
                 if (item.IsEnabled) Finish(item);
-            };
+            }, RoutingStrategies.Bubble, handledEventsToo: true);
 
             popup.Opened += (_, _) => list.Focus();
 
