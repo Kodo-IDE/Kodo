@@ -118,6 +118,7 @@ internal enum UnsavedTabAction
 
 public class EditorTab : INotifyPropertyChanged
 {
+    private readonly Dictionary<Guid, EditorViewState> _viewStates = new();
     private string _content = string.Empty;
     private bool _isDirty;
     private bool _isSelected;
@@ -252,11 +253,16 @@ public class EditorTab : INotifyPropertyChanged
         set { if (_renameText == value) return; _renameText = value; OnPropertyChanged(); }
     }
 
-    public int TopLineNumber { get; set; } = 1;
+    internal EditorViewState GetViewState(Guid paneId)
+    {
+        if (!_viewStates.TryGetValue(paneId, out var state))
+        {
+            state = new EditorViewState();
+            _viewStates.Add(paneId, state);
+        }
 
-    public double ScrollOffsetY { get; set; } = 0.0;
-
-    public int CaretOffset { get; set; } = 0;
+        return state;
+    }
 
     private int _errorCount;
     private int _warningCount;
@@ -342,6 +348,22 @@ public class EditorTab : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+internal sealed class EditorPaneState
+{
+    public Guid Id { get; } = Guid.NewGuid();
+
+    public EditorTab? ActiveTab { get; set; }
+}
+
+internal sealed class EditorViewState
+{
+    public int TopLineNumber { get; set; } = 1;
+
+    public double ScrollOffsetY { get; set; }
+
+    public int CaretOffset { get; set; }
 }
 
 public enum ExplorerClipboardMode

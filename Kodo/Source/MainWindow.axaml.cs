@@ -207,7 +207,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
     private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
     private readonly ErrorTextDarkener _errorTextDarkener = new();
-    private EditorTab? _activeEditorTab;
+    private readonly EditorPaneState _editorPane = new();
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
     private bool _isAutoSaveEnabled;
@@ -790,19 +790,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public EditorTab? ActiveEditorTab
     {
-        get => _activeEditorTab;
+        get => _editorPane.ActiveTab;
         private set
         {
-            if (ReferenceEquals(_activeEditorTab, value))
+            if (ReferenceEquals(_editorPane.ActiveTab, value))
                 return;
 
-            if (_activeEditorTab is not null)
-                _activeEditorTab.IsSelected = false;
+            if (_editorPane.ActiveTab is not null)
+                _editorPane.ActiveTab.IsSelected = false;
 
-            _activeEditorTab = value;
+            _editorPane.ActiveTab = value;
 
-            if (_activeEditorTab is not null)
-                _activeEditorTab.IsSelected = true;
+            if (_editorPane.ActiveTab is not null)
+                _editorPane.ActiveTab.IsSelected = true;
 
             OnPropertyChanged();
             OnPropertyChanged(nameof(HasOpenEditors));

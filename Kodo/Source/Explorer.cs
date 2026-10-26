@@ -130,15 +130,16 @@ public partial class MainWindow
 
         var tab = ActiveEditorTab;
         var document = EditorTextBox.Document;
+        var viewState = tab.GetViewState(_editorPane.Id);
         tab.Document = document;
         tab.Content = string.Empty;
         ActiveEditorTab.IsDirty = _isDirty;
         ActiveEditorTab.LineEnding = _currentLineEnding;
         var scrollOffset = EditorTextBox.TextArea.TextView.ScrollOffset;
-        ActiveEditorTab.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
+        viewState.TopLineNumber = EditorTextBox.TextArea.TextView.GetDocumentLineByVisualTop(
             scrollOffset.Y)?.LineNumber ?? 1;
-        ActiveEditorTab.ScrollOffsetY = scrollOffset.Y;
-        ActiveEditorTab.CaretOffset = EditorTextBox.TextArea.Caret.Offset;
+        viewState.ScrollOffsetY = scrollOffset.Y;
+        viewState.CaretOffset = EditorTextBox.TextArea.Caret.Offset;
         if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
             ActiveEditorTab.Path = _currentFilePath;
     }
@@ -218,7 +219,7 @@ public partial class MainWindow
                 $"path={tab.Path}");
             _ = SetEditorTabContentSafelyAsync(tab, activationVersion);
         }, DispatcherPriority.Normal);
-        var savedOffsetY = tab.ScrollOffsetY;
+        var savedOffsetY = tab.GetViewState(_editorPane.Id).ScrollOffsetY;
         var targetTabForScroll = tab;
         var savedOffsetVersion = _activeTabVersion;
         if (savedOffsetY > 0.0)
@@ -307,8 +308,9 @@ public partial class MainWindow
         }
         if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath))
             ApplyIndentationForContent(tab.DetectedIndentation);
-        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(tab.CaretOffset, 0, EditorTextBox.Document.TextLength);
-        EditorTextBox.ScrollToLine(tab.TopLineNumber);
+        var viewState = tab.GetViewState(_editorPane.Id);
+        EditorTextBox.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, EditorTextBox.Document.TextLength);
+        EditorTextBox.ScrollToLine(viewState.TopLineNumber);
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path) && !IsLspDocumentOpenOrOpening(tab.Path))
         {
             contentSnapshot ??= await EditorTextSnapshotStore.GetSnapshot(activeDocument).GetTextAsync();
