@@ -14,22 +14,8 @@ namespace Kodo;
 
 internal static class KodoPaths
 {
-    public static string DataRoot
-    {
-        get
-        {
-#if ISOLATED_TUTORIAL_BUILD
-            return Path.Combine(AppContext.BaseDirectory, "TutorialTestData");
-#else
-            var overridePath = Environment.GetEnvironmentVariable("KODO_DATA_ROOT");
-            if (!string.IsNullOrWhiteSpace(overridePath))
-                return Path.GetFullPath(overridePath);
-
-            return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo");
-#endif
-        }
-    }
+    public static string DataRoot => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo");
 
     public static string LegacyDataRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
