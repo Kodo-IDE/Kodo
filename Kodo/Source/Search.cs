@@ -239,7 +239,11 @@ public partial class MainWindow
             return;
 
         var document = EditorTextBox.Document;
+        var requestEditor = EditorTextBox;
+        var requestPane = _activeEditorPane;
+        var requestTab = requestPane.ActiveTab;
         var revision = EditorSession.Revision;
+        var documentVersion = document.Version;
         var revisionToken = EditorSession.RevisionCancellationToken;
         var query = FindText;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -266,7 +270,9 @@ public partial class MainWindow
             SearchStatusText = "That pattern is too expensive to search with - try a simpler one.";
             return;
         }
-        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+            !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
         if (matches.Count == 0)
         {
             SearchStatusText = "No matches to replace.";
@@ -278,12 +284,24 @@ public partial class MainWindow
             "Replace All?",
             $"This will replace {matches.Count} {matchWord} in the current file. This action can be undone with Ctrl+Z.",
             confirmLabel: "Replace All");
-        if (!confirmed || !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+        if (!confirmed || !ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+            !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision ||
             !string.Equals(FindText, query, StringComparison.Ordinal)) return;
 
-        var updated = await EditorBackgroundWork.RunAsync(_ => SearchEngine.ReplaceAll(snapshot.Source, matches, replacement, revisionToken), revisionToken);
+        string updated;
+        try
+        {
+            updated = await EditorBackgroundWork.RunAsync(_ => SearchEngine.ReplaceAll(snapshot.Source, matches, replacement, revisionToken), revisionToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
 
-        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision) return;
+        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+            !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision) return;
         try
         {
             document.Replace(0, snapshot.Source.TextLength, updated);
@@ -296,8 +314,13 @@ public partial class MainWindow
             {
                 try
                 {
-                    if (ReferenceEquals(EditorTextBox?.Document, document) && EditorSession.Revision == revision)
+                    if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+                        ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+                        ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision)
+                    {
                         document.Replace(0, snapshot.Source.TextLength, updated);
+                        SearchStatusText = $"Replaced {matches.Count} match{(matches.Count == 1 ? string.Empty : "es")}.";
+                    }
                 }
                 catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
@@ -400,31 +423,41 @@ public partial class MainWindow
 
     private async void OpenSearchResult(SearchResultItem result)
     {
-        await OpenFileFromPathAsync(result.Path);
+        var targetPane = _activeEditorPane;
+        var query = FindText;
+        await OpenFileFromPathAsync(result.Path, targetPane);
 
-        if (result.LineNumber > 0 && EditorTextBox?.Document is { } doc)
+        var destinationPane = ResolveEditorPaneForOpen(targetPane);
+        var destinationEditor = GetEditorForPane(destinationPane);
+        if (result.LineNumber > 0 && destinationEditor.Document is { } doc &&
+            destinationPane.ActiveTab is { } targetTab && FileSystemPaths.Equals(targetTab.Path, result.Path))
         {
             var lineNumber = Math.Clamp(result.LineNumber, 1, doc.LineCount);
             var line = doc.GetLineByNumber(lineNumber);
-            var matchOffset = string.IsNullOrEmpty(FindText)
+            var documentVersion = doc.Version;
+            var matchOffset = string.IsNullOrEmpty(query)
                 ? -1
-                : doc.GetText(line.Offset, line.Length).IndexOf(FindText, StringComparison.OrdinalIgnoreCase);
+                : doc.GetText(line.Offset, line.Length).IndexOf(query, StringComparison.OrdinalIgnoreCase);
 
             Dispatcher.UIThread.Post(() =>
             {
+                if (!ReferenceEquals(destinationPane.ActiveTab, targetTab) ||
+                    !ReferenceEquals(destinationEditor.Document, doc) ||
+                    !ReferenceEquals(doc.Version, documentVersion))
+                    return;
                 var caretOffset = matchOffset >= 0 ? line.Offset + matchOffset : line.Offset;
-                EditorTextBox.TextArea.Caret.Offset = caretOffset;
-                if (matchOffset >= 0 && !string.IsNullOrEmpty(FindText))
+                destinationEditor.TextArea.Caret.Offset = caretOffset;
+                if (matchOffset >= 0 && !string.IsNullOrEmpty(query))
                 {
-                    EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(
-                        EditorTextBox.TextArea, caretOffset, caretOffset + FindText.Length);
+                    destinationEditor.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(
+                        destinationEditor.TextArea, caretOffset, caretOffset + query.Length);
                 }
                 else
                 {
-                    EditorTextBox.TextArea.ClearSelection();
+                    destinationEditor.TextArea.ClearSelection();
                 }
-                EditorTextBox.ScrollToLine(lineNumber);
-                FocusEditor();
+                destinationEditor.ScrollToLine(lineNumber);
+                destinationEditor.Focus();
             }, DispatcherPriority.Background);
         }
     }
@@ -492,7 +525,6 @@ public partial class MainWindow
 
         if (!CanShowSearchPanelForMode(mode))
         {
-            _searchCancellation?.Cancel();
             _searchResults.Clear();
             _searchDisplayItems.Clear();
             SearchResultsListBox!.SelectedIndex = -1;
@@ -671,11 +703,11 @@ public partial class MainWindow
         }
 
         var previousExpansion = _fileGroups
-            .ToDictionary(g => g.FilePath, g => g.IsExpanded, StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.FilePath, g => g.IsExpanded, FileSystemPaths.Comparer);
 
         _fileGroups.Clear();
 
-        foreach (var group in _searchResults.GroupBy(r => r.Path, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in _searchResults.GroupBy(r => r.Path, FileSystemPaths.Comparer))
         {
             var items = group.ToList();
             var searchGroup = new SearchFileGroup
@@ -991,7 +1023,11 @@ public partial class MainWindow
             return;
 
         var document = EditorTextBox.Document;
+        var requestEditor = EditorTextBox;
+        var requestPane = _activeEditorPane;
+        var requestTab = requestPane.ActiveTab;
         var revision = EditorSession.Revision;
+        var documentVersion = document.Version;
         var caretOffset = EditorTextBox.TextArea.Caret.Offset;
         var query = FindText;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
@@ -1015,6 +1051,10 @@ public partial class MainWindow
                 match = await EditorBackgroundWork.RunAsync(_ => SearchEngine.FindNextMatch(text, query, Math.Max(0, caretOffset - 1), true, comparison, wholeWord, regex), CancellationToken.None).ConfigureAwait(false);
             }
         }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
         catch (RegexMatchTimeoutException ex)
         {
             KodoDiagnostics.LogDebug("Replace current match stopped: the search pattern took too long to evaluate.", ex);
@@ -1027,8 +1067,10 @@ public partial class MainWindow
         var applied = false;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
-                EditorTextBox.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+            if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+                !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+                !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision ||
+                requestEditor.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
             try
             {
                 document.Replace(match.Offset, match.Length, replacement);
@@ -1039,11 +1081,20 @@ public partial class MainWindow
                 KodoDiagnostics.LogDebug("Search: Visual line race suppressed", ex);
                 Dispatcher.UIThread.Post(() =>
                 {
+                    var replaced = false;
                     try
                     {
-                        if (ReferenceEquals(EditorTextBox?.Document, document)) document.Replace(match.Offset, match.Length, replacement);
+                        if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+                            ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+                            ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision &&
+                            requestEditor.TextArea.Caret.Offset == caretOffset && string.Equals(FindText, query, StringComparison.Ordinal))
+                        {
+                            document.Replace(match.Offset, match.Length, replacement);
+                            replaced = true;
+                        }
                     }
                     catch { }
+                    if (replaced) FindInEditor(forward: true);
                 }, Avalonia.Threading.DispatcherPriority.Background);
             }
         });
@@ -1064,9 +1115,13 @@ public partial class MainWindow
     {
         if (string.IsNullOrEmpty(FindText) || EditorTextBox?.Document is null) return;
         CancelSearchOperation(_findNavigationCancellation);
-        var document = EditorTextBox.Document;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var document = requestEditor.Document;
+        var documentVersion = document.Version;
         var revision = EditorSession.Revision;
-        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var caretOffset = requestEditor.TextArea.Caret.Offset;
         var query = FindText;
         var comparison = IsSearchMatchCaseEnabled ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var wholeWord = IsSearchWholeWordEnabled;
@@ -1126,12 +1181,14 @@ public partial class MainWindow
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (cancellation.IsCancellationRequested || !ReferenceEquals(_findNavigationCancellation, cancellation) ||
-                !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
-                EditorTextBox.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
+                !ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+                !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+                !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision ||
+                requestEditor.TextArea.Caret.Offset != caretOffset || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
             if (match.Offset < 0) return;
-            EditorTextBox.TextArea.Caret.Offset = match.Offset;
-            EditorTextBox.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(EditorTextBox.TextArea, match.Offset, match.Offset + match.Length);
-            EditorTextBox.ScrollToLine(EditorTextBox.Document.GetLineByOffset(match.Offset).LineNumber);
+            requestEditor.TextArea.Caret.Offset = match.Offset;
+            requestEditor.TextArea.Selection = AvaloniaEdit.Editing.Selection.Create(requestEditor.TextArea, match.Offset, match.Offset + match.Length);
+            requestEditor.ScrollToLine(requestEditor.Document.GetLineByOffset(match.Offset).LineNumber);
             if (_findMatchOffsets.Count > 0)
             {
                 _currentFindMatchIndex = _findMatchOffsets.BinarySearch(match.Offset);
@@ -1161,6 +1218,11 @@ public partial class MainWindow
         _findHighlightCancellation = null;
         if (EditorTextBox?.Document is not { } document) return;
 
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var documentVersion = document.Version;
+
         var query = FindText;
         var mode = IsFindInFileSearchMode;
         var regex = BuildFindRegex();
@@ -1180,7 +1242,8 @@ public partial class MainWindow
         var revision = EditorSession.Revision;
         var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
         var cancellation = _findHighlightCancellation = CancellationTokenSource.CreateLinkedTokenSource(EditorSession.RevisionCancellationToken);
-        _ = ApplyFindHighlightsAsync(document, snapshot, revision, query, comparison, wholeWord, regex, cancellation);
+        _ = ApplyFindHighlightsAsync(requestPane, requestEditor, requestTab, document, documentVersion,
+            snapshot, revision, query, comparison, wholeWord, regex, cancellation);
     }
 
     private void ClearFindHighlightState(string status)
@@ -1190,10 +1253,24 @@ public partial class MainWindow
         _currentFindMatchIndex = -1;
         SearchStatusText = status;
         EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        var otherEditor = ReferenceEquals(EditorTextBox, SecondaryEditorTextBox)
+            ? PrimaryEditorTextBox
+            : SecondaryEditorTextBox;
+        if (otherEditor is not null && EditorTextBox?.Document is { } document && ReferenceEquals(otherEditor.Document, document))
+        {
+            (ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryFindHighlightRenderer
+                : _primaryFindHighlightRenderer).Clear();
+            otherEditor?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        }
     }
 
     private async Task ApplyFindHighlightsAsync(
+        EditorPaneState requestPane,
+        AvaloniaEdit.TextEditor requestEditor,
+        EditorTab? requestTab,
         AvaloniaEdit.Document.TextDocument document,
+        AvaloniaEdit.Document.ITextSourceVersion documentVersion,
         EditorTextSnapshot snapshot,
         long revision,
         string query,
@@ -1225,7 +1302,10 @@ public partial class MainWindow
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (ReferenceEquals(_findHighlightCancellation, cancellation) && FindText == query)
+                if (ReferenceEquals(_findHighlightCancellation, cancellation) && FindText == query &&
+                    ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+                    ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+                    ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision)
                     ClearFindHighlightState("That pattern is too expensive to search with - try a simpler one.");
             });
             if (ReferenceEquals(_findHighlightCancellation, cancellation)) _findHighlightCancellation = null;
@@ -1243,19 +1323,35 @@ public partial class MainWindow
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (cancellation.IsCancellationRequested || !ReferenceEquals(_findHighlightCancellation, cancellation) ||
-                !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision ||
+                !ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+                !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+                !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision ||
                 !IsFindInFileSearchMode || !string.Equals(FindText, query, StringComparison.Ordinal)) return;
 
-            _findHighlightRenderer.Clear();
+            var primaryRenderer = ReferenceEquals(requestEditor, SecondaryEditorTextBox)
+                ? _secondaryFindHighlightRenderer
+                : _primaryFindHighlightRenderer;
+            primaryRenderer.Clear();
             _findMatchOffsets = result.Offsets;
-            _findHighlightRenderer.SetMatches(result.Matches);
+            primaryRenderer.SetMatches(result.Matches);
             _currentFindMatchIndex = _findMatchOffsets.Count == 0
                 ? -1
-                : _findMatchOffsets.BinarySearch(EditorTextBox.TextArea.Caret.Offset);
+                : _findMatchOffsets.BinarySearch(requestEditor.TextArea.Caret.Offset);
             if (_currentFindMatchIndex < 0 && _findMatchOffsets.Count > 0)
                 _currentFindMatchIndex = Math.Max(0, ~_currentFindMatchIndex - 1);
             UpdateFindStatusText();
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            requestEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            var otherEditor = ReferenceEquals(requestEditor, SecondaryEditorTextBox)
+                ? PrimaryEditorTextBox
+                : SecondaryEditorTextBox;
+            if (otherEditor is not null && ReferenceEquals(otherEditor.Document, document))
+            {
+                var otherRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                    ? _secondaryFindHighlightRenderer
+                    : _primaryFindHighlightRenderer;
+                otherRenderer.SetMatches(result.Matches);
+                otherEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            }
             _findHighlightCancellation = null;
         });
         if (ReferenceEquals(_findHighlightCancellation, cancellation))

@@ -12,6 +12,7 @@ public sealed class EditorMinimapControl : Control
 {
     private const int MaximumSamples = 2048;
     private int[] _lineLengths = [];
+    private readonly int[] _sampledLengthCounts = new int[161];
     private int _lineCount;
     private int _maximumLineLength = 1;
     private int _viewportTopLine = 1;
@@ -60,6 +61,7 @@ public sealed class EditorMinimapControl : Control
             _documentVersion = null;
             _lineLengths = [];
             _maximumLineLength = 1;
+            Array.Clear(_sampledLengthCounts);
             _viewportTopLine = 1;
             _viewportBottomLine = 1;
             InvalidateVisual();
@@ -71,6 +73,7 @@ public sealed class EditorMinimapControl : Control
         _documentVersion = version;
         var sampleCount = Math.Min(MaximumSamples, _lineCount);
         var samples = new int[sampleCount];
+        Array.Clear(_sampledLengthCounts);
         var maximumLineLength = 1;
         var sampleStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         for (var index = 0; index < sampleCount; index++)
@@ -78,7 +81,9 @@ public sealed class EditorMinimapControl : Control
             var lineNumber = 1 + (int)((long)index * _lineCount / sampleCount);
             var length = document.GetLineByNumber(lineNumber).Length;
             samples[index] = length;
-            maximumLineLength = Math.Max(maximumLineLength, Math.Min(160, length));
+            var lengthBucket = Math.Min(160, length);
+            _sampledLengthCounts[lengthBucket]++;
+            maximumLineLength = Math.Max(maximumLineLength, lengthBucket);
         }
         var sampleElapsed = System.Diagnostics.Stopwatch.GetElapsedTime(sampleStartedAt);
         KodoDiagnostics.ReportSlowStage("editor minimap line sampling", (long)sampleElapsed.TotalMilliseconds, 16,
@@ -107,17 +112,20 @@ public sealed class EditorMinimapControl : Control
         {
             var previousMaximum = Math.Min(160, _lineLengths[sampleIndex]);
             var updatedMaximum = Math.Min(160, line.Length);
+            if (previousMaximum != updatedMaximum)
+            {
+                _sampledLengthCounts[previousMaximum]--;
+                _sampledLengthCounts[updatedMaximum]++;
+            }
             _lineLengths[sampleIndex] = line.Length;
             if (updatedMaximum >= _maximumLineLength)
             {
                 _maximumLineLength = Math.Max(1, updatedMaximum);
             }
-            else if (previousMaximum == _maximumLineLength)
+            else if (previousMaximum == _maximumLineLength && _sampledLengthCounts[_maximumLineLength] == 0)
             {
-                var maximum = 1;
-                foreach (var length in _lineLengths)
-                    maximum = Math.Max(maximum, Math.Min(160, length));
-                _maximumLineLength = maximum;
+                while (_maximumLineLength > 1 && _sampledLengthCounts[_maximumLineLength] == 0)
+                    _maximumLineLength--;
             }
         }
         _documentVersion = document.Version;
@@ -136,7 +144,12 @@ public sealed class EditorMinimapControl : Control
             if (sampledLine < lineNumber) low = middle + 1;
             else high = middle - 1;
         }
-        return -1;
+
+        if (high < 0) return 0;
+        if (low >= sampleCount) return sampleCount - 1;
+        var beforeLine = 1 + (int)((long)high * lineCount / sampleCount);
+        var afterLine = 1 + (int)((long)low * lineCount / sampleCount);
+        return lineNumber - beforeLine <= afterLine - lineNumber ? high : low;
     }
 
     public void SetViewport(int topLine, int bottomLine)
@@ -213,6 +226,12 @@ public sealed class EditorMinimapControl : Control
         _isDragging = false;
         e.Pointer.Capture(null);
         e.Handled = true;
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        _isDragging = false;
     }
 
     private (double Top, double Height) GetViewportBounds()

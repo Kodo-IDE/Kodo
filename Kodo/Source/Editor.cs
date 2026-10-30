@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,7 @@ using Avalonia.Animation;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
+using AvaloniaEdit;
 using Avalonia.Threading;
 using Kodo.Editor;
 using Kodo.Models;
@@ -27,6 +29,8 @@ namespace Kodo;
 
 public partial class MainWindow
 {
+    private CancellationTokenSource? _wordCountScanCancellation;
+
     private CancellationTokenSource? _lspCompletionCts;
     private CancellationTokenSource? _lspPresentationCancellation;
     private bool _editorInsightsRefreshRunning;
@@ -74,6 +78,27 @@ public partial class MainWindow
         _InsightRefreshTimer.Start();
     }
 
+    private static CancellationTokenSource RenewAnalysisCancellation(ref CancellationTokenSource current)
+    {
+        var previous = current;
+        var replacement = new CancellationTokenSource();
+        current = replacement;
+        try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        return replacement;
+    }
+
+    private static void CancelAnalysisRequest(CancellationTokenSource cancellation)
+    {
+        try { cancellation.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    private void CancelEditorAnalysisRequests()
+    {
+        CancelAnalysisRequest(_insightAnalysisCancellation);
+        CancelAnalysisRequest(_deadCodeAnalysisCancellation);
+        CancelAnalysisRequest(_errorAnalysisCancellation);
+    }
+
     private void InsightRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _InsightRefreshTimer.Stop();
@@ -111,26 +136,30 @@ public partial class MainWindow
         var destination = backwards ? _editorForwardHistory : _editorBackHistory;
         if (source.Count == 0) return;
         var target = source[^1];
+        var targetPane = _activeEditorPane;
         var current = CaptureEditorNavigationLocation();
         if (current is null) return;
 
         try
         {
             if (!FileSystemPaths.Equals(_currentFilePath, target.FilePath))
-                await OpenFileFromPathAsync(target.FilePath);
+                await OpenFileFromPathAsync(target.FilePath, targetPane);
 
             var restored = await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!FileSystemPaths.Equals(_currentFilePath, target.FilePath) || EditorTextBox?.Document is null)
+                var destinationPane = ResolveEditorPaneForOpen(targetPane);
+                var destinationEditor = GetEditorForPane(destinationPane);
+                if (!FileSystemPaths.Equals(destinationPane.ActiveTab?.Path, target.FilePath) || destinationEditor.Document is null)
                     return false;
                 NavigateTo(AppPage.Editor);
-                EditorTextBox.TextArea.Caret.Offset = Math.Clamp(target.Offset, 0, EditorTextBox.Document.TextLength);
-                EditorTextBox.TextArea.Caret.BringCaretToView();
-                EditorTextBox.Focus();
+                destinationEditor.TextArea.Caret.Offset = Math.Clamp(target.Offset, 0, destinationEditor.Document.TextLength);
+                destinationEditor.TextArea.Caret.BringCaretToView();
+                destinationEditor.Focus();
                 return true;
             });
             if (!restored) return;
 
+            if (source.Count == 0 || source[^1] != target) return;
             source.RemoveAt(source.Count - 1);
             if (destination.Count == 0 || destination[^1] != current)
                 destination.Add(current);
@@ -194,13 +223,14 @@ public partial class MainWindow
 
     private async Task RefreshEditorInsightsAsync()
     {
-        var len = EditorTextBox?.Document?.TextLength ?? 0;
+        var document = EditorTextBox?.Document;
+        var len = document?.TextLength ?? 0;
         var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
         var languageExtension = CurrentLanguageExtension;
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
         var errorSignature = ComputeErrorHighlightSignature(_insightDocVersion, _currentFilePath, scanExtension);
         var deadSignature = ComputeDeadCodeSignature(_insightDocVersion, _currentFilePath, scanExtension, _currentFolderPath);
-        var deferLocalAnalysis = len > LocalInsightSkipThreshold &&
+        var deferLocalAnalysis = PerformanceBudget.IsLargeFile(document, LocalInsightSkipThreshold) &&
             LspEnabled && ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (deferLocalAnalysis)
         {
@@ -224,9 +254,14 @@ public partial class MainWindow
     private async void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
     {
         _wordCountRefreshTimer.Stop();
-        if (!IsActive) return;
+        if (!IsActive)
+        {
+            CancelWordCountScan();
+            return;
+        }
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
+            CancelWordCountScan();
             WordCountText = string.Empty;
             OnPropertyChanged(nameof(IsWordCountVisible));
             return;
@@ -234,53 +269,77 @@ public partial class MainWindow
         var document = EditorTextBox.Document;
         var capturedVersion = _insightDocVersion;
         var capturedPath = _currentFilePath;
-        string snapshot;
+        var capturedDocument = document;
+        var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+        var cancellation = new CancellationTokenSource();
+        CancelWordCountScan();
+        _wordCountScanCancellation = cancellation;
+        int wordCount;
         try
         {
-            snapshot = await EditorTextSnapshotStore.GetSnapshot(document)
-                .GetTextAsync(EditorSession.RevisionCancellationToken);
+            wordCount = await EditorBackgroundWork.RunAsync(
+                token => CountWords(snapshot.Source, token),
+                cancellation.Token);
         }
         catch (OperationCanceledException)
         {
             return;
         }
-        if (capturedVersion != _insightDocVersion) return;
-        _ = EditorBackgroundWork.RunAsync(_ =>
+        catch (Exception ex)
         {
-            if (string.IsNullOrWhiteSpace(snapshot)) return (0, true);
-            var chars = snapshot.AsSpan();
-            int wc = 0;
-            bool inWord = false;
-            for (var i = 0; i < chars.Length; i++)
-            {
-                if (char.IsWhiteSpace(chars[i])) inWord = false;
-                else if (!inWord) { inWord = true; wc++; }
-            }
-            return (wc, false);
-        }, CancellationToken.None).ContinueWith(t =>
-        {
-            if (t.IsFaulted || t.IsCanceled) return;
-            var (wc, blank) = t.Result;
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                if (capturedVersion != _insightDocVersion) return;
-                if (!FileSystemPaths.Equals(capturedPath, _currentFilePath)) return;
-                if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
-                WordCountText = wc == 0 && blank ? "0 words" : $"{wc} words";
-                OnPropertyChanged(nameof(IsWordCountVisible));
-            });
-        }, TaskScheduler.Default);
-        if (document.TextLength == 0)
-        {
-            WordCountText = "0 words";
-            OnPropertyChanged(nameof(IsWordCountVisible));
+            KodoDiagnostics.LogDebug("Plain-text word count refresh failed.", ex);
+            return;
         }
+        finally
+        {
+            if (ReferenceEquals(_wordCountScanCancellation, cancellation))
+                _wordCountScanCancellation = null;
+            cancellation.Dispose();
+        }
+
+        if (capturedVersion != _insightDocVersion || !ReferenceEquals(EditorTextBox?.Document, capturedDocument)) return;
+        if (!FileSystemPaths.Equals(capturedPath, _currentFilePath)) return;
+        if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null) return;
+        WordCountText = $"{wordCount} words";
+        OnPropertyChanged(nameof(IsWordCountVisible));
+    }
+
+    private static int CountWords(ITextSource source, CancellationToken cancellationToken)
+    {
+        var buffer = new char[32 * 1024];
+        var wordCount = 0;
+        var inWord = false;
+        using var reader = source.CreateReader();
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            for (var i = 0; i < read; i++)
+            {
+                if (char.IsWhiteSpace(buffer[i]))
+                    inWord = false;
+                else if (!inWord)
+                {
+                    inWord = true;
+                    wordCount++;
+                }
+            }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return wordCount;
+    }
+
+    private void CancelWordCountScan()
+    {
+        try { _wordCountScanCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
     }
 
     private void RefreshWordCount()
     {
         if (!HasDocumentOpen || !IsPlainTextFile(_currentFilePath) || EditorTextBox?.Document is null || !IsWordCountVisible)
         {
+            CancelWordCountScan();
             WordCountText = string.Empty;
             return;
         }
@@ -308,12 +367,16 @@ public partial class MainWindow
 
     private string? _hoveredDiagnosticLineText;
     private string? _hoveredDiagnosticMessage;
+    private string? _hoveredDiagnosticFilePath;
     private string? _hoveredLanguageInfo;
+    private AvaloniaEdit.Rendering.TextView? _hoveredEditorTextView;
+    private EditorPaneState? _hoveredEditorPane;
     private string? _pendingDiagnosticMessage;
     private double _pendingDiagnosticOffsetX;
     private double _pendingDiagnosticOffsetY;
     private string? _lspSignatureHelpTooltip;
     private string? _lspHoverTooltip;
+    private string? _lspHoverRequestKey;
     private CancellationTokenSource? _languageHoverCts;
     private string? _languageHoverKey;
     private string? _languageHoverResultKey;
@@ -325,6 +388,17 @@ public partial class MainWindow
         _lspDocumentRefreshFailures = 0;
         if (IsActive)
             RestartLspPresentationDebounceTimer();
+    }
+
+    private void QueueOtherPaneLspPresentationRefresh()
+    {
+        if (!LspEnabled || !IsActive || !IsSplitScreenVisible)
+            return;
+        if (_lspRefreshDebounceTimer.IsEnabled)
+            return;
+
+        _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(120);
+        _lspRefreshDebounceTimer.Start();
     }
 
     private void RestartLspPresentationDebounceTimer()
@@ -354,7 +428,7 @@ public partial class MainWindow
 
     private void ClearLspHoverTooltip()
     {
-        var textView = EditorTextBox?.TextArea?.TextView;
+        var textView = _hoveredEditorTextView ?? EditorTextBox?.TextArea?.TextView;
         if (textView is not null && _lspHoverTooltip is not null &&
             Equals(ToolTip.GetTip(textView), _lspHoverTooltip))
             ToolTip.SetTip(textView, null);
@@ -363,7 +437,9 @@ public partial class MainWindow
 
     private void HideDiagnosticPopup()
     {
-        var textView = EditorTextBox?.TextArea?.TextView;
+        CancelLanguageHoverRequest();
+        CancelLspHoverRequest();
+        var textView = _hoveredEditorTextView ?? EditorTextBox?.TextArea?.TextView;
         if (!_diagnosticPopupHideTimer.IsEnabled && !_diagnosticPopupShowTimer.IsEnabled &&
             _pendingDiagnosticMessage is null && !DiagnosticPopup.IsOpen &&
             (textView is null || ToolTip.GetTip(textView) is null))
@@ -376,25 +452,64 @@ public partial class MainWindow
             DiagnosticPopup.IsOpen = false;
         if (textView is not null && ToolTip.GetTip(textView) is not null)
             ToolTip.SetTip(textView, null);
+        _lspHoverTooltip = null;
     }
 
     private void EditorTextView_OnPointerMoved(object? sender, PointerEventArgs e)
     {
         _diagnosticPopupHideTimer.Stop();
-        var textView = EditorTextBox.TextArea.TextView;
+        var isSecondaryView = ReferenceEquals(sender, SecondaryEditorTextBox.TextArea.TextView);
+        var isPrimaryView = ReferenceEquals(sender, PrimaryEditorTextBox.TextArea.TextView);
+        var pane = isSecondaryView ? _secondaryEditorPane : _editorPane;
+        var editor = isSecondaryView ? SecondaryEditorTextBox : isPrimaryView ? PrimaryEditorTextBox : EditorTextBox;
+        var tab = pane.ActiveTab;
+        var filePath = tab is { IsUntitled: false } ? tab.Path : null;
+        var textView = sender as TextView ?? editor.TextArea.TextView;
+        if (tab is null || editor.Document is null)
+        {
+            CancelLanguageHoverRequest();
+            HideDiagnosticPopup();
+            ToolTip.SetTip(textView, null);
+            return;
+        }
+        var hoverTargetChanged = !ReferenceEquals(_hoveredEditorTextView, textView);
+        if (hoverTargetChanged && _hoveredEditorTextView is { } previousTextView)
+            ToolTip.SetTip(previousTextView, null);
+        if (hoverTargetChanged)
+            _lspHoverTooltip = null;
+        _hoveredEditorTextView = textView;
+        _hoveredEditorPane = pane;
         var position = e.GetPosition(textView);
-        var nowOverLink = IsPointerOverLink(position, textView);
-        var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView);
-        var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView);
+        var nowOverLink = IsPointerOverLink(position, textView, editor);
+        var errorRenderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? _secondaryErrorHighlightRenderer
+            : _primaryErrorHighlightRenderer;
+        var deadCodeRenderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? _secondaryDeadCodeHighlightRenderer
+            : _primaryDeadCodeHighlightRenderer;
+        var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView, editor, filePath, errorRenderer);
+        var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView, editor, filePath, deadCodeRenderer);
         string? languageHover;
         if (nowOverLink || errorReason is not null || deadCodeReason is not null)
         {
             CancelLanguageHoverRequest();
+            CancelLspHoverRequest();
             languageHover = null;
         }
         else
         {
-            languageHover = GetLanguageHoverAt(position, textView);
+            languageHover = GetLanguageHoverAt(position, textView, editor, pane, tab, filePath);
+        }
+
+        var lspHoverEligible = LspHoverEnabled && !nowOverLink && errorReason is null && deadCodeReason is null &&
+            languageHover is null && !string.IsNullOrWhiteSpace(filePath) &&
+            ResolveLspExtensionForFile(filePath) is not null;
+        string? lspHoverRequestKey = null;
+        if (lspHoverEligible && editor.Document is { } documentForHoverKey)
+        {
+            var hoverPosition = textView.GetPositionFloor(position + textView.ScrollOffset);
+            if (hoverPosition is { } resolvedPosition)
+                lspHoverRequestKey = $"{pane.Id}\u001f{filePath}\u001f{RuntimeHelpers.GetHashCode(documentForHoverKey.Version)}\u001f{resolvedPosition.Line}:{resolvedPosition.Column}";
         }
 
         string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason);
@@ -403,6 +518,8 @@ public partial class MainWindow
         if (nowOverLink == _isPointerOverEditorLink &&
             (deadCodeReason == _hoveredDeadCodeReason) && (errorReason == _hoveredErrorReason) &&
             languageHover == _hoveredLanguageInfo &&
+            !hoverTargetChanged &&
+            (!lspHoverEligible || string.Equals(lspHoverRequestKey, _lspHoverRequestKey, StringComparison.Ordinal)) &&
             (diagnosticMessage is null || DiagnosticPopup.IsOpen || _pendingDiagnosticMessage == diagnosticMessage))
             return;
 
@@ -411,7 +528,8 @@ public partial class MainWindow
         _hoveredErrorReason = errorReason;
         _hoveredLanguageInfo = languageHover;
 
-        _hoveredDiagnosticLineText = nowOverLink ? null : GetLineTextAt(position);
+        _hoveredDiagnosticLineText = nowOverLink ? null : GetLineTextAt(position, editor);
+        _hoveredDiagnosticFilePath = filePath;
         _hoveredDiagnosticMessage = diagnosticMessage;
 
         if (nowOverLink)
@@ -453,6 +571,7 @@ public partial class MainWindow
             }
 
             _pendingDiagnosticMessage = diagnosticMessage;
+            _hoveredEditorTextView = textView;
             _pendingDiagnosticOffsetX = offsetX;
             _pendingDiagnosticOffsetY = offsetY;
             _diagnosticPopupShowTimer.Stop();
@@ -460,6 +579,8 @@ public partial class MainWindow
         }
         else if (languageHover is not null)
         {
+            CancelLspHoverRequest();
+            _lspHoverTooltip = null;
             _diagnosticPopupShowTimer.Stop();
             _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
@@ -467,24 +588,34 @@ public partial class MainWindow
             ToolTip.SetShowDelay(textView, 450);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
         }
-        else if (LspHoverEnabled && !nowOverLink && diagnosticMessage is null && ResolveLspExtensionForFile(_currentFilePath) is not null && EditorTextBox?.Document is not null)
+        else if (lspHoverEligible && lspHoverRequestKey is not null)
         {
+            if (string.Equals(lspHoverRequestKey, _lspHoverRequestKey, StringComparison.Ordinal))
+                return;
+            CancelLspHoverRequest();
+            _lspHoverRequestKey = lspHoverRequestKey;
             _diagnosticPopupShowTimer.Stop();
             _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
+            _lspHoverTooltip = null;
             ToolTip.SetTip(textView, null);
             textView.Cursor = new Cursor(StandardCursorType.Ibeam);
             CancellationTokenSource hoverCts;
             lock (_lspHoverLock)
             {
-                _lspHoverCts?.Cancel();
-                _lspHoverCts?.Dispose();
+                var previousHoverCts = _lspHoverCts;
                 _lspHoverCts = new CancellationTokenSource();
                 hoverCts = _lspHoverCts;
+                previousHoverCts?.Cancel();
             }
             var hoverPos = position;
             var hoverView = textView;
-            var hoverPath = _currentFilePath;
+            var hoverEditor = editor;
+            var hoverPane = pane;
+            var hoverTab = tab;
+            var hoverDocument = editor.Document;
+            var hoverDocumentVersion = hoverDocument.Version;
+            var hoverPath = filePath;
             _ = Task.Run(async () =>
             {
                 try
@@ -496,8 +627,9 @@ public partial class MainWindow
                         try
                         {
                             var f = hoverView.GetPositionFloor(hoverPos + hoverView.ScrollOffset);
-                            if (f is null || EditorTextBox?.Document is null) return (-1, -1, -1, -1, -1, ' ', "");
-                            var doc = EditorTextBox.Document;
+                            if (f is null || !ReferenceEquals(hoverEditor.Document, hoverDocument) ||
+                                !ReferenceEquals(hoverDocument.Version, hoverDocumentVersion)) return (-1, -1, -1, -1, -1, ' ', "");
+                            var doc = hoverDocument;
                             var l = doc.GetLineByNumber(f.Value.Line);
                             var off = Math.Clamp(l.Offset + Math.Max(0, f.Value.Column - 1), 0, doc.TextLength);
                             var ch = off >= 0 && off < doc.TextLength ? doc.GetCharAt(off) : ' ';
@@ -524,7 +656,8 @@ public partial class MainWindow
                     if (hoverOffset < 0 || lspLine < 0) return;
                     if (KodoDiagnostics.VerboseLoggingEnabled)
                         KodoDiagnostics.LogDebug($"LSP hover request file={hoverPath} offset={hoverOffset} char='{hoverChar}' line={hoverLine} col={hoverCol} -> LSP line={lspLine} char={lspChar} snippet='{hoverSnippet}'");
-                    var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, lspLine, lspChar, hoverCts.Token).ConfigureAwait(false);
+                    var hoverInfo = await GetLspHoverAsync(hoverPath, hoverOffset, lspLine, lspChar,
+                        RuntimeHelpers.GetHashCode(hoverDocumentVersion), hoverCts.Token).ConfigureAwait(false);
                     if (hoverCts.IsCancellationRequested) return;
                     if (string.IsNullOrWhiteSpace(hoverInfo))
                     {
@@ -534,7 +667,12 @@ public partial class MainWindow
                     KodoDiagnostics.LogDebug($"LSP hover response len={hoverInfo.Length} for {hoverPath}");
                     await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        if (hoverCts.IsCancellationRequested || !LspEnabled || !LspHoverEnabled || !FileSystemPaths.Equals(_currentFilePath, hoverPath)) return;
+                        if (hoverCts.IsCancellationRequested || !LspEnabled || !LspHoverEnabled ||
+                            !ReferenceEquals(hoverPane.ActiveTab, hoverTab) ||
+                            !ReferenceEquals(hoverEditor.Document, hoverDocument) ||
+                            !ReferenceEquals(hoverDocument.Version, hoverDocumentVersion) ||
+                            !FileSystemPaths.Equals(hoverTab.Path, hoverPath) ||
+                            !ReferenceEquals(_hoveredEditorTextView, hoverView)) return;
                         if (DiagnosticPopup.IsOpen) return;
                         _lspHoverTooltip = hoverInfo;
                         ToolTip.SetTip(hoverView, hoverInfo);
@@ -544,10 +682,21 @@ public partial class MainWindow
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex) { KodoDiagnostics.LogDebug("LSP hover async failed", ex); }
-            }, hoverCts.Token);
+                finally
+                {
+                    lock (_lspHoverLock)
+                    {
+                        if (ReferenceEquals(_lspHoverCts, hoverCts))
+                            _lspHoverCts = null;
+                    }
+                    hoverCts.Dispose();
+                }
+            });
         }
         else
         {
+            CancelLspHoverRequest();
+            _lspHoverTooltip = null;
             _diagnosticPopupShowTimer.Stop();
             _pendingDiagnosticMessage = null;
             DiagnosticPopup.IsOpen = false;
@@ -558,6 +707,10 @@ public partial class MainWindow
 
     private void EditorTextView_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (ReferenceEquals(sender, SecondaryEditorTextBox.TextArea.TextView))
+            ActivateEditorPane(_secondaryEditorPane, focusEditor: false);
+        else if (ReferenceEquals(sender, PrimaryEditorTextBox.TextArea.TextView))
+            ActivateEditorPane(_editorPane, focusEditor: false);
         HideDiagnosticPopup();
 
         if (HandleEditorHorizontalScrollGesture(e))
@@ -567,18 +720,27 @@ public partial class MainWindow
     private void DiagnosticPopupShowTimer_OnTick(object? sender, EventArgs e)
     {
         _diagnosticPopupShowTimer.Stop();
-        if (_pendingDiagnosticMessage is null || EditorTextBox?.TextArea?.TextView is null) return;
+        if (_pendingDiagnosticMessage is null || _hoveredEditorTextView is null) return;
         DiagnosticPopupText.Text = _pendingDiagnosticMessage;
         DiagnosticPopup.HorizontalOffset = _pendingDiagnosticOffsetX;
         DiagnosticPopup.VerticalOffset = _pendingDiagnosticOffsetY;
         DiagnosticPopup.IsOpen = true;
     }
 
-    private string? GetLanguageHoverAt(Point position, AvaloniaEdit.Rendering.TextView textView)
+    private string? GetLanguageHoverAt(
+        Point position,
+        AvaloniaEdit.Rendering.TextView textView,
+        TextEditor editor,
+        EditorPaneState pane,
+        EditorTab tab,
+        string? filePath)
     {
         try
         {
-            if (CurrentLanguageExtension?.LangRules is not { HasHoverProvider: true } rules || EditorTextBox?.Document is null)
+            var rules = string.IsNullOrWhiteSpace(filePath)
+                ? null
+                : GetLanguageExtension(filePath)?.LangRules;
+            if (rules is not { HasHoverProvider: true } || editor.Document is null)
             {
                 CancelLanguageHoverRequest();
                 return null;
@@ -589,7 +751,8 @@ public partial class MainWindow
                 CancelLanguageHoverRequest();
                 return null;
             }
-            var document = EditorTextBox.Document;
+            var document = editor.Document;
+            var documentVersion = document.Version;
             var line = document.GetLineByNumber(floor.Value.Line);
             var offset = Math.Clamp(line.Offset + Math.Max(0, floor.Value.Column - 1), 0, document.TextLength);
             var lineStart = line.Offset;
@@ -615,7 +778,7 @@ public partial class MainWindow
                 return null;
             }
             var word = document.GetText(start, end - start);
-            var key = $"{_currentFilePath}\u001f{_insightDocVersion}\u001f{start}";
+            var key = $"{pane.Id}\u001f{filePath}\u001f{RuntimeHelpers.GetHashCode(documentVersion)}\u001f{start}";
             if (!string.Equals(_languageHoverKey, key, StringComparison.Ordinal))
             {
                 CancelLanguageHoverRequest();
@@ -623,11 +786,9 @@ public partial class MainWindow
                 _languageHoverResultKey = null;
                 _languageHoverResult = null;
                 var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
-                var revision = _insightDocVersion;
-                var filePath = _currentFilePath;
-                var cancellation = CancellationTokenSource.CreateLinkedTokenSource(EditorSession.RevisionCancellationToken);
+                var cancellation = new CancellationTokenSource();
                 _languageHoverCts = cancellation;
-                _ = RunLanguageHoverAsync(document, snapshot, rules, word, key, revision, filePath, textView, cancellation);
+                _ = RunLanguageHoverAsync(editor, pane, tab, document, documentVersion, snapshot, rules, word, key, filePath, textView, cancellation);
             }
 
             return string.Equals(_languageHoverResultKey, key, StringComparison.Ordinal) ? _languageHoverResult : null;
@@ -639,12 +800,15 @@ public partial class MainWindow
     }
 
     private async Task RunLanguageHoverAsync(
+        TextEditor editor,
+        EditorPaneState pane,
+        EditorTab tab,
         AvaloniaEdit.Document.TextDocument document,
+        AvaloniaEdit.Document.ITextSourceVersion documentVersion,
         EditorTextSnapshot snapshot,
         LangRulesAdapter rules,
         string word,
         string key,
-        long revision,
         string? filePath,
         AvaloniaEdit.Rendering.TextView textView,
         CancellationTokenSource cancellation)
@@ -672,10 +836,15 @@ public partial class MainWindow
             cancellation.Dispose();
             if (string.IsNullOrWhiteSpace(result) || isCancelled ||
                 !string.Equals(_languageHoverKey, key, StringComparison.Ordinal) ||
-                revision != _insightDocVersion || !FileSystemPaths.Equals(filePath, _currentFilePath) ||
-                !ReferenceEquals(EditorTextBox?.Document, document) ||
+                !ReferenceEquals(pane.ActiveTab, tab) ||
+                !ReferenceEquals(editor.Document, document) ||
+                !ReferenceEquals(document.Version, documentVersion) ||
+                !FileSystemPaths.Equals(filePath, tab.IsUntitled ? null : tab.Path) ||
+                !ReferenceEquals(_hoveredEditorTextView, textView) ||
                 _isPointerOverEditorLink || _hoveredErrorReason is not null || _hoveredDeadCodeReason is not null)
                 return;
+            CancelLspHoverRequest();
+            _lspHoverTooltip = null;
             _languageHoverResultKey = key;
             _languageHoverResult = result;
             _hoveredLanguageInfo = result;
@@ -691,6 +860,18 @@ public partial class MainWindow
         _languageHoverKey = null;
         _languageHoverResultKey = null;
         _languageHoverResult = null;
+    }
+
+    private void CancelLspHoverRequest()
+    {
+        CancellationTokenSource? hoverCts;
+        lock (_lspHoverLock)
+        {
+            hoverCts = _lspHoverCts;
+            _lspHoverCts = null;
+        }
+        hoverCts?.Cancel();
+        _lspHoverRequestKey = null;
     }
 
     private static string? BuildDiagnosticMessage(string? errorReason, string? deadCodeReason)
@@ -716,15 +897,15 @@ public partial class MainWindow
         };
     }
 
-    private string? GetLineTextAt(Point position)
+    private string? GetLineTextAt(Point position, TextEditor editor)
     {
         try
         {
-            var textView = EditorTextBox.TextArea.TextView;
+            var textView = editor.TextArea.TextView;
             var pos = textView.GetPositionFloor(position + textView.ScrollOffset);
             if (pos is null) return null;
-            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
-            return EditorTextBox.Document.GetText(line.Offset, line.Length);
+            var line = editor.Document.GetLineByNumber(pos.Value.Line);
+            return editor.Document.GetText(line.Offset, line.Length);
         }
         catch
         {
@@ -749,8 +930,10 @@ public partial class MainWindow
 
     private async void DiagnosticPopupDismiss_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (_hoveredEditorPane is { } pane && !ReferenceEquals(pane, _activeEditorPane))
+            ActivateEditorPane(pane, focusEditor: false);
         var lineText = _hoveredDiagnosticLineText;
-        var filePath = _currentFilePath;
+        var filePath = _hoveredDiagnosticFilePath;
         var didDismiss = false;
 
         if (lineText is not null)
@@ -783,7 +966,8 @@ public partial class MainWindow
         }
 
         DiagnosticPopup.IsOpen = false;
-        ToolTip.SetTip(EditorTextBox.TextArea.TextView, null);
+        if (_hoveredEditorTextView is { } textView)
+            ToolTip.SetTip(textView, null);
 
         await UpdateErrorHighlightingSafelyAsync();
         await UpdateDeadCodeHighlightingAsync();
@@ -792,14 +976,20 @@ public partial class MainWindow
         _hoveredDiagnosticMessage = null;
         _hoveredDeadCodeReason = null;
         _hoveredErrorReason = null;
+        _hoveredDiagnosticFilePath = null;
     }
 
-    private string? GetErrorReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    private string? GetErrorReasonAt(
+        Point pointerPosition,
+        AvaloniaEdit.Rendering.TextView textView,
+        TextEditor editor,
+        string? filePath,
+        ErrorLineHighlightRenderer renderer)
     {
-        if (IsErrorDeadCodeBlacklisted(_currentFilePath))
+        if (IsErrorDeadCodeBlacklisted(filePath))
             return null;
 
-        if (_errorHighlightRenderer.Spans.Count == 0)
+        if (renderer.Spans.Count == 0)
             return null;
 
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -807,17 +997,17 @@ public partial class MainWindow
 
         try
         {
-            var doc = EditorTextBox.Document;
+            var doc = editor.Document;
             var ln = pos.Value.Line;
             if (ln < 1 || ln > doc.LineCount) return null;
             var line = doc.GetLineByNumber(ln);
             var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
             var offset = line.Offset + colOffset;
-            var msg = _errorHighlightRenderer.GetMessageAt(offset);
+            var msg = renderer.GetMessageAt(offset);
             if (msg is not null) return msg;
-            bool hasEolSpanOnLine = _errorHighlightRenderer.HasEolSpanOnLine(line.Offset, line.EndOffset);
+            bool hasEolSpanOnLine = renderer.HasEolSpanOnLine(line.Offset, line.EndOffset);
             if (hasEolSpanOnLine && colOffset >= Math.Max(0, line.Length - 4))
-                return _errorHighlightRenderer.GetMessageForLine(line.Offset, line.EndOffset);
+                return renderer.GetMessageForLine(line.Offset, line.EndOffset);
             return null;
         }
         catch
@@ -826,9 +1016,14 @@ public partial class MainWindow
         }
     }
 
-    private string? GetDeadCodeReasonAt(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    private string? GetDeadCodeReasonAt(
+        Point pointerPosition,
+        AvaloniaEdit.Rendering.TextView textView,
+        TextEditor editor,
+        string? filePath,
+        DeadCodeHighlightRenderer renderer)
     {
-        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled || IsErrorDeadCodeBlacklisted(_currentFilePath))
+        if (!IsInsightEnabled || !IsInsightDeadCodeEnabled || IsErrorDeadCodeBlacklisted(filePath))
             return null;
 
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
@@ -836,12 +1031,12 @@ public partial class MainWindow
 
         try
         {
-            var doc = EditorTextBox.Document;
+            var doc = editor.Document;
             var ln = pos.Value.Line;
             if (ln < 1 || ln > doc.LineCount) return null;
             var line = doc.GetLineByNumber(ln);
             var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
-            return _deadCodeHighlightRenderer.GetReasonAt(line.Offset + colOffset);
+            return renderer.GetReasonAt(line.Offset + colOffset);
         }
         catch
         {
@@ -852,51 +1047,93 @@ public partial class MainWindow
     private void EditorTextBox_OnTextChanged(object? sender, EventArgs e)
     {
         var textChangeStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
-        _lspCompletionCts?.Cancel();
-        _lspPresentationCancellation?.Cancel();
-        _lspDocumentRefreshPending = true;
-        _lspDocumentRefreshFailures = 0;
-        _insightAnalysisCancellation.Cancel();
-        lock (_lspHoverLock) _lspHoverCts?.Cancel();
-        HideDiagnosticPopup();
-        var curLen = EditorTextBox?.Document?.TextLength ?? 0;
-        ScheduleEditorMinimapRefresh();
-        var deferLocalInsights = LspEnabled && curLen > LocalInsightSkipThreshold &&
-            !string.IsNullOrWhiteSpace(_currentFilePath) &&
-            ResolveLspExtensionForFile(_currentFilePath) is not null;
-        if (!string.IsNullOrWhiteSpace(_currentFilePath) && !HasNoFileExtension(_currentFilePath))
-            QueueLspDidChange(_currentFilePath);
-        _lspHighlightRenderer.Clear();
-        if (_lspSemanticTokenRenderer.HasTokens)
-        {
-            _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-            EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
-        }
-        RestartLspPresentationDebounceTimer();
+        var changedEditor = sender as TextEditor ?? EditorTextBox;
+        if (changedEditor is null) return;
+        var changedPane = ReferenceEquals(changedEditor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
 
-        if (deferLocalInsights)
+
+
+        var changedTab = OpenTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Document, changedEditor.Document))
+            ?? changedPane.ActiveTab;
+        var changedFilePath = changedTab is { IsUntitled: false } ? changedTab.Path : null;
+        var isActiveDocument = ReferenceEquals(changedEditor, EditorTextBox) &&
+            (ReferenceEquals(EditorSession.Document, changedEditor.Document) || EditorSession.Document is null);
+        if (isActiveDocument)
+        {
+            _lspCompletionCts?.Cancel();
+            _lspPresentationCancellation?.Cancel();
+            _lspDocumentRefreshPending = true;
+            _lspDocumentRefreshFailures = 0;
+            CancelEditorAnalysisRequests();
+            CancelLspHoverRequest();
+            HideDiagnosticPopup();
+        }
+        else if (ReferenceEquals(_hoveredEditorTextView, changedEditor.TextArea.TextView))
+        {
+            CancelLspHoverRequest();
+            HideDiagnosticPopup();
+        }
+        var curLen = changedEditor.Document?.TextLength ?? 0;
+        ScheduleEditorMinimapRefresh();
+        var deferLocalInsights = LspEnabled && LspDiagnosticsEnabled &&
+            PerformanceBudget.IsLargeFile(changedEditor.Document, LocalInsightSkipThreshold) &&
+            !string.IsNullOrWhiteSpace(changedFilePath) &&
+            ResolveLspExtensionForFile(changedFilePath) is not null;
+        if (!string.IsNullOrWhiteSpace(changedFilePath) && !HasNoFileExtension(changedFilePath))
+            QueueLspDidChange(changedFilePath);
+        ClearPaneDiagnosticHighlights(changedEditor, redraw: false);
+        ClearLspPresentationForEditor(changedEditor, redraw: false);
+        var changedFindRenderer = ReferenceEquals(changedEditor, SecondaryEditorTextBox)
+            ? _secondaryFindHighlightRenderer
+            : _primaryFindHighlightRenderer;
+        changedFindRenderer.Clear();
+        if (isActiveDocument)
+        {
+            _findMatchOffsets.Clear();
+            _currentFindMatchIndex = -1;
+            UpdateFindStatusText();
+        }
+        var otherEditor = ReferenceEquals(changedEditor, SecondaryEditorTextBox)
+            ? PrimaryEditorTextBox
+            : SecondaryEditorTextBox;
+        if (otherEditor is not null && ReferenceEquals(otherEditor.Document, changedEditor.Document))
+        {
+            ClearPaneDiagnosticHighlights(otherEditor, redraw: false);
+            ClearLspPresentationForEditor(otherEditor, redraw: false);
+            var otherFindRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryFindHighlightRenderer
+                : _primaryFindHighlightRenderer;
+            otherFindRenderer.Clear();
+        }
+        if (isActiveDocument)
+            RestartLspPresentationDebounceTimer();
+        else
+            QueueOtherPaneLspPresentationRefresh();
+
+        if (isActiveDocument && deferLocalInsights)
         {
             CloseCompletionWindow();
-            if (_deadCodeHighlightRenderer.Spans.Count > 0)
-                ClearDeadCodeHighlighting();
-            if (_errorHighlightRenderer.Spans.Count > 0)
-                ClearErrorHighlighting();
         }
 
         if (_suppressDirtyTracking) return;
-        ClearAutoSaveStatus();
-        var wasDirty = _isDirty;
-        _isDirty = true;
-        OnPropertyChanged(nameof(IsDocumentDirty));
-        if (ActiveEditorTab is not null)
+        if (changedTab is not null)
+            changedTab.IsDirty = true;
+        if (isActiveDocument)
         {
-            ActiveEditorTab.IsDirty = true;
+            ClearAutoSaveStatus();
+            var wasDirty = _isDirty;
+            _isDirty = true;
+            OnPropertyChanged(nameof(IsDocumentDirty));
+            QueueRefreshState(fullRefresh: !deferLocalInsights && !wasDirty);
+            RestartAutoSaveTimerIfNeeded();
+            if (!deferLocalInsights || LspEnabled)
+                QueueInsightRefresh();
         }
-        QueueRefreshState(fullRefresh: !deferLocalInsights && !wasDirty);
-        RestartAutoSaveTimerIfNeeded();
-        if (!deferLocalInsights || LspEnabled)
-            QueueInsightRefresh();
-        if (IsFindInFileSearchMode && IsSearchPanelVisible)
+        else if (changedTab is not null)
+        {
+            _ = RefreshInactiveTabInsightDiagnosticsAsync(changedTab);
+        }
+        if (isActiveDocument && IsFindInFileSearchMode && IsSearchPanelVisible)
         {
             _findHighlightDebounceTimer.Stop();
             _findHighlightDebounceTimer.Start();
@@ -913,23 +1150,37 @@ public partial class MainWindow
             UpdateFindHighlights();
     }
 
+    private TextEditor GetEditorForTextInput(object? sender) =>
+        sender is AvaloniaEdit.Editing.TextArea textArea && ReferenceEquals(textArea, SecondaryEditorTextBox.TextArea)
+            ? SecondaryEditorTextBox
+            : sender is AvaloniaEdit.Editing.TextArea primaryTextArea && ReferenceEquals(primaryTextArea, PrimaryEditorTextBox.TextArea)
+                ? PrimaryEditorTextBox
+                : EditorTextBox;
+
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
         if (!IsSmartSyntaxEnabled()) return;
-        if (IsMarkdownFile(_currentFilePath)) return;
+        var editor = GetEditorForTextInput(sender);
+        var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+        var filePath = pane.ActiveTab is { IsUntitled: false } tab ? tab.Path : null;
+        var languageExtension = string.IsNullOrWhiteSpace(filePath) ? null : GetLanguageExtension(filePath);
+        if (IsMarkdownFile(filePath)) return;
         if (string.IsNullOrEmpty(e.Text)) return;
         var ch = e.Text[0];
-        var caret = EditorTextBox.TextArea.Caret;
-        var doc = EditorTextBox.Document;
+        var caret = editor.TextArea.Caret;
+        var doc = editor.Document;
         var offset = caret.Offset;
-        var selection = EditorTextBox.TextArea.Selection;
-        if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true) return;
+        var selection = editor.TextArea.Selection;
+        if (languageExtension?.IsFeatureDisabled("bracketAutoClose") == true) return;
         if (!selection.IsEmpty && BracketPairs.TryGetValue(ch, out var selectionClosing))
         {
             var segment = selection.SurroundingSegment;
             if (segment is not null)
             {
                 var selectedText = selection.GetText();
+                var documentVersion = doc.Version;
+                var selectionOffset = segment.Offset;
+                var selectionLength = segment.Length;
                 try
                 {
                     doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}");
@@ -937,10 +1188,25 @@ public partial class MainWindow
                 catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
                 {
                     KodoDiagnostics.LogDebug("EditorTextArea_OnTextEntering: Visual line race suppressed", ex);
+                    e.Handled = true;
                     Dispatcher.UIThread.Post(() =>
                     {
-                        try { doc.Replace(segment, $"{ch}{selectedText}{selectionClosing}"); } catch { }
+                        if (!ReferenceEquals(editor.Document, doc) || !ReferenceEquals(doc.Version, documentVersion)) return;
+                        var currentSelection = editor.TextArea.Selection;
+                        if (currentSelection.IsEmpty ||
+                            currentSelection.SurroundingSegment is not { } currentSegment ||
+                            currentSegment.Offset != selectionOffset ||
+                            currentSegment.Length != selectionLength ||
+                            !string.Equals(currentSelection.GetText(), selectedText, StringComparison.Ordinal)) return;
+
+                        try
+                        {
+                            doc.Replace(currentSegment, $"{ch}{selectedText}{selectionClosing}");
+                            caret.Offset = selectionOffset + selectedText.Length + 1;
+                        }
+                        catch { }
                     }, Avalonia.Threading.DispatcherPriority.Background);
+                    return;
                 }
                 caret.Offset = segment.Offset + selectedText.Length + 1;
                 e.Handled = true;
@@ -980,38 +1246,53 @@ public partial class MainWindow
         }
     }
 
-    private bool _autoCloseUndoGroupOpen;
+    private AvaloniaEdit.Document.TextDocument? _autoCloseUndoGroupDocument;
 
     private void BeginAutoCloseUndoGroup(AvaloniaEdit.Document.TextDocument doc)
     {
-        if (_autoCloseUndoGroupOpen) return;
+        if (ReferenceEquals(_autoCloseUndoGroupDocument, doc)) return;
+        if (_autoCloseUndoGroupDocument is { } previousDocument)
+        {
+            previousDocument.UndoStack.EndUndoGroup();
+            _autoCloseUndoGroupDocument = null;
+        }
         doc.UndoStack.StartUndoGroup();
-        _autoCloseUndoGroupOpen = true;
+        _autoCloseUndoGroupDocument = doc;
     }
 
     private void EndAutoCloseUndoGroupIfOpen(AvaloniaEdit.Document.TextDocument doc)
     {
-        if (!_autoCloseUndoGroupOpen) return;
-        doc.UndoStack.EndUndoGroup();
-        _autoCloseUndoGroupOpen = false;
+        if (_autoCloseUndoGroupDocument is not { } groupedDocument) return;
+        groupedDocument.UndoStack.EndUndoGroup();
+        _autoCloseUndoGroupDocument = null;
+    }
+
+    private void ClosePendingAutoCloseUndoGroup()
+    {
+        if (_autoCloseUndoGroupDocument is { } groupedDocument)
+            EndAutoCloseUndoGroupIfOpen(groupedDocument);
     }
 
     private void EditorTextArea_OnTextEntered(object? sender, TextInputEventArgs e)
     {
-        var doc = EditorTextBox.Document;
+        var editor = GetEditorForTextInput(sender);
+        var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+        var filePath = pane.ActiveTab is { IsUntitled: false } tab ? tab.Path : null;
+        var languageExtension = string.IsNullOrWhiteSpace(filePath) ? null : GetLanguageExtension(filePath);
+        var doc = editor.Document;
         try
         {
             if (!IsSmartSyntaxEnabled()) return;
-            if (IsMarkdownFile(_currentFilePath)) return;
+            if (IsMarkdownFile(filePath)) return;
             if (string.IsNullOrEmpty(e.Text)) return;
             var ch = e.Text[0];
 
-            if (CurrentLanguageExtension?.IsFeatureDisabled("bracketAutoClose") == true)
+            if (languageExtension?.IsFeatureDisabled("bracketAutoClose") == true)
                 return;
 
             if (!BracketPairs.TryGetValue(ch, out var closing)) return;
 
-            var caret = EditorTextBox.TextArea.Caret;
+            var caret = editor.TextArea.Caret;
             var offset = caret.Offset;
 
             if (ch == '"' || ch == '\'' || ch == '`')
@@ -1056,11 +1337,21 @@ public partial class MainWindow
     {
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
         var document = EditorTextBox.Document;
+        var documentVersion = document.Version;
         var revision = EditorSession.Revision;
+        var revisionToken = EditorSession.RevisionCancellationToken;
         var path = _currentFilePath;
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, document.TextLength);
         var word = GetLanguageWordAtCaret();
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+            ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision &&
+            FileSystemPaths.Equals(path, _currentFilePath) && requestEditor.TextArea.Caret.Offset == offset;
 
         try
         {
@@ -1075,16 +1366,43 @@ public partial class MainWindow
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP go-to-definition failed, falling back to LangRules", ex); }
 
+        if (!IsRequestCurrent()) return;
         var extension = CurrentLanguageExtension;
         if (extension?.LangRules is not { HasDefinitionProvider: true } rules || string.IsNullOrWhiteSpace(word) || EditorTextBox?.Document is null)
             return;
-        var text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync(EditorSession.RevisionCancellationToken);
-        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
-        var definition = await EditorBackgroundWork.RunAsync(_ => rules.FindDefinition(text, word), CancellationToken.None);
-        if (definition is null) return;
+        string text;
+        try
+        {
+            text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync(revisionToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Go-to-definition could not capture the current text.", ex);
+            return;
+        }
+        if (!IsRequestCurrent()) return;
+        LangRuleLocation? definition;
+        try
+        {
+            definition = await EditorBackgroundWork.RunAsync(_ => rules.FindDefinition(text, word), revisionToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Local go-to-definition failed.", ex);
+            return;
+        }
+        if (definition is null || !IsRequestCurrent()) return;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision) return;
+            if (!IsRequestCurrent()) return;
             var start = Math.Clamp(definition.Start, 0, EditorTextBox.Document.TextLength);
             var length = Math.Clamp(definition.Length, 0, EditorTextBox.Document.TextLength - start);
             EditorTextBox.Select(start, length);
@@ -1097,10 +1415,14 @@ public partial class MainWindow
     private async void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
-        var document = EditorTextBox.Document;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var document = requestEditor.Document;
+        var documentVersion = document.Version;
         var revision = EditorSession.Revision;
         var path = _currentFilePath;
-        var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, document.TextLength);
+        var offset = Math.Clamp(requestEditor.TextArea.Caret.Offset, 0, document.TextLength);
         var word = GetLanguageWordAtCaret();
         try
         {
@@ -1111,6 +1433,11 @@ public partial class MainWindow
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP find references failed, falling back", ex); }
+        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, document) ||
+            !ReferenceEquals(document.Version, documentVersion) || EditorSession.Revision != revision ||
+            !FileSystemPaths.Equals(path, _currentFilePath) || requestEditor.TextArea.Caret.Offset != offset)
+            return;
         var extension = CurrentLanguageExtension;
         if (extension?.LangRules is not { HasReferenceProvider: true } || string.IsNullOrWhiteSpace(word)) return;
         FindText = word;
@@ -1120,64 +1447,142 @@ public partial class MainWindow
     private async void EditorFormatDocumentMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
-        var document = EditorTextBox.Document;
+        var targetEditor = EditorTextBox;
+        var requestPane = _activeEditorPane;
+        var requestTab = requestPane.ActiveTab;
+        var document = targetEditor.Document;
+        var documentVersion = document.Version;
         var revision = EditorSession.Revision;
+        var revisionToken = EditorSession.RevisionCancellationToken;
         var path = _currentFilePath;
-        var text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync();
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, targetEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(targetEditor.Document, document) &&
+            ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision &&
+            FileSystemPaths.Equals(path, _currentFilePath);
+        string text;
+        try
+        {
+            text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync(revisionToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Document formatting could not capture the current text.", ex);
+            return;
+        }
         if (text is null) return;
-        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision) return;
+        if (!IsRequestCurrent()) return;
         try
         {
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
             {
-                if (await TryLspFormatDocumentAsync(path, text))
+                if (await TryLspFormatDocumentAsync(path, text, revisionToken))
                     return;
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP formatting failed, falling back", ex); }
+        if (!IsRequestCurrent()) return;
         if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules) return;
-        var formatted = await EditorBackgroundWork.RunAsync(_ => rules.FormatDocument(text), CancellationToken.None);
-        if (formatted is null || string.Equals(formatted, text, StringComparison.Ordinal)) return;
-        var caret = EditorTextBox.TextArea.Caret.Offset;
-        if (!ReferenceEquals(EditorTextBox.Document, document) || EditorSession.Revision != revision) return;
+        string? formatted;
         try
         {
-            EditorTextBox.Document.Text = formatted;
+            formatted = await EditorBackgroundWork.RunAsync(_ => rules.FormatDocument(text), revisionToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Local document formatting failed.", ex);
+            if (IsRequestCurrent())
+                ExtensionsStatusText = "Formatting failed. See the log for details.";
+            return;
+        }
+        if (formatted is null || string.Equals(formatted, text, StringComparison.Ordinal) || !IsRequestCurrent()) return;
+        var caret = targetEditor.TextArea.Caret.Offset;
+        if (!IsRequestCurrent()) return;
+        try
+        {
+            document.Text = formatted;
         }
         catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
         {
             KodoDiagnostics.LogDebug("EditorFormatDocument: Visual line race suppressed", ex);
             Dispatcher.UIThread.Post(() =>
             {
-                try { EditorTextBox.Document.Text = formatted; } catch { }
+                if (!IsRequestCurrent()) return;
+                try
+                {
+                    document.Text = formatted;
+                    targetEditor.TextArea.Caret.Offset = Math.Min(caret, document.TextLength);
+                }
+                catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
+            return;
         }
-        EditorTextBox.TextArea.Caret.Offset = Math.Min(caret, EditorTextBox.Document.TextLength);
+        targetEditor.TextArea.Caret.Offset = Math.Min(caret, document.TextLength);
     }
 
     private async void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (await RunCodeActionsAsync(CodeActionScope.All).ConfigureAwait(false)) return;
-        await RunLangRuleFallbackAsync().ConfigureAwait(false);
+        await RunCodeActionsWithFallbackAsync(CodeActionScope.All).ConfigureAwait(false);
+    }
+
+    private async Task RunCodeActionsWithFallbackAsync(CodeActionScope scope)
+    {
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var requestDocument = requestEditor?.Document;
+        var requestRevision = EditorSession.Revision;
+        var requestCaret = requestEditor?.TextArea.Caret.Offset ?? -1;
+
+        var outcome = await RunCodeActionsAsync(scope).ConfigureAwait(false);
+        if (!ShouldRunLocalCodeActionFallback(outcome)) return;
+
+        var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+            ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) &&
+            ReferenceEquals(requestEditor?.Document, requestDocument) && EditorSession.Revision == requestRevision &&
+            requestEditor?.TextArea.Caret.Offset == requestCaret);
+        if (requestIsCurrent)
+            await RunLangRuleFallbackAsync().ConfigureAwait(false);
     }
 
 
     private async void EditorRenameSymbolMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
-        var document = EditorTextBox.Document;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var document = requestEditor.Document;
+        var documentVersion = document.Version;
         var revision = EditorSession.Revision;
         var path = _currentFilePath;
-        var caretOffset = EditorTextBox.TextArea.Caret.Offset;
+        var caretOffset = requestEditor.TextArea.Caret.Offset;
         var oldName = GetLanguageWordAtCaret();
         if (string.IsNullOrWhiteSpace(oldName)) return;
         var newName = await ShowTextInputDialogAsync("Rename Symbol", $"Rename '{oldName}' to:", oldName);
         if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, oldName, StringComparison.Ordinal)) return;
-        if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+            ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == revision &&
+            requestEditor.TextArea.Caret.Offset == caretOffset && FileSystemPaths.Equals(path, _currentFilePath);
+        if (!IsRequestCurrent()) return;
         var text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync();
-        if (text is null) return;
+        if (text is null || !IsRequestCurrent()) return;
         if (!await TryLspRenameAsync(path, caretOffset, text, newName))
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "The language server could not rename this symbol.");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsRequestCurrent()) ExtensionsStatusText = "The language server could not rename this symbol.";
+            });
     }
 
     private async void EditorTypeDefinitionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1211,15 +1616,30 @@ public partial class MainWindow
     private async void EditorDocumentSymbolsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (EditorTextBox?.Document is null) return;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
         var filePath = _currentFilePath;
         if (string.IsNullOrWhiteSpace(filePath)) return;
-        var document = EditorTextBox.Document;
+        var document = requestEditor.Document;
+        var documentVersion = document.Version;
         var documentRevision = EditorSession.Revision;
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) && ReferenceEquals(requestEditor.Document, document) &&
+            ReferenceEquals(document.Version, documentVersion) && EditorSession.Revision == documentRevision &&
+            FileSystemPaths.Equals(_currentFilePath, filePath);
         var encoding = GetLspClientForFile(filePath)?.PositionEncoding ?? "utf-16";
         var result = await GetLspDocumentSymbolsAsync(filePath).ConfigureAwait(false);
+        var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(IsRequestCurrent);
+        if (!requestIsCurrent) return;
         if (result is null || result.Value.ValueKind != JsonValueKind.Array || result.Value.GetArrayLength() == 0)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "The language server returned no document symbols.");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsRequestCurrent())
+                    ExtensionsStatusText = "The language server returned no document symbols.";
+            });
             return;
         }
         var symbols = new List<(string Label, int Line, int Character)>();
@@ -1239,6 +1659,9 @@ public partial class MainWindow
         AddSymbols(result.Value, "");
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
+            if (!IsRequestCurrent())
+                return;
+
             var list = new ListBox
             {
                 ItemsSource = symbols.Select(s => s.Label).ToArray(),
@@ -1351,10 +1774,10 @@ public partial class MainWindow
                 if (list.SelectedIndex < 0 || list.SelectedIndex >= symbols.Count) return;
                 var selected = symbols[list.SelectedIndex];
                 window.Close();
-                if (EditorTextBox?.Document is null || !ReferenceEquals(EditorTextBox.Document, document) || EditorSession.Revision != documentRevision || !FileSystemPaths.Equals(_currentFilePath, filePath)) return;
-                EditorTextBox.TextArea.Caret.Offset = LspPath.OffsetFromLspPosition(EditorTextBox.Document, selected.Line, selected.Character, encoding);
-                EditorTextBox.TextArea.Caret.BringCaretToView();
-                EditorTextBox.Focus();
+                if (!IsRequestCurrent()) return;
+                requestEditor.TextArea.Caret.Offset = LspPath.OffsetFromLspPosition(document, selected.Line, selected.Character, encoding);
+                requestEditor.TextArea.Caret.BringCaretToView();
+                requestEditor.Focus();
             };
             window.Opened += (_, _) => list.Focus();
             using (PerformanceBudget.TrackModal())
@@ -1395,8 +1818,7 @@ public partial class MainWindow
 
     private async void EditorQuickFixMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (await RunCodeActionsAsync(CodeActionScope.QuickFix).ConfigureAwait(false)) return;
-        await RunLangRuleFallbackAsync().ConfigureAwait(false);
+        await RunCodeActionsWithFallbackAsync(CodeActionScope.QuickFix).ConfigureAwait(false);
     }
 
     private async Task RunLangRuleFallbackAsync()
@@ -1404,31 +1826,98 @@ public partial class MainWindow
         var captured = await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (EditorTextBox?.Document is null || CurrentLanguageExtension?.LangRules is not { HasCodeActionProvider: true } rules)
-                return (Document: (AvaloniaEdit.Document.TextDocument?)null, Snapshot: (EditorTextSnapshot?)null, Revision: 0L, Caret: 0, Rules: (LangRulesAdapter?)null);
-            return (Document: EditorTextBox.Document, Snapshot: EditorTextSnapshotStore.GetSnapshot(EditorTextBox.Document),
-                Revision: EditorSession.Revision, Caret: EditorTextBox.TextArea.Caret.Offset, Rules: rules);
+                return (Document: (AvaloniaEdit.Document.TextDocument?)null, Snapshot: (EditorTextSnapshot?)null, Revision: 0L, Caret: 0,
+                    Rules: (LangRulesAdapter?)null, Pane: (EditorPaneState?)null, Editor: (AvaloniaEdit.TextEditor?)null,
+                    Tab: (EditorTab?)null, Version: (AvaloniaEdit.Document.ITextSourceVersion?)null,
+                    FilePath: (string?)null, RevisionToken: CancellationToken.None, IsLargeFile: false);
+            var editor = EditorTextBox;
+            return (Document: editor.Document, Snapshot: EditorTextSnapshotStore.GetSnapshot(editor.Document),
+                Revision: EditorSession.Revision, Caret: editor.TextArea.Caret.Offset, Rules: rules,
+                Pane: (EditorPaneState?)_activeEditorPane, Editor: (AvaloniaEdit.TextEditor?)editor,
+                Tab: _activeEditorPane.ActiveTab, Version: editor.Document.Version,
+                FilePath: _currentFilePath,
+                RevisionToken: EditorSession.RevisionCancellationToken,
+                IsLargeFile: PerformanceBudget.IsLargeFile(editor.Document));
         });
         if (captured.Document is null || captured.Snapshot is null || captured.Rules is null)
         {
             SetLspFeatureStatus("No quick fixes available at the caret.");
             return;
         }
-        var text = await captured.Snapshot.GetTextAsync().ConfigureAwait(false);
-        var action = await EditorBackgroundWork.RunAsync(_ => captured.Rules.GetCodeActions(text).FirstOrDefault(candidate =>
-            captured.Caret >= candidate.Start && captured.Caret <= candidate.Start + Math.Max(1, candidate.Length)), CancellationToken.None).ConfigureAwait(false);
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, captured.Pane) && ReferenceEquals(EditorTextBox, captured.Editor) &&
+            ReferenceEquals(captured.Pane.ActiveTab, captured.Tab) && ReferenceEquals(captured.Editor.Document, captured.Document) &&
+            ReferenceEquals(captured.Document.Version, captured.Version) && EditorSession.Revision == captured.Revision &&
+            captured.Editor.TextArea.Caret.Offset == captured.Caret;
+
+        if (captured.IsLargeFile)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsRequestCurrent())
+                    ExtensionsStatusText = "Local quick fixes are skipped for large files to keep the editor responsive.";
+            });
+            return;
+        }
+
+        IReadOnlyList<LangRuleCodeAction>? actions;
+        string textSnapshot;
+        try
+        {
+            textSnapshot = await captured.Snapshot.GetTextAsync(captured.RevisionToken).ConfigureAwait(false);
+            actions = await EditorBackgroundWork.RunAsync(_ => captured.Rules.GetCodeActions(textSnapshot, captured.Caret), captured.RevisionToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        var matchingActions = GetApplicableLangRuleCodeActions(
+            actions,
+            captured.Caret,
+            textSnapshot);
+        if (matchingActions.Count == 0)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsRequestCurrent())
+                    ExtensionsStatusText = "No quick fixes available at the caret.";
+            });
+            return;
+        }
+
+        using var rawAction = JsonDocument.Parse("{}");
+        var menuItems = matchingActions.Select(action => new CodeActionItem
+        {
+            Title = string.IsNullOrWhiteSpace(action.Title) ? "Apply local quick fix" : action.Title,
+            Kind = string.IsNullOrWhiteSpace(action.Kind) ? "quickfix" : action.Kind,
+            Detail = string.IsNullOrWhiteSpace(action.DiagnosticCode) ? null : action.DiagnosticCode,
+            Raw = rawAction.RootElement.Clone(),
+            LocalAction = action
+        }).ToList();
+        var snapshot = new CodeActionSnapshot(
+            captured.FilePath ?? string.Empty,
+            textSnapshot,
+            captured.Document,
+            captured.Version!,
+            captured.Revision,
+            captured.Caret,
+            0,
+            0,
+            captured.Pane,
+            captured.Editor,
+            captured.Tab);
+        var selected = await PresentCodeActionsAsync(menuItems, snapshot).ConfigureAwait(false);
+        var action = selected?.LocalAction;
+        if (action is null) return;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!ReferenceEquals(EditorTextBox?.Document, captured.Document) || EditorSession.Revision != captured.Revision) return;
-            if (action is null)
-            {
-                ExtensionsStatusText = "No quick fixes available at the caret.";
-                return;
-            }
+            if (!IsRequestCurrent()) return;
             try
             {
-                EditorTextBox.Document.Replace(action.Start,
-                    Math.Clamp(action.Length, 0, EditorTextBox.Document.TextLength - action.Start), action.NewText);
-                ExtensionsStatusText = "Applied local fix.";
+                captured.Document.Replace(action.Start, action.Length, action.NewText);
+                ExtensionsStatusText = string.IsNullOrWhiteSpace(action.Title)
+                    ? "Applied local fix."
+                    : $"Applied: {action.Title}";
             }
             catch (Exception ex) { KodoDiagnostics.LogDebug("LangRules quick fix failed", ex); }
         });
@@ -1436,6 +1925,7 @@ public partial class MainWindow
 
     private async Task UpdateInsightAsync(string? textSnapshot = null)
     {
+        var scanToken = RenewAnalysisCancellation(ref _insightAnalysisCancellation).Token;
         var lspCompletionSettingsRevision = _lspCompletionSettingsRevision;
         if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
         {
@@ -1464,6 +1954,16 @@ public partial class MainWindow
         var doc = EditorTextBox.Document;
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, doc.TextLength);
         var scanVersion = _insightDocVersion;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = ActiveEditorTab;
+        bool IsRequestCurrent() =>
+            ReferenceEquals(_activeEditorPane, requestPane) &&
+            ReferenceEquals(EditorTextBox, requestEditor) &&
+            ReferenceEquals(requestPane.ActiveTab, requestTab) &&
+            ReferenceEquals(requestEditor.Document, doc) &&
+            _insightDocVersion == scanVersion &&
+            requestEditor.TextArea.Caret.Offset == offset;
         var editorSnapshot = EditorTextSnapshotStore.GetSnapshot(doc);
         var sourceVersion = editorSnapshot.Version;
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
@@ -1471,7 +1971,8 @@ public partial class MainWindow
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var hasConfiguredLspForCompletion = lspForFile?.HasLsp == true;
         var isLspPrimaryForCompletion = LspEnabled && LspCompletionEnabled && hasConfiguredLspForCompletion && lspForFile!.HasLsp && ResolveLspConfigurationForFile(_currentFilePath) is { } cfgForCompletion && _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), cfgForCompletion) is { IsInitialized: true };
-        var needsFullDocumentText = !isLspPrimaryForCompletion && doc.TextLength <= LocalInsightSkipThreshold;
+        var needsFullDocumentText = !isLspPrimaryForCompletion &&
+            !PerformanceBudget.IsLargeFile(doc, LocalInsightSkipThreshold);
         var text = string.Empty;
         int wordStart;
         string prefix;
@@ -1551,7 +2052,6 @@ public partial class MainWindow
             {
                 suggestions = await Task.Run(async () =>
                 {
-                    var scanToken = _insightAnalysisCancellation.Token;
                     var gateway = InsightWorkerGateway.Default;
                     if (gateway.Healthy)
                     {
@@ -1581,13 +2081,12 @@ public partial class MainWindow
                 return;
             }
         }
-        if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
+        if (lspCompletionSettingsRevision != _lspCompletionSettingsRevision || !IsRequestCurrent()) return;
 
         var completionCts = new CancellationTokenSource();
         var previousCompletionCts = _lspCompletionCts;
         _lspCompletionCts = completionCts;
         previousCompletionCts?.Cancel();
-        previousCompletionCts?.Dispose();
         try
         {
             var lspSuggestions = await GetLspCompletionSuggestionsAsync(_currentFilePath, offset, prefix, sourceVersion, completionCts.Token);
@@ -1617,7 +2116,7 @@ public partial class MainWindow
             completionCts.Dispose();
         }
 
-        if (scanVersion != _insightDocVersion || lspCompletionSettingsRevision != _lspCompletionSettingsRevision) return;
+        if (lspCompletionSettingsRevision != _lspCompletionSettingsRevision || !IsRequestCurrent()) return;
         if (EditorTextBox?.TextArea is null) return;
         if (fileKey != "untitled" && !FileSystemPaths.Equals(_currentFilePath, fileKey)) return;
 
@@ -1634,6 +2133,7 @@ public partial class MainWindow
         if (_completionWindow is null)
         {
             _completionWindow = CreateCompletionWindow();
+            _completionEditor = EditorTextBox;
             _completionWindow.StartOffset = wordStart;
             foreach (var suggestion in suggestions)
                 _completionWindow.CompletionList.CompletionData.Add(suggestion);
@@ -1658,6 +2158,7 @@ public partial class MainWindow
     {
         _completionWindow?.Close();
         _completionWindow = null;
+        _completionEditor = null;
     }
 
     private readonly object _deadCodeAnalysisCacheLock = new();
@@ -1670,6 +2171,7 @@ public partial class MainWindow
 
     private async Task UpdateDeadCodeHighlightingAsync(string? textSnapshot = null)
     {
+        var scanToken = RenewAnalysisCancellation(ref _deadCodeAnalysisCancellation).Token;
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled ||
             EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
@@ -1690,7 +2192,7 @@ public partial class MainWindow
             return;
         }
 
-        if (EditorTextBox.Document.TextLength > 80_000)
+        if (PerformanceBudget.IsLargeFile(EditorTextBox.Document))
         {
             ClearDeadCodeHighlighting();
             HideDiagnosticPopup();
@@ -1701,7 +2203,9 @@ public partial class MainWindow
         var folderPath = _currentFolderPath;
         var filePath = _currentFilePath;
         var scanVersion = _insightDocVersion;
-        var scanToken = _insightAnalysisCancellation.Token;
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            scanToken, EditorSession.RevisionCancellationToken);
+        var analysisToken = linkedCancellation.Token;
         var scanExtension = languageExtension is null ? string.Empty : $"{languageExtension.Id}\u001F{languageExtension.Version}";
         var signature = ComputeDeadCodeSignature(scanVersion, filePath, scanExtension, folderPath);
         if (signature == _deadCodeAppliedSignature) return;
@@ -1712,9 +2216,9 @@ public partial class MainWindow
         lock (_deadCodeAnalysisCacheLock)
         {
             if (_cachedDeadCodeAnalysisVersion == scanVersion &&
-                string.Equals(_cachedDeadCodeAnalysisPath, filePath, StringComparison.OrdinalIgnoreCase) &&
+                FileSystemPaths.Equals(_cachedDeadCodeAnalysisPath, filePath) &&
                 string.Equals(_cachedDeadCodeAnalysisExtension, scanExtension, StringComparison.Ordinal) &&
-                string.Equals(_cachedDeadCodeAnalysisFolder, folderPath, StringComparison.OrdinalIgnoreCase))
+                FileSystemPaths.Equals(_cachedDeadCodeAnalysisFolder, folderPath))
             {
                 cachedSpans = _cachedDeadCodeAnalysisSpans is null ? null : new List<DeadCodeSpan>(_cachedDeadCodeAnalysisSpans);
                 cachedText = _cachedDeadCodeAnalysisText;
@@ -1735,7 +2239,7 @@ public partial class MainWindow
                 try
                 {
                     documentText = await EditorTextSnapshotStore.GetSnapshot(document)
-                        .GetTextAsync(EditorSession.RevisionCancellationToken);
+                        .GetTextAsync(analysisToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -1748,7 +2252,7 @@ public partial class MainWindow
             try
             {
                 documentText = textSnapshot ?? await EditorTextSnapshotStore.GetSnapshot(document)
-                    .GetTextAsync(EditorSession.RevisionCancellationToken);
+                    .GetTextAsync(analysisToken);
             }
             catch (OperationCanceledException)
             {
@@ -1756,7 +2260,7 @@ public partial class MainWindow
             }
             try
             {
-                rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, scanToken);
+                rawSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, documentText, languageExtension, folderPath, filePath, analysisToken);
             }
             catch (OperationCanceledException)
             {
@@ -1766,7 +2270,7 @@ public partial class MainWindow
             if (EditorTextBox?.Document is null) return;
             lock (_deadCodeAnalysisCacheLock)
             {
-                if (scanVersion == _insightDocVersion && string.Equals(filePath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+                if (scanVersion == _insightDocVersion && FileSystemPaths.Equals(filePath, _currentFilePath))
                 {
                     _cachedDeadCodeAnalysisVersion = scanVersion;
                     _cachedDeadCodeAnalysisPath = filePath;
@@ -1781,12 +2285,14 @@ public partial class MainWindow
         var dismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal);
         var filtered = await Task.Run(() =>
         {
-            var spans = FilterDismissedDeadCodeSpans(rawSpans, documentText, filePath, dismissedDiagnostics);
+            analysisToken.ThrowIfCancellationRequested();
+            var spans = FilterDismissedDeadCodeSpans(rawSpans, documentText, filePath, dismissedDiagnostics, analysisToken);
+            analysisToken.ThrowIfCancellationRequested();
             var index = spans.Count == 0
                 ? SpanOverlapIndex.Empty
                 : SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
             return (Spans: spans, Index: index);
-        });
+        }, analysisToken);
         if (scanVersion != _insightDocVersion || signature != ComputeDeadCodeSignature(scanVersion, _currentFilePath, scanExtension, _currentFolderPath) ||
             !ReferenceEquals(EditorTextBox?.Document, document)) return;
         var spans = filtered.Spans;
@@ -1795,6 +2301,30 @@ public partial class MainWindow
         _deadCodeTextBrightener.SetSpans(spans);
         _errorHighlightRenderer.SetDeadCodeSpans(spans, spanIndex);
         _errorTextDarkener.SetSpans(_errorHighlightRenderer.Spans, _errorHighlightRenderer.SpanIndex, spans, spanIndex);
+        var otherEditor = ReferenceEquals(EditorTextBox, SecondaryEditorTextBox)
+            ? PrimaryEditorTextBox
+            : SecondaryEditorTextBox;
+        if (otherEditor is not null && ReferenceEquals(otherEditor.Document, document))
+        {
+            var otherDeadRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryDeadCodeHighlightRenderer
+                : _primaryDeadCodeHighlightRenderer;
+            var otherDeadBrightener = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryDeadCodeTextBrightener
+                : _primaryDeadCodeTextBrightener;
+            var otherErrorRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryErrorHighlightRenderer
+                : _primaryErrorHighlightRenderer;
+            var otherErrorDarkener = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryErrorTextDarkener
+                : _primaryErrorTextDarkener;
+            otherDeadRenderer.SetSpans(spans, spanIndex);
+            otherDeadBrightener.SetSpans(spans);
+            otherErrorRenderer.SetDeadCodeSpans(spans, spanIndex);
+            otherErrorDarkener.SetSpans(otherErrorRenderer.Spans, otherErrorRenderer.SpanIndex, spans, spanIndex);
+            RedrawVisibleEditorLines(otherEditor);
+            otherEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        }
         if (spans.Count != rawSpans.Count)
             HideDiagnosticPopup();
         RedrawVisibleEditorLines();
@@ -1806,14 +2336,17 @@ public partial class MainWindow
         List<DeadCodeSpan> spans,
         string text,
         string? filePath,
-        HashSet<string> dismissedDiagnostics)
+        HashSet<string> dismissedDiagnostics,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
         var lineStarts = LspPath.GetLineStarts(text);
         var lineCache = new Dictionary<int, string>();
         var filtered = new List<DeadCodeSpan>(spans.Count);
         foreach (var span in spans)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var lineText = GetDiagnosticLineText(text, lineStarts, span.StartOffset, lineCache);
             if (dismissedDiagnostics.Contains(GetDiagnosticSignature(filePath, lineText, span.Reason))) continue;
             filtered.Add(span);
@@ -1893,7 +2426,14 @@ public partial class MainWindow
         rowPaddingStyle.Setters.Add(new Setter(Avalonia.Controls.Primitives.TemplatedControl.MinHeightProperty, 32d));
         window.Styles.Add(rowPaddingStyle);
 
-        window.Closed += (_, _) => _completionWindow = null;
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_completionWindow, window))
+            {
+                _completionWindow = null;
+                _completionEditor = null;
+            }
+        };
         return window;
     }
 

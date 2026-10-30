@@ -14,8 +14,15 @@ public static class PerformanceBudget
 
     public const int SnapshotSkipThreshold = 80_000;
 
-    public static bool IsLargeFile(TextDocument? doc, int threshold = SnapshotSkipThreshold) => (doc?.TextLength ?? 0) > threshold;
-    public static bool IsHugeFile(TextDocument? doc, int threshold = 250_000) => (doc?.TextLength ?? 0) > threshold;
+    public const int LargeFileLineCountThreshold = 50_000;
+
+    public const int HugeFileLineCountThreshold = 100_000;
+
+    public static bool IsLargeFile(TextDocument? doc, int threshold = SnapshotSkipThreshold) =>
+        doc is not null && (doc.TextLength > threshold || doc.LineCount >= LargeFileLineCountThreshold);
+
+    public static bool IsHugeFile(TextDocument? doc, int threshold = 250_000) =>
+        doc is not null && (doc.TextLength > threshold || doc.LineCount >= HugeFileLineCountThreshold);
 
     private static int _modalDepth;
 

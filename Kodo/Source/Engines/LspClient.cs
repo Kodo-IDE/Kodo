@@ -106,6 +106,8 @@ internal sealed class LspClient : IDisposable
                 method == "textDocument/semanticTokens/full" && _registeredCapabilities.Values.Contains("textDocument/semanticTokens", StringComparer.Ordinal))
                 return true;
         if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
+        if (method == "codeAction/resolve")
+            return SupportsCodeActionResolve(caps);
         var property = method switch
         {
             "textDocument/signatureHelp" => "signatureHelpProvider",
@@ -142,8 +144,18 @@ internal sealed class LspClient : IDisposable
         return value.ValueKind is JsonValueKind.True or JsonValueKind.Object;
     }
 
+    internal static bool SupportsCodeActionResolve(JsonElement capabilities)
+    {
+        if (capabilities.ValueKind != JsonValueKind.Object ||
+            !capabilities.TryGetProperty("codeActionProvider", out var provider) ||
+            provider.ValueKind != JsonValueKind.Object ||
+            !provider.TryGetProperty("resolveProvider", out var resolveProvider))
+            return false;
+        return resolveProvider.ValueKind == JsonValueKind.True;
+    }
+
     public event Action<string, JsonElement?>? OnNotification;
-    public event Func<string, JsonElement?, Task<object?>>? OnServerRequest;
+    public event Func<LspClient, string, JsonElement?, Task<object?>>? OnServerRequest;
     public event Action<string>? OnStderr;
     public event Action<int>? OnExit;
 
@@ -274,7 +286,11 @@ internal sealed class LspClient : IDisposable
                         ["workspaceFolders"] = true,
                         ["workspaceEdit"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                         {
-                            ["documentChanges"] = true
+                            ["documentChanges"] = true,
+                            ["changeAnnotationSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                            {
+                                ["groupsOnLabel"] = false
+                            }
                         }
                     },
                     ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -840,8 +856,8 @@ internal sealed class LspClient : IDisposable
             else if (OnServerRequest is { } requestHandlers)
             {
                 JsonElement? parameters = root.TryGetProperty("params", out var requestParams) ? requestParams.Clone() : null;
-                foreach (Func<string, JsonElement?, Task<object?>> handler in requestHandlers.GetInvocationList())
-                    result = await handler(method, parameters).ConfigureAwait(false);
+                foreach (Func<LspClient, string, JsonElement?, Task<object?>> handler in requestHandlers.GetInvocationList())
+                    result = await handler(this, method, parameters).ConfigureAwait(false);
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP server request {method} failed", ex); }
@@ -958,7 +974,7 @@ internal sealed class LspClient : IDisposable
                         }
                     }
                 }
-                results.Add(null);
+                results.Add(new Dictionary<string, object?>(StringComparer.Ordinal));
             }
             return results.ToArray();
         }

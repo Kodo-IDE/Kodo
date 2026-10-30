@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using AvaloniaEdit.Document;
 
 namespace Kodo.Models;
@@ -122,6 +123,10 @@ public class EditorTab : INotifyPropertyChanged
     private string _content = string.Empty;
     private bool _isDirty;
     private bool _isSelected;
+    private bool _isPrimaryPaneSelected;
+    private bool _isSecondaryPaneSelected;
+    private bool _isRenamingInPrimaryPane;
+    private bool _isRenamingInSecondaryPane;
     private IBrush _backgroundBrush = Brushes.Transparent;
     private IBrush _foregroundBrush = Brushes.White;
 
@@ -206,6 +211,28 @@ public class EditorTab : INotifyPropertyChanged
         }
     }
 
+    public bool IsPrimaryPaneSelected
+    {
+        get => _isPrimaryPaneSelected;
+        set
+        {
+            if (_isPrimaryPaneSelected == value) return;
+            _isPrimaryPaneSelected = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsSecondaryPaneSelected
+    {
+        get => _isSecondaryPaneSelected;
+        set
+        {
+            if (_isSecondaryPaneSelected == value) return;
+            _isSecondaryPaneSelected = value;
+            OnPropertyChanged();
+        }
+    }
+
     public IBrush BackgroundBrush
     {
         get => _backgroundBrush;
@@ -244,7 +271,29 @@ public class EditorTab : INotifyPropertyChanged
     public bool IsRenaming
     {
         get => _isRenaming;
-        set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
+        set
+        {
+            if (_isRenaming == value) return;
+            _isRenaming = value;
+            OnPropertyChanged();
+            if (!value)
+            {
+                IsRenamingInPrimaryPane = false;
+                IsRenamingInSecondaryPane = false;
+            }
+        }
+    }
+
+    public bool IsRenamingInPrimaryPane
+    {
+        get => _isRenamingInPrimaryPane;
+        set { if (_isRenamingInPrimaryPane == value) return; _isRenamingInPrimaryPane = value; OnPropertyChanged(); }
+    }
+
+    public bool IsRenamingInSecondaryPane
+    {
+        get => _isRenamingInSecondaryPane;
+        set { if (_isRenamingInSecondaryPane == value) return; _isRenamingInSecondaryPane = value; OnPropertyChanged(); }
     }
 
     public string RenameText
@@ -354,16 +403,53 @@ internal sealed class EditorPaneState
 {
     public Guid Id { get; } = Guid.NewGuid();
 
+    public ObservableCollection<EditorTab> Tabs { get; } = new();
+
+    public bool AddTab(EditorTab tab)
+    {
+        if (Tabs.Contains(tab))
+            return false;
+        Tabs.Add(tab);
+        return true;
+    }
+
+    internal static bool MoveTabMembership(EditorPaneState source, EditorPaneState destination, EditorTab tab)
+    {
+        var removedFromSource = source.Tabs.Remove(tab);
+        var addedToDestination = destination.AddTab(tab);
+        return removedFromSource || addedToDestination;
+    }
+
     public EditorTab? ActiveTab { get; set; }
+
+    public Bitmap? ImagePreview { get; set; }
+
+    public EditorTab? ImagePreviewTab { get; set; }
+
+    public string? ImagePreviewPath { get; set; }
+
+    public EditorTab? PendingImageScrollRestoreTab { get; set; }
 }
 
 internal sealed class EditorViewState
 {
+    public bool HasTextViewState { get; set; }
+
     public int TopLineNumber { get; set; } = 1;
 
     public double ScrollOffsetY { get; set; }
 
+    public double ScrollOffsetX { get; set; }
+
     public int CaretOffset { get; set; }
+
+    public bool HasImageViewState { get; set; }
+
+    public double ImageZoomLevel { get; set; } = 1.0;
+
+    public double ImageScrollOffsetX { get; set; }
+
+    public double ImageScrollOffsetY { get; set; }
 }
 
 public enum ExplorerClipboardMode
@@ -403,6 +489,7 @@ public class FileTreeItem : INotifyPropertyChanged
     public string FullPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
+    internal int ExpansionRequestVersion { get; set; }
 
     public bool IsRenaming
     {

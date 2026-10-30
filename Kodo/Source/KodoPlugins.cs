@@ -109,12 +109,16 @@ public partial class MainWindow
 
     private void SyncActivePlugins()
     {
-        var currentIds = LoadedExtensions.Where(e => e.HasPlugin).Select(e => e.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        const string nativeGitIntegrationId = "git-source-control";
+        var currentIds = LoadedExtensions
+            .Where(e => e.HasPlugin && !string.Equals(e.Id, nativeGitIntegrationId, StringComparison.OrdinalIgnoreCase))
+            .Select(e => e.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var staleId in _activePlugins.Keys.Where(id => !currentIds.Contains(id)).ToList())
             UnloadPlugin(staleId);
 
-        foreach (var ext in LoadedExtensions.Where(e => e.HasPlugin))
+        foreach (var ext in LoadedExtensions.Where(e => e.HasPlugin && !string.Equals(e.Id, nativeGitIntegrationId, StringComparison.OrdinalIgnoreCase)))
         {
             if (_activePlugins.TryGetValue(ext.Id, out var existing) && existing.Version == ext.Version)
                 continue;

@@ -33,6 +33,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
@@ -127,7 +128,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _lspRefreshDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
     private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
-    private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager;
+    private AvaloniaEdit.Folding.FoldingManager? _primaryLspFoldingManager;
+    private AvaloniaEdit.Folding.FoldingManager? _secondaryLspFoldingManager;
+    private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager
+    {
+        get => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
+            ? _secondaryLspFoldingManager
+            : _primaryLspFoldingManager;
+        set
+        {
+            if (ReferenceEquals(_activeEditorPane, _secondaryEditorPane))
+                _secondaryLspFoldingManager = value;
+            else
+                _primaryLspFoldingManager = value;
+        }
+    }
     private readonly DispatcherTimer _diagnosticPopupShowTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private readonly UiStallWatchdog _stallWatchdog = new();
     private bool _layoutProbeArmed;
@@ -160,6 +175,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private readonly DispatcherTimer _settingsSaveDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer _editorMinimapRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(350) };
+    private bool _editorPaneSizeRefreshPending;
     private readonly object _settingsWriteLock = new();
     private AppSettings? _pendingSettingsSnapshot;
     private bool _isPersistingSettings;
@@ -187,33 +203,58 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, bool> _lspDisabledLanguages = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _lspDismissedInstallPrompts = new(StringComparer.OrdinalIgnoreCase);
 
-    private readonly RainbowBracketColorizer _rainbowBracketColorizer = new();
-    private readonly InterpolatedStringColorizer _interpolatedStringColorizer = new();
-    private readonly HtmlEmbeddedColorizer _htmlEmbeddedColorizer = new();
-    private readonly MarkdownColorizer _markdownColorizer = new();
-    private readonly EmojiTypefaceColorizer _emojiTypefaceColorizer = new();
+    private readonly RainbowBracketColorizer _primaryRainbowBracketColorizer = new();
+    private readonly RainbowBracketColorizer _secondaryRainbowBracketColorizer = new();
+    private RainbowBracketColorizer _rainbowBracketColorizer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryRainbowBracketColorizer : _primaryRainbowBracketColorizer;
+    private readonly InterpolatedStringColorizer _primaryInterpolatedStringColorizer = new();
+    private readonly InterpolatedStringColorizer _secondaryInterpolatedStringColorizer = new();
+    private InterpolatedStringColorizer _interpolatedStringColorizer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryInterpolatedStringColorizer : _primaryInterpolatedStringColorizer;
+    private readonly HtmlEmbeddedColorizer _primaryHtmlEmbeddedColorizer = new();
+    private readonly HtmlEmbeddedColorizer _secondaryHtmlEmbeddedColorizer = new();
+    private HtmlEmbeddedColorizer _htmlEmbeddedColorizer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryHtmlEmbeddedColorizer : _primaryHtmlEmbeddedColorizer;
+    private readonly MarkdownColorizer _primaryMarkdownColorizer = new();
+    private readonly MarkdownColorizer _secondaryMarkdownColorizer = new();
+    private MarkdownColorizer _markdownColorizer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryMarkdownColorizer : _primaryMarkdownColorizer;
+    private readonly EmojiTypefaceColorizer _primaryEmojiTypefaceColorizer = new();
+    private readonly EmojiTypefaceColorizer _secondaryEmojiTypefaceColorizer = new();
+    private EmojiTypefaceColorizer _emojiTypefaceColorizer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryEmojiTypefaceColorizer : _primaryEmojiTypefaceColorizer;
     private readonly InsightEngine _InsightEngine = new();
     private CompletionWindow? _completionWindow;
+    private TextEditor? _completionEditor;
     private string? _lastSuggestionsText;
     private long _insightDocVersion => EditorSession.Revision;
     private CancellationTokenSource _insightAnalysisCancellation = new();
+    private CancellationTokenSource _deadCodeAnalysisCancellation = new();
+    private CancellationTokenSource _errorAnalysisCancellation = new();
     private readonly object _insightAnalysisCacheLock = new();
     private long _cachedInsightAnalysisVersion = -1;
     private string? _cachedInsightAnalysisPath;
     private string? _cachedInsightAnalysisText;
     private string? _cachedInsightAnalysisExtension;
     private List<ErrorSpan>? _cachedInsightAnalysisSpans;
-    private readonly DeadCodeHighlightRenderer _deadCodeHighlightRenderer = new();
-    private readonly DeadCodeTextBrightener _deadCodeTextBrightener = new();
-    private readonly ErrorLineHighlightRenderer _errorHighlightRenderer = new();
-    private readonly ErrorTextDarkener _errorTextDarkener = new();
+    private readonly DeadCodeHighlightRenderer _primaryDeadCodeHighlightRenderer = new();
+    private readonly DeadCodeHighlightRenderer _secondaryDeadCodeHighlightRenderer = new();
+    private DeadCodeHighlightRenderer _deadCodeHighlightRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryDeadCodeHighlightRenderer : _primaryDeadCodeHighlightRenderer;
+    private readonly DeadCodeTextBrightener _primaryDeadCodeTextBrightener = new();
+    private readonly DeadCodeTextBrightener _secondaryDeadCodeTextBrightener = new();
+    private DeadCodeTextBrightener _deadCodeTextBrightener => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryDeadCodeTextBrightener : _primaryDeadCodeTextBrightener;
+    private readonly ErrorLineHighlightRenderer _primaryErrorHighlightRenderer = new();
+    private readonly ErrorLineHighlightRenderer _secondaryErrorHighlightRenderer = new();
+    private ErrorLineHighlightRenderer _errorHighlightRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryErrorHighlightRenderer : _primaryErrorHighlightRenderer;
+    private readonly ErrorTextDarkener _primaryErrorTextDarkener = new();
+    private readonly ErrorTextDarkener _secondaryErrorTextDarkener = new();
+    private ErrorTextDarkener _errorTextDarkener => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryErrorTextDarkener : _primaryErrorTextDarkener;
     private readonly EditorPaneState _editorPane = new();
+    private readonly EditorPaneState _secondaryEditorPane = new();
+    private EditorPaneState _activeEditorPane = null!;
+    private bool _isSplitScreenVisible;
     private int _nextUntitledTabNumber = 1;
     private string? _autoSaveStatusMessage;
     private bool _isAutoSaveEnabled;
     private bool _isDirty;
     private bool _isSaving;
     private bool _isDiscordRichPresenceEnabled;
+    private bool _isGitSourceControlEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private Task? _initialExtensionScanTask;
@@ -314,7 +355,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _extensionAutoUpdateTimer = new() { Interval = TimeSpan.FromHours(6) };
     private readonly AppUpdateScheduler _appUpdateScheduler;
     private readonly DispatcherTimer _marketplaceRefreshTimer = new() { Interval = TimeSpan.FromHours(1) };
-    private readonly IndentGuideBackgroundRenderer _indentGuideRenderer = new();
+    private readonly IndentGuideBackgroundRenderer _primaryIndentGuideRenderer = new();
+    private readonly IndentGuideBackgroundRenderer _secondaryIndentGuideRenderer = new();
+    private IndentGuideBackgroundRenderer _indentGuideRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryIndentGuideRenderer : _primaryIndentGuideRenderer;
     private readonly List<string> _startupOpenTabPaths = [];
     private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
@@ -454,6 +497,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await Dispatcher.UIThread.InvokeAsync(action, DispatcherPriority.Background);
     }
     private string? _startupActiveTabPath;
+    private string? _startupPrimaryPaneTabPath;
+    private string? _startupSecondaryPaneTabPath;
+    private readonly List<string> _startupPrimaryPaneTabPaths = [];
+    private readonly List<string> _startupSecondaryPaneTabPaths = [];
+    private bool _startupSplitEditorVisible;
+    private bool _startupActivePaneIsSecondary;
     private string? _startupFilePath;
     private string _extensionSearchText = string.Empty;
     private string _settingsSearchText = string.Empty;
@@ -474,10 +523,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _searchDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer _searchFilterDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private (List<string> Files, SearchIgnoreRules Rules)? _searchFileCache;
-    private readonly FindHighlightRenderer _findHighlightRenderer = new();
-    private readonly FindHighlightRenderer _lspHighlightRenderer = new();
-    private readonly LspInlayHintRenderer _lspInlayHintRenderer = new();
-    private readonly LspSemanticTokenRenderer _lspSemanticTokenRenderer = new();
+    private readonly FindHighlightRenderer _primaryFindHighlightRenderer = new();
+    private readonly FindHighlightRenderer _secondaryFindHighlightRenderer = new();
+    private FindHighlightRenderer _findHighlightRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryFindHighlightRenderer : _primaryFindHighlightRenderer;
+    private readonly FindHighlightRenderer _primaryLspHighlightRenderer = new();
+    private readonly FindHighlightRenderer _secondaryLspHighlightRenderer = new();
+    private FindHighlightRenderer _lspHighlightRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryLspHighlightRenderer : _primaryLspHighlightRenderer;
+    private readonly LspInlayHintRenderer _primaryLspInlayHintRenderer = new();
+    private readonly LspInlayHintRenderer _secondaryLspInlayHintRenderer = new();
+    private LspInlayHintRenderer _lspInlayHintRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryLspInlayHintRenderer : _primaryLspInlayHintRenderer;
+    private readonly LspSemanticTokenRenderer _primaryLspSemanticTokenRenderer = new();
+    private readonly LspSemanticTokenRenderer _secondaryLspSemanticTokenRenderer = new();
+    private LspSemanticTokenRenderer _lspSemanticTokenRenderer => ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _secondaryLspSemanticTokenRenderer : _primaryLspSemanticTokenRenderer;
     private List<int> _findMatchOffsets = new();
     private int _currentFindMatchIndex = -1;
     private readonly List<string> _findInFileHistory = new();
@@ -519,8 +576,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new(FileSystemPaths.Comparer);
     private string? _lastAppliedExtensionFingerprint;
 
-    private LoadedExtension? _appliedSyntaxExtension;
+    private LoadedExtension? _primaryAppliedSyntaxExtension;
+    private LoadedExtension? _secondaryAppliedSyntaxExtension;
+    private LoadedExtension? _appliedSyntaxExtension
+    {
+        get => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
+            ? _secondaryAppliedSyntaxExtension
+            : _primaryAppliedSyntaxExtension;
+        set
+        {
+            if (ReferenceEquals(_activeEditorPane, _secondaryEditorPane))
+                _secondaryAppliedSyntaxExtension = value;
+            else
+                _primaryAppliedSyntaxExtension = value;
+        }
+    }
     private readonly ColorSwatchElementGenerator _colorSwatchGenerator = new();
+    private ColorSwatchElementGenerator? _secondaryColorSwatchGenerator;
 
     private string _findText = string.Empty;
     private string _replaceText = string.Empty;
@@ -762,7 +834,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var previousPreview = _currentImagePreview;
             _currentImagePreview = value;
             OnPropertyChanged();
-            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
+            RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
             BitmapLifetime.DisposeAfterLayout(previousPreview);
         }
     }
@@ -775,8 +847,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var clamped = Math.Clamp(value, ImageZoomMin, ImageZoomMax);
             if (Math.Abs(_imageZoomLevel - clamped) < 0.001) return;
             _imageZoomLevel = clamped;
+
+
+
+            if (_activeEditorPane.ActiveTab is { } activeImageTab &&
+                ReferenceEquals(_activeEditorPane.ImagePreviewTab, activeImageTab) &&
+                _activeEditorPane.ImagePreview is not null)
+                activeImageTab.GetViewState(_activeEditorPane.Id).ImageZoomLevel = clamped;
             OnPropertyChanged();
-            RaiseMany(nameof(ImageZoomPercent), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight));
+            RaiseMany(nameof(ImageZoomPercent), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight),
+                nameof(PrimaryPaneImageZoomedWidth), nameof(PrimaryPaneImageZoomedHeight), nameof(PrimaryPaneImageZoomPercent),
+                nameof(SecondaryPaneImageZoomedWidth), nameof(SecondaryPaneImageZoomedHeight), nameof(SecondaryPaneImageZoomPercent));
         }
     }
 
@@ -790,23 +871,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public EditorTab? ActiveEditorTab
     {
-        get => _editorPane.ActiveTab;
+        get => _activeEditorPane.ActiveTab;
         private set
         {
-            if (ReferenceEquals(_editorPane.ActiveTab, value))
+            if (ReferenceEquals(_activeEditorPane.ActiveTab, value))
                 return;
 
-            if (_editorPane.ActiveTab is not null)
-                _editorPane.ActiveTab.IsSelected = false;
+            ClearLspSignatureHelpTooltip();
+            var previousTab = _activeEditorPane.ActiveTab;
+            var otherPane = ReferenceEquals(_activeEditorPane, _editorPane)
+                ? _secondaryEditorPane
+                : _editorPane;
+            if (previousTab is not null && !ReferenceEquals(previousTab, otherPane.ActiveTab))
+                previousTab.IsSelected = false;
 
-            _editorPane.ActiveTab = value;
+            _activeEditorPane.ActiveTab = value;
+            RefreshPanePreviewState(_activeEditorPane);
+            RestorePaneImageScrollOffset(_activeEditorPane, value);
+            ImageZoomLevel = value?.GetViewState(_activeEditorPane.Id).ImageZoomLevel ?? 1.0;
 
-            if (_editorPane.ActiveTab is not null)
-                _editorPane.ActiveTab.IsSelected = true;
+            if (_activeEditorPane.ActiveTab is not null)
+                _activeEditorPane.ActiveTab.IsSelected = true;
+
+            RefreshPaneTabSelection();
+            ClearDeadCodeHighlighting();
+            ClearErrorHighlighting();
+            ClearLspPresentationForEditor(EditorTextBox);
+            _findHighlightRenderer.Clear();
 
             OnPropertyChanged();
+            OnPropertyChanged(nameof(SecondaryPaneSelectedTab));
+            OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
+            OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
+            NotifyPanePreviewStateChanged(_editorPane);
+            NotifyPanePreviewStateChanged(_secondaryEditorPane);
             OnPropertyChanged(nameof(HasOpenEditors));
             OnPropertyChanged(nameof(IsEditorTabsVisible));
+            OnPropertyChanged(nameof(IsSharedEditorTabsVisible));
+            OnPropertyChanged(nameof(CanToggleSplitEditor));
             SaveSettings();
         }
     }
@@ -823,23 +925,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             && (File.Exists(trimmedStartupPath) || Directory.Exists(trimmedStartupPath))
             ? trimmedStartupPath
             : null;
+        _activeEditorPane = _editorPane;
         InitializeComponent();
+        PrimaryEditorPane.AddHandler(
+            InputElement.PointerPressedEvent,
+            PrimaryEditorPane_OnPointerPressed,
+            RoutingStrategies.Bubble,
+            handledEventsToo: true);
+        SecondaryEditorPane.AddHandler(
+            InputElement.PointerPressedEvent,
+            SecondaryEditorPane_OnPointerPressed,
+            RoutingStrategies.Bubble,
+            handledEventsToo: true);
         _editorSession = new EditorDocumentSession(EditorTextBox.Document);
-        EditorTextBox.DocumentChanged += (_, e) =>
-        {
-            var filePath = EditorSession.FilePath;
-            EditorSession.Dispose();
-            _editorSession = new EditorDocumentSession(e.NewDocument);
-            EditorSession.SetFilePath(filePath);
-            if (_lspFoldingManager is { } previousFoldingManager)
-                AvaloniaEdit.Folding.FoldingManager.Uninstall(previousFoldingManager);
-            _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
-            _foldingMargin = null;
-            ApplyFoldingMarginTheme();
-            ResetLspFoldingState();
-            ScheduleEditorMinimapRefresh();
-        };
-        EditorTextBox.TextChanged += (_, _) => EditorSession.NotifyDocumentChanged();
+        PrimaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_editorPane, PrimaryEditorTextBox, e.NewDocument);
+        SecondaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_secondaryEditorPane, SecondaryEditorTextBox, e.NewDocument);
+        PrimaryEditorTextBox.TextChanged += EditorTextBox_OnPaneTextChanged;
         CenterQuickAccessSearchFrame();
         InsightWorkerGateway.Default.SetRegistryProvider(() =>
         {
@@ -852,6 +953,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
         AddHandler(PointerPressedEvent, OnWindowPointerPressedToDismissFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
+        _secondaryLspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(SecondaryEditorTextBox.TextArea);
         NotifySettingsSearchChanged();
         LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
@@ -886,7 +988,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) =>
         {
             HideDiagnosticPopup();
-            UpdateEditorMinimapViewport();
+
+
+            UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
             QueueLspViewportRefresh();
         }, RoutingStrategies.Bubble);
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
@@ -897,74 +1001,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _fileTreeRefreshTimer.Tick += FileTreeRefreshTimer_OnTick;
         _searchDebounceTimer.Tick += SearchDebounceTimer_OnTick;
         _searchFilterDebounceTimer.Tick += SearchFilterDebounceTimer_OnTick;
-        EditorTextBox.TextChanged += EditorTextBox_OnTextChanged;
-        EditorMinimapView.ScrollRequested += EditorMinimapView_OnScrollRequested;
+        EditorMinimapView.ScrollRequested += fraction => EditorMinimapView_OnScrollRequested(PrimaryEditorTextBox, fraction);
+        SecondaryEditorMinimapView.ScrollRequested += fraction => EditorMinimapView_OnScrollRequested(SecondaryEditorTextBox, fraction);
         _editorMinimapRefreshTimer.Tick += EditorMinimapRefreshTimer_OnTick;
         ScheduleEditorMinimapRefresh();
-        EditorTextBox.TextArea.Caret.PositionChanged += (_, _) =>
-        {
-            HideDiagnosticPopup();
-            _lspPresentationCancellation?.Cancel();
-            RestartLspPresentationDebounceTimer();
-            if (!_pendingFullStateRefresh || !_editorStateRefreshTimer.IsEnabled)
-                QueueRefreshState();
-            if (_caretVisibilityRefreshPending)
-            {
-                return;
-            }
-            _caretVisibilityRefreshPending = true;
-            Dispatcher.UIThread.Post(() =>
-            {
-                _caretVisibilityRefreshPending = false;
-                var caret = EditorTextBox.TextArea.Caret;
-                try
-                {
-                    caret.BringCaretToView();
-                }
-                catch { }
-                try
-                {
-                    if (caret.Column <= 8)
-                    {
-                        var sv = EditorHorizontalScrollViewer();
-                        if (sv is not null && sv.Offset.X > 10)
-                            sv.Offset = new Vector(0, sv.Offset.Y);
-                        else
-                        {
-                            var tv = EditorTextBox.TextArea.TextView;
-                            if (tv.ScrollOffset.X > 10)
-                                caret.BringCaretToView();
-                        }
-                    }
-                }
-                catch { }
-            }, DispatcherPriority.Background);
-        };
+        PrimaryEditorTextBox.TextArea.Caret.PositionChanged += (_, _) => EditorCaretPositionChanged(PrimaryEditorTextBox);
+        ConfigureSecondaryEditorView();
+        PrimaryEditorTextBox.GotFocus += (_, _) => ActivateEditorPane(_editorPane, focusEditor: false);
+        SecondaryEditorTextBox.GotFocus += (_, _) => ActivateEditorPane(_secondaryEditorPane, focusEditor: false);
+        PrimaryEditorTextBox.SizeChanged += EditorPaneSizeChanged;
+        SecondaryEditorTextBox.SizeChanged += EditorPaneSizeChanged;
+        SecondaryEditorTextBox.TextArea.Caret.PositionChanged += (_, _) => EditorCaretPositionChanged(SecondaryEditorTextBox);
         try
         {
             var taType = EditorTextBox.TextArea.GetType();
             var ev = taType.GetEvent("SelectionChanged");
             if (ev != null) ev.AddEventHandler(EditorTextBox.TextArea, new EventHandler((s, e) => QueueRefreshState()));
+            if (ev != null) ev.AddEventHandler(SecondaryEditorTextBox.TextArea, new EventHandler((s, e) => QueueRefreshState()));
             var edType = EditorTextBox.GetType();
             var ev2 = edType.GetEvent("SelectionChanged");
             if (ev2 != null) ev2.AddEventHandler(EditorTextBox, new EventHandler((s, e) => QueueRefreshState()));
+            if (ev2 != null) ev2.AddEventHandler(SecondaryEditorTextBox, new EventHandler((s, e) => QueueRefreshState()));
         }
         catch { }
         EditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
+        SecondaryEditorTextBox.TextArea.GotFocus += (_, _) => QueueInsightRefresh();
         Activated += (_, _) => QueueInsightRefresh();
         EditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
         EditorTextBox.TextArea.TextEntered += EditorTextArea_OnTextEntered;
+        SecondaryEditorTextBox.TextArea.TextEntering += EditorTextArea_OnTextEntering;
+        SecondaryEditorTextBox.TextArea.TextEntered += EditorTextArea_OnTextEntered;
         AddHandler(InputElement.KeyDownEvent, MainWindow_EditorKeyIntercept_OnKeyDown, RoutingStrategies.Tunnel, handledEventsToo: true);
         ImageScrollViewer.AddHandler(
             InputElement.PointerWheelChangedEvent,
             ImageScrollViewer_OnPointerWheelChanged,
             RoutingStrategies.Tunnel);
+        ImageScrollViewer.ScrollChanged += ImageScrollViewer_OnScrollChanged;
+        SecondaryImageScrollViewer.AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            ImageScrollViewer_OnPointerWheelChanged,
+            RoutingStrategies.Tunnel);
+        SecondaryImageScrollViewer.ScrollChanged += ImageScrollViewer_OnScrollChanged;
         _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
         InitializeKeybinds(settings);
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
+        _isGitSourceControlEnabled = settings.GitSourceControlEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
         _isVerboseLoggingEnabled = settings.VerboseLoggingEnabled;
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
@@ -1037,8 +1121,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isTerminalVisible = settings.TerminalVisible && IsTerminalSupported;
         _startupOpenTabPaths.AddRange(settings.OpenTabPaths
             .Where(path => File.Exists(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase));
+            .Distinct(FileSystemPaths.Comparer));
         _startupActiveTabPath = settings.ActiveTabPath;
+        _startupSplitEditorVisible = settings.SplitEditorVisible;
+        _startupPrimaryPaneTabPath = settings.PrimaryPaneTabPath;
+        _startupSecondaryPaneTabPath = settings.SecondaryPaneTabPath;
+        _startupPrimaryPaneTabPaths.AddRange((settings.PrimaryPaneTabPaths ?? [])
+            .Where(File.Exists)
+            .Distinct(FileSystemPaths.Comparer));
+        _startupSecondaryPaneTabPaths.AddRange((settings.SecondaryPaneTabPaths ?? [])
+            .Where(File.Exists)
+            .Distinct(FileSystemPaths.Comparer));
+        _startupActivePaneIsSecondary = settings.ActivePaneIsSecondary;
         _startupFolderPath = !string.IsNullOrWhiteSpace(settings.LastOpenedFolderPath) &&
                               Directory.Exists(settings.LastOpenedFolderPath)
             ? settings.LastOpenedFolderPath
@@ -1841,6 +1935,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private ScrollViewer? _editorHorizontalScrollViewer;
     private bool _editorHorizontalScrollViewerResolved;
     private bool _caretVisibilityRefreshPending;
+    private TextEditor? _caretVisibilityRefreshEditor;
 
     private ScrollViewer? EditorHorizontalScrollViewer()
     {
@@ -1898,20 +1993,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyEditorSettings()
     {
-        if (EditorTextBox is null)
-        {
-            return;
-        }
+        ApplyEditorSettings(PrimaryEditorTextBox);
+        ApplyEditorSettings(SecondaryEditorTextBox);
+        _primaryIndentGuideRenderer.TabSize = TabSize;
+        _secondaryIndentGuideRenderer.TabSize = TabSize;
+        _primaryMarkdownColorizer.TabSize = TabSize;
+        _secondaryMarkdownColorizer.TabSize = TabSize;
+        PrimaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        SecondaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
 
-        EditorTextBox.WordWrap = IsWordWrapEnabled;
-        EditorTextBox.Options.IndentationSize = TabSize;
-        EditorTextBox.Options.ConvertTabsToSpaces = InsertSpaces;
-        EditorTextBox.FontSize = EditorFontSize;
-        EditorTextBox.FontFamily = KodoFonts.ResolveEditorFamily(EditorFontFamily);
-        _indentGuideRenderer.TabSize = TabSize;
-        _markdownColorizer.TabSize = TabSize;
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+    }
 
+    private void ApplyEditorSettings(TextEditor? editor)
+    {
+        if (editor is null) return;
+        editor.WordWrap = IsWordWrapEnabled;
+        editor.Options.IndentationSize = TabSize;
+        editor.Options.ConvertTabsToSpaces = InsertSpaces;
+        editor.FontSize = EditorFontSize;
+        editor.FontFamily = KodoFonts.ResolveEditorFamily(EditorFontFamily);
     }
 
     private void RefreshCurrentFileSyntaxHighlighting()
@@ -1951,8 +2051,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var imagePreview = TryLoadImagePreview(_currentFilePath);
         previewWatch.Stop();
         KodoDiagnostics.ReportSlowStage("presentation/image preview", previewWatch.ElapsedMilliseconds, 500, $"path={_currentFilePath}");
-        if (!ReferenceEquals(CurrentImagePreview, imagePreview))
-            ImageZoomLevel = 1.0;
         CurrentImagePreview = imagePreview;
 
         if (imagePreview is not null)
@@ -2078,7 +2176,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isFileCorrupted == corrupted) return;
         _isFileCorrupted = corrupted;
-        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText));
+        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText));
     }
 
     private void ConfigureInterpolatedStrings(CompiledSyntaxProfile? syntaxProfile)
@@ -2089,8 +2187,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private static readonly string[] EditorPageVisibilityDependents =
     [
         nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive),
-        nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible),
-        nameof(IsTextEditorVisible)
+        nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible),
+        nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor),
+        nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
+        nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
+        nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
+        nameof(IsPrimaryPaneMinimapVisible), nameof(IsSecondaryPaneMinimapVisible)
     ];
 
     public bool IsSettingsPageVisible
@@ -2156,7 +2258,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
         }
     }
 
@@ -2346,6 +2448,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsSearchPanelActive => IsSearchPanelVisible && CanShowSearchPanel && IsEditorPageVisible;
 
     public bool IsEditorTabsVisible => OpenTabs.Count >= 1 && IsEditorPageVisible && !IsHomePageVisible;
+    public bool IsSharedEditorTabsVisible => IsEditorTabsVisible && !IsSplitScreenVisible;
 
     public bool CanShowSaveActions => IsTextEditorVisible;
 
@@ -3011,6 +3114,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsGitSourceControlEnabled
+    {
+        get => _isGitSourceControlEnabled;
+        set
+        {
+            if (_isGitSourceControlEnabled == value) return;
+            _isGitSourceControlEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            UpdateGitSourceControlLifecycle();
+        }
+    }
+
+    public bool IsGitSourceControlPanelOpen { get; private set; }
+
+    internal void SetGitSourceControlPanelOpen(bool isOpen)
+    {
+        if (IsGitSourceControlPanelOpen == isOpen) return;
+        IsGitSourceControlPanelOpen = isOpen;
+        OnPropertyChanged(nameof(IsGitSourceControlPanelOpen));
+    }
+
+    private void GitSourceControlActivityButton_OnClick(object? sender, RoutedEventArgs e) =>
+        _gitSourceControlIntegration?.ToggleSourcePanelFromHost();
+
     public bool IsDeveloperOptionsVisible
     {
         get => _isDeveloperOptionsVisible;
@@ -3084,7 +3212,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isStatusBarFilePathVisible == value) return;
             _isStatusBarFilePathVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(FilePathText), nameof(LanguageDisplayText), nameof(StatusBarFilePathVisibilityText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText));
+            RaiseMany(nameof(FilePathText), nameof(LanguageDisplayText), nameof(StatusBarFilePathVisibilityText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(PrimaryPaneBreadcrumbText), nameof(SecondaryPaneBreadcrumbText));
             SaveSettings();
         }
     }
@@ -3111,8 +3239,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isMinimapVisible == value) return;
             _isMinimapVisible = value;
             OnPropertyChanged();
+            RaiseMany(nameof(IsPrimaryPaneMinimapVisible), nameof(IsSecondaryPaneMinimapVisible));
             SaveSettings();
             if (value) ScheduleEditorMinimapRefresh();
+            else
+            {
+                _editorMinimapRefreshTimer.Stop();
+                EditorMinimapView?.SetDocument(null);
+                SecondaryEditorMinimapView?.SetDocument(null);
+            }
         }
     }
 
@@ -3129,36 +3264,74 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsMinimapVisible)
         {
             EditorMinimapView?.SetDocument(null);
+            SecondaryEditorMinimapView?.SetDocument(null);
             return;
         }
 
-        EditorMinimapView?.SetDocument(EditorTextBox?.Document);
-        UpdateEditorMinimapViewport();
+        EditorMinimapView?.SetDocument(PrimaryEditorTextBox?.Document);
+        SecondaryEditorMinimapView?.SetDocument(IsSplitScreenVisible ? SecondaryEditorTextBox?.Document : null);
+        UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
+        if (IsSplitScreenVisible)
+            UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
     }
 
     private void UpdateEditorMinimapViewport()
     {
-        if (!IsMinimapVisible || EditorTextBox?.Document is not { } document || EditorTextBox.TextArea?.TextView is not { } textView)
+        UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
+        if (IsSplitScreenVisible)
+            UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
+    }
+
+    private void EditorPaneSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (sender is not TextEditor || _editorPaneSizeRefreshPending)
+            return;
+
+        _editorPaneSizeRefreshPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _editorPaneSizeRefreshPending = false;
+            UpdateEditorMinimapViewport();
+            if (IsSplitScreenVisible)
+                QueueLspViewportRefresh();
+        }, DispatcherPriority.Background);
+    }
+
+    private void UpdateEditorMinimapViewport(TextEditor? editor, Kodo.Renderers.EditorMinimapControl? minimap)
+    {
+        if (ReferenceEquals(editor, SecondaryEditorTextBox) && !IsSplitScreenVisible)
+        {
+            minimap?.SetDocument(null);
+            return;
+        }
+        if (!IsMinimapVisible || editor?.Document is not { } document || editor.TextArea?.TextView is not { } textView || minimap is null)
             return;
 
         if (textView.VisualLinesValid && textView.VisualLines.Count > 0)
         {
             var top = textView.VisualLines[0].FirstDocumentLine.LineNumber;
-            var bottom = textView.VisualLines[^1].FirstDocumentLine.LineNumber;
-            EditorMinimapView?.SetViewport(top, Math.Max(top, bottom));
+            var bottom = textView.VisualLines[^1].LastDocumentLine.LineNumber;
+            minimap?.SetViewport(top, Math.Max(top, bottom));
             return;
         }
 
         var topPosition = textView.GetPositionFloor(new Point(textView.ScrollOffset.X, textView.ScrollOffset.Y));
         var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
         var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
-        EditorMinimapView?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
+        minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
     }
 
-    private void EditorMinimapView_OnScrollRequested(double fraction)
+    private void EditorMinimapView_OnScrollRequested(TextEditor editor, double fraction)
     {
-        if (EditorTextBox?.Document is not { } document) return;
-        var scrollViewer = EditorHorizontalScrollViewer();
+        if (editor?.Document is not { } document) return;
+        if (IsSplitScreenVisible)
+        {
+            if (ReferenceEquals(editor, SecondaryEditorTextBox))
+                ActivateEditorPane(_secondaryEditorPane, focusEditor: false);
+            else if (ReferenceEquals(editor, PrimaryEditorTextBox))
+                ActivateEditorPane(_editorPane, focusEditor: false);
+        }
+        var scrollViewer = editor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
         if (scrollViewer is not null)
         {
             var maximumOffset = Math.Max(0, scrollViewer.Extent.Height - scrollViewer.Viewport.Height);
@@ -3170,7 +3343,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var line = 1 + (int)Math.Round(Math.Clamp(fraction, 0, 1) * Math.Max(0, document.LineCount - 1));
-        EditorTextBox.ScrollToLine(Math.Clamp(line, 1, document.LineCount));
+        editor.ScrollToLine(Math.Clamp(line, 1, document.LineCount));
     }
 
     public bool IsInsightEnabled
@@ -3180,6 +3353,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isInsightEnabled == value) return;
             _isInsightEnabled = value;
+            CancelEditorAnalysisRequests();
+            CancelInactiveTabDiagnosticScans();
             OnPropertyChanged();
             lock (_insightAnalysisCacheLock)
             {
@@ -3189,13 +3364,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!_isInsightEnabled)
             {
                 CloseCompletionWindow();
-                ClearDeadCodeHighlighting();
-                ClearErrorHighlighting();
+                ClearAllPaneDiagnosticHighlights();
             }
-            else
-            {
-                QueueInsightRefresh();
-            }
+            QueueInsightRefresh();
+            RefreshInactiveSplitPaneDiagnostics();
             SaveSettings();
         }
     }
@@ -3207,6 +3379,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isInsightCodeSuggestionsEnabled == value) return;
             _isInsightCodeSuggestionsEnabled = value;
+            CancelEditorAnalysisRequests();
+            CancelInactiveTabDiagnosticScans();
             OnPropertyChanged();
             if (!_isInsightCodeSuggestionsEnabled)
                 CloseCompletionWindow();
@@ -3221,15 +3395,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isInsightDeadCodeEnabled == value) return;
             _isInsightDeadCodeEnabled = value;
+            CancelEditorAnalysisRequests();
+            CancelInactiveTabDiagnosticScans();
             OnPropertyChanged();
             if (!_isInsightDeadCodeEnabled)
             {
-                ClearDeadCodeHighlighting();
+                ClearAllPaneDeadCodeHighlights();
             }
             else
             {
                 QueueInsightRefresh();
             }
+            RefreshInactiveSplitPaneDiagnostics();
             SaveSettings();
         }
     }
@@ -3241,6 +3418,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (_isInsightErrorDetectionEnabled == value) return;
             _isInsightErrorDetectionEnabled = value;
+            CancelEditorAnalysisRequests();
+            CancelInactiveTabDiagnosticScans();
             OnPropertyChanged();
             lock (_insightAnalysisCacheLock)
             {
@@ -3249,13 +3428,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             if (!_isInsightErrorDetectionEnabled)
             {
-                ClearErrorHighlighting();
+                ClearAllPaneErrorHighlights();
                 QueueInsightRefresh();
             }
             else
             {
                 QueueInsightRefresh();
             }
+            RefreshInactiveSplitPaneDiagnostics();
             SaveSettings();
         }
     }
@@ -3274,13 +3454,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var path = _currentFilePath;
                 if (!string.IsNullOrWhiteSpace(path) && EditorTextBox?.Document is not null && ResolveLspExtensionForFile(path) is not null)
                     QueueLspDidChange(path);
+                InvalidateAllLspPanePresentations();
                 QueueLspPresentationRefresh();
             }
             else
             {
                 _lspDidChangeTimer.Stop();
                 _lspRefreshDebounceTimer.Stop();
-                lock (_lspHoverLock) _lspHoverCts?.Cancel();
+                CancelLspHoverRequest();
                 _ = LspShutdownAllAsync();
                 lock (_lspDiagnosticsLock)
                 {
@@ -3290,14 +3471,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     BumpLspDiagnosticsRevision();
                 }
                 ClearLspHoverTooltip();
-                _lspInlayHintRenderer.SetHints(Array.Empty<(int, string)>());
-                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-                _lspHighlightRenderer.Clear();
-                _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+                ClearLspPresentationForEditor(PrimaryEditorTextBox);
+                ClearLspPresentationForEditor(SecondaryEditorTextBox);
+                _primaryLspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+                _secondaryLspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
                 ClearLspSignatureHelpTooltip();
-                EditorTextBox?.TextArea?.TextView?.Redraw();
-                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
                 _ = UpdateErrorHighlightingSafelyAsync();
+                foreach (var tab in OpenTabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path)))
+                    UpdateInactiveTabDiagnosticsForFile(tab.Path);
             }
             QueueInsightRefresh();
             SaveSettings();
@@ -3316,7 +3497,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspHoverEnabled == value) return;
             _lspHoverEnabled = value;
             OnPropertyChanged();
-            if (!value) lock (_lspHoverLock) _lspHoverCts?.Cancel();
+            if (!value) CancelLspHoverRequest();
             if (!value) ClearLspHoverTooltip();
             SaveSettings();
         }
@@ -3329,7 +3510,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspSignatureHelpEnabled == value) return;
             _lspSignatureHelpEnabled = value;
             OnPropertyChanged();
-            if (value) QueueLspPresentationRefresh();
+            if (value)
+            {
+                InvalidateAllLspPanePresentations();
+                QueueLspPresentationRefresh();
+            }
             else ClearLspSignatureHelpTooltip();
             SaveSettings();
         }
@@ -3342,8 +3527,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspInlayHintsEnabled == value) return;
             _lspInlayHintsEnabled = value;
             OnPropertyChanged();
-            if (value) QueueLspPresentationRefresh();
-            else ApplyLspInlayHints(Array.Empty<(int, string)>());
+            if (value)
+            {
+                InvalidateAllLspPanePresentations();
+                QueueLspPresentationRefresh();
+            }
+            else
+            {
+                ClearLspInlayHintsForEditor(PrimaryEditorTextBox);
+                ClearLspInlayHintsForEditor(SecondaryEditorTextBox);
+            }
             SaveSettings();
         }
     }
@@ -3355,8 +3548,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspFoldingEnabled == value) return;
             _lspFoldingEnabled = value;
             OnPropertyChanged();
-            if (value) QueueLspPresentationRefresh();
-            else _lspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+            if (value)
+            {
+                InvalidateAllLspPanePresentations();
+                QueueLspPresentationRefresh();
+            }
+            else
+            {
+                _primaryLspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+                _secondaryLspFoldingManager?.UpdateFoldings(Array.Empty<AvaloniaEdit.Folding.NewFolding>(), 0);
+            }
             SaveSettings();
         }
     }
@@ -3368,8 +3569,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspDocumentHighlightsEnabled == value) return;
             _lspDocumentHighlightsEnabled = value;
             OnPropertyChanged();
-            if (value) QueueLspPresentationRefresh();
-            else { _lspHighlightRenderer.Clear(); EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background); }
+            if (value)
+            {
+                InvalidateAllLspPanePresentations();
+                QueueLspPresentationRefresh();
+            }
+            else
+            {
+                _primaryLspHighlightRenderer.Clear();
+                _secondaryLspHighlightRenderer.Clear();
+                PrimaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+                SecondaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            }
             SaveSettings();
         }
     }
@@ -3409,11 +3620,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_lspSemanticHighlightingEnabled == value) return;
             _lspSemanticHighlightingEnabled = value;
             OnPropertyChanged();
-            if (value) QueueLspPresentationRefresh();
+            if (value)
+            {
+                InvalidateAllLspPanePresentations();
+                QueueLspPresentationRefresh();
+            }
             else
             {
-                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+                _primaryLspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                _secondaryLspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                PrimaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+                SecondaryEditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
             }
             SaveSettings();
         }
@@ -4514,6 +4731,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
         _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+        if (_secondaryColorSwatchGenerator is not null)
+        {
+            _secondaryColorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
+            _secondaryColorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+        }
     }
 
     public bool IsAmericanEnglish => _userCountry == "US";
@@ -5018,7 +5240,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void OpenTabs_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(IsHomeOrEditorPageVisible), nameof(HasDocumentOpen), nameof(IsTextEditorVisible));
+        RefreshPaneTabSelection();
+        RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(IsHomeOrEditorPageVisible), nameof(HasDocumentOpen), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor));
         Dispatcher.UIThread.Post(() => SaveSettings(), DispatcherPriority.Background);
     }
 
@@ -5220,6 +5443,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         UpdateTabDiagnostics(ActiveEditorTab, _errorHighlightRenderer.Spans, _deadCodeHighlightRenderer.Spans);
     }
 
+    private void RefreshInactiveSplitPaneDiagnostics()
+    {
+        if (!IsSplitScreenVisible)
+            return;
+
+        var inactivePane = ReferenceEquals(_activeEditorPane, _editorPane)
+            ? _secondaryEditorPane
+            : _editorPane;
+        var tab = inactivePane.ActiveTab;
+        if (tab is null)
+            return;
+
+        if (ResolveLspExtensionForFile(tab.Path) is { HasLsp: true } && LspEnabled && LspDiagnosticsEnabled)
+        {
+            UpdateInactiveTabDiagnosticsForFile(tab.Path);
+            return;
+        }
+
+        if (IsInsightEnabled && (IsInsightErrorDetectionEnabled || IsInsightDeadCodeEnabled))
+        {
+            _ = RefreshInactiveTabInsightDiagnosticsAsync(tab);
+            return;
+        }
+
+        var errorRenderer = ReferenceEquals(inactivePane, _secondaryEditorPane)
+            ? _secondaryErrorHighlightRenderer
+            : _primaryErrorHighlightRenderer;
+        var deadRenderer = ReferenceEquals(inactivePane, _secondaryEditorPane)
+            ? _secondaryDeadCodeHighlightRenderer
+            : _primaryDeadCodeHighlightRenderer;
+        UpdateTabDiagnostics(tab, errorRenderer.Spans, deadRenderer.Spans);
+    }
+
     private void UpdateInactiveTabDiagnosticsForFile(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return;
@@ -5245,51 +5501,193 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             raw = raw is null ? new List<LspRawDiagnostic>() : new List<LspRawDiagnostic>(raw);
         }
 
+        var splitPaneErrors = UpdateInactiveSplitPaneLspHighlightsForFile(filePath);
         var errors = raw.Count(d => string.Equals(d.Severity, "error", StringComparison.OrdinalIgnoreCase));
         var warnings = raw.Count(d => string.Equals(d.Severity, "warning", StringComparison.OrdinalIgnoreCase));
         var infos = raw.Count - errors - warnings;
+        int? visibleTabErrorCount = null;
 
         foreach (var tab in matchingTabs)
         {
+            var shownInInactivePane = IsSplitScreenVisible &&
+                ((!ReferenceEquals(_activeEditorPane, _editorPane) && ReferenceEquals(_editorPane.ActiveTab, tab)) ||
+                 (!ReferenceEquals(_activeEditorPane, _secondaryEditorPane) && ReferenceEquals(_secondaryEditorPane.ActiveTab, tab)));
             var unused = tab.UnusedCount;
-            tab.UpdateDiagnostics(errors, warnings, infos, unused);
-            if (raw.Count == 0 && tab.HasDiagnostics && errors == 0 && warnings == 0 && infos == 0)
+            var tabErrors = errors;
+            var tabWarnings = warnings;
+            var tabInfos = infos;
+            if (shownInInactivePane && splitPaneErrors is { } visibleErrors)
+            {
+                tabErrors = visibleErrors.Count(span => string.Equals(span.Severity, "error", StringComparison.OrdinalIgnoreCase));
+                tabWarnings = visibleErrors.Count(span => string.Equals(span.Severity, "warning", StringComparison.OrdinalIgnoreCase));
+                tabInfos = visibleErrors.Count - tabErrors - tabWarnings;
+                visibleTabErrorCount = tabErrors;
+            }
+
+            tab.UpdateDiagnostics(tabErrors, tabWarnings, tabInfos, unused);
+            if (raw.Count == 0 && (tab.HasDiagnostics || shownInInactivePane) &&
+                tabErrors == 0 && tabWarnings == 0 && tabInfos == 0)
             {
                 _ = RefreshInactiveTabInsightDiagnosticsAsync(tab);
             }
         }
-        UpdateFileTreeErrorCount(filePath, errors);
+        UpdateFileTreeErrorCount(filePath, visibleTabErrorCount ?? errors);
+    }
+
+    private List<ErrorSpan>? UpdateInactiveSplitPaneLspHighlightsForFile(string filePath)
+    {
+        if (!IsSplitScreenVisible)
+            return null;
+
+        var client = GetLspClientForFile(filePath);
+        var encoding = LspPath.NormalizePositionEncoding(client?.PositionEncoding);
+        List<ErrorSpan>? displayedErrors = null;
+        foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+        {
+            if (ReferenceEquals(pane, _activeEditorPane) ||
+                !FileSystemPaths.Equals(pane.ActiveTab?.Path, filePath))
+                continue;
+
+            var editor = GetEditorForPane(pane);
+            if (editor.Document is not { } document)
+                continue;
+
+            var errors = GetLspDiagnosticsForFile(filePath, document, encoding);
+            if (_dismissedDiagnostics.Count > 0)
+                errors = FilterDismissedErrorSpans(errors, document, filePath,
+                    new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal));
+
+            var deadRenderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+                ? _secondaryDeadCodeHighlightRenderer
+                : _primaryDeadCodeHighlightRenderer;
+            var errorRenderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+                ? _secondaryErrorHighlightRenderer
+                : _primaryErrorHighlightRenderer;
+            var errorDarkener = ReferenceEquals(editor, SecondaryEditorTextBox)
+                ? _secondaryErrorTextDarkener
+                : _primaryErrorTextDarkener;
+            var preserveLocalDiagnostics = !IsLspPrimaryForFile(filePath);
+            var combinedErrors = errorRenderer.Spans
+                .Where(span => preserveLocalDiagnostics &&
+                    !string.Equals(span.Source, "lsp", StringComparison.OrdinalIgnoreCase))
+                .Concat(errors)
+                .GroupBy(span => (span.StartOffset, span.Length,
+                    Severity: span.Severity.Trim().ToLowerInvariant(), span.Message, span.Code))
+                .Select(group => group.OrderByDescending(span =>
+                    string.Equals(span.Source, "lsp", StringComparison.OrdinalIgnoreCase) ? 2 :
+                    span.Source.Contains("Recovery", StringComparison.OrdinalIgnoreCase) ? 1 : 0).First())
+                .ToList();
+            displayedErrors = combinedErrors;
+            var errorIndex = combinedErrors.Count == 0
+                ? SpanOverlapIndex.Empty
+                : SpanOverlapIndex.Build(combinedErrors, span => span.StartOffset,
+                    span => (long)span.StartOffset + Math.Max(1, span.Length));
+
+            errorRenderer.SetSpans(combinedErrors, errorIndex);
+            errorRenderer.SetDeadCodeSpans(deadRenderer.Spans, deadRenderer.SpanIndex);
+            errorDarkener.SetSpans(combinedErrors, errorIndex, deadRenderer.Spans, deadRenderer.SpanIndex);
+            RedrawVisibleEditorLines(editor);
+            editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        }
+        return displayedErrors;
     }
 
     private async Task RefreshInactiveTabInsightDiagnosticsAsync(Kodo.Models.EditorTab tab)
     {
         if (tab.IsUntitled || IsPlainTextFile(tab.Path) || HasNoFileExtension(tab.Path) || IsInsightBlacklisted(tab.Path) || IsErrorDeadCodeBlacklisted(tab.Path))
             return;
-        if (!IsInsightEnabled || !IsInsightErrorDetectionEnabled) return;
-        if (HasRunningLspForFile(tab.Path)) return;
+        if (!IsInsightEnabled || (!IsInsightErrorDetectionEnabled && !IsInsightDeadCodeEnabled)) return;
+        if (ReferenceEquals(tab, ActiveEditorTab) || IsLspPrimaryForFile(tab.Path)) return;
 
-        if (tab.Document is { TextLength: > 80_000 }) return;
-        var text = await GetEditorTabContentAsync(tab);
-        if (text.Length > 80_000) return;
-        var ext = GetLanguageExtension(tab.Path);
-
+        var cancellation = BeginInactiveTabDiagnosticScan(tab);
+        var cancellationToken = cancellation.Token;
         try
         {
-            var spans = await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, ext, CancellationToken.None);
-            var deadSpans = await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, text, ext, _currentFolderPath, tab.Path, CancellationToken.None);
+            await Task.Delay(180, cancellationToken);
+            var filePath = tab.Path;
+            var folderPath = _currentFolderPath;
+            var document = tab.Document;
+            if (document is { TextLength: > 80_000 }) return;
+            var documentVersion = document?.Version;
+            var text = await GetEditorTabContentAsync(tab, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (text.Length > 80_000 || IsLspPrimaryForFile(filePath)) return;
+            var ext = GetLanguageExtension(filePath);
+            var spans = IsInsightErrorDetectionEnabled
+                ? await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, ext, cancellationToken)
+                : new List<ErrorSpan>();
+            var deadSpans = IsInsightDeadCodeEnabled
+                ? await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, text, ext, folderPath, filePath, cancellationToken)
+                : new List<DeadCodeSpan>();
+            cancellationToken.ThrowIfCancellationRequested();
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab)) return;
-                UpdateTabDiagnostics(tab, spans, deadSpans);
+                if (!IsCurrentInactiveTabDiagnosticScan(tab, cancellation) ||
+                    !OpenTabs.Contains(tab) || ReferenceEquals(tab, ActiveEditorTab) ||
+                    !FileSystemPaths.Equals(tab.Path, filePath) ||
+                    !FileSystemPaths.Equals(_currentFolderPath, folderPath) || !IsInsightEnabled ||
+                    (document is not null && (!ReferenceEquals(tab.Document, document) ||
+                     !ReferenceEquals(document.Version, documentVersion))) ||
+                    (document is null && !string.Equals(tab.Content ?? string.Empty, text, StringComparison.Ordinal)))
+                    return;
+
+                if (!IsInsightErrorDetectionEnabled)
+                    spans = new List<ErrorSpan>();
+                if (!IsInsightDeadCodeEnabled)
+                    deadSpans = new List<DeadCodeSpan>();
+                var dismissed = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal);
+                var filteredSpans = FilterDismissedErrorSpans(spans, document ?? new TextDocument(text), filePath, dismissed);
+                var filteredDeadSpans = FilterDismissedDeadCodeSpans(deadSpans, text, filePath, dismissed);
+                UpdateTabDiagnostics(tab, filteredSpans, filteredDeadSpans);
+
+                if (!IsSplitScreenVisible || document is null)
+                    return;
+
+                foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+                {
+                    if (ReferenceEquals(pane, _activeEditorPane) || !ReferenceEquals(pane.ActiveTab, tab))
+                        continue;
+
+                    var editor = GetEditorForPane(pane);
+                    if (!ReferenceEquals(editor.Document, document))
+                        continue;
+
+                    var isSecondary = ReferenceEquals(editor, SecondaryEditorTextBox);
+                    var deadRenderer = isSecondary ? _secondaryDeadCodeHighlightRenderer : _primaryDeadCodeHighlightRenderer;
+                    var deadBrightener = isSecondary ? _secondaryDeadCodeTextBrightener : _primaryDeadCodeTextBrightener;
+                    var errorRenderer = isSecondary ? _secondaryErrorHighlightRenderer : _primaryErrorHighlightRenderer;
+                    var errorDarkener = isSecondary ? _secondaryErrorTextDarkener : _primaryErrorTextDarkener;
+                    var deadIndex = filteredDeadSpans.Count == 0
+                        ? SpanOverlapIndex.Empty
+                        : SpanOverlapIndex.Build(filteredDeadSpans, span => span.StartOffset,
+                            span => (long)span.StartOffset + Math.Max(1, span.Length));
+                    var errorIndex = filteredSpans.Count == 0
+                        ? SpanOverlapIndex.Empty
+                        : SpanOverlapIndex.Build(filteredSpans, span => span.StartOffset,
+                            span => (long)span.StartOffset + Math.Max(1, span.Length));
+
+                    deadRenderer.SetSpans(filteredDeadSpans, deadIndex);
+                    deadBrightener.SetSpans(filteredDeadSpans);
+                    errorRenderer.SetSpans(filteredSpans, errorIndex);
+                    errorRenderer.SetDeadCodeSpans(filteredDeadSpans, deadIndex);
+                    errorDarkener.SetSpans(filteredSpans, errorIndex, filteredDeadSpans, deadIndex);
+                    RedrawVisibleEditorLines(editor);
+                    editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                }
             });
         }
-        catch { }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { KodoDiagnostics.LogDebug($"Inactive-tab diagnostics failed for '{tab.Path}'", ex); }
+        finally { FinishInactiveTabDiagnosticScan(tab, cancellation); }
     }
 
     private static readonly string[] EditorStateRefreshProperties =
     [
         nameof(HasDocumentOpen), nameof(IsDocumentViewVisible), nameof(HasImagePreview), nameof(IsImagePreviewVisible),
-        nameof(IsTextEditorVisible), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive),
+        nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive),
+        nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
+        nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
+        nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
         nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen),
         nameof(HomeQuickSearchPlaceholderText), nameof(WorkspaceFolderPath), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
@@ -5317,6 +5715,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void QueueWordCountRefresh()
     {
+        CancelWordCountScan();
         _wordCountRefreshTimer.Stop();
         _wordCountRefreshTimer.Start();
     }
@@ -5520,6 +5919,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("FindInFile",         "Find in file",            new KeyGesture(Key.F, KeyModifiers.Control),                        "Editor"),
         new("FindInProject",      "Find in project",         new KeyGesture(Key.F, KeyModifiers.Control | KeyModifiers.Shift),  "Editor"),
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
+        new("ToggleSplitEditor",  "Split editor / close split", new KeyGesture(Key.OemPipe, KeyModifiers.Control),               "Editor"),
+        new("FocusFirstEditorGroup",  "Focus first editor group",  new KeyGesture(Key.D1, KeyModifiers.Control),                 "Editor"),
+        new("FocusSecondEditorGroup", "Focus second editor group", new KeyGesture(Key.D2, KeyModifiers.Control),                 "Editor"),
         new("GoToDefinition",    "Go to Definition",        new KeyGesture(Key.F12, KeyModifiers.None),                         "Editor"),
         new("EditorGoBack",      "Go Back in Editor Navigation", new KeyGesture(Key.Left, KeyModifiers.Control | KeyModifiers.Alt), "Navigation"),
         new("EditorGoForward",   "Go Forward in Editor Navigation", new KeyGesture(Key.Right, KeyModifiers.Control | KeyModifiers.Alt), "Navigation"),
@@ -5630,12 +6032,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         settings.ThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         settings.RecentFiles = settings.RecentFiles?
             .Where(e => !string.IsNullOrWhiteSpace(e.Path))
-            .GroupBy(e => e.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(e => e.Path, FileSystemPaths.Comparer)
             .Select(g => g.OrderByDescending(e => e.IsPinned).ThenByDescending(e => e.LastOpened).First())
             .ToList() ?? [];
         settings.OpenTabPaths = settings.OpenTabPaths?
             .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(FileSystemPaths.Comparer)
             .ToList() ?? [];
         settings.TabSize = NormalizeTabSize(settings.TabSize);
         settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
@@ -5674,6 +6076,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ThemeName = _requestedThemeName,
             AutoSaveEnabled = IsAutoSaveEnabled,
             DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
+            GitSourceControlEnabled = IsGitSourceControlEnabled,
             DeveloperOptionsVisible = IsDeveloperOptionsVisible,
             VerboseLoggingEnabled = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
@@ -5722,11 +6125,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OpenTabPaths = OpenTabs
                 .Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
                 .Select(tab => tab.Path)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Distinct(FileSystemPaths.Comparer)
                 .ToList(),
             ActiveTabPath = ActiveEditorTab is { IsUntitled: false } activeTab
                 ? activeTab.Path
                 : null,
+            SplitEditorVisible = IsSplitScreenVisible,
+            PrimaryPaneTabPath = IsSplitScreenVisible && _editorPane.ActiveTab is { IsUntitled: false } primaryPaneTab
+                ? primaryPaneTab.Path
+                : null,
+            SecondaryPaneTabPath = IsSplitScreenVisible && _secondaryEditorPane.ActiveTab is { IsUntitled: false } secondaryPaneTab
+                ? secondaryPaneTab.Path
+                : null,
+            PrimaryPaneTabPaths = IsSplitScreenVisible
+                ? _editorPane.Tabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
+                    .Select(tab => tab.Path!).Distinct(FileSystemPaths.Comparer).ToList()
+                : [],
+            SecondaryPaneTabPaths = IsSplitScreenVisible
+                ? _secondaryEditorPane.Tabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
+                    .Select(tab => tab.Path!).Distinct(FileSystemPaths.Comparer).ToList()
+                : [],
+            ActivePaneIsSecondary = IsSplitScreenVisible && ReferenceEquals(_activeEditorPane, _secondaryEditorPane),
             LastOpenedFolderPath = _currentFolderPath,
             RecentFiles = RecentFiles
                 .Select(f => new RecentFileEntry { Path = f.Path, IsFolder = f.IsFolder, LastOpened = f.LastOpened, IsPinned = f.IsPinned })
@@ -5839,6 +6258,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ActivateTab(recoveredTab, focusEditor: false);
     }
 
+    internal static TextDocument? CreateStartupRestoredDocument(string content, bool isCorrupted, bool isImagePreview) =>
+        isCorrupted || isImagePreview ? null : new TextDocument(content);
+
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
         Opened -= MainWindow_OnOpened;
@@ -5863,43 +6285,53 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                 var distinctPaths = _startupOpenTabPaths
                     .Where(p => !string.IsNullOrWhiteSpace(p) && File.Exists(p))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Distinct(FileSystemPaths.Comparer)
                     .ToList();
 
                 if (distinctPaths.Count > 0)
                 {
                     var readTasks = distinctPaths.Select(async path =>
                     {
-                        if (IsImagePreviewFile(path))
+                        try
                         {
-                            return (path, content: string.Empty, lineEnding: Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF, isCorrupted: false, encoding: System.Text.Encoding.UTF8);
-                        }
-                        var (encoding, corrupted) = await Task.Run(() =>
-                        {
-                            if (IsBinaryContent(path))
-                                return (System.Text.Encoding.UTF8, true);
-                            return (SearchEngine.DetectFileEncoding(path), false);
-                        }).ConfigureAwait(false);
+                            if (IsImagePreviewFile(path))
+                            {
+                                return (path: (string?)path, content: string.Empty, lineEnding: Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF, isCorrupted: false, encoding: System.Text.Encoding.UTF8);
+                            }
+                            var (encoding, corrupted) = await Task.Run(() =>
+                            {
+                                if (IsBinaryContent(path))
+                                    return (System.Text.Encoding.UTF8, true);
+                                return (SearchEngine.DetectFileEncoding(path), false);
+                            }).ConfigureAwait(false);
 
-                        string content;
-                        if (corrupted)
-                        {
-                            content = string.Empty;
-                        }
-                        else if (new FileInfo(path).Length > MaxFileSizeForFullLoad)
-                        {
-                            content = await ReadLargeFileAsync(path, encoding).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            content = await File.ReadAllTextAsync(path, encoding).ConfigureAwait(false);
-                        }
+                            string content;
+                            if (corrupted)
+                            {
+                                content = string.Empty;
+                            }
+                            else if (new FileInfo(path).Length > MaxFileSizeForFullLoad)
+                            {
+                                content = await ReadLargeFileAsync(path, encoding).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                content = await File.ReadAllTextAsync(path, encoding).ConfigureAwait(false);
+                            }
 
-                        var lineEnding = !corrupted && !string.IsNullOrEmpty(content)
-                            ? DetectLineEnding(content)
-                            : Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
+                            var lineEnding = !corrupted && !string.IsNullOrEmpty(content)
+                                ? DetectLineEnding(content)
+                                : Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
 
-                        return (path, content, lineEnding, isCorrupted: corrupted, encoding);
+                            return (path: (string?)path, content, lineEnding, isCorrupted: corrupted, encoding);
+                        }
+                        catch (Exception ex)
+                        {
+                            KodoDiagnostics.LogDebug($"Unable to restore startup tab '{path}'", ex);
+                            return (path: (string?)null, content: string.Empty,
+                                lineEnding: Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF,
+                                isCorrupted: false, encoding: System.Text.Encoding.UTF8);
+                        }
                     }).ToArray();
 
                     var results = await Task.WhenAll(readTasks);
@@ -5909,12 +6341,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     {
                         foreach (var path in _startupOpenTabPaths)
                         {
-                            var result = results.FirstOrDefault(r => string.Equals(r.path, path, StringComparison.OrdinalIgnoreCase));
+                            var result = results.FirstOrDefault(r => FileSystemPaths.Equals(r.path, path));
                             if (result.path is null) continue;
-                            if (OpenTabs.Any(t => !t.IsUntitled && string.Equals(t.Path, result.path, StringComparison.OrdinalIgnoreCase)))
+                            if (OpenTabs.Any(t => !t.IsUntitled && FileSystemPaths.Equals(t.Path, result.path)))
                                 continue;
 
-                            var tab = new EditorTab(result.path, Path.GetFileName(result.path), result.content, lineEnding: result.lineEnding) { Encoding = result.encoding };
+                            var restoredDocument = CreateStartupRestoredDocument(
+                                result.content,
+                                result.isCorrupted,
+                                IsImagePreviewFile(result.path));
+                            var tab = new EditorTab(result.path, Path.GetFileName(result.path), string.Empty, lineEnding: result.lineEnding)
+                            {
+                                Encoding = result.encoding,
+                                Document = restoredDocument
+                            };
                             if (result.isCorrupted)
                                 _corruptedTabs.Add(tab);
                             CaptureTabDiskState(tab);
@@ -5926,7 +6366,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         {
                             var activeTab = OpenTabs.FirstOrDefault(tab =>
                                 !tab.IsUntitled &&
-                                string.Equals(tab.Path, _startupActiveTabPath, StringComparison.OrdinalIgnoreCase));
+                                FileSystemPaths.Equals(tab.Path, _startupActiveTabPath));
                             tabToActivate = activeTab ?? (OpenTabs.Count > 0 ? OpenTabs[0] : null);
                         }
                         else if (OpenTabs.Count > 0 && ActiveEditorTab is null)
@@ -5939,16 +6379,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         var largeContentLength = tabToActivate.Document?.TextLength ?? tabToActivate.Content.Length;
                         if (largeContentLength > 120_000)
                             await Task.Delay(TimeSpan.FromMilliseconds(60));
+                        var activationVersion = -1;
+                        EditorPaneState? activationPane = null;
                         await Dispatcher.UIThread.InvokeAsync(() =>
                         {
-                            if (OpenTabs.Contains(tabToActivate) && ActiveEditorTab is null)
-                                ActivateTab(tabToActivate);
+                            if (OpenTabs.Contains(tabToActivate))
+                            {
+                                if (!ReferenceEquals(_activeEditorPane.ActiveTab, tabToActivate))
+                                    ActivateTab(tabToActivate, scheduleContentLoad: false);
+                                activationVersion = _activeTabVersion;
+                                activationPane = _activeEditorPane;
+                            }
                         });
+                        if (activationPane is not null)
+                        {
+                            await SetEditorTabContentSafelyAsync(tabToActivate, activationVersion, activationPane);
+                            await EnsurePaneDocumentHasContentAsync(activationPane, tabToActivate);
+                        }
                     }
-                    RaiseMany(nameof(IsHomePageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(HasOpenEditors));
+                    RaiseMany(nameof(IsHomePageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(HasOpenEditors));
                     RefreshState(fullRefresh: true);
                 }
             }
+
+            if (IsRestoreOpenTabsOnLaunchEnabled && _startupSplitEditorVisible && _startupOpenTabPaths.Count > 0)
+                await RestoreStartupSplitEditorAsync();
 
             if (!string.IsNullOrWhiteSpace(_startupFilePath))
             {
@@ -5970,6 +6425,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         InitializeDeferredStartupWork();
+        UpdateGitSourceControlLifecycle();
 
         var isReturningUser = _hasCompletedTutorial;
 
@@ -6099,6 +6555,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InvalidateDotnetProjectCache();
         AddRecentFolder(path);
         await PopulateFileTreeAsync(path);
+        if (!FileSystemPaths.Equals(_currentFolderPath, path))
+            return;
         SetupProjectFolderWatcher(path);
         IsFileExplorerVisible = true;
         RefreshState(fullRefresh: true);
@@ -6107,6 +6565,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseFolder()
     {
+        _fileTreeLoadGeneration++;
         DisposeProjectFolderWatcher();
         _currentFolderPath = null;
         _searchFileCache = null;
@@ -6123,6 +6582,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _autoSaveTimer.Stop();
         if (_isSaving) return false;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var originalFilePath = requestTab is { IsUntitled: false } ? requestTab.Path : null;
+        var requestDocument = requestEditor.Document;
         if (HasImagePreview) return false;
         if (ActiveEditorTab is not null && _corruptedTabs.Contains(ActiveEditorTab))
         {
@@ -6146,6 +6610,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SuggestedFileName = suggestedFileName
             });
 
+            if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+                !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, requestDocument))
+                return false;
+
             var newPath = file?.TryGetLocalPath();
             if (string.IsNullOrWhiteSpace(newPath)) return false;
 
@@ -6162,23 +6630,65 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _hasUntitledDocument = false;
             if (ActiveEditorTab is not null)
                 ActiveEditorTab.Rename(newPath, Path.GetFileName(newPath));
+            if (ActiveEditorTab is { } renamedTab)
+            {
+                RefreshSyntaxHighlightingForTabInPanes(renamedTab);
+                foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+                {
+                    if (!ReferenceEquals(pane.ActiveTab, renamedTab))
+                        continue;
+
+                    ResetPaneLspPresentation(pane);
+                }
+            }
+            OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
+            OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
             ClearAutoSaveStatus();
             RefreshCurrentFileSyntaxHighlighting();
+            QueueInsightRefresh();
         }
 
         var savingTab = ActiveEditorTab;
         var savingPath = _currentFilePath;
-        var savingVersion = _insightDocVersion;
         var savingDocument = EditorTextBox.Document;
+        var savingDocumentVersion = savingDocument.Version;
         var savingLineEnding = _currentLineEnding;
         var savingSnapshot = EditorTextSnapshotStore.GetSnapshot(savingDocument);
-        var savingContent = await savingSnapshot.GetTextAsync();
+        var expectedDiskWriteTimeUtc = !shouldPromptForPath && savingTab is { LastKnownLength: >= 0 }
+            ? savingTab.LastKnownWriteTimeUtc
+            : (DateTime?)null;
+        var expectedDiskLength = !shouldPromptForPath && savingTab is { LastKnownLength: >= 0 }
+            ? savingTab.LastKnownLength
+            : (long?)null;
 
         if (!shouldPromptForPath && savingTab is not null && IsTabDiskStateChanged(savingTab))
         {
             await ReportSaveRefusedAsync(
                 $"\"{Path.GetFileName(savingPath!)}\" changed on disk since it was opened, so it was not overwritten. Use Save As to keep your changes under a new name, or reload the file to pick up the newer version.");
             return false;
+        }
+
+        if (savingTab is { IsUntitled: false, IsDirty: false, LastKnownLength: > 0 } &&
+            savingSnapshot.Source.TextLength == 0 && !IsTabDiskStateChanged(savingTab))
+        {
+            await ReportSaveRefusedAsync(
+                $"\"{Path.GetFileName(savingPath!)}\" is still marked clean, but its editor buffer is empty while the file on disk contains {savingTab.LastKnownLength:N0} bytes. The file was not overwritten.");
+            return false;
+        }
+
+        if (savingTab is { IsUntitled: false, IsDirty: true, LastKnownLength: > 0 } &&
+            savingSnapshot.Source.TextLength == 0 && !IsTabDiskStateChanged(savingTab))
+        {
+            var confirmed = await ShowConfirmationDialogAsync(
+                "Save an empty file?",
+                $"The editor buffer for \"{Path.GetFileName(savingPath!)}\" is empty, but the existing file contains {savingTab.LastKnownLength:N0} bytes. Replace the file with an empty file?",
+                "Replace with Empty File",
+                "Keep Existing File",
+                isDestructive: true);
+            if (!confirmed || !ReferenceEquals(_activeEditorPane, requestPane) ||
+                !ReferenceEquals(requestPane.ActiveTab, savingTab) || !ReferenceEquals(EditorTextBox.Document, savingDocument) ||
+                !ReferenceEquals(savingDocument.Version, savingDocumentVersion))
+                return false;
         }
 
         var savingEncoding = savingTab?.Encoding ?? _currentFileEncoding;
@@ -6194,12 +6704,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             var saveWatch = System.Diagnostics.Stopwatch.StartNew();
-            var textToSave = await Task.Run(() => ConvertToLineEnding(savingContent, savingLineEnding));
-            await WriteTextFileAtomicallyAsync(savingPath!, textToSave, savingEncoding);
+            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                savingPath!, savingSnapshot, savingLineEnding, savingEncoding,
+                expectedDiskWriteTimeUtc, expectedDiskLength,
+                async () => await Dispatcher.UIThread.InvokeAsync(() => savingTab is null || FileSystemPaths.Equals(savingTab.Path, savingPath))));
             saveWatch.Stop();
-            KodoDiagnostics.ReportSlowStage("save convert+write", saveWatch.ElapsedMilliseconds, 1000, $"len={savingContent.Length}");
+            KodoDiagnostics.ReportSlowStage("save convert+write", saveWatch.ElapsedMilliseconds, 1000, $"len={savingSnapshot.Source.TextLength}");
 
-            if (savingVersion == _insightDocVersion)
+            var targetPathMatchesTab = savingTab is null || FileSystemPaths.Equals(savingTab.Path, savingPath);
+            if (targetPathMatchesTab && ReferenceEquals(savingDocument.Version, savingDocumentVersion))
             {
                 if (savingTab is not null)
                 {
@@ -6219,16 +6732,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     savingTab.IsDirty = true;
             }
             if (savingTab is not null && savingTab.IsUntitled)
+            {
                 savingTab.IsUntitled = false;
-            if (savingTab is not null)
+                RefreshSyntaxHighlightingForTabInPanes(savingTab);
+            }
+            if (savingTab is not null && targetPathMatchesTab)
             {
                 CaptureTabDiskState(savingTab);
                 savingTab.IsModifiedExternally = false;
+                if (ReferenceEquals(_editorPane.ActiveTab, savingTab))
+                    RefreshPanePreviewState(_editorPane);
+                if (ReferenceEquals(_secondaryEditorPane.ActiveTab, savingTab))
+                    RefreshPanePreviewState(_secondaryEditorPane);
             }
             if (ReferenceEquals(ActiveEditorTab, savingTab))
             {
                 if (shouldPromptForPath)
-                    RefreshCurrentFileSyntaxHighlighting();
+                    UpdateCurrentDocumentPresentation();
                 else
                     RefreshRunBuildState();
             }
@@ -6236,7 +6756,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (IsAutoSaveEnabled && HasFileOpen && ReferenceEquals(ActiveEditorTab, savingTab))
             {
-                if (savingVersion == _insightDocVersion)
+                if (ReferenceEquals(savingDocument.Version, savingDocumentVersion))
                 {
                     _autoSaveStatusMessage = AutoSaveSavedMessage;
                     _autoSaveStatusTimer.Stop();
@@ -6251,7 +6771,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             if (!string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
-                _ = FlushLspDocumentAsync(savingPath, savingContent);
+                _ = FlushLspDocumentAsync(savingPath, string.Empty);
+            if (shouldPromptForPath && savingTab is not null && !string.IsNullOrWhiteSpace(savingPath))
+            {
+                if (!string.IsNullOrWhiteSpace(originalFilePath) &&
+                    !FileSystemPaths.Equals(originalFilePath, savingPath) &&
+                    IsLspDocumentOpenOrOpening(originalFilePath))
+                    _ = RetargetLspDocumentAsync(originalFilePath, savingPath, savingTab);
+                else
+                    _ = LspNotifyActiveDocumentDidOpenAsync(savingPath);
+            }
 
             RefreshState(fullRefresh: true);
             return true;
@@ -6288,7 +6817,35 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await ShowWarningDialogAsync("File save", new IOException(reason));
     }
 
-    private static async Task WriteTextFileAtomicallyAsync(string path, string text, System.Text.Encoding encoding)
+    private static Task WriteTextFileAtomicallyAsync(
+        string path,
+        string text,
+        System.Text.Encoding encoding,
+        DateTime? expectedWriteTimeUtc = null,
+        long? expectedLength = null,
+        Func<Task<bool>>? validateBeforeCommit = null) =>
+        WriteTextFileAtomicallyCoreAsync(
+            path, encoding, writer => writer.WriteAsync(text), expectedWriteTimeUtc, expectedLength, validateBeforeCommit);
+
+    private static Task WriteTextFileAtomicallyAsync(
+        string path,
+        EditorTextSnapshot snapshot,
+        Kodo.Models.LineEnding lineEnding,
+        System.Text.Encoding encoding,
+        DateTime? expectedWriteTimeUtc = null,
+        long? expectedLength = null,
+        Func<Task<bool>>? validateBeforeCommit = null) =>
+        WriteTextFileAtomicallyCoreAsync(
+            path, encoding, writer => WriteEditorSnapshotAsync(writer, snapshot, lineEnding),
+            expectedWriteTimeUtc, expectedLength, validateBeforeCommit);
+
+    private static async Task WriteTextFileAtomicallyCoreAsync(
+        string path,
+        System.Text.Encoding encoding,
+        Func<StreamWriter, Task> writeContent,
+        DateTime? expectedWriteTimeUtc = null,
+        long? expectedLength = null,
+        Func<Task<bool>>? validateBeforeCommit = null)
     {
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath);
@@ -6315,7 +6872,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             using (var stream = new FileStream(tempPath, options))
             using (var writer = new StreamWriter(stream, encoding, 1024, leaveOpen: true))
             {
-                await writer.WriteAsync(text);
+                await writeContent(writer);
                 await writer.FlushAsync();
                 stream.Flush(flushToDisk: true);
             }
@@ -6325,12 +6882,88 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 try { File.SetUnixFileMode(tempPath, unixMode.Value); } catch { }
             }
 
+            if (expectedWriteTimeUtc is { } expectedTime && expectedLength is { } expectedFileLength)
+            {
+                var currentInfo = new FileInfo(fullPath);
+                if (!currentInfo.Exists || currentInfo.LastWriteTimeUtc != expectedTime || currentInfo.Length != expectedFileLength)
+                    throw new IOException($"\"{fullPath}\" changed on disk while Kodo was saving it. The existing file was left untouched.");
+            }
+
+            if (validateBeforeCommit is not null && !await validateBeforeCommit())
+                throw new IOException($"The editor tab changed paths while Kodo was saving \"{fullPath}\". The file was left untouched.");
+
             await CommitTempFileAsync(tempPath, fullPath);
         }
         finally
         {
             try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
         }
+    }
+
+    private static async Task WriteEditorSnapshotAsync(
+        StreamWriter writer,
+        EditorTextSnapshot snapshot,
+        Kodo.Models.LineEnding lineEnding)
+    {
+        var newline = lineEnding switch
+        {
+            Kodo.Models.LineEnding.CRLF => "\r\n",
+            Kodo.Models.LineEnding.CR => "\r",
+            Kodo.Models.LineEnding.LF => "\n",
+            _ => Environment.NewLine
+        };
+        var input = new char[32 * 1024];
+        var output = new char[32 * 1024 + 2];
+        var outputLength = 0;
+        var pendingCarriageReturn = false;
+        using var reader = snapshot.Source.CreateReader();
+
+        void AppendNewline()
+        {
+            newline.AsSpan().CopyTo(output.AsSpan(outputLength));
+            outputLength += newline.Length;
+        }
+
+        async Task FlushOutputAsync()
+        {
+            if (outputLength == 0) return;
+            await writer.WriteAsync(output.AsMemory(0, outputLength));
+            outputLength = 0;
+        }
+
+        int read;
+        while ((read = await reader.ReadAsync(input.AsMemory())) > 0)
+        {
+            for (var i = 0; i < read; i++)
+            {
+                var current = input[i];
+                if (pendingCarriageReturn)
+                {
+                    AppendNewline();
+                    pendingCarriageReturn = false;
+                    if (current == '\n')
+                    {
+                        if (outputLength >= 32 * 1024)
+                            await FlushOutputAsync();
+                        continue;
+                    }
+                }
+
+                if (current == '\r')
+                    pendingCarriageReturn = true;
+                else if (current == '\n')
+                    AppendNewline();
+                else
+                    output[outputLength++] = current;
+
+                if (outputLength >= 32 * 1024)
+                    await FlushOutputAsync();
+            }
+        }
+
+        if (pendingCarriageReturn)
+            AppendNewline();
+        await FlushOutputAsync();
     }
 
     private static UnixFileMode? ReadUnixMode(string path)
@@ -6358,12 +6991,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             KodoDiagnostics.LogDebug($"Atomic replace of '{targetPath}' was blocked by an open handle - falling back to an in-place write.");
         }
 
-        await File.WriteAllBytesAsync(targetPath, await File.ReadAllBytesAsync(tempPath));
+        await using (var source = new FileStream(
+                         tempPath,
+                         FileMode.Open,
+                         FileAccess.Read,
+                         FileShare.Read,
+                         bufferSize: 128 * 1024,
+                         FileOptions.Asynchronous | FileOptions.SequentialScan))
+        await using (var destination = new FileStream(
+                         targetPath,
+                         FileMode.Create,
+                         FileAccess.Write,
+                         FileShare.Read,
+                         bufferSize: 128 * 1024,
+                         FileOptions.Asynchronous | FileOptions.SequentialScan))
+        {
+            await source.CopyToAsync(destination, 128 * 1024);
+            await destination.FlushAsync();
+            destination.Flush(flushToDisk: true);
+        }
         File.Delete(tempPath);
     }
 
     private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
-        Dispatcher.UIThread.Post(RestartFileTreeRefreshTimer);
+        Dispatcher.UIThread.Post(() =>
+        {
+            RecheckDirtyTabsForExternalChanges();
+            RestartFileTreeRefreshTimer();
+        });
 
     private static string[] GetSortedEntries(string dirPath)
     {
@@ -6454,12 +7109,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SetEditorContentCore(null, content, content.Length);
     }
 
-    private async Task SetEditorContentAsync(string content, int expectedActivationVersion)
+    private async Task SetEditorContentAsync(
+        string content,
+        int expectedActivationVersion,
+        EditorPaneState? expectedPane = null,
+        EditorTab? expectedTab = null)
     {
         var dispatchQueuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (_activeTabVersion != expectedActivationVersion) return;
+            if (_activeTabVersion != expectedActivationVersion ||
+                (expectedPane is not null && !ReferenceEquals(_activeEditorPane, expectedPane)) ||
+                (expectedPane is not null && expectedTab is not null &&
+                    !ReferenceEquals(expectedPane.ActiveTab, expectedTab))) return;
             SetEditorContent(new TextDocument(content));
         }, DispatcherPriority.Normal);
         KodoDiagnostics.ReportSlowStage(
@@ -6492,7 +7154,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         try
         {
             if (replacementDocument is not null)
+            {
                 EditorTextBox.Document = replacementDocument;
+                var otherPane = ReferenceEquals(_activeEditorPane, _editorPane)
+                    ? _secondaryEditorPane
+                    : _editorPane;
+                var otherEditor = ReferenceEquals(otherPane, _secondaryEditorPane)
+                    ? SecondaryEditorTextBox
+                    : PrimaryEditorTextBox;
+                if (ActiveEditorTab is { } activeTab && ReferenceEquals(otherPane.ActiveTab, activeTab) &&
+                    !ReferenceEquals(otherEditor.Document, replacementDocument))
+                    otherEditor.Document = replacementDocument;
+            }
             else if (EditorTextBox.Document.TextLength != contentLength || contentLength > 0)
                 EditorTextBox.Document.Text = content ?? string.Empty;
             if (!preserveUndoHistory)
@@ -6826,7 +7499,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
-        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
     }
 
@@ -6873,6 +7546,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (OpenTabs.Count == 0) return;
 
+        var originalActivePane = _activeEditorPane;
         var originalActiveTab = ActiveEditorTab;
         SaveCurrentEditorStateIntoTab();
 
@@ -6885,7 +7559,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (tab.IsUntitled)
                 {
                     if (!ReferenceEquals(tab, ActiveEditorTab))
+                    {
+                        var tabPane = ReferenceEquals(_editorPane.ActiveTab, tab)
+                            ? _editorPane
+                            : ReferenceEquals(_secondaryEditorPane.ActiveTab, tab)
+                                ? _secondaryEditorPane
+                                : _activeEditorPane;
+                        ActivateEditorPane(ResolveEditorPaneForOpen(tabPane), focusEditor: false);
                         ActivateTab(tab, focusEditor: false, preserveCurrentState: false);
+                    }
 
                     await SaveAsync(allowPromptForPath: true, forcePromptForPath: true);
                 }
@@ -6903,19 +7585,54 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                     try
                     {
-                        var tabContent = await GetEditorTabContentAsync(tab);
-                        var textToSave = await Task.Run(() => ConvertToLineEnding(tabContent, tab.LineEnding));
-                        var encToUse = tab.Encoding ?? _currentFileEncoding;
-                        if (encToUse == System.Text.Encoding.UTF8 && File.Exists(tab.Path))
+                        var tabSource = await Dispatcher.UIThread.InvokeAsync(() =>
+                            (Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty,
+                                Path: tab.Path, LineEnding: tab.LineEnding, Encoding: tab.Encoding ?? _currentFileEncoding,
+                                LastWriteTimeUtc: tab.LastKnownWriteTimeUtc, LastLength: tab.LastKnownLength));
+                        var encToUse = tabSource.Encoding;
+                        if (encToUse == System.Text.Encoding.UTF8 && File.Exists(tabSource.Path))
                         {
-                            try { encToUse = SearchEngine.DetectFileEncoding(tab.Path); } catch { }
+                            try { encToUse = await Task.Run(() => SearchEngine.DetectFileEncoding(tabSource.Path)); } catch { }
                         }
-                        await WriteTextFileAtomicallyAsync(tab.Path, textToSave, encToUse);
-                        tab.Content = string.Empty;
-                        tab.Encoding = encToUse;
-                        tab.IsDirty = false;
-                        tab.IsModifiedExternally = false;
-                        CaptureTabDiskState(tab);
+                        if (tabSource.Document is { } tabDocument)
+                        {
+                            var tabSnapshot = EditorTextSnapshotStore.GetSnapshot(tabDocument);
+                            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                                tabSource.Path, tabSnapshot, tabSource.LineEnding, encToUse,
+                                tabSource.LastLength >= 0 ? tabSource.LastWriteTimeUtc : null,
+                                tabSource.LastLength >= 0 ? tabSource.LastLength : null,
+                                async () => await Dispatcher.UIThread.InvokeAsync(() => FileSystemPaths.Equals(tab.Path, tabSource.Path))));
+                        }
+                        else
+                        {
+                            var textToSave = await Task.Run(() => ConvertToLineEnding(tabSource.Content, tabSource.LineEnding));
+                            await WriteTextFileAtomicallyAsync(
+                                tabSource.Path,
+                                textToSave,
+                                encToUse,
+                                tabSource.LastLength >= 0 ? tabSource.LastWriteTimeUtc : null,
+                                tabSource.LastLength >= 0 ? tabSource.LastLength : null,
+                                async () => await Dispatcher.UIThread.InvokeAsync(() => FileSystemPaths.Equals(tab.Path, tabSource.Path)));
+                        }
+                        var unchanged = await Dispatcher.UIThread.InvokeAsync(() => tabSource.Document is not null
+                            ? FileSystemPaths.Equals(tab.Path, tabSource.Path) && ReferenceEquals(tab.Document, tabSource.Document) && ReferenceEquals(tabSource.Document.Version, tabSource.Version)
+                            : FileSystemPaths.Equals(tab.Path, tabSource.Path) && tab.Document is null && string.Equals(tab.Content ?? string.Empty, tabSource.Content, StringComparison.Ordinal));
+                        if (unchanged)
+                        {
+                            tab.Content = string.Empty;
+                            tab.IsDirty = false;
+                        }
+                        else
+                        {
+                            tab.IsDirty = true;
+                            KodoDiagnostics.LogDebug($"Save All raced with edits for '{tab.Path}' - leaving tab dirty");
+                        }
+                        if (FileSystemPaths.Equals(tab.Path, tabSource.Path))
+                        {
+                            tab.Encoding = encToUse;
+                            tab.IsModifiedExternally = false;
+                            CaptureTabDiskState(tab);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -6926,6 +7643,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         finally
         {
+            if (!ReferenceEquals(_activeEditorPane, originalActivePane))
+                ActivateEditorPane(originalActivePane, focusEditor: false);
+
             if (originalActiveTab is not null && OpenTabs.Contains(originalActiveTab) &&
                 !ReferenceEquals(originalActiveTab, ActiveEditorTab))
             {
@@ -8187,11 +8907,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async Task RestoreExpandedPathsAsync(HashSet<string> expandedPaths)
+    private async Task RestoreExpandedPathsAsync(HashSet<string> expandedPaths, int expectedGeneration)
     {
+        if (_fileTreeLoadGeneration != expectedGeneration) return;
         bool anyExpanded;
         do
         {
+            if (_fileTreeLoadGeneration != expectedGeneration) return;
             anyExpanded = false;
             var candidates = FileTreeItems
                 .Where(i => i.IsDirectory && !i.IsExpanded && expandedPaths.Contains(i.FullPath))
@@ -8199,7 +8921,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             foreach (var item in candidates)
             {
+                if (_fileTreeLoadGeneration != expectedGeneration) return;
                 await ToggleDirectoryExpansionAsync(item);
+                if (_fileTreeLoadGeneration != expectedGeneration) return;
                 anyExpanded = true;
             }
         }
@@ -8210,27 +8934,41 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var originalActiveTab = ActiveEditorTab;
 
+
+
+
+
+        var ownershipSnapshot = tabs.Where(t => t.IsDirty)
+            .Select(t => (tab: t, inPrimary: _editorPane.Tabs.Contains(t), inSecondary: _secondaryEditorPane.Tabs.Contains(t)))
+            .ToList();
+
         foreach (var tab in tabs.Where(t => t.IsDirty))
         {
             var action = await ShowUnsavedTabDialogAsync(tab);
+            var declined = false;
             switch (action)
             {
                 case UnsavedTabAction.Cancel:
-                    if (originalActiveTab is not null && OpenTabs.Contains(originalActiveTab))
-                        ActivateTab(originalActiveTab, focusEditor: false, preserveCurrentState: false);
-                    return false;
+                    declined = true;
+                    break;
 
                 case UnsavedTabAction.Save:
+
+
                     if (!ReferenceEquals(tab, ActiveEditorTab))
-                        ActivateTab(tab, focusEditor: false);
+                        ActivateTab(tab, focusEditor: false, preserveOtherPaneMembership: true);
 
                     if (!await SaveAsync(allowPromptForPath: true, forcePromptForPath: false))
-                    {
-                        if (originalActiveTab is not null && OpenTabs.Contains(originalActiveTab))
-                            ActivateTab(originalActiveTab, focusEditor: false, preserveCurrentState: false);
-                        return false;
-                    }
+                        declined = true;
                     break;
+            }
+
+            if (declined)
+            {
+                RestoreDeletionPromptTabOwnership(ownershipSnapshot);
+                if (originalActiveTab is not null && OpenTabs.Contains(originalActiveTab))
+                    ActivateTab(originalActiveTab, focusEditor: false, preserveCurrentState: false);
+                return false;
             }
         }
 
@@ -8238,6 +8976,31 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ActivateTab(originalActiveTab, focusEditor: false, preserveCurrentState: false);
 
         return true;
+    }
+
+    private void RestoreDeletionPromptTabOwnership(
+        List<(EditorTab tab, bool inPrimary, bool inSecondary)> snapshot)
+    {
+        foreach (var entry in snapshot)
+        {
+            RestoreDeletionPromptTabOwnershipInPane(_editorPane, entry.tab, entry.inPrimary);
+            RestoreDeletionPromptTabOwnershipInPane(_secondaryEditorPane, entry.tab, entry.inSecondary);
+        }
+    }
+
+    private void RestoreDeletionPromptTabOwnershipInPane(EditorPaneState pane, EditorTab tab, bool wasMember)
+    {
+        if (wasMember || !pane.Tabs.Contains(tab))
+            return;
+
+        var index = pane.Tabs.IndexOf(tab);
+        pane.Tabs.Remove(tab);
+        if (ReferenceEquals(pane.ActiveTab, tab))
+        {
+            var replacementIndex = Math.Min(index, pane.Tabs.Count - 1);
+            var replacementTab = pane.Tabs.Count > 0 ? pane.Tabs[replacementIndex] : null;
+            SetOtherPaneTab(pane, replacementTab);
+        }
     }
 
     private void RetargetTabPaths(string oldPath, string newPath, bool wasDirectory)
@@ -8259,38 +9022,81 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (updated is null) continue;
 
+            var previousPath = tab.Path;
             tab.Rename(updated, Path.GetFileName(updated));
+            if (ReferenceEquals(_editorPane.ActiveTab, tab))
+                RefreshPanePreviewState(_editorPane);
+            if (ReferenceEquals(_secondaryEditorPane.ActiveTab, tab))
+                RefreshPanePreviewState(_secondaryEditorPane);
+            RefreshSyntaxHighlightingForTabInPanes(tab);
+            foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+            {
+                if (ReferenceEquals(pane.ActiveTab, tab))
+                    ResetPaneLspPresentation(pane);
+            }
+            OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
+            OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
+            _ = RetargetLspDocumentAsync(previousPath, updated, tab);
+            QueueLspPresentationRefresh();
 
             if (ReferenceEquals(tab, ActiveEditorTab))
             {
                 _currentFilePath = updated;
                 EditorSession.SetFilePath(updated);
+                UpdateCurrentDocumentPresentation();
+                QueueInsightRefresh();
                 RefreshState(fullRefresh: true);
             }
         }
     }
 
-    private async Task ActivateEditorTabForMenuActionAsync(EditorTab tab)
+    private (EditorPaneState Pane, EditorTab? Tab, EditorPaneState TargetPane) ActivateEditorTabForMenuAction(EditorTab tab)
     {
-        if (!ReferenceEquals(ActiveEditorTab, tab))
+        var previousPane = _activeEditorPane;
+        var previousTab = previousPane.ActiveTab;
+        var targetPane = ReferenceEquals(_editorPane.ActiveTab, tab)
+            ? _editorPane
+            : ReferenceEquals(_secondaryEditorPane.ActiveTab, tab)
+                ? _secondaryEditorPane
+                : previousPane;
+        targetPane = ResolveEditorPaneForOpen(targetPane);
+        ActivateEditorPane(targetPane, focusEditor: false);
+        if (!ReferenceEquals(targetPane.ActiveTab, tab))
             ActivateTab(tab, focusEditor: false);
+        return (previousPane, previousTab, targetPane);
+    }
 
-        await Task.CompletedTask;
+    private void RestoreEditorTabMenuContext((EditorPaneState Pane, EditorTab? Tab, EditorPaneState TargetPane) context, EditorTab targetTab)
+    {
+        if (!ReferenceEquals(_activeEditorPane, context.TargetPane) || !ReferenceEquals(context.TargetPane.ActiveTab, targetTab))
+            return;
+
+        if (context.Tab is null || !OpenTabs.Contains(context.Tab))
+            return;
+
+        ActivateEditorPane(context.Pane, focusEditor: false);
+        if (!ReferenceEquals(context.Pane.ActiveTab, context.Tab))
+            ActivateTab(context.Tab, focusEditor: false);
     }
 
     private async void SaveEditorTabMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { } tab) return;
-        await ActivateEditorTabForMenuActionAsync(tab);
-        await SaveAsync();
+        var context = ActivateEditorTabForMenuAction(tab);
+        try { await SaveAsync(); }
+        finally { RestoreEditorTabMenuContext(context, tab); }
     }
 
     private async void SaveEditorTabAsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { } tab) return;
-        await ActivateEditorTabForMenuActionAsync(tab);
-        await SaveAsAsync();
-        await RefreshExplorerTreeAsync();
+        var context = ActivateEditorTabForMenuAction(tab);
+        try
+        {
+            await SaveAsAsync();
+            await RefreshExplorerTreeAsync();
+        }
+        finally { RestoreEditorTabMenuContext(context, tab); }
     }
 
     private void CopyEditorTabPathMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -8358,6 +9164,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         tab.RenameText = tab.DisplayName;
         tab.IsRenaming = true;
+        tab.IsRenamingInSecondaryPane = IsSplitScreenVisible && ReferenceEquals(_activeEditorPane, _secondaryEditorPane);
+        tab.IsRenamingInPrimaryPane = !tab.IsRenamingInSecondaryPane;
         _inlineTabRenameFocusPending = tab;
 
         Dispatcher.UIThread.Post(() =>
@@ -8373,10 +9181,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         });
     }
 
-    private TextBox? FindInlineTabRenameTextBox(EditorTab tab) =>
-        this.GetVisualDescendants()
+    private TextBox? FindInlineTabRenameTextBox(EditorTab tab)
+    {
+        var candidates = this.GetVisualDescendants()
             .OfType<TextBox>()
-            .FirstOrDefault(control => ReferenceEquals(control.DataContext, tab));
+            .Where(control => ReferenceEquals(control.DataContext, tab));
+        if (IsSplitScreenVisible)
+        {
+            var pane = ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
+                ? SecondaryEditorPane
+                : PrimaryEditorPane;
+            return candidates.FirstOrDefault(control =>
+                control.GetVisualAncestors().Any(ancestor => ReferenceEquals(ancestor, pane)));
+        }
+
+        return candidates.FirstOrDefault();
+    }
 
     private async void InlineTabRenameTextBox_OnKeyDown(object? sender, KeyEventArgs e)
     {
@@ -8451,7 +9271,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         var newPath = Path.Combine(parentDir, newName);
-        var isCaseOnlyRename = string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase)
+        var isCaseOnlyRename = FileSystemPaths.Comparer.Equals(oldPath, newPath)
                                && !string.Equals(oldPath, newPath, StringComparison.Ordinal);
         if (!isCaseOnlyRename && File.Exists(newPath))
         {
@@ -8468,8 +9288,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (tab.IsDirty)
             {
-                await ActivateEditorTabForMenuActionAsync(tab);
-                await SaveAsync();
+                var context = ActivateEditorTabForMenuAction(tab);
+                try { await SaveAsync(); }
+                finally { RestoreEditorTabMenuContext(context, tab); }
             }
 
             await RefreshExplorerTreeAsync();
@@ -8556,7 +9377,50 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var tempPath = newPath + ".tmp_rename_" + Guid.NewGuid().ToString("N");
         File.Move(currentPath, tempPath);
-        File.Move(tempPath, newPath);
+        try
+        {
+            File.Move(tempPath, newPath);
+        }
+        catch (Exception moveException)
+        {
+            if (File.Exists(tempPath) && !File.Exists(currentPath))
+            {
+                try { File.Move(tempPath, currentPath); }
+                catch (Exception rollbackException)
+                {
+                    throw new IOException(
+                        $"Rename failed and the original file remains at '{tempPath}'.",
+                        new AggregateException(moveException, rollbackException));
+                }
+            }
+
+            throw;
+        }
+    }
+
+    private static void MoveDirectoryCaseSafe(string currentPath, string newPath)
+    {
+        var tempPath = newPath + ".tmp_rename_" + Guid.NewGuid().ToString("N");
+        Directory.Move(currentPath, tempPath);
+        try
+        {
+            Directory.Move(tempPath, newPath);
+        }
+        catch (Exception moveException)
+        {
+            if (Directory.Exists(tempPath) && !Directory.Exists(currentPath))
+            {
+                try { Directory.Move(tempPath, currentPath); }
+                catch (Exception rollbackException)
+                {
+                    throw new IOException(
+                        $"Rename failed and the original folder remains at '{tempPath}'.",
+                        new AggregateException(moveException, rollbackException));
+                }
+            }
+
+            throw;
+        }
     }
 
     private async Task CompleteInlineRenameAsync(FileTreeItem item)
@@ -8579,7 +9443,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var parentDir = Path.GetDirectoryName(item.FullPath) ?? _currentFolderPath ?? string.Empty;
         var newPath = Path.Combine(parentDir, newName);
 
-        var isCaseOnlyRename = string.Equals(item.FullPath, newPath, StringComparison.OrdinalIgnoreCase) && !string.Equals(item.FullPath, newPath, StringComparison.Ordinal);
+        var isCaseOnlyRename = FileSystemPaths.Comparer.Equals(item.FullPath, newPath) && !string.Equals(item.FullPath, newPath, StringComparison.Ordinal);
         if (!isCaseOnlyRename && (item.IsDirectory ? Directory.Exists(newPath) : File.Exists(newPath)))
         {
             ExtensionsStatusText = $"Rename failed: '{newName}' already exists.";
@@ -8598,17 +9462,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (isCaseOnlyRename)
             {
-                var tempPath = newPath + ".tmp_rename_" + Guid.NewGuid().ToString("N");
                 if (item.IsDirectory)
-                {
-                    Directory.Move(item.FullPath, tempPath);
-                    Directory.Move(tempPath, newPath);
-                }
+                    MoveDirectoryCaseSafe(item.FullPath, newPath);
                 else
-                {
-                    File.Move(item.FullPath, tempPath);
-                    File.Move(tempPath, newPath);
-                }
+                    MoveFileCaseSafe(item.FullPath, newPath, isCaseOnlyRename: true);
             }
             else if (item.IsDirectory)
                 Directory.Move(item.FullPath, newPath);
@@ -8628,6 +9485,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (!HasFileOpen || !IsTextEditorVisible) return;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var requestDocument = requestEditor.Document;
+        var requestPath = _currentFilePath;
+        var requestLineEnding = _currentLineEnding;
+        var requestEncoding = _currentFileEncoding;
 
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
@@ -8704,8 +9568,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         foreach (var (label, enc) in encodings)
         {
-            var isCurrent = enc.CodePage == _currentFileEncoding.CodePage &&
-                            enc.GetPreamble().Length == _currentFileEncoding.GetPreamble().Length;
+            var isCurrent = enc.CodePage == requestEncoding.CodePage &&
+                            enc.GetPreamble().Length == requestEncoding.GetPreamble().Length;
             var btn = new Button
             {
                 Content = isCurrent ? $"{label}  ✓" : label,
@@ -8783,30 +9647,44 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         if (chosen is null) return;
+        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, requestDocument) ||
+            !FileSystemPaths.Equals(_currentFilePath, requestPath) || string.IsNullOrWhiteSpace(requestPath))
+            return;
 
-        if (chosen.CodePage == _currentFileEncoding.CodePage &&
-            chosen.GetPreamble().Length == _currentFileEncoding.GetPreamble().Length)
+        if (chosen.CodePage == requestEncoding.CodePage &&
+            chosen.GetPreamble().Length == requestEncoding.GetPreamble().Length)
             return;
 
         try
         {
-            var document = EditorTextBox.Document;
-            var capturedSnapshot = EditorTextSnapshotStore.GetSnapshot(document);
-            var snapshotText = await capturedSnapshot.GetTextAsync();
-            var textToWrite = await Task.Run(() => ConvertToLineEnding(snapshotText, _currentLineEnding));
-            await WriteTextFileAtomicallyAsync(_currentFilePath!, textToWrite, chosen);
-            _currentFileEncoding = chosen;
-            OnPropertyChanged(nameof(EncodingDisplayText));
-            if (ActiveEditorTab is not null)
+            if (requestTab is not null && IsTabDiskStateChanged(requestTab))
+                throw new IOException($"\"{Path.GetFileName(requestPath)}\" changed on disk and was left untouched.");
+            var documentVersion = requestDocument.Version;
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(requestDocument);
+            var expectedWriteTimeUtc = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownWriteTimeUtc : (DateTime?)null;
+            var expectedLength = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownLength : (long?)null;
+            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                requestPath, snapshot, requestLineEnding, chosen, expectedWriteTimeUtc, expectedLength,
+                async () => await Dispatcher.UIThread.InvokeAsync(() => requestTab is not null && FileSystemPaths.Equals(requestTab.Path, requestPath))));
+
+            if (requestTab is not null && OpenTabs.Contains(requestTab) && FileSystemPaths.Equals(requestTab.Path, requestPath))
             {
-                ActiveEditorTab.Content = string.Empty;
-                ActiveEditorTab.Encoding = chosen;
-                ActiveEditorTab.IsDirty = false;
-                ActiveEditorTab.IsModifiedExternally = false;
-                CaptureTabDiskState(ActiveEditorTab);
+                var documentUnchanged = ReferenceEquals(requestDocument.Version, documentVersion);
+                requestTab.Content = string.Empty;
+                requestTab.Encoding = chosen;
+                requestTab.IsDirty = !documentUnchanged;
+                requestTab.IsModifiedExternally = false;
+                CaptureTabDiskState(requestTab);
+                if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(requestPane.ActiveTab, requestTab))
+                {
+                    _currentFileEncoding = chosen;
+                    _isDirty = !documentUnchanged;
+                    OnPropertyChanged(nameof(EncodingDisplayText));
+                    OnPropertyChanged(nameof(IsDocumentDirty));
+                }
             }
-            _isDirty = false;
-            OnPropertyChanged(nameof(IsDocumentDirty));
+            RefreshState(fullRefresh: true);
         }
         catch (Exception ex)
         {
@@ -8817,6 +9695,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void LineEndingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (!HasFileOpen || !IsTextEditorVisible) return;
+        var requestPane = _activeEditorPane;
+        var requestEditor = EditorTextBox;
+        var requestTab = requestPane.ActiveTab;
+        var requestDocument = requestEditor.Document;
+        var requestPath = _currentFilePath;
+        var requestLineEnding = _currentLineEnding;
+        var requestEncoding = _currentFileEncoding;
 
         var lineEndings = new (string Label, Kodo.Models.LineEnding Ending)[]
         {
@@ -8877,7 +9762,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         foreach (var (label, ending) in lineEndings)
         {
-            var isCurrent = ending == _currentLineEnding;
+            var isCurrent = ending == requestLineEnding;
             var btn = new Button
             {
                 Content = isCurrent ? $"{label}  ✓" : label,
@@ -8955,28 +9840,42 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
 
         if (chosen is null) return;
-        if (chosen.Value == _currentLineEnding) return;
+        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
+            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, requestDocument) ||
+            !FileSystemPaths.Equals(_currentFilePath, requestPath) || string.IsNullOrWhiteSpace(requestPath))
+            return;
+        if (chosen.Value == requestLineEnding) return;
 
         try
         {
-            var document = EditorTextBox.Document;
-            var capturedSnapshot = EditorTextSnapshotStore.GetSnapshot(document);
-            var snapshotText = await capturedSnapshot.GetTextAsync();
-            var textToWrite = await Task.Run(() => ConvertToLineEnding(snapshotText, chosen.Value));
-            await WriteTextFileAtomicallyAsync(_currentFilePath!, textToWrite, _currentFileEncoding);
-            _currentLineEnding = chosen.Value;
-            if (ActiveEditorTab is not null)
+            if (requestTab is not null && IsTabDiskStateChanged(requestTab))
+                throw new IOException($"\"{Path.GetFileName(requestPath)}\" changed on disk and was left untouched.");
+            var documentVersion = requestDocument.Version;
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(requestDocument);
+            var expectedWriteTimeUtc = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownWriteTimeUtc : (DateTime?)null;
+            var expectedLength = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownLength : (long?)null;
+            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                requestPath, snapshot, chosen.Value, requestEncoding, expectedWriteTimeUtc, expectedLength,
+                async () => await Dispatcher.UIThread.InvokeAsync(() => requestTab is not null && FileSystemPaths.Equals(requestTab.Path, requestPath))));
+
+            if (requestTab is not null && OpenTabs.Contains(requestTab) && FileSystemPaths.Equals(requestTab.Path, requestPath))
             {
-                ActiveEditorTab.LineEnding = chosen.Value;
-                ActiveEditorTab.Content = string.Empty;
-                ActiveEditorTab.IsDirty = false;
-                ActiveEditorTab.IsModifiedExternally = false;
-                CaptureTabDiskState(ActiveEditorTab);
+                var documentUnchanged = ReferenceEquals(requestDocument.Version, documentVersion);
+                requestTab.LineEnding = chosen.Value;
+                requestTab.Content = string.Empty;
+                requestTab.IsDirty = !documentUnchanged;
+                requestTab.IsModifiedExternally = false;
+                CaptureTabDiskState(requestTab);
+                if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(requestPane.ActiveTab, requestTab))
+                {
+                    _currentLineEnding = chosen.Value;
+                    _isDirty = !documentUnchanged;
+                    OnPropertyChanged(nameof(LineEndingDisplayText));
+                    OnPropertyChanged(nameof(IsLineEndingVisible));
+                    OnPropertyChanged(nameof(IsDocumentDirty));
+                }
             }
-            _isDirty = false;
-            OnPropertyChanged(nameof(IsDocumentDirty));
-            OnPropertyChanged(nameof(LineEndingDisplayText));
-            OnPropertyChanged(nameof(IsLineEndingVisible));
+            RefreshState(fullRefresh: true);
         }
         catch (Exception ex)
         {
@@ -9140,28 +10039,39 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
-        var hasSelection = EditorTextBox?.TextArea?.Selection is { IsEmpty: false };
         if (sender is not ContextMenu menu) return;
+        var targetEditor = menu.PlacementTarget as TextEditor ??
+            (menu.PlacementTarget as Control)?.GetVisualAncestors().OfType<TextEditor>().FirstOrDefault();
+        if (ReferenceEquals(targetEditor, SecondaryEditorTextBox))
+            ActivateEditorPane(_secondaryEditorPane, focusEditor: false);
+        else if (ReferenceEquals(targetEditor, PrimaryEditorTextBox))
+            ActivateEditorPane(_editorPane, focusEditor: false);
+
+        var hasSelection = EditorTextBox?.TextArea?.Selection is { IsEmpty: false };
         foreach (var item in menu.Items.OfType<MenuItem>())
         {
-            if (item.Name is "EditorCutMenuItem" or "EditorCopyMenuItem" or "EditorFindAllOccurrencesMenuItem" or "EditorChangeAllOccurrencesMenuItem")
+            var name = item.Name ?? string.Empty;
+            if (name.EndsWith("CutMenuItem", StringComparison.Ordinal) ||
+                name.EndsWith("CopyMenuItem", StringComparison.Ordinal) ||
+                name.EndsWith("FindAllOccurrencesMenuItem", StringComparison.Ordinal) ||
+                name.EndsWith("ChangeAllOccurrencesMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = hasSelection;
 
-            if (item.Name == "EditorCutMenuItem")
+            if (name.EndsWith("CutMenuItem", StringComparison.Ordinal))
                 item.InputGesture = _keybinds.TryGetValue("Cut", out var cutGesture) ? cutGesture : null;
-            if (item.Name == "EditorCopyMenuItem")
+            if (name.EndsWith("CopyMenuItem", StringComparison.Ordinal))
                 item.InputGesture = _keybinds.TryGetValue("Copy", out var copyGesture) ? copyGesture : null;
-            if (item.Name == "EditorPasteMenuItem")
+            if (name.EndsWith("PasteMenuItem", StringComparison.Ordinal))
                 item.InputGesture = _keybinds.TryGetValue("Paste", out var pasteGesture) ? pasteGesture : null;
 
-            if (item.Name == "EditorDismissDiagnosticMenuItem")
+            if (name.EndsWith("DismissDiagnosticMenuItem", StringComparison.Ordinal))
             {
                 var diag = GetDiagnosticAtCaret();
                 var hasDiagnostic = diag is not null;
                 item.IsEnabled = hasDiagnostic;
                 item.Header = hasDiagnostic ? $"Dismiss: {diag?.message ?? "Diagnostic"}" : "Dismiss Diagnostic";
             }
-            if (item.Name == "EditorGoToDefinitionMenuItem")
+            if (name.EndsWith("GoToDefinitionMenuItem", StringComparison.Ordinal))
             {
                 var word = GetLanguageWordAtCaret();
                 var isVariable = word is not null && CurrentLanguageExtension?.LangRules is { HasDefinitionProvider: true };
@@ -9169,20 +10079,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 item.IsVisible = isVariable;
                 item.InputGesture = _keybinds.TryGetValue("GoToDefinition", out var definitionGesture) ? definitionGesture : null;
             }
-            if (item.Name == "EditorFindReferencesMenuItem")
+            if (name.EndsWith("FindReferencesMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true && GetLanguageWordAtCaret() is not null;
-            if (item.Name == "EditorRenameSymbolMenuItem")
+            if (name.EndsWith("RenameSymbolMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
-            if (item.Name is "EditorTypeDefinitionMenuItem" or "EditorImplementationMenuItem")
+            if (name.EndsWith("TypeDefinitionMenuItem", StringComparison.Ordinal) || name.EndsWith("ImplementationMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
-            if (item.Name == "EditorDocumentSymbolsMenuItem")
+            if (name.EndsWith("DocumentSymbolsMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
-            if (item.Name == "EditorSignatureHelpMenuItem")
+            if (name.EndsWith("SignatureHelpMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
-            if (item.Name == "EditorFormatDocumentMenuItem")
+            if (name.EndsWith("FormatDocumentMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true ||
                                  (ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true });
-            if (item.Name == "EditorQuickFixMenuItem")
+            if (name.EndsWith("QuickFixMenuItem", StringComparison.Ordinal))
             {
                 var hasDiagnostic = GetDiagnosticAtCaret() is not null;
                 var hasProvider = CurrentLanguageExtension?.LangRules?.HasCodeActionProvider == true ||
@@ -9266,12 +10176,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (EditorTextBox?.TextArea?.Selection is not { IsEmpty: false } sel) return;
+        var targetPane = _activeEditorPane;
+        var targetEditor = EditorTextBox;
+        var targetTab = targetPane.ActiveTab;
+        var targetDocument = targetEditor?.Document;
+        if (targetTab is null || targetDocument is null || targetEditor?.TextArea?.Selection is not { IsEmpty: false } sel) return;
         var text = sel.GetText();
         if (string.IsNullOrEmpty(text)) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is not null)
             await clipboard.SetTextAsync(text);
+        if (!ReferenceEquals(_activeEditorPane, targetPane) || !ReferenceEquals(targetPane.ActiveTab, targetTab) ||
+            !ReferenceEquals(targetEditor.Document, targetDocument) || !ReferenceEquals(targetEditor.TextArea.Selection, sel))
+            return;
         sel.ReplaceSelectionWithText(string.Empty);
     }
 
@@ -9287,12 +10204,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void EditorPasteMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (EditorTextBox?.TextArea is not { } textArea) return;
+        var targetPane = _activeEditorPane;
+        var targetEditor = EditorTextBox;
+        var targetTab = targetPane.ActiveTab;
+        var targetDocument = targetEditor?.Document;
+        var textArea = targetEditor?.TextArea;
+        var selection = textArea?.Selection;
+        if (targetTab is null || targetDocument is null || textArea is null || selection is null) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is null) return;
         var text = await clipboard.TryGetTextAsync();
-        if (!string.IsNullOrEmpty(text))
-            textArea.Selection.ReplaceSelectionWithText(text);
+        if (string.IsNullOrEmpty(text) || !ReferenceEquals(_activeEditorPane, targetPane) ||
+            !ReferenceEquals(targetPane.ActiveTab, targetTab) || !ReferenceEquals(targetEditor?.Document, targetDocument) ||
+            !ReferenceEquals(textArea?.Selection, selection))
+            return;
+        selection.ReplaceSelectionWithText(text);
     }
 
     private void IncreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -9303,8 +10229,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void EditorTextView_OnPointerExited(object? sender, PointerEventArgs e)
     {
+        if (!ReferenceEquals(sender, _hoveredEditorTextView)) return;
+        var hasTooltip = sender is AvaloniaEdit.Rendering.TextView textView && ToolTip.GetTip(textView) is not null;
         CancelLanguageHoverRequest();
-        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null && _hoveredLanguageInfo is null) return;
+        CancelLspHoverRequest();
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null &&
+            _hoveredLanguageInfo is null && _lspHoverTooltip is null && !hasTooltip) return;
         _diagnosticPopupHideTimer.Stop();
         _diagnosticPopupHideTimer.Start();
     }
@@ -9320,29 +10250,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void DiagnosticPopupHideTimer_OnTick(object? sender, EventArgs e)
     {
         _diagnosticPopupHideTimer.Stop();
-        var textView = EditorTextBox.TextArea.TextView;
+        var textView = _hoveredEditorTextView ?? EditorTextBox.TextArea.TextView;
         if (textView.IsPointerOver || DiagnosticPopup.IsPointerOver || DiagnosticPopupBorder.IsPointerOver || DiagnosticPopupHitBorder.IsPointerOver) return;
-        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null && _hoveredLanguageInfo is null) return;
+        if (!_isPointerOverEditorLink && _hoveredDeadCodeReason is null && _hoveredErrorReason is null &&
+            _hoveredLanguageInfo is null && _lspHoverTooltip is null) return;
         _isPointerOverEditorLink = false;
         _hoveredDeadCodeReason = null;
         _hoveredErrorReason = null;
         _hoveredDiagnosticLineText = null;
         _hoveredDiagnosticMessage = null;
         _hoveredLanguageInfo = null;
+        _hoveredDiagnosticFilePath = null;
+        _hoveredEditorTextView = null;
+        _hoveredEditorPane = null;
+        _lspHoverTooltip = null;
         DiagnosticPopup.IsOpen = false;
         ToolTip.SetTip(textView, null);
         textView.Cursor = new Cursor(StandardCursorType.Ibeam);
     }
 
-    private bool IsPointerOverLink(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView)
+    private bool IsPointerOverLink(Point pointerPosition, AvaloniaEdit.Rendering.TextView textView, TextEditor editor)
     {
+        var document = editor.Document;
+        if (document is null) return false;
         var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
         if (pos is null) return false;
 
         try
         {
-            var line = EditorTextBox.Document.GetLineByNumber(pos.Value.Line);
-            var lineText = EditorTextBox.Document.GetText(line.Offset, line.Length);
+            var line = document.GetLineByNumber(pos.Value.Line);
+            var lineText = document.GetText(line.Offset, line.Length);
             var colOffset = pos.Value.Column - 1;
 
             if (StrictLinkElementGenerator.TryGetLinkSpan(lineText, colOffset, out _, out _))
@@ -9375,7 +10312,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RedrawVisibleEditorLines()
     {
-        var textView = EditorTextBox?.TextArea?.TextView;
+        RedrawVisibleEditorLines(EditorTextBox);
+    }
+
+    private static void RedrawVisibleEditorLines(TextEditor? editor)
+    {
+        var textView = editor?.TextArea?.TextView;
         if (textView is null || !textView.VisualLinesValid || textView.VisualLines.Count == 0)
             return;
 
@@ -9403,7 +10345,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async Task UpdateErrorHighlightingAsync(string? textSnapshot = null)
     {
-        var hasLspForFile = LspEnabled && ResolveLspExtensionForFile(_currentFilePath) is not null;
+        var scanToken = RenewAnalysisCancellation(ref _errorAnalysisCancellation).Token;
+        var hasLspForFile = LspEnabled && LspDiagnosticsEnabled &&
+            ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (EditorTextBox?.Document is null ||
             ActiveEditorTab is null || ActiveEditorTab.IsUntitled ||
             IsPlainTextFile(_currentFilePath) ||
@@ -9424,7 +10368,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var document = EditorTextBox.Document;
         var documentLength = document.TextLength;
-        if (document.TextLength > 120_000 && !hasLspForFile)
+        if (PerformanceBudget.IsLargeFile(document, 120_000) && !hasLspForFile)
         {
             ClearErrorHighlighting();
             HideDiagnosticPopup();
@@ -9440,7 +10384,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
         var isLspPrimary = IsLspPrimaryForFile(_currentFilePath);
-        var skipLocalText = isLspPrimary || document.TextLength > 120_000;
+        var skipLocalText = isLspPrimary || PerformanceBudget.IsLargeFile(document, 120_000);
         var text = textSnapshot ?? string.Empty;
         try
         {
@@ -9453,16 +10397,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
         if (scanVersion != _insightDocVersion) return;
-        _insightAnalysisCancellation.Cancel();
-        _insightAnalysisCancellation.Dispose();
-        _insightAnalysisCancellation = new CancellationTokenSource();
-        var scanToken = _insightAnalysisCancellation.Token;
-
         List<ErrorSpan>? rawSpans = null;
         lock (_insightAnalysisCacheLock)
         {
             if (_cachedInsightAnalysisVersion == scanVersion &&
-                string.Equals(_cachedInsightAnalysisPath, scanPath, StringComparison.OrdinalIgnoreCase) &&
+                FileSystemPaths.Equals(_cachedInsightAnalysisPath, scanPath) &&
                 string.Equals(_cachedInsightAnalysisExtension, scanExtension, StringComparison.Ordinal))
             {
                 rawSpans = _cachedInsightAnalysisSpans is null ? null : new List<ErrorSpan>(_cachedInsightAnalysisSpans);
@@ -9477,13 +10416,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             try
             {
                 var insightDisabled = !IsInsightEnabled || !IsInsightErrorDetectionEnabled || IsInsightBlacklisted(_currentFilePath) || IsErrorDeadCodeBlacklisted(_currentFilePath);
-                var isLargeFile = documentLength > 80_000;
-                var isHugeFile = documentLength > 120_000;
-                var shouldSkipInsightForLsp = hasRunningLsp && documentLength > 50_000;
-                if (isLspPrimary || insightDisabled || isHugeFile || shouldSkipInsightForLsp)
+                var isLargeFile = PerformanceBudget.IsLargeFile(document);
+                var isHugeFile = PerformanceBudget.IsHugeFile(document, 120_000);
+                var isLargeByLineCount = document.LineCount >= PerformanceBudget.LargeFileLineCountThreshold;
+                var shouldSkipInsightForLsp = hasRunningLsp && (documentLength > 50_000 || isLargeByLineCount);
+                if (isLspPrimary || insightDisabled || isHugeFile || isLargeByLineCount || shouldSkipInsightForLsp)
                 {
                     rawSpans = new List<ErrorSpan>();
-                    var reason = isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : insightDisabled ? "Insight disabled by setting/blacklist" : $"large file len={documentLength}";
+                    var reason = isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : insightDisabled ? "Insight disabled by setting/blacklist" : $"large file len={documentLength} lines={document.LineCount}";
                     KodoDiagnostics.LogDebug($"Insight diagnostics skipped ({reason}, initialized={isLspPrimary})");
                 }
                 else
@@ -9495,7 +10435,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (isLargeFile || isLspPrimary || insightDisabled)
                 {
                     externalDiagnostics = Array.Empty<ExternalToolDiagnostic>();
-                    var skipReason = isLargeFile ? $"large file len={documentLength}" : isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : "Insight disabled";
+                    var skipReason = isLargeFile ? $"large file len={documentLength} lines={document.LineCount}" : isLspPrimary ? $"LSP primary for {lspForFile?.Id}" : "Insight disabled";
                     KodoDiagnostics.LogDebug($"External diagnostics skipped ({skipReason})");
                 }
                 else
@@ -9534,7 +10474,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             lock (_insightAnalysisCacheLock)
             {
-                if (scanVersion == _insightDocVersion && string.Equals(scanPath, _currentFilePath, StringComparison.OrdinalIgnoreCase))
+                if (scanVersion == _insightDocVersion && FileSystemPaths.Equals(scanPath, _currentFilePath))
                 {
                     _cachedInsightAnalysisVersion = scanVersion;
                     _cachedInsightAnalysisPath = scanPath;
@@ -9607,6 +10547,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _errorHighlightRenderer.SetSpans(spans, errorIndex);
         _errorHighlightRenderer.SetDeadCodeSpans(deadSpans, deadIndex);
         _errorTextDarkener.SetSpans(spans, errorIndex, deadSpans, deadIndex);
+        var otherEditor = ReferenceEquals(EditorTextBox, SecondaryEditorTextBox)
+            ? PrimaryEditorTextBox
+            : SecondaryEditorTextBox;
+        if (otherEditor is not null && ReferenceEquals(otherEditor.Document, document))
+        {
+            var otherDeadRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryDeadCodeHighlightRenderer
+                : _primaryDeadCodeHighlightRenderer;
+            var otherErrorRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryErrorHighlightRenderer
+                : _primaryErrorHighlightRenderer;
+            var otherErrorDarkener = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryErrorTextDarkener
+                : _primaryErrorTextDarkener;
+            otherErrorRenderer.SetSpans(spans, errorIndex);
+            otherErrorRenderer.SetDeadCodeSpans(otherDeadRenderer.Spans, otherDeadRenderer.SpanIndex);
+            otherErrorDarkener.SetSpans(otherErrorRenderer.Spans, otherErrorRenderer.SpanIndex,
+                otherDeadRenderer.Spans, otherDeadRenderer.SpanIndex);
+            RedrawVisibleEditorLines(otherEditor);
+            otherEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        }
         if (spans.Count != rawSpans.Count)
             HideDiagnosticPopup();
         try
@@ -9851,13 +10812,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return indent.Length > 0 ? indent[..^1] : indent;
     }
 
-    private int GetOutdentLength(ReadOnlySpan<char> lineText, int availableLength)
+    private int GetOutdentLength(ReadOnlySpan<char> lineText, int availableLength, string? indentUnitOverride = null)
     {
         if (lineText.IsEmpty || availableLength <= 0)
             return 0;
 
         var maxLength = Math.Min(availableLength, lineText.Length);
-        var indentUnit = GetIndentUnit();
+        var indentUnit = indentUnitOverride ?? GetIndentUnit();
         if (maxLength >= indentUnit.Length &&
             lineText[..indentUnit.Length].SequenceEqual(indentUnit.AsSpan()))
         {
@@ -9935,6 +10896,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
+        StopGitSourceControl();
         SaveSettings(immediate: true, synchronous: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
@@ -9945,6 +10907,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _appUpdateScheduler.Stop();
         _marketplaceRefreshTimer.Stop();
         _wordCountRefreshTimer.Stop();
+        CancelWordCountScan();
+        CancelEditorAnalysisRequests();
+        CancelInactiveTabDiagnosticScans();
         _settingsSaveDebounceTimer.Stop();
         _windowsAccentPollTimer.Stop();
         _windowsThemePollTimer.Stop();
@@ -10145,6 +11110,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             CreateTerminalSession();
             e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "ToggleSplitEditor"))
+        {
+            if (CanToggleSplitEditor)
+                ToggleSplitEditorButton_OnClick(null, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "FocusFirstEditorGroup"))
+        {
+            FocusEditorPane(_editorPane);
+            e.Handled = IsSplitScreenVisible;
+        }
+        else if (MatchesKeybind(e, "FocusSecondEditorGroup"))
+        {
+            FocusEditorPane(_secondaryEditorPane);
+            e.Handled = IsSplitScreenVisible;
         }
         else if (MatchesKeybind(e, "CloseTab"))
         {

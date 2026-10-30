@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Avalonia.Animation;
+using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
@@ -52,6 +53,11 @@ public partial class MainWindow
 
     private void MainWindow_EditorKeyIntercept_OnKeyDown(object? sender, KeyEventArgs e)
     {
+        if (GetEditorForKeyEvent(e) is { } eventEditor && !ReferenceEquals(eventEditor, EditorTextBox))
+            ActivateEditorPane(ReferenceEquals(eventEditor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane, focusEditor: false);
+        if (_completionWindow is not null && !ReferenceEquals(_completionEditor, EditorTextBox))
+            CloseCompletionWindow();
+
         if (DiagnosticPopup.IsOpen && IsEditorKeyEvent(e))
             HideDiagnosticPopup();
 
@@ -124,17 +130,23 @@ public partial class MainWindow
                 return;
 
             case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Shift:
-                HandleTabKey(() => HandleOutdent(doc, textArea.Selection, caret), doc, caret);
+            {
+                var indentUnit = GetIndentUnit();
+                HandleTabKey(() => HandleOutdent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
                 e.Handled = true;
                 return;
+            }
 
             case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.None:
-                HandleTabKey(() => HandleIndent(doc, textArea.Selection, caret), doc, caret);
+            {
+                var indentUnit = GetIndentUnit();
+                HandleTabKey(() => HandleIndent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
                 e.Handled = true;
                 return;
+            }
 
             case Key.Back when IsSmartSyntaxEnabled():
-                if (HandleSmartBackspace(doc, caret))
+                if (HandleSmartBackspace(doc, textArea, caret))
                 {
                     e.Handled = true;
                     return;
@@ -182,9 +194,9 @@ public partial class MainWindow
         return false;
     }
 
-    private void EditorInvalidateEditorLayers()
+    private void EditorInvalidateEditorLayers(AvaloniaEdit.Editing.TextArea? textArea = null)
     {
-        var textView = EditorTextBox?.TextArea?.TextView;
+        var textView = (textArea ?? EditorTextBox?.TextArea)?.TextView;
         if (textView is null) return;
         textView.InvalidateLayer(KnownLayer.Background);
         textView.InvalidateLayer(KnownLayer.Text);
@@ -249,7 +261,7 @@ public partial class MainWindow
         }
 
         EditorRestoreLineSelection(doc, textArea, first + direction, last + direction);
-        EditorInvalidateEditorLayers();
+        EditorInvalidateEditorLayers(textArea);
     }
 
     private void EditorDuplicateLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, int direction)
@@ -277,7 +289,7 @@ public partial class MainWindow
         EditorRestoreLineSelection(doc, textArea,
             direction > 0 ? last + 1 : first,
             direction > 0 ? last + span : first);
-        EditorInvalidateEditorLayers();
+        EditorInvalidateEditorLayers(textArea);
     }
 
     private void EditorDeleteLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
@@ -320,7 +332,7 @@ public partial class MainWindow
             SetCaretOffsetSafely(textArea.Caret, doc, Math.Clamp(line.Offset, 0, doc.TextLength));
         }
 
-        EditorInvalidateEditorLayers();
+        EditorInvalidateEditorLayers(textArea);
     }
 
     private void EditorInsertLine(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, bool below)
@@ -341,7 +353,7 @@ public partial class MainWindow
         }
 
         SetCaretOffsetSafely(caret, doc, offset + Environment.NewLine.Length);
-        EditorInvalidateEditorLayers();
+        EditorInvalidateEditorLayers(textArea);
     }
 
     private async Task EditorGoToLineAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
@@ -349,18 +361,24 @@ public partial class MainWindow
         var answer = await ShowTextInputDialogAsync("Go to line", $"Line number (1-{doc.LineCount}):", string.Empty).ConfigureAwait(true);
         if (string.IsNullOrWhiteSpace(answer)) return;
         if (!int.TryParse(answer.Trim(), out var requested)) return;
+        if (!ReferenceEquals(textArea.Document, doc)) return;
         var lineNumber = Math.Clamp(requested, 1, doc.LineCount);
         var line = doc.GetLineByNumber(lineNumber);
         textArea.ClearSelection();
         SetCaretOffsetSafely(textArea.Caret, doc, line.Offset);
-        EditorTextBox?.Focus();
-        EditorInvalidateEditorLayers();
+        var editor = ReferenceEquals(textArea, PrimaryEditorTextBox.TextArea)
+            ? PrimaryEditorTextBox
+            : ReferenceEquals(textArea, SecondaryEditorTextBox.TextArea)
+                ? SecondaryEditorTextBox
+                : null;
+        editor?.Focus();
+        EditorInvalidateEditorLayers(textArea);
     }
 
     private void EditorSelectCurrentLine(AvaloniaEdit.Document.TextDocument document, AvaloniaEdit.Editing.TextArea textArea)
     {
         var line = document.GetLineByOffset(Math.Clamp(textArea.Caret.Offset, 0, document.TextLength));
-        EditorTextBox.Select(line.Offset, line.TotalLength);
+        textArea.Selection = AvaloniaEdit.Editing.Selection.Create(textArea, line.Offset, line.Offset + line.TotalLength);
     }
 
     private bool _isHighlightCurrentLineEnabled = true;
@@ -370,15 +388,16 @@ public partial class MainWindow
     private void EditorToggleHighlightCurrentLine()
     {
         _isHighlightCurrentLineEnabled = !_isHighlightCurrentLineEnabled;
-        var textView = EditorTextBox?.TextArea?.TextView;
-        if (textView is not null)
+        foreach (var editor in new[] { PrimaryEditorTextBox, SecondaryEditorTextBox })
         {
+            var textView = editor?.TextArea?.TextView;
+            if (textView is null) continue;
             textView.CurrentLineBackground = _isHighlightCurrentLineEnabled
                 ? EditorBuildCurrentLineBrush()
                 : null;
+            textView.InvalidateLayer(KnownLayer.Background);
         }
         OnPropertyChanged(nameof(IsHighlightCurrentLineEnabled));
-        EditorInvalidateEditorLayers();
     }
 
     private Avalonia.Media.IBrush EditorBuildCurrentLineBrush()
@@ -392,17 +411,19 @@ public partial class MainWindow
         return new SolidColorBrush(overlay);
     }
 
-    private bool IsEditorKeyEvent(KeyEventArgs e)
+    private TextEditor? GetEditorForKeyEvent(KeyEventArgs e)
     {
-        if (EditorTextBox is null || e.Source is not Visual visual)
-            return false;
+        if (e.Source is not Visual visual) return null;
 
-        if (ReferenceEquals(visual, EditorTextBox) || ReferenceEquals(visual, EditorTextBox.TextArea))
-            return true;
-
-        return visual.GetSelfAndVisualAncestors().Any(v =>
-            ReferenceEquals(v, EditorTextBox) || ReferenceEquals(v, EditorTextBox.TextArea));
+        var ancestors = visual.GetSelfAndVisualAncestors();
+        if (ancestors.Any(v => ReferenceEquals(v, SecondaryEditorTextBox) || ReferenceEquals(v, SecondaryEditorTextBox.TextArea)))
+            return SecondaryEditorTextBox;
+        if (ancestors.Any(v => ReferenceEquals(v, PrimaryEditorTextBox) || ReferenceEquals(v, PrimaryEditorTextBox.TextArea)))
+            return PrimaryEditorTextBox;
+        return null;
     }
+
+    private bool IsEditorKeyEvent(KeyEventArgs e) => GetEditorForKeyEvent(e) is not null;
 
     private void HandleTabKey(Action tabAction, AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
     {
@@ -449,9 +470,12 @@ public partial class MainWindow
         try { caret.BringCaretToView(); } catch { }
     }
 
-    private bool HandleSmartBackspace(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Caret caret)
+    private bool HandleSmartBackspace(
+        AvaloniaEdit.Document.TextDocument doc,
+        AvaloniaEdit.Editing.TextArea textArea,
+        AvaloniaEdit.Editing.Caret caret)
     {
-        var selection = EditorTextBox.TextArea.Selection;
+        var selection = textArea.Selection;
         if (selection is not null && !selection.IsEmpty)
             return false;
 
@@ -466,6 +490,7 @@ public partial class MainWindow
         if (doc.GetCharAt(offset) != closing)
             return false;
 
+        var documentVersion = doc.Version;
         try
         {
             doc.Remove(offset - 1, 2);
@@ -475,6 +500,9 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug("HandleSmartBackspace: Visual line race suppressed", ex);
             Dispatcher.UIThread.Post(() =>
             {
+                if (!ReferenceEquals(textArea.Document, doc) || !ReferenceEquals(doc.Version, documentVersion) ||
+                    caret.Offset != offset || !textArea.Selection.IsEmpty)
+                    return;
                 try { doc.Remove(offset - 1, 2); SetCaretOffsetSafely(caret, doc, offset - 1); } catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
             return true;
@@ -483,17 +511,24 @@ public partial class MainWindow
         return true;
     }
 
-    private void HandleIndent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    private void HandleIndent(
+        AvaloniaEdit.Document.TextDocument doc,
+        AvaloniaEdit.Editing.TextArea textArea,
+        AvaloniaEdit.Editing.Selection? selection,
+        AvaloniaEdit.Editing.Caret caret,
+        string indentUnit)
     {
-        var textArea = EditorTextBox?.TextArea;
-        if (textArea is null) return;
+        if (!ReferenceEquals(textArea.Document, doc)) return;
+        var documentVersion = doc.Version;
+        var originalSelection = selection is { IsEmpty: false } ? selection.SurroundingSegment : null;
+        var originalCaretOffset = caret.Offset;
         try
         {
             if (selection is null || selection.IsEmpty)
             {
                 var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
-                doc.Insert(safeOffset, GetIndentUnit());
-                SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+                doc.Insert(safeOffset, indentUnit);
+                SetCaretOffsetSafely(caret, doc, safeOffset + indentUnit.Length);
                 return;
             }
 
@@ -501,8 +536,8 @@ public partial class MainWindow
             if (segment is null)
             {
                 var safeOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
-                doc.Insert(safeOffset, GetIndentUnit());
-                SetCaretOffsetSafely(caret, doc, safeOffset + GetIndentUnit().Length);
+                doc.Insert(safeOffset, indentUnit);
+                SetCaretOffsetSafely(caret, doc, safeOffset + indentUnit.Length);
                 return;
             }
 
@@ -513,7 +548,7 @@ public partial class MainWindow
             var startOffset = firstLine.Offset;
             var sourceLength = lastLine.EndOffset - startOffset;
             var sourceText = doc.GetText(startOffset, sourceLength);
-            var indent = GetIndentUnit();
+            var indent = indentUnit;
             var newText = new StringBuilder(sourceText.Length + (indent.Length * (last - first + 1)));
             newText.Append(indent);
             for (var index = 0; index < sourceText.Length; index++)
@@ -540,15 +575,33 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug("HandleIndent: Visual line race suppressed", ex);
             Dispatcher.UIThread.Post(() =>
             {
-                try { HandleIndent(doc, selection, caret); } catch { }
+                if (!ReferenceEquals(textArea.Document, doc) || !ReferenceEquals(doc.Version, documentVersion)) return;
+                var currentSelection = textArea.Selection;
+                if (originalSelection is null)
+                {
+                    if (!currentSelection.IsEmpty || caret.Offset != originalCaretOffset) return;
+                }
+                else if (currentSelection.IsEmpty || currentSelection.SurroundingSegment is not { } currentSegment ||
+                         currentSegment.Offset != originalSelection.Offset || currentSegment.Length != originalSelection.Length)
+                {
+                    return;
+                }
+                try { HandleIndent(doc, textArea, currentSelection, caret, indentUnit); } catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
         }
     }
 
-    private void HandleOutdent(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
+    private void HandleOutdent(
+        AvaloniaEdit.Document.TextDocument doc,
+        AvaloniaEdit.Editing.TextArea textArea,
+        AvaloniaEdit.Editing.Selection? selection,
+        AvaloniaEdit.Editing.Caret caret,
+        string indentUnit)
     {
-        var textArea = EditorTextBox?.TextArea;
-        if (textArea is null) return;
+        if (!ReferenceEquals(textArea.Document, doc)) return;
+        var documentVersion = doc.Version;
+        var originalSelection = selection is { IsEmpty: false } ? selection.SurroundingSegment : null;
+        var originalCaretOffset = caret.Offset;
         try
         {
             doc.UndoStack.StartUndoGroup();
@@ -557,7 +610,7 @@ public partial class MainWindow
                 var line = doc.GetLineByOffset(caret.Offset);
                 var lineText = doc.GetText(line);
                 var caretColumnInLine = caret.Offset - line.Offset;
-                var removable = GetOutdentLength(lineText, caretColumnInLine);
+                var removable = GetOutdentLength(lineText, caretColumnInLine, indentUnit);
                 if (removable <= 0)
                     return;
 
@@ -585,7 +638,7 @@ public partial class MainWindow
                 var lineEnd = lineStart;
                 while (lineEnd < sourceText.Length && sourceText[lineEnd] is not '\r' and not '\n') lineEnd++;
                 var line = sourceText.AsSpan(lineStart, lineEnd - lineStart);
-                var removable = GetOutdentLength(line, line.Length);
+                var removable = GetOutdentLength(line, line.Length, indentUnit);
                 newText.Append(line[removable..]);
                 changed |= removable > 0;
                 if (lineEnd < sourceText.Length)
@@ -609,7 +662,18 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug("HandleOutdent: Visual line race suppressed", ex);
             Dispatcher.UIThread.Post(() =>
             {
-                try { HandleOutdent(doc, selection, caret); } catch { }
+                if (!ReferenceEquals(textArea.Document, doc) || !ReferenceEquals(doc.Version, documentVersion)) return;
+                var currentSelection = textArea.Selection;
+                if (originalSelection is null)
+                {
+                    if (!currentSelection.IsEmpty || caret.Offset != originalCaretOffset) return;
+                }
+                else if (currentSelection.IsEmpty || currentSelection.SurroundingSegment is not { } currentSegment ||
+                         currentSegment.Offset != originalSelection.Offset || currentSegment.Length != originalSelection.Length)
+                {
+                    return;
+                }
+                try { HandleOutdent(doc, textArea, currentSelection, caret, indentUnit); } catch { }
             }, Avalonia.Threading.DispatcherPriority.Background);
         }
         finally
@@ -705,59 +769,112 @@ public partial class MainWindow
         if (clipboard is null)
             return;
 
-        var text = await clipboard.TryGetTextAsync();
+        var editor = GetEditorForTextInput(textArea);
+        var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+        var tab = pane.ActiveTab;
+        var documentVersion = doc.Version;
+        var caretOffset = caret.Offset;
+        var initialSelection = textArea.Selection;
+        var selectedSegment = initialSelection.IsEmpty ? null : initialSelection.SurroundingSegment;
+        var selectedText = selectedSegment is null ? null : initialSelection.GetText();
+
+        string? text;
+        try
+        {
+            text = await clipboard.TryGetTextAsync();
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Smart paste could not read the clipboard.", ex);
+            return;
+        }
         if (string.IsNullOrEmpty(text))
             return;
 
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        try
         {
-            if (!ReferenceEquals(EditorTextBox?.Document, doc) ||
-                !ReferenceEquals(EditorTextBox.TextArea, textArea) ||
-                !ReferenceEquals(textArea.Caret, caret))
-                return;
-
-            var insertionOffset = Math.Clamp(caret.Offset, 0, doc.TextLength);
-            var insertionText = ReindentPastedText(text, doc, insertionOffset);
-            var safeOffset = insertionOffset;
-
-            var selection = textArea.Selection;
-            if (selection is not null && !selection.IsEmpty && selection.SurroundingSegment is not null)
+            await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                var segment = selection.SurroundingSegment;
-                try
+                if (!ReferenceEquals(editor, GetEditorForTextInput(textArea)) ||
+                    !ReferenceEquals(editor, EditorTextBox) ||
+                    !ReferenceEquals(_activeEditorPane, pane) ||
+                    !ReferenceEquals(pane.ActiveTab, tab) ||
+                    !ReferenceEquals(editor.Document, doc) ||
+                    !ReferenceEquals(textArea.Document, doc) ||
+                    !ReferenceEquals(doc.Version, documentVersion) ||
+                    !ReferenceEquals(editor.TextArea, textArea) ||
+                    !ReferenceEquals(textArea.Caret, caret) ||
+                    caret.Offset != caretOffset)
+                    return;
+
+                var selection = textArea.Selection;
+                if (selectedSegment is null)
                 {
-                    doc.Replace(segment, insertionText);
+                    if (!selection.IsEmpty)
+                        return;
                 }
-                catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                else if (selection.IsEmpty || selection.SurroundingSegment is not { } currentSegment ||
+                         currentSegment.Offset != selectedSegment.Offset || currentSegment.Length != selectedSegment.Length ||
+                         !string.Equals(selection.GetText(), selectedText, StringComparison.Ordinal))
                 {
-                    KodoDiagnostics.LogDebug("HandleSmartPasteAsync: Visual line race suppressed", ex);
-                    var activationVersion = _activeTabVersion;
-                    var documentVersion = doc.Version;
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (_activeTabVersion != activationVersion || !ReferenceEquals(EditorTextBox?.Document, doc) ||
-                            !ReferenceEquals(doc.Version, documentVersion)) return;
-                        try
-                        {
-                            doc.Replace(segment, insertionText);
-                            SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
-                        }
-                        catch { }
-                    }, Avalonia.Threading.DispatcherPriority.Background);
                     return;
                 }
-                SetCaretOffsetSafely(caret, doc, segment.Offset + insertionText.Length);
-                return;
-            }
 
-            doc.Insert(safeOffset, insertionText);
-            SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
-        });
+                var insertionOffset = Math.Clamp(caretOffset, 0, doc.TextLength);
+                var insertionText = ReindentPastedText(text, doc, insertionOffset);
+                var safeOffset = insertionOffset;
+
+                if (selectedSegment is not null && selection.SurroundingSegment is { } currentSelectionSegment)
+                {
+                    try
+                    {
+                        doc.Replace(currentSelectionSegment, insertionText);
+                    }
+                    catch (ArgumentException ex) when (ex.Message.Contains("visual line", StringComparison.OrdinalIgnoreCase))
+                    {
+                        KodoDiagnostics.LogDebug("HandleSmartPasteAsync: Visual line race suppressed", ex);
+                        var activationVersion = _activeTabVersion;
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            var currentEditor = GetEditorForTextInput(textArea);
+                            if (_activeTabVersion != activationVersion || !ReferenceEquals(_activeEditorPane, pane) ||
+                                !ReferenceEquals(pane.ActiveTab, tab) || !ReferenceEquals(currentEditor, editor) ||
+                                !ReferenceEquals(currentEditor.Document, doc) || !ReferenceEquals(currentEditor.TextArea, textArea) ||
+                                !ReferenceEquals(doc.Version, documentVersion)) return;
+                            var currentSelection = textArea.Selection;
+                            if (currentSelection.IsEmpty || currentSelection.SurroundingSegment is not { } currentSegment ||
+                                currentSegment.Offset != selectedSegment.Offset || currentSegment.Length != selectedSegment.Length ||
+                                !string.Equals(currentSelection.GetText(), selectedText, StringComparison.Ordinal))
+                                return;
+                            try
+                            {
+                                doc.Replace(currentSegment, insertionText);
+                                SetCaretOffsetSafely(caret, doc, currentSegment.Offset + insertionText.Length);
+                            }
+                            catch { }
+                        }, Avalonia.Threading.DispatcherPriority.Background);
+                        return;
+                    }
+                    SetCaretOffsetSafely(caret, doc, currentSelectionSegment.Offset + insertionText.Length);
+                    return;
+                }
+
+                doc.Insert(safeOffset, insertionText);
+                SetCaretOffsetSafely(caret, doc, safeOffset + insertionText.Length);
+            });
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Smart paste failed.", ex);
+        }
     }
 
     private void ToggleLineComment(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, AvaloniaEdit.Editing.Selection? selection, AvaloniaEdit.Editing.Caret caret)
     {
-        var lineCommentToken = CurrentLanguageExtension?.CommentLine;
+        var editor = GetEditorForTextInput(textArea);
+        var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+        var filePath = pane.ActiveTab is { IsUntitled: false } tab ? tab.Path : null;
+        var lineCommentToken = string.IsNullOrWhiteSpace(filePath) ? null : GetLanguageExtension(filePath)?.CommentLine;
         if (string.IsNullOrWhiteSpace(lineCommentToken))
             return;
 

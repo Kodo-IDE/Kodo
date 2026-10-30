@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Avalonia.Animation;
+using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
@@ -34,9 +35,13 @@ public partial class MainWindow
         private const int MaximumInlineLineMapTotalLength = 64 * 1024;
         private const int LineMapBufferLines = 40;
 
-        public LspPresentationContext(TextDocument document, string filePath, long version, int caret, int visibleStartLine, int visibleEndLine, LspClient? client, bool includeCaretPosition, CancellationToken cancellationToken)
+        public LspPresentationContext(EditorPaneState pane, TextEditor editor, EditorTab tab, TextDocument document, string filePath, long version, int caret, int visibleStartLine, int visibleEndLine, LspClient? client, bool includeCaretPosition, CancellationToken cancellationToken)
         {
+            Pane = pane;
+            Editor = editor;
+            Tab = tab;
             Document = document;
+            DocumentVersion = document.Version;
             _snapshot = EditorTextSnapshotStore.GetSnapshot(document);
             CancellationToken = cancellationToken;
             LineCount = document.LineCount;
@@ -74,6 +79,10 @@ public partial class MainWindow
         }
 
         public TextDocument Document { get; }
+        public ITextSourceVersion DocumentVersion { get; }
+        public EditorPaneState Pane { get; }
+        public TextEditor Editor { get; }
+        public EditorTab Tab { get; }
         public string FilePath { get; }
         public long Version { get; }
         public int Caret { get; }
@@ -105,17 +114,76 @@ public partial class MainWindow
         public Task<string> GetDocumentTextAsync() => _snapshot.GetTextAsync(CancellationToken);
     }
 
+    private sealed class LspPanePresentationState
+    {
+        public string? FoldedPath { get; set; }
+        public ITextSourceVersion? FoldedVersion { get; set; }
+        public bool FoldingDeferred { get; set; }
+        public string? PresentedPath { get; set; }
+        public ITextSourceVersion? PresentedVersion { get; set; }
+        public LspClient? PresentedClient { get; set; }
+        public int PresentedStartLine { get; set; } = -1;
+        public int PresentedEndLine { get; set; } = -1;
+        public int PresentedCaret { get; set; } = -1;
+    }
+
+    private readonly Dictionary<Guid, LspPanePresentationState> _lspPanePresentationStates = new();
+
+    private LspPanePresentationState GetLspPanePresentationState(EditorPaneState pane)
+    {
+        if (!_lspPanePresentationStates.TryGetValue(pane.Id, out var state))
+        {
+            state = new LspPanePresentationState();
+            _lspPanePresentationStates.Add(pane.Id, state);
+        }
+        return state;
+    }
+
+    private void InvalidateLspPanePresentation(EditorPaneState pane)
+    {
+        var state = GetLspPanePresentationState(pane);
+        state.FoldedPath = null;
+        state.FoldedVersion = null;
+        state.FoldingDeferred = false;
+        state.PresentedPath = null;
+        state.PresentedVersion = null;
+        state.PresentedClient = null;
+        state.PresentedStartLine = -1;
+        state.PresentedEndLine = -1;
+        state.PresentedCaret = -1;
+    }
+
+    private void InvalidateAllLspPanePresentations()
+    {
+        InvalidateLspPanePresentation(_editorPane);
+        InvalidateLspPanePresentation(_secondaryEditorPane);
+    }
+
     private bool LspPresentationContextIsCurrent(LspPresentationContext ctx, bool lspEnabled) =>
         lspEnabled &&
-        ctx.Version == _insightDocVersion &&
-        ReferenceEquals(ctx.Document, EditorTextBox?.Document) &&
-        FileSystemPaths.Equals(ctx.FilePath, _currentFilePath);
+        ReferenceEquals(ctx.Pane.ActiveTab, ctx.Tab) &&
+        ReferenceEquals(ctx.Editor.Document, ctx.Document) &&
+        ReferenceEquals(ctx.Document.Version, ctx.DocumentVersion) &&
+        FileSystemPaths.Equals(ctx.FilePath, ctx.Tab.IsUntitled ? null : ctx.Tab.Path);
+
+    private static (int StartLine, int EndLine) GetEditorVisibleLines(TextEditor editor)
+    {
+        var document = editor.Document;
+        var textView = editor.TextArea.TextView;
+        if (textView.VisualLinesValid && textView.VisualLines.Count > 0)
+            return (textView.VisualLines[0].FirstDocumentLine.LineNumber - 1,
+                textView.VisualLines[^1].LastDocumentLine.LineNumber);
+
+        var line = document.GetLineByOffset(Math.Clamp(editor.TextArea.Caret.Offset, 0, document.TextLength)).LineNumber - 1;
+        return (line, Math.Min(document.LineCount, line + 1));
+    }
 
     private static bool LspMethodUnavailable(LspPresentationContext ctx, string method) =>
         ctx.Client is null || !ctx.Client.Supports(method);
 
     private async Task UpdateLspSignatureHelpAsync(LspPresentationContext ctx)
     {
+        if (!ReferenceEquals(ctx.Editor, EditorTextBox)) return;
         if (!LspSignatureHelpEnabled)
         {
             ClearLspSignatureHelpTooltip();
@@ -128,7 +196,7 @@ public partial class MainWindow
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
+                if (ReferenceEquals(ctx.Editor, EditorTextBox) && LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
                     ClearLspSignatureHelpTooltip();
             });
             return;
@@ -139,7 +207,7 @@ public partial class MainWindow
         {
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
+                if (ReferenceEquals(ctx.Editor, EditorTextBox) && LspPresentationContextIsCurrent(ctx, LspEnabled) && EditorTextBox?.TextArea.Caret.Offset == ctx.Caret)
                     ClearLspSignatureHelpTooltip();
             });
             return;
@@ -147,7 +215,7 @@ public partial class MainWindow
         var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspSignatureHelpEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
+            if (!LspSignatureHelpEnabled || !ReferenceEquals(ctx.Editor, EditorTextBox) || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
             _lspSignatureHelpTooltip = string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}";
             ToolTip.SetTip(EditorTextBox.TextArea.TextView, _lspSignatureHelpTooltip);
             ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
@@ -169,13 +237,10 @@ public partial class MainWindow
     private int _lspLastViewportStart = -1;
     private int _lspLastViewportEnd = -1;
     private int _lspViewportRefreshFailures;
-
-    private string? _lspFoldedPath;
-    private long _lspFoldedVersion = -1;
+    private bool _lspOtherPaneRefreshRunning;
+    private bool _lspOtherPaneRefreshPending;
 
     private bool _lspDiagnosticsSeenForFile;
-
-    private bool _lspFoldingDeferred;
 
     private void ScheduleLspViewportRetry()
     {
@@ -187,10 +252,8 @@ public partial class MainWindow
 
     private void ResetLspFoldingState()
     {
-        _lspFoldedPath = null;
-        _lspFoldedVersion = -1;
-        _lspDiagnosticsSeenForFile = false;
-        _lspFoldingDeferred = false;
+        InvalidateLspPanePresentation(_activeEditorPane);
+        _lspDiagnosticsSeenForFile = HasStoredLspDiagnosticsForFile(_currentFilePath);
     }
 
     private async Task ClearLspFoldingsAsync()
@@ -217,14 +280,133 @@ public partial class MainWindow
         _lspRefreshDebounceTimer.Start();
     }
 
+    private async Task RefreshOtherPaneLspPresentationAsync()
+    {
+        if (!IsSplitScreenVisible)
+        {
+            _lspOtherPaneRefreshPending = false;
+            return;
+        }
+
+        if (_lspOtherPaneRefreshRunning)
+        {
+            _lspOtherPaneRefreshPending = true;
+            return;
+        }
+
+        var pane = ReferenceEquals(_activeEditorPane, _editorPane) ? _secondaryEditorPane : _editorPane;
+        var editor = GetEditorForPane(pane);
+        var tab = pane.ActiveTab;
+        if (tab is null || editor.Document is not { } document || tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path))
+            return;
+
+        var path = tab.Path;
+        var configuration = ResolveLspConfigurationForFile(path);
+        if (configuration is null)
+            return;
+        var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(path), configuration);
+        if (client is not { IsInitialized: true, IsStarted: true })
+            return;
+
+        var state = GetLspPanePresentationState(pane);
+        var visible = GetEditorVisibleLines(editor);
+        var caret = editor.TextArea.Caret.Offset;
+        var refreshDocument = !ReferenceEquals(state.PresentedVersion, document.Version) ||
+            !FileSystemPaths.Equals(state.PresentedPath, path) || !ReferenceEquals(state.PresentedClient, client) ||
+            state.FoldingDeferred;
+        var refreshViewport = refreshDocument || visible.StartLine != state.PresentedStartLine ||
+            visible.EndLine != state.PresentedEndLine;
+        var refreshCaretFeatures = refreshDocument || caret != state.PresentedCaret;
+        if (!refreshDocument && !refreshViewport && !refreshCaretFeatures)
+            return;
+
+        using var cancellation = new CancellationTokenSource();
+        var ctx = new LspPresentationContext(
+            pane, editor, tab, document, path, 0, caret, visible.StartLine, visible.EndLine,
+            client, refreshCaretFeatures, cancellation.Token);
+        _lspOtherPaneRefreshRunning = true;
+        try
+        {
+            var documentFeatures = new List<Task<bool>>();
+            var viewportFeatures = new List<Task<bool>>();
+            if (refreshDocument && LspFoldingEnabled)
+                documentFeatures.Add(UpdateLspFoldingAsync(ctx));
+            if (refreshDocument || refreshViewport)
+                viewportFeatures.Add(UpdateLspInlayHintsAsync(ctx));
+            var hasSemanticRange = client.Supports("textDocument/semanticTokens/range");
+            if (refreshDocument || (hasSemanticRange && refreshViewport))
+                viewportFeatures.Add(UpdateLspSemanticTokensAsync(ctx, hasSemanticRange));
+            if (LspDocumentHighlightsEnabled && refreshCaretFeatures)
+                await UpdateLspDocumentHighlightsAsync(ctx);
+
+            await Task.WhenAll(documentFeatures.Cast<Task>().Concat(viewportFeatures));
+            var documentApplied = true;
+            foreach (var feature in documentFeatures)
+                documentApplied &= await feature.ConfigureAwait(false);
+            var viewportApplied = true;
+            foreach (var feature in viewportFeatures)
+                viewportApplied &= await feature.ConfigureAwait(false);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || !viewportApplied ||
+                    (!documentApplied && !state.FoldingDeferred))
+                    return;
+
+                state.PresentedPath = path;
+                state.PresentedVersion = ctx.DocumentVersion;
+                state.PresentedClient = client;
+                state.PresentedStartLine = visible.StartLine;
+                state.PresentedEndLine = visible.EndLine;
+                state.PresentedCaret = caret;
+                state.FoldingDeferred = !documentApplied;
+            });
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Other-pane LSP presentation refresh failed.", ex);
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _lspOtherPaneRefreshRunning = false;
+                if (!_lspOtherPaneRefreshPending || !IsSplitScreenVisible || !LspEnabled || !IsActive)
+                    return;
+
+                _lspOtherPaneRefreshPending = false;
+                _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(120);
+                if (!_lspRefreshDebounceTimer.IsEnabled)
+                    _lspRefreshDebounceTimer.Start();
+            });
+        }
+    }
+
     private async void LspRefreshDebounceTimer_OnTick(object? sender, EventArgs e)
     {
         _lspRefreshDebounceTimer.Stop();
-        if (!LspEnabled || !IsActive || EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath) || _lspRefreshRunning) return;
+        if (!LspEnabled || !IsActive) return;
+        var otherPaneRefresh = RefreshOtherPaneLspPresentationAsync();
+        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath) || _lspRefreshRunning)
+        {
+            await otherPaneRefresh;
+            return;
+        }
         var configuration = ResolveLspConfigurationForFile(_currentFilePath);
-        if (configuration is null) return;
+        if (configuration is null)
+        {
+            await otherPaneRefresh;
+            return;
+        }
         var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(_currentFilePath), configuration);
-        if (client is not { IsInitialized: true, IsStarted: true }) return;
+        if (client is not { IsInitialized: true, IsStarted: true })
+        {
+            await otherPaneRefresh;
+            return;
+        }
         var document = EditorTextBox.Document;
         var revision = _insightDocVersion;
         var caret = EditorTextBox.TextArea.Caret.Offset;
@@ -245,9 +427,10 @@ public partial class MainWindow
             !FileSystemPaths.Equals(path, _lspCaretFeaturePath) || revision != _lspCaretFeatureVersion || caret != _lspCaretFeatureOffset);
         var caretFeatureFailureCount = Volatile.Read(ref _lspCaretFeatureRequestFailures);
         var viewportRequestGeneration = _lspViewportRequestGeneration;
+        if (_activeEditorPane.ActiveTab is not { } activePresentationTab) return;
         var presentationCancellation = CancellationTokenSource.CreateLinkedTokenSource(EditorSession.RevisionCancellationToken);
         _lspPresentationCancellation = presentationCancellation;
-        var ctx = new LspPresentationContext(document, path, revision, caret, visibleStartLine, visibleEndLine, client, refreshCaretFeatures, presentationCancellation.Token);
+        var ctx = new LspPresentationContext(_activeEditorPane, EditorTextBox, activePresentationTab, document, path, revision, caret, visibleStartLine, visibleEndLine, client, refreshCaretFeatures, presentationCancellation.Token);
         _lspRefreshRunning = true;
         try
         {
@@ -271,6 +454,7 @@ public partial class MainWindow
             if (LspDocumentHighlightsEnabled && refreshCaretFeatures)
                 requests.Add(UpdateLspDocumentHighlightsAsync(ctx));
             await Task.WhenAll(requests);
+            await otherPaneRefresh;
 
             if (refreshCaretFeatures && caretFeatureFailureCount == Volatile.Read(ref _lspCaretFeatureRequestFailures) &&
                 revision == _insightDocVersion && caret == EditorTextBox.TextArea.Caret.Offset &&
@@ -312,9 +496,9 @@ public partial class MainWindow
                 _lspDocumentRefreshFailures = 0;
                 _lastPresentationClient = client;
             }
-            else if (_lspFoldingDeferred)
+            else if (GetLspPanePresentationState(_activeEditorPane).FoldingDeferred)
             {
-                _lspFoldingDeferred = false;
+                GetLspPanePresentationState(_activeEditorPane).FoldingDeferred = false;
                 _lspDocumentRefreshPending = true;
                 KodoDiagnostics.LogDebug("LSP folding deferred until diagnostics arrive");
             }
@@ -352,17 +536,23 @@ public partial class MainWindow
 
     private async Task<bool> UpdateLspFoldingAsync(LspPresentationContext ctx)
     {
-        _lspFoldingDeferred = false;
+        var paneState = GetLspPanePresentationState(ctx.Pane);
+        paneState.FoldingDeferred = false;
+        var editor = ctx.Editor;
+        var manager = GetLspFoldingManagerForPane(ctx.Pane);
         if (!LspFoldingEnabled)
         {
             return true;
         }
-        if (_lspFoldingManager is null || string.IsNullOrWhiteSpace(ctx.FilePath) || EditorTextBox?.Document is null) return true;
+        if (manager is null || string.IsNullOrWhiteSpace(ctx.FilePath) || editor.Document is null) return true;
         if (LspMethodUnavailable(ctx, "textDocument/foldingRange")) return true;
-        if (_lspFoldedVersion == ctx.Version && FileSystemPaths.Equals(_lspFoldedPath, ctx.FilePath)) return true;
-        if (!_lspDiagnosticsSeenForFile)
+        if (ReferenceEquals(paneState.FoldedVersion, ctx.DocumentVersion) && FileSystemPaths.Equals(paneState.FoldedPath, ctx.FilePath)) return true;
+        var diagnosticsSeen = ReferenceEquals(ctx.Pane, _activeEditorPane)
+            ? _lspDiagnosticsSeenForFile
+            : HasStoredLspDiagnosticsForFile(ctx.FilePath);
+        if (!diagnosticsSeen)
         {
-            _lspFoldingDeferred = true;
+            paneState.FoldingDeferred = true;
             return false;
         }
         var result = await GetLspFoldingRangesAsync(ctx.FilePath, ctx.CancellationToken).ConfigureAwait(false);
@@ -378,9 +568,15 @@ public partial class MainWindow
             if (startLine0 < 0 || endLine0 <= startLine0) continue;
             ranges.Add((startLine0, endLine0));
         }
+        if (ranges.Count > LspMaxFoldingsApplied)
+        {
+            ranges.Sort(static (left, right) => left.StartLine.CompareTo(right.StartLine));
+            KodoDiagnostics.LogDebug($"LSP folding ranges truncated from {ranges.Count} to {LspMaxFoldingsApplied} before editor mapping for {ctx.FilePath}");
+            ranges.RemoveRange(LspMaxFoldingsApplied, ranges.Count - LspMaxFoldingsApplied);
+        }
         var foldings = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is not { } currentDocument)
+            if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is not { } currentDocument)
                 return null;
             var lastLine0 = currentDocument.LineCount - 1;
             var mapped = new List<AvaloniaEdit.Folding.NewFolding>(Math.Min(ranges.Count, LspMaxFoldingsApplied));
@@ -405,54 +601,12 @@ public partial class MainWindow
             foldings.Sort(static (left, right) => left.StartOffset.CompareTo(right.StartOffset));
             foldings.RemoveRange(LspMaxFoldingsApplied, foldings.Count - LspMaxFoldingsApplied);
         }
-        var manager = _lspFoldingManager;
         var orderedFoldings = foldings.OrderBy(f => f.StartOffset).ToArray();
         var updates = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is not { } currentDocument)
+            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is not { } currentDocument)
                 return null;
-
-            var changes = new List<Action>();
-            var existing = manager.AllFoldings.ToArray();
-            if (FoldingsMatchByLineRanges(currentDocument, existing, orderedFoldings))
-                return changes;
-            var existingIndex = 0;
-            foreach (var folding in orderedFoldings)
-            {
-                while (existingIndex < existing.Length && folding.StartOffset > existing[existingIndex].StartOffset)
-                {
-                    var stale = existing[existingIndex++];
-                    changes.Add(() => manager.RemoveFolding(stale));
-                }
-
-                if (existingIndex < existing.Length && folding.StartOffset == existing[existingIndex].StartOffset)
-                {
-                    var section = existing[existingIndex++];
-                    changes.Add(() =>
-                    {
-                        section.Length = folding.EndOffset - folding.StartOffset;
-                        section.Title = folding.Name;
-                        section.Tag = folding;
-                    });
-                }
-                else
-                {
-                    changes.Add(() =>
-                    {
-                        var section = manager.CreateFolding(folding.StartOffset, folding.EndOffset);
-                        section.Title = folding.Name;
-                        section.Tag = folding;
-                    });
-                }
-            }
-
-            while (existingIndex < existing.Length)
-            {
-                var stale = existing[existingIndex++];
-                changes.Add(() => manager.RemoveFolding(stale));
-            }
-
-            return changes;
+            return BuildLspFoldingUpdates(manager, currentDocument, orderedFoldings);
         }, DispatcherPriority.Background);
 
         if (updates is null || manager is null) return false;
@@ -463,7 +617,7 @@ public partial class MainWindow
             var end = Math.Min(index + updateBatchSize, updates.Count);
             applied = await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!ReferenceEquals(_lspFoldingManager, manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled))
+                if (!ReferenceEquals(GetLspFoldingManagerForPane(ctx.Pane), manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled))
                     return false;
 
                 for (var i = start; i < end; i++)
@@ -473,14 +627,126 @@ public partial class MainWindow
             if (!applied) return false;
         }
 
+        TextEditor? otherEditor = null;
+        AvaloniaEdit.Folding.FoldingManager? otherManager = null;
+        var otherPaneHasSameDocument = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            otherEditor = ReferenceEquals(editor, SecondaryEditorTextBox)
+                ? PrimaryEditorTextBox
+                : SecondaryEditorTextBox;
+            otherManager = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                ? _secondaryLspFoldingManager
+                : _primaryLspFoldingManager;
+            return otherEditor is not null && otherManager is not null &&
+                   ReferenceEquals(otherEditor.Document, ctx.Document);
+        }, DispatcherPriority.Background);
+        if (otherPaneHasSameDocument && otherEditor is not null && otherManager is not null)
+        {
+            var otherUpdates = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) ||
+                    !ReferenceEquals(otherEditor.Document, ctx.Document) ||
+                    !ReferenceEquals(otherManager, ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                        ? _secondaryLspFoldingManager
+                        : _primaryLspFoldingManager))
+                    return null;
+                return BuildLspFoldingUpdates(otherManager, ctx.Document, orderedFoldings);
+            }, DispatcherPriority.Background);
+            if (otherUpdates is null) return false;
+
+            for (var index = 0; index < otherUpdates.Count; index += updateBatchSize)
+            {
+                var start = index;
+                var end = Math.Min(index + updateBatchSize, otherUpdates.Count);
+                applied = await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) ||
+                        !ReferenceEquals(otherEditor.Document, ctx.Document) ||
+                        !ReferenceEquals(otherManager, ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                            ? _secondaryLspFoldingManager
+                            : _primaryLspFoldingManager))
+                        return false;
+
+                    for (var i = start; i < end; i++)
+                        otherUpdates[i]();
+                    return true;
+                }, DispatcherPriority.Background);
+                if (!applied) return false;
+            }
+        }
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!ReferenceEquals(_lspFoldingManager, manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled)) return;
-            _lspFoldedPath = ctx.FilePath;
-            _lspFoldedVersion = ctx.Version;
+            if (!ReferenceEquals(GetLspFoldingManagerForPane(ctx.Pane), manager) || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled)) return;
+            paneState.FoldedPath = ctx.FilePath;
+            paneState.FoldedVersion = ctx.DocumentVersion;
             applied = true;
+
+            if (otherEditor is not null && otherManager is not null &&
+                ReferenceEquals(otherEditor.Document, ctx.Document) &&
+                ReferenceEquals(otherManager, GetLspFoldingManagerForPane(
+                    ReferenceEquals(otherEditor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane)))
+            {
+                var otherPane = ReferenceEquals(otherEditor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+                var otherPaneState = GetLspPanePresentationState(otherPane);
+                otherPaneState.FoldedPath = ctx.FilePath;
+                otherPaneState.FoldedVersion = ctx.DocumentVersion;
+                otherPaneState.FoldingDeferred = false;
+            }
         }, DispatcherPriority.Background);
         return applied;
+    }
+
+    private AvaloniaEdit.Folding.FoldingManager? GetLspFoldingManagerForPane(EditorPaneState pane) =>
+        ReferenceEquals(pane, _secondaryEditorPane) ? _secondaryLspFoldingManager : _primaryLspFoldingManager;
+
+    private static List<Action> BuildLspFoldingUpdates(
+        AvaloniaEdit.Folding.FoldingManager manager,
+        TextDocument document,
+        IReadOnlyList<AvaloniaEdit.Folding.NewFolding> orderedFoldings)
+    {
+        var changes = new List<Action>();
+        var existing = manager.AllFoldings.ToArray();
+        if (FoldingsMatchByLineRanges(document, existing, orderedFoldings))
+            return changes;
+
+        var existingIndex = 0;
+        foreach (var folding in orderedFoldings)
+        {
+            while (existingIndex < existing.Length && folding.StartOffset > existing[existingIndex].StartOffset)
+            {
+                var stale = existing[existingIndex++];
+                changes.Add(() => manager.RemoveFolding(stale));
+            }
+
+            if (existingIndex < existing.Length && folding.StartOffset == existing[existingIndex].StartOffset)
+            {
+                var section = existing[existingIndex++];
+                changes.Add(() =>
+                {
+                    section.Length = folding.EndOffset - folding.StartOffset;
+                    section.Title = folding.Name;
+                    section.Tag = folding;
+                });
+            }
+            else
+            {
+                changes.Add(() =>
+                {
+                    var section = manager.CreateFolding(folding.StartOffset, folding.EndOffset);
+                    section.Title = folding.Name;
+                    section.Tag = folding;
+                });
+            }
+        }
+
+        while (existingIndex < existing.Length)
+        {
+            var stale = existing[existingIndex++];
+            changes.Add(() => manager.RemoveFolding(stale));
+        }
+
+        return changes;
     }
 
     private static bool FoldingsMatchByLineRanges(
@@ -504,19 +770,23 @@ public partial class MainWindow
 
     private async Task UpdateLspDocumentHighlightsAsync(LspPresentationContext ctx)
     {
+        var editor = ctx.Editor;
+        var renderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? _secondaryLspHighlightRenderer
+            : _primaryLspHighlightRenderer;
         if (!LspDocumentHighlightsEnabled)
         {
-            if (_lspHighlightRenderer.HasMatches)
+            if (renderer.HasMatches)
             {
-                _lspHighlightRenderer.Clear();
-                EditorTextBox?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+                renderer.Clear();
+                editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             }
             return;
         }
-        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return;
-        var wasHighlighted = _lspHighlightRenderer.HasMatches;
-        _lspHighlightRenderer.Clear();
-        if (wasHighlighted) EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+        if (editor.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return;
+        var wasHighlighted = renderer.HasMatches;
+        renderer.Clear();
+        if (wasHighlighted) editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         var (line, character) = ctx.CaretPosition;
         var result = await GetLspDocumentHighlightsAsync(ctx.FilePath, line, character, ctx.CancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array) return;
@@ -563,9 +833,9 @@ public partial class MainWindow
         }, ctx.CancellationToken).ConfigureAwait(false);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspDocumentHighlightsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
-            _lspHighlightRenderer.SetMatches(matches);
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            if (!LspDocumentHighlightsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is null || editor.TextArea.Caret.Offset != ctx.Caret) return;
+            renderer.SetMatches(matches);
+            editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
         });
     }
 
@@ -573,10 +843,10 @@ public partial class MainWindow
     {
         if (!LspEnabled || !LspInlayHintsEnabled)
         {
-            ApplyLspInlayHints(Array.Empty<(int, string)>());
+            ApplyLspInlayHints(ctx, Array.Empty<(int, string)>());
             return true;
         }
-        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
+        if (ctx.Editor.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
         if (LspMethodUnavailable(ctx, "textDocument/inlayHint")) return true;
         const int inlayBufferLines = 40;
         var startLine = Math.Max(0, ctx.VisibleStartLine - inlayBufferLines);
@@ -609,20 +879,44 @@ public partial class MainWindow
         var applied = false;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspInlayHintsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null) return;
-            ApplyLspInlayHints(hints);
+            if (!LspInlayHintsEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || ctx.Editor.Document is null) return;
+            ApplyLspInlayHints(ctx, hints, startLine, endLine);
             applied = true;
         });
         return applied;
     }
 
-    private void ApplyLspInlayHints(IReadOnlyList<(int Offset, string Label)> hints)
+    private void ApplyLspInlayHints(
+        LspPresentationContext ctx,
+        IReadOnlyList<(int Offset, string Label)> hints,
+        int? coveredStartLine = null,
+        int? coveredEndLine = null)
     {
-        var changedRange = _lspInlayHintRenderer.SetHints(hints);
-        if (changedRange is not { } range || EditorTextBox?.TextArea?.TextView is not { } textView)
+        var editor = ctx.Editor;
+        var renderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? _secondaryLspInlayHintRenderer
+            : _primaryLspInlayHintRenderer;
+        var changedRange = renderer.SetHints(hints);
+        if (changedRange is { } range && editor.TextArea?.TextView is { } textView)
+            textView.Redraw(range.Offset, range.Length);
+
+        var otherEditor = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? PrimaryEditorTextBox
+            : SecondaryEditorTextBox;
+        if (coveredStartLine is null || coveredEndLine is null || otherEditor is null ||
+            !ReferenceEquals(otherEditor.Document, ctx.Document))
             return;
 
-        textView.Redraw(range.Offset, range.Length);
+        var otherVisible = GetEditorVisibleLines(otherEditor);
+        if (otherVisible.StartLine < coveredStartLine.Value || otherVisible.EndLine > coveredEndLine.Value)
+            return;
+
+        var otherRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+            ? _secondaryLspInlayHintRenderer
+            : _primaryLspInlayHintRenderer;
+        var otherChangedRange = otherRenderer.SetHints(hints);
+        if (otherChangedRange is { } otherRange)
+            otherEditor.TextArea.TextView.Redraw(otherRange.Offset, otherRange.Length);
     }
 
     private static bool TryReadLspPosition(JsonElement position, out int line, out int character)
@@ -652,16 +946,30 @@ public partial class MainWindow
 
     private async Task<bool> UpdateLspSemanticTokensAsync(LspPresentationContext ctx, bool useRange)
     {
+        var editor = ctx.Editor;
+        var renderer = ReferenceEquals(editor, SecondaryEditorTextBox)
+            ? _secondaryLspSemanticTokenRenderer
+            : _primaryLspSemanticTokenRenderer;
         if (!LspEnabled || !LspSemanticHighlightingEnabled)
         {
-            if (_lspSemanticTokenRenderer.HasTokens)
+            if (renderer.HasTokens)
             {
-                _lspSemanticTokenRenderer.SetTokens(Array.Empty<(int, int, IBrush)>());
-                EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                renderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
             }
             return true;
         }
-        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
+        if (editor.Document is null || string.IsNullOrWhiteSpace(ctx.FilePath)) return true;
+        if (!useRange && PerformanceBudget.IsHugeFile(ctx.Document, 1_000_000))
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || !renderer.HasTokens) return;
+                renderer.SetTokens(Array.Empty<(int, int, IBrush)>());
+                editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            });
+            return true;
+        }
         if (LspMethodUnavailable(ctx, useRange ? "textDocument/semanticTokens/range" : "textDocument/semanticTokens/full")) return true;
         var result = useRange
             ? await GetLspSemanticTokensRangeAsync(ctx.FilePath, ctx.VisibleStartLine, ctx.VisibleEndLine, ctx.CancellationToken).ConfigureAwait(false)
@@ -789,9 +1097,24 @@ public partial class MainWindow
         var applied = false;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspSemanticHighlightingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null) return;
-            _lspSemanticTokenRenderer.SetTokens(tokens);
-            EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            if (!LspSemanticHighlightingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is null) return;
+            renderer.SetTokens(tokens);
+            editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+            var otherEditor = ReferenceEquals(editor, SecondaryEditorTextBox)
+                ? PrimaryEditorTextBox
+                : SecondaryEditorTextBox;
+            if (otherEditor is not null && ReferenceEquals(otherEditor.Document, ctx.Document))
+            {
+                var otherVisible = GetEditorVisibleLines(otherEditor);
+                if (!useRange || (otherVisible.StartLine >= ctx.VisibleStartLine && otherVisible.EndLine <= ctx.VisibleEndLine))
+                {
+                    var otherRenderer = ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                        ? _secondaryLspSemanticTokenRenderer
+                        : _primaryLspSemanticTokenRenderer;
+                    otherRenderer.SetTokens(tokens);
+                    otherEditor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
+                }
+            }
             applied = true;
         });
         return applied;

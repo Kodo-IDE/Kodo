@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using AvaloniaEdit;
 using AvaloniaEdit.Rendering;
 using Kodo.Models;
 
@@ -517,6 +518,15 @@ public partial class MainWindow
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
         stageWatch.Stop();
         KodoDiagnostics.ReportSlowStage("apply/lsp provider registry", stageWatch.ElapsedMilliseconds, 250, $"extensions={LoadedExtensions.Count}");
+
+        if (PrimaryEditorTextBox is not null)
+            ApplyPaneSyntaxHighlighting(_editorPane, PrimaryEditorTextBox, _editorPane.ActiveTab);
+        if (SecondaryEditorTextBox is not null)
+            ApplyPaneSyntaxHighlighting(_secondaryEditorPane, SecondaryEditorTextBox, _secondaryEditorPane.ActiveTab);
+        CurrentLanguageExtension = string.IsNullOrWhiteSpace(_currentFilePath)
+            ? null
+            : GetLanguageExtension(_currentFilePath);
+        RefreshRunBuildState();
 
         applyWatch.Stop();
         KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
@@ -1668,6 +1678,33 @@ public partial class MainWindow
         ConfigureMarkdownHighlighting(ext);
 
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+    }
+
+    private void ApplyPaneSyntaxHighlighting(EditorPaneState pane, TextEditor editor, EditorTab? tab)
+    {
+        var isSecondary = ReferenceEquals(pane, _secondaryEditorPane);
+        var extension = tab is null || tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path)
+            ? null
+            : GetLanguageExtension(tab.Path);
+        var definition = extension is null || tab is null ? null : GetSyntaxHighlightingForPath(tab.Path);
+        editor.SyntaxHighlighting = definition;
+        if (isSecondary)
+            _secondaryAppliedSyntaxExtension = extension;
+        else
+            _primaryAppliedSyntaxExtension = extension;
+
+        var isMarkdown = KodoExtensionIds.IsMarkdown(extension?.Id);
+        (isSecondary ? _secondaryRainbowBracketColorizer : _primaryRainbowBracketColorizer)
+            .UpdateSyntax(isMarkdown ? null : extension);
+        (isSecondary ? _secondaryInterpolatedStringColorizer : _primaryInterpolatedStringColorizer)
+            .UpdateSyntax(extension is null ? null : ResolveCompiledSyntaxProfile(extension));
+        (isSecondary ? _secondaryHtmlEmbeddedColorizer : _primaryHtmlEmbeddedColorizer)
+            .UpdateSyntax(extension, ResolveHtmlEmbeddedSyntaxProfile);
+        (isSecondary ? _secondaryMarkdownColorizer : _primaryMarkdownColorizer)
+            .UpdateSyntax(extension, ResolveFenceLanguageSyntaxProfile, ResolveInlineCodeLanguageExtension);
+        (isSecondary ? _secondaryIndentGuideRenderer : _primaryIndentGuideRenderer).IsEnabled = extension is not null;
+        editor.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+        editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
     public KodoHighlightingDefinition? GetSyntaxHighlightingForPath(string filePath)

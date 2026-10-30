@@ -14,6 +14,7 @@ internal sealed class AppSettings
     public string ThemeName { get; set; } = "Dark";
     public bool AutoSaveEnabled { get; set; }
     public bool DiscordRichPresenceEnabled { get; set; }
+    public bool GitSourceControlEnabled { get; set; }
     public bool DeveloperOptionsVisible { get; set; }
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;
@@ -51,6 +52,12 @@ internal sealed class AppSettings
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }
+    public bool SplitEditorVisible { get; set; }
+    public string? PrimaryPaneTabPath { get; set; }
+    public string? SecondaryPaneTabPath { get; set; }
+    public List<string> PrimaryPaneTabPaths { get; set; } = [];
+    public List<string> SecondaryPaneTabPaths { get; set; } = [];
+    public bool ActivePaneIsSecondary { get; set; }
     public string? LastOpenedFolderPath { get; set; }
     public List<RecentFileEntry> RecentFiles { get; set; } = [];
     public bool HasCompletedTutorial { get; set; }

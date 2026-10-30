@@ -149,6 +149,7 @@ public partial class MainWindow
     private void ApplyThemeToEditor()
     {
         EditorMinimapView?.SetTheme(EditorBackgroundBrush, MutedTextBrush, AccentBrush);
+        SecondaryEditorMinimapView?.SetTheme(EditorBackgroundBrush, MutedTextBrush, AccentBrush);
         if (TerminalHostControl is not null)
         {
             TerminalHostControl.ApplyKodoTheme(
@@ -162,59 +163,97 @@ public partial class MainWindow
         _colorSwatchGenerator.BorderBrush = SurfaceBorderBrush;
         _colorSwatchGenerator.TextBrush = PrimaryTextBrush;
         _colorSwatchGenerator.AccentBrush = AccentBrush;
-        EditorTextBox.Background = EditorBackgroundBrush;
-        EditorTextBox.Foreground = PrimaryTextBrush;
-        EditorTextBox.LineNumbersForeground = MutedTextBrush;
+        if (_secondaryColorSwatchGenerator is not null)
+        {
+            _secondaryColorSwatchGenerator.PanelBrush = WindowBackgroundBrush;
+            _secondaryColorSwatchGenerator.BorderBrush = SurfaceBorderBrush;
+            _secondaryColorSwatchGenerator.TextBrush = PrimaryTextBrush;
+            _secondaryColorSwatchGenerator.AccentBrush = AccentBrush;
+        }
+        ApplyEditorTheme(PrimaryEditorTextBox);
+        ApplyEditorTheme(SecondaryEditorTextBox);
         ApplyFoldingMarginTheme();
-        EditorTextBox.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush b
-            ? new SolidColorBrush(b.Color, 0.3)
-            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
-        EditorTextBox.TextArea.SelectionForeground = PrimaryTextBrush;
-        EditorTextBox.TextArea.TextView.LinkTextForegroundBrush = CachedLinkBrush;
-        EditorTextBox.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
-        _indentGuideRenderer.GuideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
+        var guideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
             ? new SolidColorBrush(mutedBrush.Color, 0.4)
             : new SolidColorBrush(Color.Parse("#808080"), 0.4);
+        _primaryIndentGuideRenderer.GuideBrush = guideBrush;
+        _secondaryIndentGuideRenderer.GuideBrush = guideBrush;
         IBrush deadCodeGrey = IsLightThemeActive
             ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
             : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
-        _deadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
-        _errorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
+        _primaryDeadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
+        _secondaryDeadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
+        _primaryErrorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
+        _secondaryErrorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
         var basePrimary = PrimaryTextBrush.ToImmutable() is ISolidColorBrush primarySolid
             ? primarySolid.Color
             : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
-        _deadCodeTextBrightener.TextBrush = new SolidColorBrush(
+        var deadCodeTextBrush = new SolidColorBrush(
             PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
-        _errorTextDarkener.IsLightTheme = IsLightThemeActive;
-        _errorTextDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-        EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Selection);
-        EditorTextBox.TextArea.TextView.Redraw();
+        _primaryDeadCodeTextBrightener.TextBrush = deadCodeTextBrush;
+        _secondaryDeadCodeTextBrightener.TextBrush = deadCodeTextBrush;
+        foreach (var textDarkener in new[] { _primaryErrorTextDarkener, _secondaryErrorTextDarkener })
+        {
+            textDarkener.IsLightTheme = IsLightThemeActive;
+            textDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
+        }
+        foreach (var editor in new[] { PrimaryEditorTextBox, SecondaryEditorTextBox })
+        {
+            editor?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+            editor?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Selection);
+            editor?.TextArea?.TextView?.Redraw();
+        }
 
+    }
+
+    private void ApplyEditorTheme(AvaloniaEdit.TextEditor? editor)
+    {
+        if (editor is null) return;
+        editor.Background = EditorBackgroundBrush;
+        editor.Foreground = PrimaryTextBrush;
+        editor.LineNumbersForeground = MutedTextBrush;
+        editor.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush solid
+            ? new SolidColorBrush(solid.Color, 0.3)
+            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
+        editor.TextArea.SelectionForeground = PrimaryTextBrush;
+        editor.TextArea.TextView.LinkTextForegroundBrush = CachedLinkBrush;
+        editor.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
     }
 
     private void ApplyFoldingMarginTheme()
     {
-        if (EditorTextBox is null) return;
-        _foldingMargin ??= InstallFoldingMargin();
-        if (_foldingMargin is null) return;
-        _foldingMargin.FoldingMarkerBackgroundBrush = Brushes.Transparent;
-        _foldingMargin.FoldingMarkerBrush = MutedTextBrush;
-        _foldingMargin.SelectedFoldingMarkerBackgroundBrush = ButtonHoverBrush;
-        _foldingMargin.SelectedFoldingMarkerBrush = AccentBrush;
+        var primaryMargin = EnsureFoldingMargin(PrimaryEditorTextBox);
+        var secondaryMargin = EnsureFoldingMargin(SecondaryEditorTextBox);
+        ApplyFoldingMarginTheme(primaryMargin);
+        ApplyFoldingMarginTheme(secondaryMargin);
+        _foldingMargin = ReferenceEquals(EditorTextBox, SecondaryEditorTextBox)
+            ? secondaryMargin
+            : primaryMargin;
     }
 
-    private FoldingMargin? InstallFoldingMargin()
+    private void ApplyFoldingMarginTheme(FoldingMargin? margin)
     {
-        if (EditorTextBox is null) return null;
-        foreach (var existing in EditorTextBox.TextArea.LeftMargins.OfType<FoldingMargin>())
-        {
-            _foldingMargin = existing;
-            return existing;
-        }
-        var marker = new FoldingMargin();
-        EditorTextBox.TextArea.LeftMargins.Add(marker);
-        return marker;
+        if (margin is null) return;
+        margin.FoldingMarkerBackgroundBrush = Brushes.Transparent;
+        margin.FoldingMarkerBrush = MutedTextBrush;
+        margin.SelectedFoldingMarkerBackgroundBrush = ButtonHoverBrush;
+        margin.SelectedFoldingMarkerBrush = AccentBrush;
+    }
+
+    private static FoldingMargin? FindFoldingMargin(AvaloniaEdit.TextEditor? editor)
+    {
+        if (editor is null) return null;
+        return editor.TextArea.LeftMargins.OfType<FoldingMargin>().FirstOrDefault();
+    }
+
+    private static FoldingMargin? EnsureFoldingMargin(AvaloniaEdit.TextEditor? editor)
+    {
+        if (editor is null) return null;
+        var margin = FindFoldingMargin(editor);
+        if (margin is not null) return margin;
+        margin = new FoldingMargin();
+        editor.TextArea.LeftMargins.Add(margin);
+        return margin;
     }
 
     private static Color GetTerminalThemeColor(IBrush brush, Color fallback) =>

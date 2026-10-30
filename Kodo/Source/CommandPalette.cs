@@ -669,6 +669,11 @@ public partial class MainWindow
             new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey"),
             new("Open Tutorial", "Help", "", () => { NavigateTo(AppPage.Tutorial); return Task.CompletedTask; }, Keywords: "getting started help guide"),
             new("Open What's New", "Help", "", () => { NavigateTo(AppPage.WhatsNew); return Task.CompletedTask; }, Keywords: "release notes updates changelog"),
+            new(IsSplitScreenVisible ? "Close Split Editor" : "Split Editor Right", "View", "ToggleSplitEditor", () => { if (IsSplitScreenVisible) CloseSplitEditor(); else ShowSplitEditor(); return Task.CompletedTask; }, () => CanToggleSplitEditor, "side by side pane group"),
+            new("Focus First Editor Group", "View", "FocusFirstEditorGroup", () => { FocusEditorPane(_editorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group left"),
+            new("Focus Second Editor Group", "View", "FocusSecondEditorGroup", () => { FocusEditorPane(_secondaryEditorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group right"),
+            new("Focus Other Editor Pane", "View", "FocusOtherEditor", () => { FocusOtherEditorPaneButton_OnClick(null, new RoutedEventArgs()); return Task.CompletedTask; }, () => IsSplitScreenVisible, "switch group editor"),
+            new("Open Active File to the Side", "View", "OpenActiveFileToSide", () => { if (ActiveEditorTab is { } tab) OpenEditorTabToSide(tab, moveFromSourcePane: true); return Task.CompletedTask; }, () => ActiveEditorTab is not null && IsTextEditorVisible, "split move beside"),
 
             new("Search Files by Name…", "Navigation", "QuickAccess", () => { SetPaletteText(string.Empty); return Task.CompletedTask; }, Keywords: "quick open file path", KeepOpen: true),
             new("Go to Line…", "Navigation", "GoToLine", () => { SetPaletteText(":"); return Task.CompletedTask; }, HasDocument, "jump line number", KeepOpen: true, Badge: ":"),
@@ -753,6 +758,7 @@ public partial class MainWindow
         AddSettingToggle("Developer Options", () => IsDeveloperOptionsVisible, value => IsDeveloperOptionsVisible = value, "developer advanced");
         AddSettingToggle("Verbose Logging", () => IsVerboseLoggingEnabled, value => IsVerboseLoggingEnabled = value, "logs diagnostics");
         AddSettingToggle("Discord Rich Presence", () => IsDiscordRichPresenceEnabled, value => IsDiscordRichPresenceEnabled = value, "activity status discord");
+        AddSettingToggle("Git Source Control", () => IsGitSourceControlEnabled, value => IsGitSourceControlEnabled = value, "git source control version control");
         AddSettingToggle("Code Suggestions", () => IsInsightCodeSuggestionsEnabled, value => IsInsightCodeSuggestionsEnabled = value, "insight completion autocomplete");
         AddSettingToggle("Dead Code Detection", () => IsInsightDeadCodeEnabled, value => IsInsightDeadCodeEnabled = value, "insight analysis");
         AddSettingToggle("Error Detection", () => IsInsightErrorDetectionEnabled, value => IsInsightErrorDetectionEnabled = value, "insight diagnostics errors");
@@ -1642,6 +1648,7 @@ public partial class MainWindow
         Key.OemPlus => "=",
         Key.OemMinus => "-",
         Key.Oem3 => "`",
+        Key.OemPipe => "\\",
         Key.D0 => "0",
         Key.D1 => "1",
         Key.D2 => "2",

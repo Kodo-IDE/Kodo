@@ -38,7 +38,7 @@ public sealed class LangRulesAdapter : IDisposable
     private readonly ILangRulesProvider? _typedProvider;
     private bool _disposed;
 
-    private LangRulesAdapter(Type rules, AssemblyLoadContext loadContext, ILangRulesProvider? typedProvider = null)
+    internal LangRulesAdapter(Type rules, AssemblyLoadContext loadContext, ILangRulesProvider? typedProvider = null)
     {
         _rules = rules;
         _loadContext = loadContext;
@@ -356,8 +356,13 @@ public sealed class LangRulesAdapter : IDisposable
     }
 
     public IReadOnlyList<LangRuleCodeAction> GetCodeActions(string code)
+        => GetCodeActions(code, 0);
+
+    public IReadOnlyList<LangRuleCodeAction> GetCodeActions(string code, int offset)
     {
-        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetCodeActions(code, 0));
+        code ??= string.Empty;
+        offset = Math.Clamp(offset, 0, code.Length);
+        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.GetCodeActions(code, offset));
         if (_codeActions is null) return [];
         try { return ConvertRecords<LangRuleCodeAction>(_codeActions.Invoke(null, [code]), (x, t) => new(t("Title"), t("Kind"), i(x, "Start"), i(x, "Length"), t("NewText"), t("DiagnosticCode"))); }
         catch { return []; }

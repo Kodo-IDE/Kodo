@@ -30,6 +30,14 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
         _hints = Array.Empty<(int, string)>();
     }
 
+    public void ClearHints() => _hints = Array.Empty<(int, string)>();
+
+    private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
+    {
+        if (ReferenceEquals(sender, _document))
+            ClearHints();
+    }
+
     public (int Offset, int Length)? SetHints(IReadOnlyList<(int Offset, string Label)> hints)
     {
         var normalized = new List<(int Offset, string Label)>(hints.Count);
@@ -74,37 +82,6 @@ public sealed class LspInlayHintRenderer : VisualLineElementGenerator
         return firstChangedOffset == int.MaxValue
             ? null
             : (firstChangedOffset, Math.Max(1, lastChangedOffset - firstChangedOffset + 1));
-    }
-
-    private void OnDocumentChanged(object? sender, DocumentChangeEventArgs e)
-    {
-        if (_hints.Count == 0 || sender is not TextDocument document || !ReferenceEquals(document, _document))
-            return;
-
-        var insertedLength = e.InsertedText.Text.Length;
-        var oldEnd = e.Offset + e.RemovalLength;
-        var offset = Math.Clamp(e.Offset, 0, document.TextLength);
-        var changedEnd = Math.Clamp(e.Offset + insertedLength, offset, document.TextLength);
-        var firstAffectedLine = document.GetLineByOffset(offset);
-        var lastAffectedLine = document.GetLineByOffset(changedEnd);
-        var affectedStart = firstAffectedLine.Offset;
-        var affectedEnd = lastAffectedLine.EndOffset + lastAffectedLine.DelimiterLength;
-        var offsetDelta = insertedLength - e.RemovalLength;
-        var adjusted = new List<(int Offset, string Label)>(_hints.Count);
-
-        foreach (var hint in _hints)
-        {
-            var adjustedOffset = hint.Offset;
-            if (hint.Offset >= oldEnd)
-                adjustedOffset += offsetDelta;
-            else if (hint.Offset >= e.Offset)
-                continue;
-
-            if (adjustedOffset < affectedStart || adjustedOffset > affectedEnd)
-                adjusted.Add((adjustedOffset, hint.Label));
-        }
-
-        _hints = adjusted.ToArray();
     }
 
     public override int GetFirstInterestedOffset(int startOffset)
