@@ -337,7 +337,7 @@ public partial class MainWindow
             ApplyIndentationForContent(tab.DetectedIndentation);
         var viewState = tab.GetViewState(_activeEditorPane.Id);
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, EditorTextBox.Document.TextLength);
-        EditorTextBox.ScrollToLine(viewState.TopLineNumber);
+        EditorTextBox.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, EditorTextBox.Document.LineCount));
         RestorePaneScrollOffset(activationPane, tab, EditorTextBox, activationVersion);
         QueueLspPresentationRefresh();
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path) && !IsLspDocumentOpenOrOpening(tab.Path))

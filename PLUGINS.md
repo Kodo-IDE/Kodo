@@ -66,7 +66,7 @@ created. Store your controls, handlers, timers, and subscriptions in fields.
       ExcludeAssets="runtime" so Avalonia is not copied into your output. Kodo already has
       Avalonia loaded, so a second copy inside the .kox is a version conflict.
     -->
-    <PackageReference Include="Avalonia" Version="12.1.3" ExcludeAssets="runtime" />
+    <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Kodo">

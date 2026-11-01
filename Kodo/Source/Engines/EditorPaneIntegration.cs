@@ -634,7 +634,8 @@ public partial class MainWindow
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { } tab || sender is not Control control)
             return;
-        var pane = control.GetVisualAncestors().OfType<Control>().Any(ancestor => ReferenceEquals(ancestor, SecondaryEditorPane))
+        var pane = IsSplitScreenVisible &&
+            control.GetVisualAncestors().OfType<Control>().Any(ancestor => ReferenceEquals(ancestor, SecondaryEditorPane))
             ? _secondaryEditorPane
             : _editorPane;
         await RequestClosePaneTabAsync(pane, tab);
@@ -642,8 +643,15 @@ public partial class MainWindow
 
     private async void ClosePaneTabMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (TryGetTaggedData<EditorTab>(sender) is { } tab)
-            await RequestClosePaneTabAsync(_activeEditorPane, tab);
+        if (TryGetTaggedData<EditorTab>(sender) is not { } tab)
+            return;
+
+        var pane = _editorPane.Tabs.Contains(tab) && !_secondaryEditorPane.Tabs.Contains(tab)
+            ? _editorPane
+            : _secondaryEditorPane.Tabs.Contains(tab) && !_editorPane.Tabs.Contains(tab)
+                ? _secondaryEditorPane
+                : _activeEditorPane;
+        await RequestClosePaneTabAsync(pane, tab);
     }
 
     private async void CloseOtherPaneTabsMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1086,6 +1094,8 @@ public partial class MainWindow
         if (wasSecondaryActive && secondaryActiveTab is not null)
         {
             CopyPaneViewState(secondaryActiveTab, _secondaryEditorPane, _editorPane);
+            if (ReferenceEquals(_editorPane.ActiveTab, secondaryActiveTab))
+                _editorPane.ActiveTab = null;
             SetOtherPaneTab(_editorPane, secondaryActiveTab);
         }
         else if (_editorPane.ActiveTab is null && secondaryActiveTab is not null)
@@ -1194,7 +1204,10 @@ public partial class MainWindow
 
         if (moveFromSourcePane && splitWasVisible && sourcePane.Tabs.Count == 1 && sourcePane.Tabs.Contains(tab))
         {
-            var replacement = OpenTabs.FirstOrDefault(candidate => !ReferenceEquals(candidate, tab));
+            var replacement = OpenTabs.FirstOrDefault(candidate =>
+                !ReferenceEquals(candidate, tab) &&
+                CanDisplayInEditorPane(candidate) &&
+                !sourcePane.Tabs.Contains(candidate));
             if (replacement is not null)
                 SetOtherPaneTab(sourcePane, replacement);
         }

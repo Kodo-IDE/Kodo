@@ -864,6 +864,7 @@ public partial class MainWindow
     {
         var hasLsp = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
         var rules = CurrentLanguageExtension?.LangRules;
+        var hasDefinitionProvider = rules?.HasDefinitionProvider == true || hasLsp;
         var hasFormatter = rules?.HasFormatter == true || hasLsp;
         var hasReferences = rules?.HasReferenceProvider == true || hasLsp;
         var hasCodeActions = rules?.HasCodeActionProvider == true || hasLsp;
@@ -1028,7 +1029,7 @@ public partial class MainWindow
             new("Toggle Whole Word", "Search", "", () => { IsSearchWholeWordEnabled = !IsSearchWholeWordEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search exact word"),
             new("Toggle Regular Expression Search", "Search", "", () => { IsSearchRegexEnabled = !IsSearchRegexEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search regex pattern"),
 
-            new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => ActiveEditorTab is not null),
+            new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => HasDocument() && hasDefinitionProvider, "language server navigation"),
             new("Go Back", "Navigation", "EditorGoBack", () => NavigateEditorHistoryAsync(true), HasDocument, "previous location history"),
             new("Go Forward", "Navigation", "EditorGoForward", () => NavigateEditorHistoryAsync(false), HasDocument, "next location history"),
             new("Next Problem", "Editor", "NextProblem", () => { NavigateEditorDiagnostic(1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning"),

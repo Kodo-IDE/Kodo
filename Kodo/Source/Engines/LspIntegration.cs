@@ -2619,16 +2619,16 @@ public partial class MainWindow
             var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is { } activeDocument)
-                    return (Snapshot: (EditorTextSnapshot?)EditorTextSnapshotStore.GetSnapshot(activeDocument), Document: (AvaloniaEdit.Document.TextDocument?)activeDocument, Version: _insightDocVersion, DocumentVersion: activeDocument.Version, IsActive: true);
+                    return (Snapshot: (EditorTextSnapshot?)EditorTextSnapshotStore.GetSnapshot(activeDocument), Document: (AvaloniaEdit.Document.TextDocument?)activeDocument, Version: _insightDocVersion, DocumentVersion: activeDocument.Version, IsActive: true, InactivePane: (EditorPaneState?)null);
 
 
-                var otherPane = ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _editorPane : _secondaryEditorPane;
+                var inactivePane = ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _editorPane : _secondaryEditorPane;
                 if (IsSplitScreenVisible &&
-                    otherPane.ActiveTab is { IsUntitled: false } otherTab &&
+                    inactivePane.ActiveTab is { IsUntitled: false } otherTab &&
                     FileSystemPaths.Equals(otherTab.Path, filePath) &&
-                    GetEditorForPane(otherPane).Document is { } otherDocument)
-                    return (Snapshot: (EditorTextSnapshot?)EditorTextSnapshotStore.GetSnapshot(otherDocument), Document: (AvaloniaEdit.Document.TextDocument?)otherDocument, Version: _insightDocVersion, DocumentVersion: otherDocument.Version, IsActive: false);
-                return (Snapshot: (EditorTextSnapshot?)null, Document: (AvaloniaEdit.Document.TextDocument?)null, Version: _insightDocVersion, DocumentVersion: (AvaloniaEdit.Document.ITextSourceVersion?)null, IsActive: true);
+                    GetEditorForPane(inactivePane).Document is { } otherDocument)
+                    return (Snapshot: (EditorTextSnapshot?)EditorTextSnapshotStore.GetSnapshot(otherDocument), Document: (AvaloniaEdit.Document.TextDocument?)otherDocument, Version: _insightDocVersion, DocumentVersion: otherDocument.Version, IsActive: false, InactivePane: (EditorPaneState?)inactivePane);
+                return (Snapshot: (EditorTextSnapshot?)null, Document: (AvaloniaEdit.Document.TextDocument?)null, Version: _insightDocVersion, DocumentVersion: (AvaloniaEdit.Document.ITextSourceVersion?)null, IsActive: true, InactivePane: (EditorPaneState?)null);
             });
             if (snapshot.Snapshot is not null && HasPendingLspDocumentSync(filePath))
                 await FlushLspDocumentAsync(filePath, string.Empty).ConfigureAwait(false);
@@ -2650,11 +2650,13 @@ public partial class MainWindow
                     return FileSystemPaths.Equals(_currentFilePath, filePath) && ReferenceEquals(EditorTextBox?.Document, snapshot.Document) && _insightDocVersion == snapshot.Version
                         ? result
                         : null;
-                var otherPane = ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _editorPane : _secondaryEditorPane;
+                var inactivePane = snapshot.InactivePane;
+                if (inactivePane is null)
+                    return null;
                 return snapshot.Document is not null &&
-                       otherPane.ActiveTab is { IsUntitled: false } otherTab &&
+                       inactivePane.ActiveTab is { IsUntitled: false } otherTab &&
                        FileSystemPaths.Equals(otherTab.Path, filePath) &&
-                       ReferenceEquals(GetEditorForPane(otherPane).Document, snapshot.Document) &&
+                       ReferenceEquals(GetEditorForPane(inactivePane).Document, snapshot.Document) &&
                        ReferenceEquals(snapshot.Document.Version, snapshot.DocumentVersion)
                     ? result
                     : null;
