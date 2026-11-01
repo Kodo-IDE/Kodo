@@ -2,13 +2,13 @@
 #pragma warning disable CA1416
 using Avalonia.Threading;
 using Kodo.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
 using System.Threading;
-using System;
+using System.Threading.Tasks;
 
 namespace Kodo;
 

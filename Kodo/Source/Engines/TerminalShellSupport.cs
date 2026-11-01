@@ -1,11 +1,11 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Media;
+using Kodo.Models;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
-using Avalonia.Media;
-using Kodo.Models;
 
 namespace Kodo;
 

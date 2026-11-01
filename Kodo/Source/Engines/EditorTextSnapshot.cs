@@ -1,11 +1,11 @@
 // Licensed under the GNU GPL-v3.0
+using AvaloniaEdit.Document;
 using System;
 using System.Buffers;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using AvaloniaEdit.Document;
 
 namespace Kodo.Editor;
 

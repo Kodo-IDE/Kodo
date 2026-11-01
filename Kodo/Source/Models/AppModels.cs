@@ -1,8 +1,8 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Input;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using Avalonia.Input;
 
 namespace Kodo.Models;
 

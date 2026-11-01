@@ -1,8 +1,8 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Threading;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Avalonia.Threading;
 
 namespace Kodo;
 

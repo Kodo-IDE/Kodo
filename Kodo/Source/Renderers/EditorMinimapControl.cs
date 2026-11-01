@@ -1,10 +1,10 @@
 // Licensed under the GNU GPL-v3.0
-using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
+using System;
 
 namespace Kodo.Renderers;
 

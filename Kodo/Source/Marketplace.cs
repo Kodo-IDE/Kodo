@@ -1,4 +1,9 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,11 +15,6 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Controls;
-using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using Kodo.Models;
 
 namespace Kodo;
 

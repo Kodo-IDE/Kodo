@@ -1,9 +1,9 @@
 // Licensed under GPL-v3.0
-using System;
-using System.ComponentModel;
 using Avalonia;
 using Avalonia.Media;
 using Kodo;
+using System;
+using System.ComponentModel;
 
 namespace GitSourceControl;
 

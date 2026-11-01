@@ -1,15 +1,15 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Media;
+using AvaloniaEdit;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Rendering;
+using Kodo.Editor;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Media;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Rendering;
-using AvaloniaEdit;
-using Kodo.Editor;
 
 namespace Kodo.Models;
 

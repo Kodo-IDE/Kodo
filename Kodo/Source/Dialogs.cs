@@ -1,12 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-using System;
-using System.Diagnostics;
-using System.Linq;
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Http;
-using System.Threading;
-using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input.Platform;
@@ -14,6 +6,14 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Kodo.Models;
+using System;
+using System.Diagnostics;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.NetworkInformation;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Kodo;
 

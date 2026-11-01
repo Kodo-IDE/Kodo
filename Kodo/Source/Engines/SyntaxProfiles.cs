@@ -1,13 +1,13 @@
 
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Media;
+using AvaloniaEdit.Document;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using Avalonia.Media;
-using AvaloniaEdit.Document;
-using Kodo.Models;
 
 namespace Kodo;
 

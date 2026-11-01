@@ -1,5 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-using System.Diagnostics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -10,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Microsoft.Win32;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;

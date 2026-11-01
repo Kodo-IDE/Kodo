@@ -1,10 +1,10 @@
 // Licensed under the GNU GPL-v3.0
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
-using Microsoft.Win32;
 
 namespace Kodo;
 

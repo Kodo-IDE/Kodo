@@ -12,6 +12,8 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
+using Kodo.Editor;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,8 +21,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Kodo.Editor;
-using Kodo.Models;
 
 namespace Kodo;
 

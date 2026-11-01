@@ -1,17 +1,4 @@
 // Licensed under GPL-v3.0
-using System;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.ComponentModel;
-using System.IO;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -26,8 +13,21 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using Kodo;
 using Kodo.Models;
-using Shape = Avalonia.Controls.Shapes.Shape;
+using System;
+using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Xml.Linq;
 using PathShape = Avalonia.Controls.Shapes.Path;
+using Shape = Avalonia.Controls.Shapes.Shape;
 
 namespace GitSourceControl;
 
@@ -56,7 +56,6 @@ internal sealed class GitSourceControlIntegration
     private bool _hasRemote;
     private int _diffRequest;
 
-    // ---- state added in this revision ----
     private const int CommitHistoryCount = 15;
     private const int DefaultRowLimit = 300;
     private GitStatusSnapshot? _snapshot;
@@ -142,7 +141,6 @@ internal sealed class GitSourceControlIntegration
         _window = null;
     }
 
-    /// <summary>Diff previews are temp files that are normally deleted when their tab closes; sweep up any a crash left behind.</summary>
     private static void CleanupStalePreviewFiles()
     {
         _ = Task.Run(() =>
@@ -177,8 +175,6 @@ internal sealed class GitSourceControlIntegration
         }
         else if (e.PropertyName == "IsFileExplorerVisible" && _panelOpen && _fallbackWindow is null)
         {
-            // Returning to Explorer through Kodo's activity bar also closes
-            // this view and restores the original sidebar surface.
             CloseSourcePanel();
         }
         else if (e.PropertyName == "ExplorerPanelWidth" && _panelOpen)
@@ -189,7 +185,6 @@ internal sealed class GitSourceControlIntegration
         {
             if (_panelOpen)
             {
-                // Kodo raises one PropertyChanged per brush on a theme switch; repaint once, not once per brush.
                 _themeTimer.Stop();
                 _themeTimer.Start();
             }
@@ -232,7 +227,6 @@ internal sealed class GitSourceControlIntegration
     private void RefreshTimer_OnTick(object? sender, EventArgs e)
     {
         if (!_panelOpen || !_sidebarViewAvailable) return;
-        // Don't spawn git processes while Kodo is in the background; polling resumes on the next tick after it is focused.
         if (!HostIsActive()) return;
         _ = RefreshRepositoryAsync(fromPoll: true);
     }
@@ -248,7 +242,6 @@ internal sealed class GitSourceControlIntegration
 
     private bool HostIsActive()
     {
-        // Isolated + guarded: Window.IsActive is a host member; if it were ever unavailable we simply keep polling.
         try { return HostIsActiveCore(); }
         catch { return true; }
     }
@@ -256,9 +249,6 @@ internal sealed class GitSourceControlIntegration
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool HostIsActiveCore() => _window?.IsActive ?? true;
 
-    // ---------------------------------------------------------------------
-    // Activity bar and sidebar
-    // ---------------------------------------------------------------------
 
     internal void ToggleSourcePanelFromHost() => ToggleSourcePanel();
 
@@ -323,10 +313,6 @@ internal sealed class GitSourceControlIntegration
         DisposeThemeSyncs(_fixedThemeSyncs);
     }
 
-    /// <summary>
-    /// Drops every reference to the current panel's controls. The text typed into the commit box is kept first:
-    /// closing the panel (or switching to Home and back) used to throw an unsent message away.
-    /// </summary>
     private void ForgetPanelControls()
     {
         if (_commitMessage is not null) _commitMessageDraft = _commitMessage.Text ?? string.Empty;
@@ -513,8 +499,6 @@ internal sealed class GitSourceControlIntegration
         DockPanel.SetDock(repositoryCard, Dock.Top);
         dock.Children.Add(repositoryCard);
 
-        // Inline "more actions" area (toggled by the header button). Plain buttons rather than a popup menu so
-        // it only relies on controls the rest of this panel already uses.
         var actionsCard = new Border
         {
             Margin = new Thickness(12, 0, 12, 6),
@@ -527,7 +511,6 @@ internal sealed class GitSourceControlIntegration
         };
         TrackTheme(actionsCard, Border.BackgroundProperty, "CardBrush", _fixedThemeSyncs);
         TrackTheme(actionsCard, Border.BorderBrushProperty, "SurfaceBorderBrush", _fixedThemeSyncs);
-        // Two single-row grids in a StackPanel: only members this panel already uses (no Grid row definitions/spacing).
         var actionsRows = new StackPanel { Spacing = 5 };
         Grid NewActionRow()
         {
@@ -656,9 +639,6 @@ internal sealed class GitSourceControlIntegration
         DockPanel.SetDock(_contentScroll, Dock.Top);
         _groupsPanel = new StackPanel { Spacing = 1, Margin = new Thickness(0, 3, 0, 12) };
         _contentScroll.Content = _groupsPanel;
-        // The scrollable groups must be the last child so DockPanel gives them
-        // the remaining space. Keeping the footer before the fill child avoids
-        // squeezing the status text into a narrow docked column.
         dock.Children.Add(_contentScroll);
 
         var sourcePanel = new Border
@@ -682,11 +662,6 @@ internal sealed class GitSourceControlIntegration
 
     private Button? _branchButton;
 
-    /// <summary>
-    /// Redraws the panel only when something it shows has actually changed. The 4-second poll used to rebuild
-    /// every row each time, which reset hover state, lost scroll position and could swallow a click that landed
-    /// mid-rebuild.
-    /// </summary>
     private void UpdatePanel()
     {
         var signature = BuildSignature();
@@ -724,7 +699,6 @@ internal sealed class GitSourceControlIntegration
         return sb.ToString();
     }
 
-    /// <summary>Enabled/visible state of every control that depends on repository or operation state.</summary>
     private void ApplyControlStates()
     {
         var repositoryAvailable = _repositoryRoot is not null && !_operationRunning;
@@ -745,7 +719,6 @@ internal sealed class GitSourceControlIntegration
             _pushButton.Content = canPublish ? "⇡  Publish" : "⇡  Push";
             ToolTip.SetTip(_pushButton, canPublish ? "Publish this branch to the remote and set its upstream" : "Push to remote");
         }
-        // Typing a message stays possible during a long fetch/push; only a local operation (which rewrites the index) locks it.
         if (_commitMessage is not null) _commitMessage.IsEnabled = _repositoryRoot is not null && !(_operationRunning && !_operationIsNetwork);
         if (_amendButton is not null)
         {
@@ -773,7 +746,6 @@ internal sealed class GitSourceControlIntegration
     private void RefreshPanelContent()
     {
         if (!_panelOpen || _window is null || _groupsPanel is null) return;
-        // Whatever path led here, the drawn state is the current state: the next poll must not redraw it again.
         _lastSignature = BuildSignature();
         var previousOffset = _contentScroll?.Offset ?? default;
         DisposeThemeSyncs(_dynamicThemeSyncs);
@@ -809,8 +781,6 @@ internal sealed class GitSourceControlIntegration
         {
             if (!string.IsNullOrWhiteSpace(_repositoryProblem))
             {
-                // Something other than "not a repository" went wrong (e.g. git missing, "dubious ownership").
-                // Offering `git init` here would be wrong - show git's own explanation instead.
                 AddEmptyState(_repositoryProblem!, showInitialize: false);
                 return;
             }
@@ -834,7 +804,6 @@ internal sealed class GitSourceControlIntegration
             AddEmptyState("There are no changes to commit.", showInitialize: false);
         AddCommitsSection();
 
-        // Keep the user's place in a long list across rebuilds.
         var scroll = _contentScroll;
         if (scroll is not null && previousOffset.Y > 0)
             Dispatcher.UIThread.Post(() =>
@@ -967,7 +936,6 @@ internal sealed class GitSourceControlIntegration
         _groupsPanel.Children.Add(heading);
         if (collapsed) return;
 
-        // Thousands of rows would freeze the UI thread; show a page and let the user ask for more.
         var limit = _rowLimits.TryGetValue(key, out var stored) ? stored : DefaultRowLimit;
         foreach (var change in changes.Take(limit))
             _groupsPanel.Children.Add(CreateChangeRow(change, kind));
@@ -1081,8 +1049,6 @@ internal sealed class GitSourceControlIntegration
         TrackTheme(statusText, TextBlock.ForegroundProperty, statusBrushName, _dynamicThemeSyncs);
         grid.Children.Add(statusText);
 
-        // File name first, then the folder in a quieter tone. One trimmed TextBlock means a narrow sidebar clips the
-        // folder (the less useful part) before the name - the old "full path, trimmed at the end" cut off the name.
         var (fileName, directory) = GitCommands.SplitPath(change.Path);
         var name = new TextBlock
         {
@@ -1159,9 +1125,6 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Repository state and operations
-    // ---------------------------------------------------------------------
 
     private async Task RefreshRepositoryAsync(bool fromPoll = false)
     {
@@ -1223,8 +1186,6 @@ internal sealed class GitSourceControlIntegration
                 return;
             }
 
-            // The repository root only changes when the open folder/file does, so resolve it once rather than
-            // spawning `git rev-parse` on every poll.
             string repository;
             if (_repositoryRoot is not null
                 && string.Equals(_cachedCandidate, candidate, StringComparison.OrdinalIgnoreCase)
@@ -1237,8 +1198,6 @@ internal sealed class GitSourceControlIntegration
                 var rootResult = await GitProcess.RunAsync(candidate, ["rev-parse", "--show-toplevel"], TimeSpan.FromSeconds(10), token);
                 if (!rootResult.Success)
                 {
-                    // "Not a repository" is normal (offer `git init`); anything else (git missing, "dubious ownership",
-                    // permissions) is a real problem the user needs to read, not a prompt to initialise.
                     var notRepository = rootResult.Error.Contains("not a git repository", StringComparison.OrdinalIgnoreCase);
                     var message = notRepository ? "No Git repository found in this folder or its parents." : FormatGitError(rootResult);
                     ClearRepositoryState(notRepository ? null : message);
@@ -1258,8 +1217,6 @@ internal sealed class GitSourceControlIntegration
                 _forceFullRefresh = true;
             }
 
-            // One process per poll: porcelain v2 reports branch, HEAD commit, upstream, ahead/behind, renames and
-            // conflicts together.
             var status = await GitProcess.RunAsync(repository, GitCommands.StatusArgs, TimeSpan.FromSeconds(30), token);
             if (!status.Success || status.Output.Contains("[Output truncated]", StringComparison.Ordinal))
             {
@@ -1276,8 +1233,6 @@ internal sealed class GitSourceControlIntegration
 
             var snapshot = GitStatusParser.Parse(status.Output);
 
-            // Slow-changing data (remotes, history, stash) is refreshed when HEAD moves, after any operation,
-            // on a manual refresh and at least once a minute - not on every poll.
             var full = _forceFullRefresh
                        || !string.Equals(_repositoryRoot, repository, StringComparison.Ordinal)
                        || !string.Equals(snapshot.Oid, _lastOid, StringComparison.Ordinal)
@@ -1342,7 +1297,6 @@ internal sealed class GitSourceControlIntegration
     private Task RunGitOperationAsync(IReadOnlyList<string> arguments, string successMessage, string? workingDirectory = null)
         => RunGitSequenceAsync([arguments], successMessage, workingDirectory);
 
-    /// <summary>Runs one or more git commands in order, stopping at the first failure.</summary>
     private async Task RunGitSequenceAsync(IReadOnlyList<IReadOnlyList<string>> commands, string successMessage, string? workingDirectory = null)
     {
         if (_operationRunning)
@@ -1362,8 +1316,6 @@ internal sealed class GitSourceControlIntegration
         _operationIsNetwork = network;
         _lastOperationSucceeded = false;
         _lastOperationError = string.Empty;
-        // Short local operations lock the panel; network operations can take minutes, so the panel stays usable
-        // (and shows a Cancel button) while they run.
         if (!network) SetOperationBusy(true);
         ApplyControlStates();
         SetStatus(network ? "Working…  (Cancel to abort)" : "Working…");
@@ -1375,7 +1327,6 @@ internal sealed class GitSourceControlIntegration
             var failed = false;
             foreach (var command in commands)
             {
-                // Pushing/fetching a large repository can legitimately take far longer than a local command.
                 var timeout = IsNetworkCommand(command) ? TimeSpan.FromMinutes(10.0) : TimeSpan.FromSeconds(90);
                 var result = await GitProcess.RunAsync(directory, command, timeout, cts.Token);
                 if (result.Success) continue;
@@ -1401,7 +1352,7 @@ internal sealed class GitSourceControlIntegration
             _operationIsNetwork = false;
             if (ReferenceEquals(_operationCts, cts)) _operationCts = null;
             cts.Dispose();
-            _forceFullRefresh = true;     // an operation can change branches, remotes, stash and history
+            _forceFullRefresh = true;
             _lastSignature = string.Empty;
             await RefreshRepositoryAsync();
             SetOperationBusy(false);
@@ -1426,7 +1377,6 @@ internal sealed class GitSourceControlIntegration
 
     private async Task PushAsync()
     {
-        // A branch without an upstream cannot be pushed with a plain `git push`; publish it and set the upstream.
         var arguments = GitCommands.Push(_snapshot, _remotes);
         var publishing = arguments.Count > 1;
         await RunGitOperationAsync(arguments, publishing ? "Branch published." : "Pushed changes.");
@@ -1457,7 +1407,6 @@ internal sealed class GitSourceControlIntegration
         _amend = !_amend;
         if (_amend && string.IsNullOrWhiteSpace(_commitMessage?.Text))
         {
-            // Start from the existing message, as editors usually do.
             try
             {
                 var token = _lifetime?.Token ?? CancellationToken.None;
@@ -1496,7 +1445,6 @@ internal sealed class GitSourceControlIntegration
         await RunGitOperationAsync(GitCommands.Commit(message, amend), amend ? "Commit amended." : "Commit created.");
         if (_lastOperationSucceeded)
         {
-            // The panel may have been closed while git ran; never assume the controls still exist.
             _commitMessageDraft = string.Empty;
             if (_commitMessage is not null) _commitMessage.Text = string.Empty;
             if (amend)
@@ -1550,8 +1498,6 @@ internal sealed class GitSourceControlIntegration
             "Discard All");
         if (!confirmed) return;
 
-        // Name the files explicitly (in batches, to stay under command-line length limits) instead of "." so only
-        // what the list shows is touched.
         var commands = new List<IReadOnlyList<string>>();
         foreach (var batch in GitCommands.Chunk(tracked.SelectMany(c => c.Pathspecs).Distinct().ToList(), 100))
             commands.Add(["restore", "--worktree", "--", .. batch]);
@@ -1690,7 +1636,6 @@ internal sealed class GitSourceControlIntegration
             var locals = branches.Where(b => !b.IsRemote && Matches(b))
                 .OrderByDescending(b => b.IsCurrent).ThenBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
             var localNames = new HashSet<string>(branches.Where(b => !b.IsRemote).Select(b => b.Name), StringComparer.Ordinal);
-            // A remote branch that already has a local twin would just fail `switch --track` - hide it.
             var remotes = branches.Where(b => b.IsRemote && Matches(b))
                 .Where(b => !localNames.Contains(b.Name[(b.Name.IndexOf('/') + 1)..]))
                 .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
@@ -1888,16 +1833,11 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Diff preview
-    // ---------------------------------------------------------------------
 
     private sealed class GitDiffLineColorizer : DocumentColorizingTransformer
     {
         private static readonly MethodInfo? SetTextRunPropertiesMethod =
             typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
-        // Neighbouring lines are needed to tell a file header from a content line; read via reflection so a
-        // different AvaloniaEdit build can only ever cost us that refinement, never break the diff view.
         private static readonly PropertyInfo? NextLineProperty = typeof(DocumentLine).GetProperty("NextLine");
         private static readonly PropertyInfo? PreviousLineProperty = typeof(DocumentLine).GetProperty("PreviousLine");
         private static readonly IBrush AddedLineBrush = new SolidColorBrush(Color.Parse("#2EA043"), 0.18);
@@ -1933,7 +1873,6 @@ internal sealed class GitSourceControlIntegration
                     if (background is not null) properties.SetBackgroundBrush(background);
                     if (foreground is not null)
                     {
-                        // Guarded at the call site: this lambda runs inside AvaloniaEdit's render loop, outside ColorizeLine's try.
                         try { TrySetForeground(properties, foreground); } catch { }
                     }
                     SetTextRunPropertiesMethod?.Invoke(element, [properties]);
@@ -1941,14 +1880,11 @@ internal sealed class GitSourceControlIntegration
             }
             catch
             {
-                // A rendering-pipeline callback must never throw: an uncoloured line is the worst outcome.
             }
         }
 
         private static DiffLineKind Classify(AvaloniaEdit.Document.TextDocument document, DocumentLine line, string text)
         {
-            // Only "--- " / "+++ " lines are ambiguous (a removed line starting "-- " is also "--- "); look at the
-            // neighbours for those and nowhere else.
             if (!text.StartsWith("--- ", StringComparison.Ordinal) && !text.StartsWith("+++ ", StringComparison.Ordinal))
                 return GitDiffClassifier.Classify(text, null, null);
             if (NextLineProperty is null || PreviousLineProperty is null)
@@ -1969,8 +1905,6 @@ internal sealed class GitSourceControlIntegration
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void TrySetForeground(object properties, IBrush brush)
         {
-            // Reflection: only the background setter is used elsewhere, and a missing foreground setter should just
-            // mean "no tint", not an exception inside AvaloniaEdit's render loop.
             try { properties.GetType().GetMethod("SetForegroundBrush", [typeof(IBrush)])?.Invoke(properties, [brush]); }
             catch { }
         }
@@ -1983,7 +1917,6 @@ internal sealed class GitSourceControlIntegration
         if (_window is null || _repositoryRoot is null) return;
         if (change.IsConflicted)
         {
-            // A conflicted file has no meaningful two-sided diff; open it so the markers can be resolved.
             await OpenWorkingFileAsync(change);
             return;
         }
@@ -2053,8 +1986,6 @@ internal sealed class GitSourceControlIntegration
         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16];
         var path = Path.Combine(Path.GetTempPath(), "Kodo", "GitDiffPreviews", $"{Path.GetFileNameWithoutExtension(sourcePath)}-{(staged ? "staged" : "working")}-{id}{extension}");
         _diffPreviewPaths[key] = path;
-        // Stored as an absolute path: GetWorkspaceCandidate() later uses it to find the repository, and a path
-        // relative to the repository root resolves against the wrong directory.
         _diffPreviewSources[path] = _repositoryRoot is null ? sourcePath : Path.GetFullPath(Path.Combine(_repositoryRoot, sourcePath));
         return path;
     }
@@ -2156,9 +2087,6 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-    // ---------------------------------------------------------------------
-    // Small UI helpers
-    // ---------------------------------------------------------------------
 
     private Button CreateIconButton(string text, string tip, Func<Task> action)
     {
@@ -2278,8 +2206,6 @@ internal sealed class GitSourceControlIntegration
 
     private void SetStatus(string text, bool fromPoll = false)
     {
-        // Poll results ("3 changed files") never replace an operation result such as a push error: those stay
-        // until the user does something else. (Previously every 4s poll overwrote them.)
         _statusFromPoll = fromPoll;
         if (_statusLabel is null) return;
         _statusLabel.Text = text;

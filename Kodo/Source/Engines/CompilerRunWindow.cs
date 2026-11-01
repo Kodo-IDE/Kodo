@@ -1,7 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -9,6 +6,9 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Kodo.Models;
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace Kodo;
 

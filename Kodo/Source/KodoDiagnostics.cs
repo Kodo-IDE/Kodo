@@ -1,4 +1,5 @@
 // Licensed under the GNU GPL-v3.0
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,7 +9,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 namespace Kodo;
 

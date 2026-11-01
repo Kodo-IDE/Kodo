@@ -6,18 +6,11 @@ using System.Text;
 
 namespace GitSourceControl;
 
-// ---------------------------------------------------------------------------
-// Pure Git logic - no Avalonia / Kodo types - so every command and parser here
-// can be exercised against real repositories in tests. The plugin class only
-// wires these into the UI.
-// ---------------------------------------------------------------------------
 
-/// <summary>One entry from <c>git status</c>. Statuses use ' ' for "unmodified" (porcelain v2 uses '.').</summary>
 internal sealed record GitChange(string Path, char IndexStatus, char WorktreeStatus, string? OriginalPath = null)
 {
     public bool IsUntracked => IndexStatus == '?' && WorktreeStatus == '?';
 
-    /// <summary>Unmerged paths (merge/rebase/cherry-pick conflicts).</summary>
     public bool IsConflicted => IndexStatus == 'U' || WorktreeStatus == 'U'
                                 || (IndexStatus == 'A' && WorktreeStatus == 'A')
                                 || (IndexStatus == 'D' && WorktreeStatus == 'D');
@@ -26,15 +19,10 @@ internal sealed record GitChange(string Path, char IndexStatus, char WorktreeSta
     public bool IsUnstaged => !IsConflicted && (IsUntracked || WorktreeStatus is not ' ' and not '?' and not '!');
     public bool IsRenameOrCopy => IndexStatus is 'R' or 'C' || WorktreeStatus is 'R' or 'C';
 
-    /// <summary>True when the file no longer exists in the working tree (so there is nothing to open).</summary>
     public bool IsDeletedInWorktree => WorktreeStatus == 'D' || (IndexStatus == 'D' && WorktreeStatus == ' ');
 
     public char DisplayStatus(bool staged) => IsConflicted ? 'U' : staged ? IndexStatus : IsUntracked ? '?' : WorktreeStatus;
 
-    /// <summary>
-    /// Paths an index operation must name. A staged rename is a deletion of the old path plus an addition of
-    /// the new one: acting on only the new path leaves the deletion staged (verified against real git).
-    /// </summary>
     public IReadOnlyList<string> Pathspecs
         => IsRenameOrCopy && !string.IsNullOrEmpty(OriginalPath) ? [OriginalPath, Path] : [Path];
 }
@@ -77,10 +65,6 @@ internal sealed record GitStatusSnapshot(
 
 internal static class GitStatusParser
 {
-    /// <summary>
-    /// Parses <c>git status --porcelain=v2 -z --branch --untracked-files=all</c>. v2 states rename origins, conflicts,
-    /// the HEAD commit and upstream tracking explicitly, so nothing has to be inferred from free-form text.
-    /// </summary>
     public static GitStatusSnapshot Parse(string output)
     {
         string? branch = null, oid = null, upstream = null;
@@ -114,7 +98,6 @@ internal static class GitStatusParser
                 }
                 else if (r.StartsWith("# branch.ab ", StringComparison.Ordinal))
                 {
-                    // "# branch.ab +3 -1"
                     var parts = r[12..].Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                     if (parts.Length == 2 && TryCount(parts[0], '+', out var a) && TryCount(parts[1], '-', out var b))
                     {
@@ -128,23 +111,23 @@ internal static class GitStatusParser
 
             switch (r[0])
             {
-                case '1': // ordinary: 1 XY sub mH mI mW hH hI path
+                case '1':
                     {
                         var f = Fields(r, 9);
                         if (f.Length == 9 && f[1].Length == 2)
                             changes.Add(new GitChange(f[8], Norm(f[1][0]), Norm(f[1][1])));
                         break;
                     }
-                case '2': // rename/copy: 2 XY sub mH mI mW hH hI Xscore path <NUL> origPath
+                case '2':
                     {
                         var f = Fields(r, 10);
                         var orig = i + 1 < records.Length ? records[i + 1] : null;
-                        i++; // the origin path is its own NUL-delimited record
+                        i++;
                         if (f.Length == 10 && f[1].Length == 2)
                             changes.Add(new GitChange(f[9], Norm(f[1][0]), Norm(f[1][1]), string.IsNullOrEmpty(orig) ? null : orig));
                         break;
                     }
-                case 'u': // unmerged: u XY sub m1 m2 m3 mW h1 h2 h3 path
+                case 'u':
                     {
                         var f = Fields(r, 11);
                         if (f.Length == 11 && f[1].Length == 2)
@@ -154,18 +137,14 @@ internal static class GitStatusParser
                 case '?':
                     if (r.Length > 2) changes.Add(new GitChange(r[2..], '?', '?'));
                     break;
-                    // '!' (ignored) entries are never requested; anything else is skipped for forward compatibility.
             }
         }
 
-        // An upstream is configured but git reported no ahead/behind line => the upstream ref no longer exists.
         var gone = !string.IsNullOrEmpty(upstream) && !hasAb;
         return new GitStatusSnapshot(branch, detached, oid, upstream, ahead, behind, gone, changes);
 
         static char Norm(char c) => c == '.' ? ' ' : c;
 
-        // Splits on single spaces into at most 'max' fields; the last field keeps any further spaces
-        // (file names may contain them). Manual so the parse path uses only long-established BCL members.
         static string[] Fields(string text, int max)
         {
             var result = new List<string>(max);
@@ -209,7 +188,6 @@ internal static class GitCommands
 
     public static IReadOnlyList<string> DeleteUntracked(IEnumerable<string> paths) => ["clean", "-f", "--", .. paths];
 
-    /// <summary>Plain push when an upstream exists; otherwise publish the branch and set its upstream.</summary>
     public static IReadOnlyList<string> Push(GitStatusSnapshot? snapshot, IReadOnlyList<string> remotes)
     {
         if (snapshot is null || snapshot.HasUpstream || snapshot.IsDetached || string.IsNullOrEmpty(snapshot.Branch) || remotes.Count == 0)
@@ -253,7 +231,6 @@ internal static class GitCommands
             : ["diff", "--no-ext-diff", "--no-color", "--", .. change.Pathspecs];
     }
 
-    // ---- parsers ----
 
     public static List<GitBranch> ParseBranches(string output)
     {
@@ -264,7 +241,7 @@ internal static class GitCommands
             if (f.Length < 3) continue;
             var refName = f[0];
             var shortName = f[1];
-            if (refName.EndsWith("/HEAD", StringComparison.Ordinal)) continue; // origin/HEAD symbolic ref
+            if (refName.EndsWith("/HEAD", StringComparison.Ordinal)) continue;
             var isRemote = refName.StartsWith("refs/remotes/", StringComparison.Ordinal);
             var upstream = f.Length > 3 && f[3].Length > 0 ? f[3] : null;
             if (shortName.Length > 0) result.Add(new GitBranch(shortName, isRemote, f[2].Trim() == "*", upstream));
@@ -288,7 +265,6 @@ internal static class GitCommands
     public static List<string> ParseRemotes(string output) =>
         output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).Where(s => s.Length > 0).ToList();
 
-    /// <summary>Cheap pre-check mirroring <c>git check-ref-format --branch</c>; git itself remains the authority.</summary>
     public static string? ValidateBranchName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return "Enter a branch name.";
@@ -309,7 +285,6 @@ internal static class GitCommands
         return null;
     }
 
-    /// <summary>Splits "src/app/Main.cs" into ("Main.cs", "src/app").</summary>
     public static (string Name, string Directory) SplitPath(string path)
     {
         var normalized = path.Replace('\\', '/');
@@ -328,15 +303,6 @@ internal enum DiffLineKind { None, Added, Removed, FileHeader, Hunk, Meta }
 
 internal static class GitDiffClassifier
 {
-    /// <summary>
-    /// Classifies one line of a unified diff. <c>---</c>/<c>+++</c> are only file headers when they form the
-    /// header pair directly in front of a hunk: a removed line whose content starts with "-- " (e.g. a SQL comment)
-    /// also begins with "--- " and must still be shown as removed (verified against real git output).
-    /// </summary>
-    /// <summary>
-    /// Fallback for when neighbouring lines can't be read: recognise the conventional header shapes
-    /// ("--- a/x", "+++ b/x", "--- /dev/null") and treat every other "--- " / "+++ " line as content.
-    /// </summary>
     public static DiffLineKind ClassifyWithoutNeighbours(string line)
     {
         if (line.StartsWith("--- a/", StringComparison.Ordinal) || line.StartsWith("--- /dev/null", StringComparison.Ordinal)

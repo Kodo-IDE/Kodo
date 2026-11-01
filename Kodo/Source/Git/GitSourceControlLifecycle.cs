@@ -1,6 +1,6 @@
 // Licensed under the GNU GPL-v3.0
-using System;
 using GitSourceControl;
+using System;
 
 namespace Kodo;
 

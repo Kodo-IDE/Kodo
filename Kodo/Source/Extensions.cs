@@ -1,4 +1,9 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using AvaloniaEdit;
+using AvaloniaEdit.Rendering;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,11 +12,6 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using AvaloniaEdit;
-using AvaloniaEdit.Rendering;
-using Kodo.Models;
 
 namespace Kodo;
 

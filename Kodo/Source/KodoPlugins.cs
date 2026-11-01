@@ -1,12 +1,12 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Threading;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
-using Avalonia.Threading;
-using Kodo.Models;
 
 namespace Kodo;
 

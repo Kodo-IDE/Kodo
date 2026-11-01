@@ -1,7 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-using System;
-using System.Collections.Generic;
-using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -12,6 +9,9 @@ using Avalonia.Media;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using Kodo.Editor;
+using System;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace Kodo;
 

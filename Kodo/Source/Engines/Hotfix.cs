@@ -1,7 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 
 using Kodo.HotfixShared;
-using Shared = Kodo.HotfixShared.HotfixShared;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,6 +12,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Shared = Kodo.HotfixShared.HotfixShared;
 
 namespace Kodo;
 

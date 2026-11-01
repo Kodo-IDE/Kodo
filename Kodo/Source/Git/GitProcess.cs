@@ -35,21 +35,14 @@ internal static class GitProcess
             StandardErrorEncoding = new UTF8Encoding(false)
         };
         var argumentList = arguments as IReadOnlyList<string> ?? new List<string>(arguments);
-        // --literal-pathspecs stops file names such as "a[1].txt" or "*.cs" being read as globs. It must NOT be
-        // applied to stash: stash runs its own internal pathspec plumbing (e.g. ":/" for the final clean-up), which
-        // the flag makes literal, so `stash push --include-untracked` would stash untracked files yet leave them in
-        // the working tree - and a later pop then refuses to restore them. (Verified against git 2.43.)
         var literalPathspecs = !(argumentList.Count > 0 && argumentList[0] == "stash");
         if (literalPathspecs) startInfo.ArgumentList.Add("--literal-pathspecs");
         foreach (var argument in argumentList)
             startInfo.ArgumentList.Add(argument);
 
-        // Keep background status reads quiet and prevent Git from waiting for
-        // interactive terminal input that Kodo cannot display.
         startInfo.Environment["GIT_OPTIONAL_LOCKS"] = "0";
         startInfo.Environment["GIT_PAGER"] = "cat";
         startInfo.Environment["GIT_TERMINAL_PROMPT"] = "0";
-        // Never block on an editor Kodo cannot display (merge/commit message prompts fall back to the default text).
         startInfo.Environment["GIT_EDITOR"] = "true";
         startInfo.Environment["GIT_MERGE_AUTOEDIT"] = "no";
 

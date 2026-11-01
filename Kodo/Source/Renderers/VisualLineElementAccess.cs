@@ -1,7 +1,7 @@
 // Licensed under the GNU GPL-v3.0
+using AvaloniaEdit.Rendering;
 using System;
 using System.Reflection;
-using AvaloniaEdit.Rendering;
 
 namespace Kodo;
 
