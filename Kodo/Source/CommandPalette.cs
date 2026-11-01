@@ -67,6 +67,7 @@ public partial class MainWindow
     private const int PaletteMaxResults = 80;
     private const int PaletteMaxFuzzyGap = 20;
     private const int PaletteMaxRecentCommands = 5;
+    private static readonly bool ShowRareCommandPalettePreviewThisSession = Random.Shared.Next(1_000_000) == 0;
     private static readonly TimeSpan QuickAccessIndexLifetime = TimeSpan.FromSeconds(15);
     private static readonly Regex PaletteFileLineSuffix = new(@"^(?<query>.*?):(?<line>\d+)(?::(?<column>\d+))?$", RegexOptions.CultureInvariant);
     private static readonly Regex PaletteLineSpec = new(@"^(?<line>\d+)(?:[:,\s]+(?<column>\d+))?$", RegexOptions.CultureInvariant);
@@ -82,6 +83,7 @@ public partial class MainWindow
     private ScrollViewer? _commandPaletteScroll;
     private StackPanel? _commandPaletteList;
     private TextBlock? _commandPaletteStatus;
+    private TextBlock? _commandPalettePreviewText;
     private TextBox? _commandPaletteSearchBox;
     private TextBox? _quickAccessSearchBox;
     private bool _commandPaletteUsesOverlaySearchBox;
@@ -93,7 +95,31 @@ public partial class MainWindow
     private int _palettePressedIndex = -1;
     private bool _paletteShortcutIsCommands;
     private bool _suppressQuickAccessTextChanged;
+    private bool _isCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
 
+    public bool IsCommandPaletteRarePreviewVisible
+    {
+        get => _isCommandPaletteRarePreviewVisible;
+        private set
+        {
+            if (_isCommandPaletteRarePreviewVisible == value) return;
+            _isCommandPaletteRarePreviewVisible = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private void InitializeQuickAccessPlaceholder()
+    {
+        _quickAccessSearchBox = this.FindControl<TextBox>("QuickAccessSearchBox");
+        if (_quickAccessSearchBox is not null)
+        {
+            _quickAccessSearchBox.PlaceholderText = ShowRareCommandPalettePreviewThisSession
+                ? string.Empty
+                : "Search files (> commands, : line, @ symbol)";
+        }
+
+        OnPropertyChanged(nameof(IsCommandPaletteRarePreviewVisible));
+    }
     private string? _quickAccessIndexedFolder;
     private bool _quickAccessIndexing;
     private DateTime _quickAccessIndexedAtUtc = DateTime.MinValue;
@@ -186,8 +212,12 @@ public partial class MainWindow
         };
         if (useOverlaySearchBox)
         {
-            body.Children.Add(paletteSearchBox);
-            Grid.SetRow(paletteSearchBox, 0);
+            var searchRow = new Grid();
+            searchRow.Children.Add(paletteSearchBox);
+            _commandPalettePreviewText = CreateRareCommandPalettePreviewText();
+            searchRow.Children.Add(_commandPalettePreviewText);
+            body.Children.Add(searchRow);
+            Grid.SetRow(searchRow, 0);
         }
         body.Children.Add(scroll);
         body.Children.Add(status);
@@ -272,6 +302,26 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(() => _commandPaletteSearchBox?.Focus(), DispatcherPriority.Input);
     }
 
+    private TextBlock CreateRareCommandPalettePreviewText()
+    {
+        var inlines = new Avalonia.Controls.Documents.InlineCollection
+        {
+            new Avalonia.Controls.Documents.Run("Code fast, stay "),
+            new Avalonia.Controls.Documents.Run("light") { Foreground = AccentBrush },
+            new Avalonia.Controls.Documents.Run("."),
+        };
+        return new TextBlock
+        {
+            FontSize = 13,
+            Margin = new Thickness(2, 0),
+            Foreground = MutedTextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            IsVisible = IsCommandPaletteRarePreviewVisible,
+            Inlines = inlines,
+        };
+    }
+
     private void CommandPalettePopupSearchBox_OnTextChanged(object? sender, TextChangedEventArgs e)
     {
         if (_suppressQuickAccessTextChanged)
@@ -312,6 +362,7 @@ public partial class MainWindow
         _commandPaletteScroll = null;
         _commandPaletteList = null;
         _commandPaletteStatus = null;
+        _commandPalettePreviewText = null;
         _paletteRows.Clear();
         _filteredPaletteCommands = [];
         _paletteSelectedIndex = -1;
@@ -319,6 +370,7 @@ public partial class MainWindow
         _paletteSymbols = null;
         _paletteSymbolsLoading = false;
         _paletteSymbolsVersion++;
+        IsCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
         RemoveHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed);
         if (overlay is not null && Content is Grid root)
             root.Children.Remove(overlay);
@@ -327,7 +379,12 @@ public partial class MainWindow
         try
         {
             if (_quickAccessSearchBox is not null)
+            {
                 _quickAccessSearchBox.Text = string.Empty;
+                _quickAccessSearchBox.PlaceholderText = ShowRareCommandPalettePreviewThisSession
+                    ? string.Empty
+                    : "Search files (> commands, : line, @ symbol)";
+            }
         }
         finally { _suppressQuickAccessTextChanged = false; }
         _commandPaletteSearchBox = _quickAccessSearchBox;
@@ -401,6 +458,24 @@ public partial class MainWindow
 
     private void QuickAccessSearchFrame_OnPointerPressed(object? sender, PointerPressedEventArgs e) =>
         _commandPaletteSearchBox?.Focus();
+
+    private void EncodingStatusBarPaletteButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (HasFileOpen && IsTextEditorVisible)
+            ShowCommandPalette(prefix: "> Encoding:");
+    }
+
+    private void LineEndingStatusBarPaletteButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (HasFileOpen && IsTextEditorVisible)
+            ShowCommandPalette(prefix: "> Line Ending:");
+    }
+
+    private void IndentationStatusBarPaletteButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsTextEditorVisible)
+            ShowCommandPalette(prefix: "> Indentation:");
+    }
 
 
 
@@ -657,6 +732,111 @@ public partial class MainWindow
         await OpenFolderFromPathAsync(path);
     }
 
+    private async Task ApplyPaletteFileEncodingAsync(System.Text.Encoding encoding)
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        if (!HasFileOpen || !IsTextEditorVisible || ActiveEditorTab is not { IsUntitled: false } tab ||
+            EditorTextBox?.Document is not { } document || string.IsNullOrWhiteSpace(tab.Path))
+            return;
+
+        var pane = _activeEditorPane;
+        var editor = EditorTextBox;
+        var path = tab.Path;
+        var originalEncoding = tab.Encoding ?? _currentFileEncoding;
+        var lineEnding = tab.LineEnding;
+        if (encoding.CodePage == originalEncoding.CodePage &&
+            encoding.GetPreamble().Length == originalEncoding.GetPreamble().Length)
+            return;
+
+        try
+        {
+            if (IsTabDiskStateChanged(tab))
+                throw new IOException($"\"{Path.GetFileName(path)}\" changed on disk and was left untouched.");
+
+            var documentVersion = document.Version;
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+            var expectedWriteTimeUtc = tab.LastKnownLength >= 0 ? tab.LastKnownWriteTimeUtc : (DateTime?)null;
+            var expectedLength = tab.LastKnownLength >= 0 ? tab.LastKnownLength : (long?)null;
+            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                path, snapshot, lineEnding, encoding, expectedWriteTimeUtc, expectedLength,
+                async () => await Dispatcher.UIThread.InvokeAsync(() => OpenTabs.Contains(tab) && FileSystemPaths.Equals(tab.Path, path))));
+
+            if (!OpenTabs.Contains(tab) || !FileSystemPaths.Equals(tab.Path, path))
+                return;
+
+            var documentUnchanged = ReferenceEquals(document.Version, documentVersion);
+            tab.Content = string.Empty;
+            tab.Encoding = encoding;
+            tab.IsDirty = !documentUnchanged;
+            tab.IsModifiedExternally = false;
+            CaptureTabDiskState(tab);
+            if (ReferenceEquals(_activeEditorPane, pane) && ReferenceEquals(EditorTextBox, editor) && ReferenceEquals(pane.ActiveTab, tab))
+            {
+                _currentFileEncoding = encoding;
+                _isDirty = !documentUnchanged;
+                OnPropertyChanged(nameof(EncodingDisplayText));
+                OnPropertyChanged(nameof(IsDocumentDirty));
+            }
+            RefreshState(fullRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Change encoding", ex);
+        }
+    }
+
+    private async Task ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding lineEnding)
+    {
+        if (!HasFileOpen || !IsTextEditorVisible || ActiveEditorTab is not { IsUntitled: false } tab ||
+            EditorTextBox?.Document is not { } document || string.IsNullOrWhiteSpace(tab.Path))
+            return;
+
+        var pane = _activeEditorPane;
+        var editor = EditorTextBox;
+        var path = tab.Path;
+        var originalLineEnding = tab.LineEnding;
+        var encoding = tab.Encoding ?? _currentFileEncoding;
+        if (lineEnding == originalLineEnding)
+            return;
+
+        try
+        {
+            if (IsTabDiskStateChanged(tab))
+                throw new IOException($"\"{Path.GetFileName(path)}\" changed on disk and was left untouched.");
+
+            var documentVersion = document.Version;
+            var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
+            var expectedWriteTimeUtc = tab.LastKnownLength >= 0 ? tab.LastKnownWriteTimeUtc : (DateTime?)null;
+            var expectedLength = tab.LastKnownLength >= 0 ? tab.LastKnownLength : (long?)null;
+            await Task.Run(() => WriteTextFileAtomicallyAsync(
+                path, snapshot, lineEnding, encoding, expectedWriteTimeUtc, expectedLength,
+                async () => await Dispatcher.UIThread.InvokeAsync(() => OpenTabs.Contains(tab) && FileSystemPaths.Equals(tab.Path, path))));
+
+            if (!OpenTabs.Contains(tab) || !FileSystemPaths.Equals(tab.Path, path))
+                return;
+
+            var documentUnchanged = ReferenceEquals(document.Version, documentVersion);
+            tab.LineEnding = lineEnding;
+            tab.Content = string.Empty;
+            tab.IsDirty = !documentUnchanged;
+            tab.IsModifiedExternally = false;
+            CaptureTabDiskState(tab);
+            if (ReferenceEquals(_activeEditorPane, pane) && ReferenceEquals(EditorTextBox, editor) && ReferenceEquals(pane.ActiveTab, tab))
+            {
+                _currentLineEnding = lineEnding;
+                _isDirty = !documentUnchanged;
+                OnPropertyChanged(nameof(LineEndingDisplayText));
+                OnPropertyChanged(nameof(IsLineEndingVisible));
+                OnPropertyChanged(nameof(IsDocumentDirty));
+            }
+            RefreshState(fullRefresh: true);
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Change line ending", ex);
+        }
+    }
+
     private bool GoToLineInActiveEditor(int line, int column = 1)
     {
         if (!IsTextEditorVisible || EditorTextBox?.Document is not { } doc || EditorTextBox.TextArea is not { } textArea)
@@ -687,6 +867,7 @@ public partial class MainWindow
         var hasFormatter = rules?.HasFormatter == true || hasLsp;
         var hasReferences = rules?.HasReferenceProvider == true || hasLsp;
         var hasCodeActions = rules?.HasCodeActionProvider == true || hasLsp;
+        var hasWritableTextFile = HasFileOpen && IsTextEditorVisible && ActiveEditorTab is { IsUntitled: false, Path.Length: > 0 };
 
         bool HasDocument() => IsTextEditorVisible && EditorTextBox?.Document is not null;
         bool HasLspDocument() => HasDocument() && hasLsp;
@@ -778,7 +959,7 @@ public partial class MainWindow
                 return Task.CompletedTask;
             }, Keywords: "preferences find setting configuration"),
             new("Open Marketplace", "Extensions", "OpenExtensions", () => { NavigateTo(AppPage.Extensions); RefreshMarketplaceConnectivityState(); _ = RefreshExtensionsDataAsync(); return Task.CompletedTask; }, Keywords: "plugins extensions themes"),
-            new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey"),
+            new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey dialog window"),
             new("Open Tutorial", "Help", "", () => { NavigateTo(AppPage.Tutorial); return Task.CompletedTask; }, Keywords: "getting started help guide"),
             new("Open What's New", "Help", "", () => { NavigateTo(AppPage.WhatsNew); return Task.CompletedTask; }, Keywords: "release notes updates changelog"),
             new(IsSplitScreenVisible ? "Close Split Editor" : "Split Editor Right", "View", "ToggleSplitEditor", () => { if (IsSplitScreenVisible) CloseSplitEditor(); else ShowSplitEditor(); return Task.CompletedTask; }, () => CanToggleSplitEditor, "side by side pane group"),
@@ -795,12 +976,31 @@ public partial class MainWindow
             new("Previous Tab", "Navigation", "", () => { ActivateAdjacentTab(-1); return Task.CompletedTask; }, () => _activeEditorPane.Tabs.Count > 1 || OpenTabs.Count > 1, "editor file cycle"),
 
             new("New File", "File", "NewFile", () => { NewFile(); return Task.CompletedTask; }, Keywords: "create"),
-            new("Open File…", "File", "OpenFile", async () => await OpenFileAsync(), Keywords: "browse"),
-            new("Open Folder…", "File", "OpenFolder", async () => await OpenFolderAsync(), Keywords: "workspace project"),
+            new("Open File…", "File", "OpenFile", async () => await OpenFileAsync(), Keywords: "browse picker dialog"),
+            new("Open Folder…", "File", "OpenFolder", async () => await OpenFolderAsync(), Keywords: "workspace project picker dialog"),
             new("Close Folder", "File", "CloseFolder", () => { if (IsFolderOpen) CloseFolder(); return Task.CompletedTask; }, () => IsFolderOpen, "workspace project"),
-            new("Save", "File", "Save", async () => { await SaveAsync(); }, () => ActiveEditorTab is not null),
-            new("Save As…", "File", "SaveAs", async () => { await SaveAsAsync(); }, () => ActiveEditorTab is not null),
-            new("Save All", "File", "", async () => await SaveAllAsync(), () => OpenTabs.Any(tab => tab.IsDirty)),
+            new("Save", "File", "Save", async () => { await SaveAsync(); }, () => ActiveEditorTab is not null, "file picker dialog"),
+            new("Save As…", "File", "SaveAs", async () => { await SaveAsAsync(); }, () => ActiveEditorTab is not null, "file picker dialog"),
+            new("Save All", "File", "", async () => await SaveAllAsync(), () => OpenTabs.Any(tab => tab.IsDirty), "dialog file"),
+            new("Change File Encoding…", "File", "", () => { SetPaletteText("> Encoding:"); return Task.CompletedTask; }, () => hasWritableTextFile, "charset utf8 bom utf16 codepage", KeepOpen: true),
+            new("Encoding: UTF-8", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(false)), () => hasWritableTextFile, "charset no bom"),
+            new("Encoding: UTF-8 with BOM", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(true)), () => hasWritableTextFile, "charset signature"),
+            new("Encoding: UTF-16 LE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.Unicode), () => hasWritableTextFile, "charset little endian unicode"),
+            new("Encoding: UTF-16 BE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.BigEndianUnicode), () => hasWritableTextFile, "charset big endian unicode"),
+            new("Encoding: UTF-32", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.UTF32), () => hasWritableTextFile, "charset unicode"),
+            new("Encoding: Windows-1252", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.GetEncoding(1252)), () => hasWritableTextFile, "charset ansi"),
+            new("Encoding: ASCII", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.ASCII), () => hasWritableTextFile, "charset"),
+            new("Change Line Ending…", "File", "", () => { SetPaletteText("> Line Ending:"); return Task.CompletedTask; }, () => hasWritableTextFile, "eol newline crlf lf cr", KeepOpen: true),
+            new("Line Ending: LF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.LF), () => hasWritableTextFile, "eol unix macos newline"),
+            new("Line Ending: CRLF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CRLF), () => hasWritableTextFile, "eol windows newline"),
+            new("Line Ending: CR", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CR), () => hasWritableTextFile, "eol classic mac newline"),
+            new("Change Indentation…", "Editor", "", () => { SetPaletteText("> Indentation:"); return Task.CompletedTask; }, () => HasDocument(), "spaces tabs tab size indent", KeepOpen: true),
+            new("Indentation: Spaces 2", "Editor", "", () => { InsertSpaces = true; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
+            new("Indentation: Spaces 4", "Editor", "", () => { InsertSpaces = true; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
+            new("Indentation: Spaces 8", "Editor", "", () => { InsertSpaces = true; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
+            new("Indentation: Tabs, size 2", "Editor", "", () => { InsertSpaces = false; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
+            new("Indentation: Tabs, size 4", "Editor", "", () => { InsertSpaces = false; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
+            new("Indentation: Tabs, size 8", "Editor", "", () => { InsertSpaces = false; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
             new("Close Active Tab", "File", "CloseTab", async () => { if (ActiveEditorTab is not null) await RequestCloseTabAsync(ActiveEditorTab); }, () => ActiveEditorTab is not null),
             new("Close Other Tabs", "File", "", CloseOtherTabsAsync, () => OpenTabs.Count > 1, "close tabs documents"),
             new("Close Tabs to the Right", "File", "", CloseTabsToRightAsync, () => ActiveEditorTab is not null && OpenTabs.IndexOf(ActiveEditorTab) < OpenTabs.Count - 1, "close tabs below after"),
@@ -836,7 +1036,7 @@ public partial class MainWindow
             new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), HasLspDocument, "language server"),
             new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), HasLspDocument, "language server"),
             new("Find All References", "Editor", "", () => RunMenuHandler(EditorFindReferencesMenuItem_OnClick), () => HasDocument() && hasReferences, "usages"),
-            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), HasLspDocument, "refactor"),
+            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), HasLspDocument, "refactor dialog rename input"),
             new("Show Document Symbols", "Editor", "", () => RunMenuHandler(EditorDocumentSymbolsMenuItem_OnClick), HasLspDocument, "outline language server"),
             new("Show Signature Help", "Editor", "", () => RunMenuHandler(EditorSignatureHelpMenuItem_OnClick), HasLspDocument, "parameters"),
             new("Quick Fix…", "Editor", "", () => RunMenuHandler(EditorQuickFixMenuItem_OnClick), () => HasDocument() && hasCodeActions, "code action"),
@@ -969,7 +1169,7 @@ public partial class MainWindow
         commands.Add(new PaletteCommand("Use Theme Accent Color", "Settings", string.Empty,
             () => { AccentThemeButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentTheme && HasThemeAccent, "appearance accent color theme extension"));
         commands.Add(new PaletteCommand("Choose Custom Accent Color…", "Settings", string.Empty,
-            () => { AccentColorPickerButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentCustom, "appearance accent color picker"));
+            () => { AccentColorPickerButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentCustom, "appearance accent color picker dialog"));
         foreach (var fontFamily in EditorFontChoices)
         {
             var selectedFontFamily = fontFamily;
@@ -1376,7 +1576,11 @@ public partial class MainWindow
 
         var mode = GetPaletteMode(_commandPaletteSearchBox.Text, out var query);
         UpdatePaletteShortcutText();
-        _commandPaletteSearchBox.PlaceholderText = mode switch
+        var showRarePreview = ShowRareCommandPalettePreviewThisSession && string.IsNullOrEmpty(_commandPaletteSearchBox.Text);
+        IsCommandPaletteRarePreviewVisible = showRarePreview;
+        if (_commandPalettePreviewText is not null)
+            _commandPalettePreviewText.IsVisible = showRarePreview;
+        _commandPaletteSearchBox.PlaceholderText = showRarePreview ? string.Empty : mode switch
         {
             PaletteMode.Commands => "Show and Run Commands",
             PaletteMode.Symbols => "Go to Symbol in File",

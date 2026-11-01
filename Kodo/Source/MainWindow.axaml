@@ -1767,7 +1767,7 @@
                                          Grid.Column="1"
                                          HorizontalAlignment="Stretch"
                                          VerticalAlignment="Center"
-                                         PlaceholderText="Search files (&gt; commands, : line, @ symbol)"
+                                         PlaceholderText=""
                                          FontSize="13"
                                          Padding="2,0"
                                          Classes="quickaccesssearch"
@@ -1782,6 +1782,15 @@
                                          GotFocus="QuickAccessSearchBox_OnGotFocus"
                                          LostFocus="QuickAccessSearchBox_OnLostFocus"
                                          KeyDown="CommandPaletteSearch_OnKeyDown" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="2,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           IsVisible="{Binding IsCommandPaletteRarePreviewVisible}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           FontSize="13">
+                                    <TextBlock.Inlines><Run Text="Code fast, stay"/><Run Text=" "/><Run Text="light" Foreground="{Binding AccentBrush}"/><Run Text="."/></TextBlock.Inlines>
+                                </TextBlock>
                                 <Border Grid.Column="2"
                                         Background="{Binding WindowBackgroundBrush}"
                                         BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3900,7 +3909,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="File encoding - click to change"
-                                    Click="EncodingStatusBarButton_OnClick"
+                                    Click="EncodingStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3921,7 +3930,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Line ending - click to change"
-                                    Click="LineEndingStatusBarButton_OnClick"
+                                    Click="LineEndingStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3942,7 +3951,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Indentation - click to change"
-                                    Click="IndentationStatusBarButton_OnClick"
+                                    Click="IndentationStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">

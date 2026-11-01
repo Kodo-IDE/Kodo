@@ -1187,7 +1187,10 @@ public partial class MainWindow
 
 
         if (!splitWasVisible)
+        {
             targetPane.Tabs.Clear();
+            AddTabToPane(targetPane, tab);
+        }
 
         if (moveFromSourcePane && splitWasVisible && sourcePane.Tabs.Count == 1 && sourcePane.Tabs.Contains(tab))
         {

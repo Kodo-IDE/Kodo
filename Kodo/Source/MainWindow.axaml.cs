@@ -361,9 +361,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly List<string> _startupOpenTabPaths = [];
     private string? _startupFolderPath;
     private readonly Dictionary<string, IBrush> _brushCache = new(StringComparer.OrdinalIgnoreCase);
-    private ExtensionScanResult? _cachedThemeScan;
-    private DateTime _cachedThemeScanUtc = DateTime.MinValue;
-    private readonly TimeSpan ThemeScanCacheValidity = TimeSpan.FromHours(24);
     private readonly ConcurrentDictionary<string, byte[]> _marketplaceIconBytesCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _marketplaceSvgCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _warningDialogCooldowns = new(StringComparer.OrdinalIgnoreCase);
@@ -954,8 +951,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         AddHandler(PointerPressedEvent, OnWindowPointerPressedToDismissFocus, RoutingStrategies.Bubble, handledEventsToo: true);
         _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
         _secondaryLspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(SecondaryEditorTextBox.TextArea);
-        NotifySettingsSearchChanged();
-        LoadWindowIcon();
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.FontFamily = KodoFonts.MonoFamily;
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
@@ -1169,19 +1164,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
-        try
-        {
-            var themeScan = _cachedThemeScan is not null && DateTime.UtcNow - _cachedThemeScanUtc < ThemeScanCacheValidity
-                ? _cachedThemeScan
-                : ScanInstalledThemeExtensions();
-            if (themeScan.Extensions.Count > 0)
-            {
-                ApplyLoadedExtensionsResult(themeScan);
-                _cachedThemeScan = themeScan;
-                _cachedThemeScanUtc = DateTime.UtcNow;
-            }
-        }
-        catch (Exception ex) { KodoDiagnostics.LogDebug("Theme preload failed", ex); }
+        LoadOrScanStartupThemes();
         ApplyThemeBrushes(_requestedThemeName);
 
         var extensionStartupLoading = BeginAppLoading("Loading extensions");
@@ -1211,6 +1194,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _accentColorMode = "theme";
 
         DataContext = this;
+        InitializeQuickAccessPlaceholder();
         IsHomePageVisible = true;
 
         ApplyEditorSettings();
@@ -6264,9 +6248,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
         Opened -= MainWindow_OnOpened;
-
-        if (_initialExtensionScanTask is not null)
-            await _initialExtensionScanTask;
+        LoadWindowIcon();
 
         ApplyThemeToEditor();
         var startupRestoreLoading = IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0
@@ -6280,7 +6262,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (!string.IsNullOrWhiteSpace(_startupFolderPath) &&
                     _startupOpenTabPaths.Any(path => IsPathInsideDirectory(path, _startupFolderPath!)))
                 {
-                    await OpenFolderFromPathAsync(_startupFolderPath!);
+                    await OpenFolderFromPathAsync(_startupFolderPath!, deferFileTreePopulation: true);
                 }
 
                 var distinctPaths = _startupOpenTabPaths
@@ -6408,7 +6390,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!string.IsNullOrWhiteSpace(_startupFilePath))
             {
                 if (Directory.Exists(_startupFilePath))
-                    await OpenFolderFromPathAsync(_startupFilePath);
+                    await OpenFolderFromPathAsync(_startupFilePath, deferFileTreePopulation: true);
                 else
                     await OpenFileFromPathAsync(_startupFilePath);
             }
@@ -6546,7 +6528,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ActivateTab(tab);
     }
 
-    private async Task OpenFolderFromPathAsync(string path)
+    private async Task OpenFolderFromPathAsync(string path, bool deferFileTreePopulation = false)
     {
         using var loading = BeginAppLoading($"Opening {Path.GetFileName(path)}");
         _currentFolderPath = path;
@@ -6554,7 +6536,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
         AddRecentFolder(path);
-        await PopulateFileTreeAsync(path);
+        if (deferFileTreePopulation)
+            _ = PopulateFileTreeAsync(path);
+        else
+            await PopulateFileTreeAsync(path);
         if (!FileSystemPaths.Equals(_currentFolderPath, path))
             return;
         SetupProjectFolderWatcher(path);
@@ -7491,6 +7476,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isExtensionsPageVisible = newExtensions;
         _isTutorialPageVisible = newTutorial;
         _isWhatsNewPageVisible = newWhatsNew;
+
+        if (newSettings)
+            NotifySettingsSearchChanged();
 
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;

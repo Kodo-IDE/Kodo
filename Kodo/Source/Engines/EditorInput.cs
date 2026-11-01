@@ -356,23 +356,10 @@ public partial class MainWindow
         EditorInvalidateEditorLayers(textArea);
     }
 
-    private async Task EditorGoToLineAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
+    private Task EditorGoToLineAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
     {
-        var answer = await ShowTextInputDialogAsync("Go to line", $"Line number (1-{doc.LineCount}):", string.Empty).ConfigureAwait(true);
-        if (string.IsNullOrWhiteSpace(answer)) return;
-        if (!int.TryParse(answer.Trim(), out var requested)) return;
-        if (!ReferenceEquals(textArea.Document, doc)) return;
-        var lineNumber = Math.Clamp(requested, 1, doc.LineCount);
-        var line = doc.GetLineByNumber(lineNumber);
-        textArea.ClearSelection();
-        SetCaretOffsetSafely(textArea.Caret, doc, line.Offset);
-        var editor = ReferenceEquals(textArea, PrimaryEditorTextBox.TextArea)
-            ? PrimaryEditorTextBox
-            : ReferenceEquals(textArea, SecondaryEditorTextBox.TextArea)
-                ? SecondaryEditorTextBox
-                : null;
-        editor?.Focus();
-        EditorInvalidateEditorLayers(textArea);
+        ShowCommandPalette(prefix: ":");
+        return Task.CompletedTask;
     }
 
     private void EditorSelectCurrentLine(AvaloniaEdit.Document.TextDocument document, AvaloniaEdit.Editing.TextArea textArea)
