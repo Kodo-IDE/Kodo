@@ -32,6 +32,8 @@ public partial class MainWindow
     private CancellationTokenSource? _wordCountScanCancellation;
 
     private CancellationTokenSource? _lspCompletionCts;
+    private bool _completionTypingPending;
+    private bool _completionRefreshRequestedByTyping;
     private CancellationTokenSource? _lspPresentationCancellation;
     private bool _editorInsightsRefreshRunning;
     private bool _editorInsightsRefreshPending;
@@ -1115,6 +1117,11 @@ public partial class MainWindow
             CloseCompletionWindow();
         }
 
+        if (isActiveDocument && _completionTypingPending)
+        {
+            _completionRefreshRequestedByTyping = true;
+            _completionTypingPending = false;
+        }
         if (_suppressDirtyTracking) return;
         if (changedTab is not null)
             changedTab.IsDirty = true;
@@ -1159,8 +1166,10 @@ public partial class MainWindow
 
     private void EditorTextArea_OnTextEntering(object? sender, TextInputEventArgs e)
     {
-        if (!IsSmartSyntaxEnabled()) return;
         var editor = GetEditorForTextInput(sender);
+        if (ReferenceEquals(editor, EditorTextBox) && !string.IsNullOrEmpty(e.Text))
+            _completionTypingPending = true;
+        if (!IsSmartSyntaxEnabled()) return;
         var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
         var filePath = pane.ActiveTab is { IsUntitled: false } tab ? tab.Path : null;
         var languageExtension = string.IsNullOrWhiteSpace(filePath) ? null : GetLanguageExtension(filePath);
@@ -1310,6 +1319,7 @@ public partial class MainWindow
         finally
         {
             EndAutoCloseUndoGroupIfOpen(doc);
+            _completionTypingPending = false;
         }
     }
 
@@ -1925,15 +1935,28 @@ public partial class MainWindow
 
     private async Task UpdateInsightAsync(string? textSnapshot = null)
     {
+        if (!_completionRefreshRequestedByTyping)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+        _completionRefreshRequestedByTyping = false;
+
         var scanToken = RenewAnalysisCancellation(ref _insightAnalysisCancellation).Token;
         var lspCompletionSettingsRevision = _lspCompletionSettingsRevision;
-        if (!IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
+        if (!IsEditorPageVisible || !IsInsightEnabled || !IsInsightCodeSuggestionsEnabled)
         {
             CloseCompletionWindow();
             return;
         }
 
         if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (!EditorTextBox.TextArea.Selection.IsEmpty)
         {
             CloseCompletionWindow();
             return;
@@ -1957,15 +1980,21 @@ public partial class MainWindow
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
         var requestTab = ActiveEditorTab;
+        var editorSnapshot = EditorTextSnapshotStore.GetSnapshot(doc);
+        var sourceVersion = editorSnapshot.Version;
         bool IsRequestCurrent() =>
+            IsEditorPageVisible &&
+            IsInsightEnabled &&
+            IsInsightCodeSuggestionsEnabled &&
             ReferenceEquals(_activeEditorPane, requestPane) &&
             ReferenceEquals(EditorTextBox, requestEditor) &&
             ReferenceEquals(requestPane.ActiveTab, requestTab) &&
             ReferenceEquals(requestEditor.Document, doc) &&
+            ReferenceEquals(doc.Version, sourceVersion) &&
             _insightDocVersion == scanVersion &&
-            requestEditor.TextArea.Caret.Offset == offset;
-        var editorSnapshot = EditorTextSnapshotStore.GetSnapshot(doc);
-        var sourceVersion = editorSnapshot.Version;
+            requestEditor.TextArea.Selection.IsEmpty &&
+            requestEditor.TextArea.Caret.Offset == offset &&
+            requestEditor.TextArea.IsKeyboardFocusWithin;
         var fileKey = ActiveEditorTab?.Path ?? "untitled";
         var languageExtension = CurrentLanguageExtension;
         var lspForFile = ResolveLspExtensionForFile(_currentFilePath);
@@ -2156,6 +2185,7 @@ public partial class MainWindow
 
     private void CloseCompletionWindow()
     {
+        try { _lspCompletionCts?.Cancel(); } catch (ObjectDisposedException) { }
         _completionWindow?.Close();
         _completionWindow = null;
         _completionEditor = null;

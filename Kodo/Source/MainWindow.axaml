@@ -5976,10 +5976,13 @@
                         Padding="18,22">
                     <Grid RowDefinitions="Auto,*">
                         <StackPanel Spacing="5" Margin="4,0,4,20">
-                            <TextBlock FontSize="20"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding PrimaryTextBrush}"
-                                       Text="Settings" />
+                            <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="20"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Settings" />
+                            </StackPanel>
                             <TextBlock FontSize="11"
                                        Foreground="{Binding MutedTextBrush}"
                                        Text="Customize your workspace" />

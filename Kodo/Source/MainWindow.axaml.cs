@@ -6571,11 +6571,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _searchFileCache = null;
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
-        FileTreeItems.Clear();
         IsFileExplorerVisible = false;
+        FileTreeItems.Clear();
         RefreshState(fullRefresh: true);
         RefreshRunBuildState();
-        SaveSettings(immediate: true, synchronous: true);
+        SaveSettings(immediate: true);
     }
 
     private async Task<bool> SaveAsync(bool allowPromptForPath, bool forcePromptForPath)
@@ -7155,7 +7155,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (replacementDocument is not null)
             {
-                EditorTextBox.Document = replacementDocument;
+                SetEditorPaneDocument(_activeEditorPane, EditorTextBox, replacementDocument);
                 var otherPane = ReferenceEquals(_activeEditorPane, _editorPane)
                     ? _secondaryEditorPane
                     : _editorPane;
@@ -7164,7 +7164,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     : PrimaryEditorTextBox;
                 if (ActiveEditorTab is { } activeTab && ReferenceEquals(otherPane.ActiveTab, activeTab) &&
                     !ReferenceEquals(otherEditor.Document, replacementDocument))
-                    otherEditor.Document = replacementDocument;
+                    SetEditorPaneDocument(otherPane, otherEditor, replacementDocument);
             }
             else if (EditorTextBox.Document.TextLength != contentLength || contentLength > 0)
                 EditorTextBox.Document.Text = content ?? string.Empty;

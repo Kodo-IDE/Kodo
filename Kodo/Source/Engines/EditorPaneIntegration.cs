@@ -302,6 +302,7 @@ public partial class MainWindow
     private void EditorCaretPositionChanged(TextEditor editor)
     {
         if (!ReferenceEquals(editor, EditorTextBox)) return;
+        CloseCompletionWindow();
         HideDiagnosticPopup();
         _lspPresentationCancellation?.Cancel();
         RestartLspPresentationDebounceTimer();
@@ -337,6 +338,8 @@ public partial class MainWindow
 
     private void HandleEditorPaneDocumentChanged(EditorPaneState pane, TextEditor editor, TextDocument document)
     {
+        if (ReferenceEquals(_completionEditor, editor))
+            CloseCompletionWindow();
         if (ReferenceEquals(_hoveredEditorPane, pane))
             HideDiagnosticPopup();
         CancelLanguageHoverRequest();
@@ -348,18 +351,6 @@ public partial class MainWindow
             : _primaryFindHighlightRenderer).Clear();
         editor.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
         editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
-
-        var oldManager = ReferenceEquals(pane, _secondaryEditorPane)
-            ? _secondaryLspFoldingManager
-            : _primaryLspFoldingManager;
-        if (oldManager is not null)
-            FoldingManager.Uninstall(oldManager);
-        var newManager = FoldingManager.Install(editor.TextArea);
-        if (ReferenceEquals(pane, _secondaryEditorPane))
-            _secondaryLspFoldingManager = newManager;
-        else
-            _primaryLspFoldingManager = newManager;
-        ApplyFoldingMarginTheme();
         var paneInlayHintRenderer = ReferenceEquals(pane, _secondaryEditorPane)
             ? _secondaryLspInlayHintRenderer
             : _primaryLspInlayHintRenderer;
@@ -377,6 +368,38 @@ public partial class MainWindow
         TrackLspDocument(document);
         _foldingMargin = null;
         ResetLspFoldingState();
+    }
+
+    private void SetEditorPaneDocument(EditorPaneState pane, TextEditor editor, TextDocument document)
+    {
+        Dispatcher.UIThread.VerifyAccess();
+        if (ReferenceEquals(editor.Document, document))
+            return;
+
+        var isSecondaryPane = ReferenceEquals(pane, _secondaryEditorPane);
+        var oldManager = isSecondaryPane ? _secondaryLspFoldingManager : _primaryLspFoldingManager;
+        if (oldManager is not null)
+        {
+            FoldingManager.Uninstall(oldManager);
+            if (isSecondaryPane)
+                _secondaryLspFoldingManager = null;
+            else
+                _primaryLspFoldingManager = null;
+        }
+
+        try
+        {
+            editor.Document = document;
+        }
+        finally
+        {
+            var newManager = FoldingManager.Install(editor.TextArea);
+            if (isSecondaryPane)
+                _secondaryLspFoldingManager = newManager;
+            else
+                _primaryLspFoldingManager = newManager;
+            ApplyFoldingMarginTheme();
+        }
     }
 
     private void ActivateEditorPane(EditorPaneState pane, bool focusEditor = true)
@@ -1009,7 +1032,8 @@ public partial class MainWindow
         _suppressDirtyTracking = true;
         try
         {
-            editor.Document = document;
+            var pane = ReferenceEquals(editor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
+            SetEditorPaneDocument(pane, editor, document);
         }
         finally
         {
