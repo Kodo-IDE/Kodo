@@ -1515,36 +1515,36 @@ public partial class MainWindow
             if (parameters is not JsonElement request || request.ValueKind != JsonValueKind.Object ||
                 !request.TryGetProperty("edit", out var edit) || edit.ValueKind != JsonValueKind.Object)
                 return CreateWorkspaceApplyEditResult(false, "The language server sent an invalid workspace edit request");
-        var captured = await Dispatcher.UIThread.InvokeAsync<(string? ActiveFilePath, string ContextPath, AvaloniaEdit.Document.TextDocument Document, AvaloniaEdit.Document.ITextSourceVersion DocumentVersion, EditorTextSnapshot Text, long Revision, CancellationToken RevisionToken, int Caret, int Length, EditorPaneState Pane, AvaloniaEdit.TextEditor Editor, EditorTab? Tab)?>(() =>
-        {
-            var editor = EditorTextBox;
-            var pane = _activeEditorPane;
-            var document = editor?.Document;
-            if (document is null) return null;
-            var activeFilePath = _currentFilePath;
-            var contextPath = string.IsNullOrWhiteSpace(activeFilePath) ? client.ClientWorkspaceRoot : activeFilePath;
-            return (ActiveFilePath: activeFilePath, ContextPath: contextPath, Document: document, DocumentVersion: document.Version, Text: EditorTextSnapshotStore.GetSnapshot(document),
-                Revision: EditorSession.Revision, RevisionToken: EditorSession.RevisionCancellationToken,
-                Caret: editor!.TextArea.Caret.Offset, Length: Math.Min(1, document.TextLength), Pane: pane, Editor: editor, Tab: pane.ActiveTab);
-        });
-        if (captured is null) return CreateWorkspaceApplyEditResult(false, "No active document");
-        string text;
-        try { text = await captured.Value.Text.GetTextAsync(captured.Value.RevisionToken).ConfigureAwait(false); }
-        catch (OperationCanceledException) { return CreateWorkspaceApplyEditResult(false, "The active document changed"); }
-        var stillCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
-            ReferenceEquals(_activeEditorPane, captured.Value.Pane) && ReferenceEquals(EditorTextBox, captured.Value.Editor) &&
-            ReferenceEquals(captured.Value.Pane.ActiveTab, captured.Value.Tab) && ReferenceEquals(captured.Value.Editor.Document, captured.Value.Document) &&
-            ReferenceEquals(captured.Value.Document.Version, captured.Value.DocumentVersion) &&
-            EditorSession.Revision == captured.Value.Revision &&
-            FileSystemPaths.Equals(_currentFilePath, captured.Value.ActiveFilePath));
-        if (!stillCurrent) return CreateWorkspaceApplyEditResult(false, "The active document changed");
-        var snapshot = new CodeActionSnapshot(captured.Value.ContextPath, text, captured.Value.Document, captured.Value.DocumentVersion,
-            captured.Value.Revision, captured.Value.Caret, 0, captured.Value.Length,
-            captured.Value.Pane, captured.Value.Editor, captured.Value.Tab);
-        var outcome = await ApplyWorkspaceEditAsync(edit, snapshot, EditScope.WorkspaceEdit,
-            client.PositionEncoding, client.ClientWorkspaceRoot).ConfigureAwait(false);
-        return CreateWorkspaceApplyEditResult(outcome == CodeActionOutcome.Applied,
-            outcome == CodeActionOutcome.Applied ? null : "The workspace edit could not be applied");
+            var captured = await Dispatcher.UIThread.InvokeAsync<(string? ActiveFilePath, string ContextPath, AvaloniaEdit.Document.TextDocument Document, AvaloniaEdit.Document.ITextSourceVersion DocumentVersion, EditorTextSnapshot Text, long Revision, CancellationToken RevisionToken, int Caret, int Length, EditorPaneState Pane, AvaloniaEdit.TextEditor Editor, EditorTab? Tab)?>(() =>
+            {
+                var editor = EditorTextBox;
+                var pane = _activeEditorPane;
+                var document = editor?.Document;
+                if (document is null) return null;
+                var activeFilePath = _currentFilePath;
+                var contextPath = string.IsNullOrWhiteSpace(activeFilePath) ? client.ClientWorkspaceRoot : activeFilePath;
+                return (ActiveFilePath: activeFilePath, ContextPath: contextPath, Document: document, DocumentVersion: document.Version, Text: EditorTextSnapshotStore.GetSnapshot(document),
+                    Revision: EditorSession.Revision, RevisionToken: EditorSession.RevisionCancellationToken,
+                    Caret: editor!.TextArea.Caret.Offset, Length: Math.Min(1, document.TextLength), Pane: pane, Editor: editor, Tab: pane.ActiveTab);
+            });
+            if (captured is null) return CreateWorkspaceApplyEditResult(false, "No active document");
+            string text;
+            try { text = await captured.Value.Text.GetTextAsync(captured.Value.RevisionToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) { return CreateWorkspaceApplyEditResult(false, "The active document changed"); }
+            var stillCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
+                ReferenceEquals(_activeEditorPane, captured.Value.Pane) && ReferenceEquals(EditorTextBox, captured.Value.Editor) &&
+                ReferenceEquals(captured.Value.Pane.ActiveTab, captured.Value.Tab) && ReferenceEquals(captured.Value.Editor.Document, captured.Value.Document) &&
+                ReferenceEquals(captured.Value.Document.Version, captured.Value.DocumentVersion) &&
+                EditorSession.Revision == captured.Value.Revision &&
+                FileSystemPaths.Equals(_currentFilePath, captured.Value.ActiveFilePath));
+            if (!stillCurrent) return CreateWorkspaceApplyEditResult(false, "The active document changed");
+            var snapshot = new CodeActionSnapshot(captured.Value.ContextPath, text, captured.Value.Document, captured.Value.DocumentVersion,
+                captured.Value.Revision, captured.Value.Caret, 0, captured.Value.Length,
+                captured.Value.Pane, captured.Value.Editor, captured.Value.Tab);
+            var outcome = await ApplyWorkspaceEditAsync(edit, snapshot, EditScope.WorkspaceEdit,
+                client.PositionEncoding, client.ClientWorkspaceRoot).ConfigureAwait(false);
+            return CreateWorkspaceApplyEditResult(outcome == CodeActionOutcome.Applied,
+                outcome == CodeActionOutcome.Applied ? null : "The workspace edit could not be applied");
         }
         catch (Exception ex)
         {

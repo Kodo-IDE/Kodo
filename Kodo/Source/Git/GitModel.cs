@@ -129,32 +129,32 @@ internal static class GitStatusParser
             switch (r[0])
             {
                 case '1': // ordinary: 1 XY sub mH mI mW hH hI path
-                {
-                    var f = Fields(r, 9);
-                    if (f.Length == 9 && f[1].Length == 2)
-                        changes.Add(new GitChange(f[8], Norm(f[1][0]), Norm(f[1][1])));
-                    break;
-                }
+                    {
+                        var f = Fields(r, 9);
+                        if (f.Length == 9 && f[1].Length == 2)
+                            changes.Add(new GitChange(f[8], Norm(f[1][0]), Norm(f[1][1])));
+                        break;
+                    }
                 case '2': // rename/copy: 2 XY sub mH mI mW hH hI Xscore path <NUL> origPath
-                {
-                    var f = Fields(r, 10);
-                    var orig = i + 1 < records.Length ? records[i + 1] : null;
-                    i++; // the origin path is its own NUL-delimited record
-                    if (f.Length == 10 && f[1].Length == 2)
-                        changes.Add(new GitChange(f[9], Norm(f[1][0]), Norm(f[1][1]), string.IsNullOrEmpty(orig) ? null : orig));
-                    break;
-                }
+                    {
+                        var f = Fields(r, 10);
+                        var orig = i + 1 < records.Length ? records[i + 1] : null;
+                        i++; // the origin path is its own NUL-delimited record
+                        if (f.Length == 10 && f[1].Length == 2)
+                            changes.Add(new GitChange(f[9], Norm(f[1][0]), Norm(f[1][1]), string.IsNullOrEmpty(orig) ? null : orig));
+                        break;
+                    }
                 case 'u': // unmerged: u XY sub m1 m2 m3 mW h1 h2 h3 path
-                {
-                    var f = Fields(r, 11);
-                    if (f.Length == 11 && f[1].Length == 2)
-                        changes.Add(new GitChange(f[10], Norm(f[1][0]), Norm(f[1][1])));
-                    break;
-                }
+                    {
+                        var f = Fields(r, 11);
+                        if (f.Length == 11 && f[1].Length == 2)
+                            changes.Add(new GitChange(f[10], Norm(f[1][0]), Norm(f[1][1])));
+                        break;
+                    }
                 case '?':
                     if (r.Length > 2) changes.Add(new GitChange(r[2..], '?', '?'));
                     break;
-                // '!' (ignored) entries are never requested; anything else is skipped for forward compatibility.
+                    // '!' (ignored) entries are never requested; anything else is skipped for forward compatibility.
             }
         }
 

@@ -504,7 +504,7 @@ public partial class MainWindow
             var viewState = tab.GetViewState(pane.Id);
             editor.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, editor.Document.TextLength);
             editor.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, editor.Document.LineCount));
-        RestorePaneScrollOffset(pane, tab, editor);
+            RestorePaneScrollOffset(pane, tab, editor);
         }
         OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));

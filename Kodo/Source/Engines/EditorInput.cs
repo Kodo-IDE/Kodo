@@ -130,20 +130,20 @@ public partial class MainWindow
                 return;
 
             case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.Shift:
-            {
-                var indentUnit = GetIndentUnit();
-                HandleTabKey(() => HandleOutdent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
-                e.Handled = true;
-                return;
-            }
+                {
+                    var indentUnit = GetIndentUnit();
+                    HandleTabKey(() => HandleOutdent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
+                    e.Handled = true;
+                    return;
+                }
 
             case Key.Tab when IsSmartSyntaxEnabled() && e.KeyModifiers == KeyModifiers.None:
-            {
-                var indentUnit = GetIndentUnit();
-                HandleTabKey(() => HandleIndent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
-                e.Handled = true;
-                return;
-            }
+                {
+                    var indentUnit = GetIndentUnit();
+                    HandleTabKey(() => HandleIndent(doc, textArea, textArea.Selection, caret, indentUnit), doc, caret);
+                    e.Handled = true;
+                    return;
+                }
 
             case Key.Back when IsSmartSyntaxEnabled():
                 if (HandleSmartBackspace(doc, textArea, caret))
