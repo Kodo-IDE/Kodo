@@ -452,12 +452,6 @@ internal sealed class EditorViewState
     public double ImageScrollOffsetY { get; set; }
 }
 
-public enum ExplorerClipboardMode
-{
-    Copy,
-    Cut
-}
-
 public class FileNode
 {
     public FileNode(string name, string path, bool isDirectory)

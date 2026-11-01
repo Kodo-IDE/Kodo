@@ -141,8 +141,7 @@ public sealed class KodoPluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
-        // Plugin assemblies must share Kodo's contract assembly so IKodoPlugin and
-        // KodoPluginCommandRegistry have the same type identity in both contexts.
+
         var hostAssembly = typeof(IKodoPlugin).Assembly;
         if (AssemblyName.ReferenceMatchesDefinition(assemblyName, hostAssembly.GetName()))
             return hostAssembly;
