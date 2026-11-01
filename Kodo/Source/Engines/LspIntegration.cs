@@ -912,6 +912,48 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP active document open failed for {filePath}", ex); }
     }
 
+    private async Task EnsureVisiblePaneLspDocumentsOpenAsync()
+    {
+        var filePaths = await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var paths = new List<string>();
+            if (IsSplitScreenVisible)
+            {
+                if (_editorPane.ActiveTab is { IsUntitled: false } primary && !IsImagePreviewFile(primary.Path))
+                    paths.Add(primary.Path);
+                if (_secondaryEditorPane.ActiveTab is { IsUntitled: false } secondary && !IsImagePreviewFile(secondary.Path) &&
+                    !paths.Contains(secondary.Path, FileSystemPaths.Comparer))
+                    paths.Add(secondary.Path);
+            }
+            else if (ActiveEditorTab is { IsUntitled: false } active && !IsImagePreviewFile(active.Path))
+            {
+                paths.Add(active.Path);
+            }
+
+            return paths;
+        });
+
+        foreach (var filePath in filePaths)
+        {
+            if (IsLspDocumentOpenOrOpening(filePath))
+                continue;
+
+            try
+            {
+                var content = await CaptureOpenDocumentTextAsync(filePath).ConfigureAwait(false);
+                if (content is null || IsLspDocumentOpenOrOpening(filePath))
+                    continue;
+
+                await LspNotifyDidOpenAsync(filePath, content).ConfigureAwait(false);
+                await Dispatcher.UIThread.InvokeAsync(QueueLspPresentationRefresh);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"Unable to initialize language services for restored file '{filePath}'", ex);
+            }
+        }
+    }
+
     private async Task<string?> CaptureActiveDocumentTextAsync(string filePath, CancellationToken cancellationToken = default)
     {
         var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>

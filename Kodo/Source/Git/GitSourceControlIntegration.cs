@@ -2118,6 +2118,9 @@ internal sealed class GitSourceControlIntegration
             FontSize = 14,
             Cursor = new Cursor(StandardCursorType.Hand),
             CornerRadius = KodoDesignTokens.CompactRadius,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
         ToolTip.SetTip(button, tip);
@@ -2141,7 +2144,8 @@ internal sealed class GitSourceControlIntegration
             FontSize = 12,
             Cursor = new Cursor(StandardCursorType.Hand),
             CornerRadius = KodoDesignTokens.CompactRadius,
-            HorizontalContentAlignment = HorizontalAlignment.Center
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         ToolTip.SetTip(button, tip);
         button.Click += async (_, _) => await action();

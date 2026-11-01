@@ -299,7 +299,9 @@ public partial class MainWindow
         if (!anyFolderFound)
             extensionLoadErrors.Add($"Extensions folder not found. Expected: {ExtensionsFolderPath}");
 
-        return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+        var result = new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+        SaveInstalledThemeCache(result.Extensions, ComputeInstalledThemeFingerprint());
+        return result;
     }
 
     private ExtensionScanResult ScanInstalledThemeExtensions()
@@ -441,7 +443,7 @@ public partial class MainWindow
 
             var path = InstalledThemeCachePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var temporaryPath = path + ".tmp";
+            var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
             File.WriteAllText(temporaryPath, JsonSerializer.Serialize(cache));
             File.Move(temporaryPath, path, overwrite: true);
         }
@@ -679,6 +681,7 @@ public partial class MainWindow
             ? null
             : GetLanguageExtension(_currentFilePath);
         RefreshRunBuildState();
+        _ = EnsureVisiblePaneLspDocumentsOpenAsync();
 
         applyWatch.Stop();
         KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
