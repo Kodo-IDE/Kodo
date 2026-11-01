@@ -397,10 +397,7 @@ public sealed class MarkdownColorizer : DocumentColorizingTransformer
             return;
 
         if (fence.Profile is null)
-        {
-            ApplyBrush(lineOffset, 0, text.Length, Brushes.White);
             return;
-        }
 
         fence.Profile.Colorize(
             text,

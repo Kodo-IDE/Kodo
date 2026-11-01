@@ -283,6 +283,8 @@ public partial class MainWindow
             ReferenceEquals(EditorTextBox.Document, editor.Document))
             editor = EditorTextBox;
 
+        if (editor.Document is null)
+            return;
         var version = editor.Document.Version;
         if (ReferenceEquals(_lastHandledEditorTextDocument, editor.Document) &&
             ReferenceEquals(_lastHandledEditorTextVersion, version))
@@ -822,6 +824,8 @@ public partial class MainWindow
             OpenTabs.Contains(previousSideTab) && CanDisplayInEditorPane(previousSideTab)
             ? previousSideTab
             : primaryTab;
+        if (secondaryTab is not null)
+            CopyMissingPaneViewState(secondaryTab, _editorPane, _secondaryEditorPane);
         if (useSecondaryTabOverride && secondaryTab is not null && !ReferenceEquals(secondaryTab, primaryTab))
             _editorPane.Tabs.Remove(secondaryTab);
         _secondaryEditorPane.ActiveTab = secondaryTab;
@@ -1105,6 +1109,8 @@ public partial class MainWindow
         }
 
         foreach (var tab in _secondaryEditorPane.Tabs)
+            CopyMissingPaneViewState(tab, _secondaryEditorPane, _editorPane);
+        foreach (var tab in _secondaryEditorPane.Tabs)
             _editorPane.AddTab(tab);
 
         if (wasSecondaryActive)
@@ -1212,6 +1218,8 @@ public partial class MainWindow
                 SetOtherPaneTab(sourcePane, replacement);
         }
 
+        if (!ReferenceEquals(sourcePane, targetPane))
+            CopyMissingPaneViewState(tab, sourcePane, targetPane);
         ActivateEditorPane(targetPane, focusEditor: false);
         if (!ReferenceEquals(ActiveEditorTab, tab))
             ActivateTab(tab, focusEditor: true, preserveOtherPaneMembership: true);
@@ -1360,6 +1368,13 @@ public partial class MainWindow
         _tabDragSourcePane = chain.Any(visual => ReferenceEquals(visual, SecondaryEditorPane)) ? _secondaryEditorPane
             : chain.Any(visual => ReferenceEquals(visual, PrimaryEditorPane)) && IsSplitScreenVisible ? _editorPane
             : null;
+        if (_tabDragSourcePane is null && IsSplitScreenVisible)
+        {
+            if (_secondaryEditorPane.Tabs.Contains(tab) && !_editorPane.Tabs.Contains(tab))
+                _tabDragSourcePane = _secondaryEditorPane;
+            else if (_editorPane.Tabs.Contains(tab))
+                _tabDragSourcePane = _editorPane;
+        }
         _tabDragOrigin = point.Position;
         _tabDragActive = false;
     }
@@ -1522,6 +1537,8 @@ public partial class MainWindow
         if (!targetPane.Tabs.Contains(tab))
             targetPane.Tabs.Insert(Math.Clamp(insertIndex, 0, targetPane.Tabs.Count), tab);
 
+        if (sourcePane is not null && !ReferenceEquals(sourcePane, targetPane))
+            CopyMissingPaneViewState(tab, sourcePane, targetPane);
         ActivateEditorPane(targetPane, focusEditor: false);
         if (!ReferenceEquals(ActiveEditorTab, tab))
             ActivateTab(tab, focusEditor: true, preserveOtherPaneMembership: true);
@@ -1530,8 +1547,8 @@ public partial class MainWindow
 
         if (sourceWasActive)
         {
-            var replacement = sourcePane.Tabs.Count > 0
-                ? sourcePane.Tabs[Math.Min(sourceIndex, sourcePane.Tabs.Count - 1)]
+            var replacement = sourcePane!.Tabs.Count > 0
+                ? sourcePane!.Tabs[Math.Min(sourceIndex, sourcePane!.Tabs.Count - 1)]
                 : null;
             SetOtherPaneTab(sourcePane, replacement);
         }
