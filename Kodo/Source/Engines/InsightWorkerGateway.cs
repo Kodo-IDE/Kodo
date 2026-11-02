@@ -1,5 +1,6 @@
 // Licensed under the GNU GPL-v3.0
 
+using Kodo.Editor;
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
@@ -62,7 +63,17 @@ internal sealed class InsightWorkerGateway
 
     public void MarkRegistryDirty() => _registryDirty = true;
 
-    public async Task<List<DeadCodeSpan>> FindDeadCodeAsync(
+    public Task<List<DeadCodeSpan>> FindDeadCodeAsync(
+        InsightEngine engine,
+        string documentText,
+        LoadedExtension? languageExtension,
+        string? folderPath,
+        string? filePath,
+        CancellationToken cancellationToken) =>
+        MeasureAnalysisAsync(InsightRefreshKind.DeadCode, "dead-code", documentText.Length,
+            () => FindDeadCodeCoreAsync(engine, documentText, languageExtension, folderPath, filePath, cancellationToken));
+
+    private async Task<List<DeadCodeSpan>> FindDeadCodeCoreAsync(
         InsightEngine engine,
         string documentText,
         LoadedExtension? languageExtension,
@@ -93,7 +104,15 @@ internal sealed class InsightWorkerGateway
         }
     }
 
-    public async Task<List<ErrorSpan>> FindErrorsAsync(
+    public Task<List<ErrorSpan>> FindErrorsAsync(
+        InsightEngine engine,
+        string documentText,
+        LoadedExtension? languageExtension,
+        CancellationToken cancellationToken) =>
+        MeasureAnalysisAsync(InsightRefreshKind.Errors, "errors", documentText.Length,
+            () => FindErrorsCoreAsync(engine, documentText, languageExtension, cancellationToken));
+
+    private async Task<List<ErrorSpan>> FindErrorsCoreAsync(
         InsightEngine engine,
         string documentText,
         LoadedExtension? languageExtension,
@@ -167,6 +186,22 @@ internal sealed class InsightWorkerGateway
 
     private static List<ErrorSpan> InProcessErrors(InsightEngine engine, string documentText, LoadedExtension? ext, CancellationToken ct)
         => engine.FindErrors(documentText, ext, null, ct);
+
+    private static async Task<T> MeasureAnalysisAsync<T>(InsightRefreshKind kind, string name, int textLength, Func<Task<T>> operation)
+    {
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            return await operation().ConfigureAwait(false);
+        }
+        finally
+        {
+            watch.Stop();
+            var elapsed = watch.ElapsedMilliseconds;
+            InsightAnalysisMetrics.RecordCost(kind, elapsed);
+            KodoDiagnostics.ReportSlowStage($"Insight {name}", elapsed, 100, $"len={textLength}");
+        }
+    }
 
     private async Task<WorkerResponse> RequestAsync(
         string op,

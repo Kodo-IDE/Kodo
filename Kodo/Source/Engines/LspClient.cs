@@ -387,7 +387,12 @@ internal sealed class LspClient : IDisposable
             KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialized. Server caps: {LspProtocol.Preview(ServerCapabilities?.GetRawText() ?? "<none>")}");
             return result;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
+        {
+            lock (_initLock) _initTask = null;
+            throw;
+        }
+        catch (Exception ex)
         {
             if (!cancellationToken.IsCancellationRequested)
                 KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialization failed", ex);

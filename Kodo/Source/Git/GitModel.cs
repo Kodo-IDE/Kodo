@@ -122,7 +122,8 @@ internal static class GitStatusParser
                     {
                         var f = Fields(r, 10);
                         var orig = i + 1 < records.Length ? records[i + 1] : null;
-                        i++;
+                        if (orig is not null)
+                            i++;
                         if (f.Length == 10 && f[1].Length == 2)
                             changes.Add(new GitChange(f[9], Norm(f[1][0]), Norm(f[1][1]), string.IsNullOrEmpty(orig) ? null : orig));
                         break;

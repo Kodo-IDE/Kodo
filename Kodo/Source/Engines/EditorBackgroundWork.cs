@@ -7,33 +7,45 @@ namespace Kodo.Editor;
 
 internal static class EditorBackgroundWork
 {
-    public static Task<T> RunAsync<T>(Func<CancellationToken, T> work, CancellationToken cancellationToken) =>
-        Task.Run(() =>
+    private static readonly SemaphoreSlim WorkSlots = new(Math.Clamp(Environment.ProcessorCount - 1, 1, 4));
+
+    public static async Task<T> RunAsync<T>(Func<CancellationToken, T> work, CancellationToken cancellationToken)
+    {
+        await WorkSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            var thread = Thread.CurrentThread;
-            var originalPriority = thread.Priority;
-            var priorityLowered = false;
-            try
+            return await Task.Run(() =>
             {
+                var thread = Thread.CurrentThread;
+                var originalPriority = thread.Priority;
+                var priorityLowered = false;
                 try
                 {
-                    thread.Priority = ThreadPriority.BelowNormal;
-                    priorityLowered = true;
-                }
-                catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or System.Security.SecurityException)
-                {
-                }
+                    try
+                    {
+                        thread.Priority = ThreadPriority.BelowNormal;
+                        priorityLowered = true;
+                    }
+                    catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or System.Security.SecurityException)
+                    {
+                    }
 
-                cancellationToken.ThrowIfCancellationRequested();
-                return work(cancellationToken);
-            }
-            finally
-            {
-                if (priorityLowered)
-                {
-                    try { thread.Priority = originalPriority; }
-                    catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or System.Security.SecurityException) { }
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return work(cancellationToken);
                 }
-            }
-        }, cancellationToken);
+                finally
+                {
+                    if (priorityLowered)
+                    {
+                        try { thread.Priority = originalPriority; }
+                        catch (Exception ex) when (ex is PlatformNotSupportedException or InvalidOperationException or System.Security.SecurityException) { }
+                    }
+                }
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            WorkSlots.Release();
+        }
+    }
 }

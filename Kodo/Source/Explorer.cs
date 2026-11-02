@@ -29,6 +29,7 @@ namespace Kodo;
 public partial class MainWindow
 {
     private const int MaximumQueuedProjectFolderChanges = 4096;
+    private const int MaximumFileTreeDepth = 64;
     private readonly object _projectFolderChangeLock = new();
     private readonly HashSet<string> _pendingProjectFolderChangedPaths = new(FileSystemPaths.Comparer);
     private bool _projectFolderChangeDispatchPending;
@@ -125,9 +126,10 @@ public partial class MainWindow
 
         if (HasImagePreview)
         {
-            ActiveEditorTab.IsDirty = false;
-            if (!ActiveEditorTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
-                ActiveEditorTab.Path = _currentFilePath;
+            var activeImageTab = ActiveEditorTab;
+            activeImageTab.IsDirty = false;
+            if (!activeImageTab.IsUntitled && !string.IsNullOrWhiteSpace(_currentFilePath))
+                activeImageTab.Path = _currentFilePath;
             return;
         }
 
@@ -139,7 +141,12 @@ public partial class MainWindow
 
         if (OpenTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Document, document)) is { } ownerTab &&
             !ReferenceEquals(ownerTab, tab))
+        {
+            if (ReferenceEquals(ownerTab, _editorPane.ActiveTab) || ReferenceEquals(ownerTab, _secondaryEditorPane.ActiveTab))
+                ownerTab.IsDirty = ownerTab.IsDirty || _isDirty;
+            SavePaneViewState(_activeEditorPane, EditorTextBox);
             return;
+        }
         var viewState = tab.GetViewState(_activeEditorPane.Id);
         tab.Document = document;
         tab.Content = string.Empty;
@@ -429,6 +436,27 @@ public partial class MainWindow
             return;
         }
 
+        if (IsSplitScreenVisible && otherPane.Tabs.Count > 0)
+        {
+            var replacement = otherPane.ActiveTab ?? otherPane.Tabs[0];
+            CloseSplitEditor();
+            if (!ReferenceEquals(ActiveEditorTab, replacement))
+                ActivateTab(replacement, focusEditor: false, preserveCurrentState: false);
+            return;
+        }
+
+        if (IsSplitScreenVisible)
+        {
+            CloseSplitEditor();
+            if (OpenTabs.Count > 0)
+            {
+                var replacement = OpenTabs[Math.Min(index, OpenTabs.Count - 1)];
+                ActivateEditorPane(_editorPane, focusEditor: false);
+                ActivateTab(replacement, focusEditor: false, preserveCurrentState: false);
+                return;
+            }
+        }
+
         if (OpenTabs.Count > 0)
         {
             ClearActivePaneAfterLastTabClosed();
@@ -498,6 +526,10 @@ public partial class MainWindow
         AssignPaneDocumentWithoutDirtyTracking(editor, IsSplitScreenVisible || !ReferenceEquals(pane, _secondaryEditorPane)
             ? tab?.Document ?? new AvaloniaEdit.Document.TextDocument(string.Empty)
             : new AvaloniaEdit.Document.TextDocument(string.Empty));
+        if (IsSplitScreenVisible && !ReferenceEquals(pane, _activeEditorPane) && tab is { IsUntitled: false } &&
+            !IsImagePreviewFile(tab.Path) && (tab.Document is null || tab.Document.TextLength == 0) &&
+            TryGetFileLength(tab.Path) > 0)
+            _ = RestoreInactivePaneDocumentAsync(pane, editor, tab);
         ApplyPaneSyntaxHighlighting(pane, editor, tab);
         if (tab is not null)
         {
@@ -512,6 +544,43 @@ public partial class MainWindow
         QueueLspPresentationRefresh();
         if (tab is { IsUntitled: false } && !string.IsNullOrWhiteSpace(tab.Path) && !ReferenceEquals(tab, ActiveEditorTab))
             UpdateInactiveTabDiagnosticsForFile(tab.Path);
+    }
+
+    private async Task RestoreInactivePaneDocumentAsync(EditorPaneState pane, AvaloniaEdit.TextEditor editor, EditorTab tab)
+    {
+        var observedDocument = editor.Document;
+        try
+        {
+            var content = await Task.Run(async () => new FileInfo(tab.Path).Length > MaxFileSizeForFullLoad
+                ? await ReadLargeFileAsync(tab.Path, tab.Encoding).ConfigureAwait(false)
+                : await File.ReadAllTextAsync(tab.Path, tab.Encoding).ConfigureAwait(false)).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!IsSplitScreenVisible || !ReferenceEquals(pane.ActiveTab, tab) ||
+                    !ReferenceEquals(editor.Document, observedDocument) ||
+                    (tab.Document is not null && tab.Document.TextLength > 0))
+                    return;
+                var document = new AvaloniaEdit.Document.TextDocument(content);
+                tab.Document = document;
+                tab.Content = string.Empty;
+                AssignPaneDocumentWithoutDirtyTracking(editor, document);
+                ApplyPaneSyntaxHighlighting(pane, editor, tab);
+                var state = tab.GetViewState(pane.Id);
+                editor.TextArea.Caret.Offset = Math.Clamp(state.CaretOffset, 0, document.TextLength);
+                editor.ScrollToLine(Math.Clamp(state.TopLineNumber, 1, document.LineCount));
+                QueueLspPresentationRefresh();
+            });
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"Unable to restore split pane content for '{tab.Path}'", ex);
+        }
+    }
+
+    private static long TryGetFileLength(string path)
+    {
+        try { return File.Exists(path) ? new FileInfo(path).Length : 0; }
+        catch { return 0; }
     }
 
     private async Task<bool> RequestCloseTabAsync(EditorTab tab)
@@ -1054,6 +1123,12 @@ public partial class MainWindow
     {
         var index = FileTreeItems.IndexOf(dirItem);
         if (index < 0) return;
+
+        if (!dirItem.IsExpanded && dirItem.Depth >= MaximumFileTreeDepth)
+        {
+            ExtensionsStatusText = $"Folders deeper than {MaximumFileTreeDepth} levels cannot be expanded.";
+            return;
+        }
 
         if (dirItem.IsExpanded)
         {
@@ -1777,6 +1852,15 @@ public partial class MainWindow
     private async void CloseTabsToTheRightMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<EditorTab>(sender) is not { } pivotTab) return;
+        var pane = GetPaneForContextMenu(sender);
+        if (pane is not null)
+        {
+            var paneIndex = pane.Tabs.IndexOf(pivotTab);
+            if (paneIndex < 0) return;
+            foreach (var tab in pane.Tabs.Skip(paneIndex + 1).ToArray())
+                if (!await RequestClosePaneTabAsync(pane, tab)) break;
+            return;
+        }
         var pivotIndex = OpenTabs.IndexOf(pivotTab);
         if (pivotIndex < 0) return;
 
@@ -1909,6 +1993,12 @@ public partial class MainWindow
         if (!IsSplitScreenVisible)
             return;
 
+        if (sourcePane.ActiveTab is null && ActiveEditorTab is { } currentTab)
+        {
+            AddTabToPane(sourcePane, currentTab);
+            SetOtherPaneTab(sourcePane, currentTab);
+        }
+
         var destinationPane = ReferenceEquals(sourcePane, _editorPane)
             ? _secondaryEditorPane
             : _editorPane;
@@ -2029,7 +2119,8 @@ public partial class MainWindow
             var normalizedSrc = Path.GetFullPath(_clipboardItemPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             var normalizedDest = Path.GetFullPath(destPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (FileSystemPaths.Equals(normalizedDest, normalizedSrc) ||
-                FileSystemPaths.IsPrefixOf(normalizedDest, normalizedSrc))
+                FileSystemPaths.IsPrefixOf(normalizedDest, normalizedSrc) ||
+                (_clipboardIsCut && FileSystemPaths.IsPrefixOf(normalizedSrc, normalizedDest)))
             {
                 ExtensionsStatusText = "Paste failed: cannot paste a folder inside itself.";
                 await ShowWarningDialogAsync("Paste file", new InvalidOperationException("Cannot paste a folder into itself or its descendant."));

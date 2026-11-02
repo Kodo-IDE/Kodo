@@ -40,7 +40,11 @@ internal sealed class EditorDocumentSession : IDisposable
     {
         get
         {
-            lock (_gate) return _revisionCancellation.Token;
+            lock (_gate)
+            {
+                if (_disposed) return CancellationToken.None;
+                return _revisionCancellation.Token;
+            }
         }
     }
 
@@ -48,7 +52,8 @@ internal sealed class EditorDocumentSession : IDisposable
     {
         lock (_gate)
         {
-            if (string.Equals(_filePath, filePath, StringComparison.OrdinalIgnoreCase)) return;
+            if (_disposed) return;
+            if (string.Equals(_filePath, filePath, StringComparison.Ordinal)) return;
             _filePath = filePath;
             AdvanceRevisionUnderLock();
         }
@@ -65,11 +70,12 @@ internal sealed class EditorDocumentSession : IDisposable
 
     private void AdvanceRevisionUnderLock()
     {
+        if (_disposed) return;
         _revision++;
         var previous = _revisionCancellation;
         _revisionCancellation = new CancellationTokenSource();
-        previous.Cancel();
-        previous.Dispose();
+        try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        try { previous.Dispose(); } catch (ObjectDisposedException) { }
     }
 
     public void Dispose()

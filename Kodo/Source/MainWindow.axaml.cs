@@ -938,6 +938,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PrimaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_editorPane, PrimaryEditorTextBox, e.NewDocument);
         SecondaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_secondaryEditorPane, SecondaryEditorTextBox, e.NewDocument);
         PrimaryEditorTextBox.TextChanged += EditorTextBox_OnPaneTextChanged;
+        SecondaryEditorTextBox.TextChanged += EditorTextBox_OnPaneTextChanged;
         CenterQuickAccessSearchFrame();
         InsightWorkerGateway.Default.SetRegistryProvider(() =>
         {
@@ -1121,12 +1122,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _startupSplitEditorVisible = settings.SplitEditorVisible;
         _startupPrimaryPaneTabPath = settings.PrimaryPaneTabPath;
         _startupSecondaryPaneTabPath = settings.SecondaryPaneTabPath;
-        _startupPrimaryPaneTabPaths.AddRange((settings.PrimaryPaneTabPaths ?? [])
-            .Where(File.Exists)
-            .Distinct(FileSystemPaths.Comparer));
-        _startupSecondaryPaneTabPaths.AddRange((settings.SecondaryPaneTabPaths ?? [])
-            .Where(File.Exists)
-            .Distinct(FileSystemPaths.Comparer));
+        _startupPrimaryPaneTabPaths.AddRange(settings.PrimaryPaneTabPaths ?? []);
+        _startupSecondaryPaneTabPaths.AddRange(settings.SecondaryPaneTabPaths ?? []);
         _startupActivePaneIsSecondary = settings.ActivePaneIsSecondary;
         _startupFolderPath = !string.IsNullOrWhiteSpace(settings.LastOpenedFolderPath) &&
                               Directory.Exists(settings.LastOpenedFolderPath)
@@ -3368,6 +3365,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             if (!_isInsightCodeSuggestionsEnabled)
                 CloseCompletionWindow();
+            else
+                QueueInsightRefresh(InsightRefreshKind.Suggestions);
             SaveSettings();
         }
     }
@@ -3388,7 +3387,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else
             {
-                QueueInsightRefresh();
+                QueueInsightRefresh(InsightRefreshKind.DeadCode);
             }
             RefreshInactiveSplitPaneDiagnostics();
             SaveSettings();
@@ -3413,11 +3412,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!_isInsightErrorDetectionEnabled)
             {
                 ClearAllPaneErrorHighlights();
-                QueueInsightRefresh();
+                QueueInsightRefresh(InsightRefreshKind.Errors);
             }
             else
             {
-                QueueInsightRefresh();
+                QueueInsightRefresh(InsightRefreshKind.Errors);
             }
             RefreshInactiveSplitPaneDiagnostics();
             SaveSettings();
@@ -5374,6 +5373,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hash = MixSignatureInt(scanVersion, lspRevision);
         hash = MixSignatureText(hash, scanPath);
         hash = MixSignatureText(hash, scanExtension);
+        hash = MixSignatureInt(hash, RuntimeHelpers.GetHashCode(EditorSession.Document));
         return MixSignatureInt(hash, _dismissedDiagnosticsRevision);
     }
 
@@ -5382,6 +5382,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var hash = MixSignatureInt(scanVersion, _dismissedDiagnosticsRevision);
         hash = MixSignatureText(hash, scanPath);
         hash = MixSignatureText(hash, scanExtension);
+        hash = MixSignatureInt(hash, RuntimeHelpers.GetHashCode(EditorSession.Document));
         return MixSignatureText(hash, folderPath);
     }
 
@@ -5585,9 +5586,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var cancellation = BeginInactiveTabDiagnosticScan(tab);
         var cancellationToken = cancellation.Token;
+        var scanGateAcquired = false;
         try
         {
             await Task.Delay(180, cancellationToken);
+            await _inactiveTabDiagnosticsGate.WaitAsync(cancellationToken);
+            scanGateAcquired = true;
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentInactiveTabDiagnosticScan(tab, cancellation) || ReferenceEquals(tab, ActiveEditorTab)) return;
             var filePath = tab.Path;
             var folderPath = _currentFolderPath;
             var document = tab.Document;
@@ -5662,7 +5668,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"Inactive-tab diagnostics failed for '{tab.Path}'", ex); }
-        finally { FinishInactiveTabDiagnosticScan(tab, cancellation); }
+        finally
+        {
+            if (scanGateAcquired) _inactiveTabDiagnosticsGate.Release();
+            FinishInactiveTabDiagnosticScan(tab, cancellation);
+        }
     }
 
     private static readonly string[] EditorStateRefreshProperties =
@@ -6115,19 +6125,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ? activeTab.Path
                 : null,
             SplitEditorVisible = IsSplitScreenVisible,
-            PrimaryPaneTabPath = IsSplitScreenVisible && _editorPane.ActiveTab is { IsUntitled: false } primaryPaneTab
-                ? primaryPaneTab.Path
+            PrimaryPaneTabPath = IsSplitScreenVisible && _editorPane.ActiveTab is { } primaryPaneTab
+                ? primaryPaneTab.IsUntitled ? $"untitled:{_editorPane.Tabs.IndexOf(primaryPaneTab)}:{primaryPaneTab.DisplayName}" : primaryPaneTab.Path
                 : null,
-            SecondaryPaneTabPath = IsSplitScreenVisible && _secondaryEditorPane.ActiveTab is { IsUntitled: false } secondaryPaneTab
-                ? secondaryPaneTab.Path
+            SecondaryPaneTabPath = IsSplitScreenVisible && _secondaryEditorPane.ActiveTab is { } secondaryPaneTab
+                ? secondaryPaneTab.IsUntitled ? $"untitled:{_secondaryEditorPane.Tabs.IndexOf(secondaryPaneTab)}:{secondaryPaneTab.DisplayName}" : secondaryPaneTab.Path
                 : null,
             PrimaryPaneTabPaths = IsSplitScreenVisible
-                ? _editorPane.Tabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
-                    .Select(tab => tab.Path!).Distinct(FileSystemPaths.Comparer).ToList()
+                ? _editorPane.Tabs.Select((tab, index) => tab.IsUntitled
+                    ? $"untitled:{index}:{tab.DisplayName}"
+                    : tab.Path).Where(path => !string.IsNullOrWhiteSpace(path)).Cast<string>().ToList()
                 : [],
             SecondaryPaneTabPaths = IsSplitScreenVisible
-                ? _secondaryEditorPane.Tabs.Where(tab => !tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path))
-                    .Select(tab => tab.Path!).Distinct(FileSystemPaths.Comparer).ToList()
+                ? _secondaryEditorPane.Tabs.Select((tab, index) => tab.IsUntitled
+                    ? $"untitled:{index}:{tab.DisplayName}"
+                    : tab.Path).Where(path => !string.IsNullOrWhiteSpace(path)).Cast<string>().ToList()
                 : [],
             ActivePaneIsSecondary = IsSplitScreenVisible && ReferenceEquals(_activeEditorPane, _secondaryEditorPane),
             LastOpenedFolderPath = _currentFolderPath,
@@ -8858,6 +8870,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void CloseOtherTabsButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: EditorTab pivotTab }) return;
+        var pane = GetPaneForContextMenu(sender);
+        if (pane is not null)
+        {
+            foreach (var tab in pane.Tabs.Where(tab => !ReferenceEquals(tab, pivotTab)).ToArray())
+                if (!await RequestClosePaneTabAsync(pane, tab)) break;
+            return;
+        }
         var others = OpenTabs.Where(t => !ReferenceEquals(t, pivotTab)).ToList();
         foreach (var tab in others)
         {
@@ -8868,6 +8887,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private async void CloseAllTabsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        var pane = GetPaneForContextMenu(sender);
+        if (pane is not null)
+        {
+            foreach (var tab in pane.Tabs.ToArray())
+                if (!await RequestClosePaneTabAsync(pane, tab)) break;
+            return;
+        }
         var all = OpenTabs.ToList();
         foreach (var tab in all)
         {
@@ -10518,7 +10544,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var dismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal);
         var filteredSpans = dismissedDiagnostics.Count == 0
             ? rawSpans
-            : await Dispatcher.UIThread.InvokeAsync(() => FilterDismissedErrorSpans(rawSpans, document, scanPath, dismissedDiagnostics));
+            : !string.IsNullOrEmpty(text)
+                ? await EditorBackgroundWork.RunAsync(token => FilterDismissedErrorSpans(rawSpans, text, scanPath, dismissedDiagnostics, token), scanToken)
+                : await Dispatcher.UIThread.InvokeAsync(() => FilterDismissedErrorSpans(rawSpans, document, scanPath, dismissedDiagnostics));
         var filtered = await Task.Run(() =>
         {
             var index = filteredSpans.Count == 0
@@ -10605,6 +10633,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.ReportSlowStage("diagnostics apply+redraw", applyWatch.ElapsedMilliseconds, 500, () => $"spans={spans.Count} textLen={document.TextLength}");
         RefreshStatusBarDiagnostics();
         _errorHighlightAppliedSignature = signature;
+        _activeEditorPane.InsightCacheSignature = MixSignatureInt(
+            ComputeDeadCodeSignature(scanVersion, scanPath, scanExtension, _currentFolderPath), signature);
     }
 
     private static List<ErrorSpan> FilterDismissedErrorSpans(
@@ -10625,6 +10655,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 lineText = document.GetText(line.Offset, line.Length);
                 lineCache[line.LineNumber] = lineText;
             }
+            if (dismissedDiagnostics.Contains(GetDiagnosticSignature(filePath, lineText, span.Message))) continue;
+            filtered.Add(span);
+        }
+        return filtered;
+    }
+
+    private static List<ErrorSpan> FilterDismissedErrorSpans(
+        List<ErrorSpan> spans,
+        string text,
+        string? filePath,
+        HashSet<string> dismissedDiagnostics,
+        CancellationToken cancellationToken)
+    {
+        if (dismissedDiagnostics.Count == 0 || spans.Count == 0) return spans;
+        var lineStarts = LspPath.GetLineStarts(text);
+        var lineCache = new Dictionary<int, string>();
+        var filtered = new List<ErrorSpan>(spans.Count);
+        foreach (var span in spans)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var lineText = GetDiagnosticLineText(text, lineStarts, span.StartOffset, lineCache);
             if (dismissedDiagnostics.Contains(GetDiagnosticSignature(filePath, lineText, span.Message))) continue;
             filtered.Add(span);
         }

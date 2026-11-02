@@ -418,6 +418,18 @@ internal static class KodoDiagnostics
         catch { }
     }
 
+    public static void ReportRuntimeMetric(string metric, string value, string? detail = null)
+    {
+        try
+        {
+            var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] METRIC  {metric}={value}{(string.IsNullOrWhiteSpace(detail) ? string.Empty : " " + detail)}";
+            EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
+            PushBreadcrumb(line);
+            WritePayloadToDisk(line, MainLogFilePath);
+        }
+        catch { }
+    }
+
     public static void LogDebug(string message, Exception? exception = null)
     {
         try

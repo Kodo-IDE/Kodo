@@ -26,6 +26,7 @@ public partial class MainWindow
 {
     private ITextSourceVersion? _lastHandledEditorTextVersion;
     private TextDocument? _lastHandledEditorTextDocument;
+    private readonly HashSet<(TextDocument Document, ITextSourceVersion Version)> _handledPaneTextChanges = [];
 
     private TextEditor EditorTextBox => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
         ? SecondaryEditorTextBox
@@ -264,7 +265,7 @@ public partial class MainWindow
             HideDiagnosticPopup();
             UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
             QueueLspViewportRefresh();
-        }, RoutingStrategies.Bubble);
+        }, RoutingStrategies.Bubble, handledEventsToo: true);
         editor.TextChanged += EditorTextBox_OnPaneTextChanged;
         InitializeTabDragDrop();
     }
@@ -286,11 +287,13 @@ public partial class MainWindow
         if (editor.Document is null)
             return;
         var version = editor.Document.Version;
-        if (ReferenceEquals(_lastHandledEditorTextDocument, editor.Document) &&
-            ReferenceEquals(_lastHandledEditorTextVersion, version))
+        if (!_handledPaneTextChanges.Add((editor.Document, version)))
             return;
         _lastHandledEditorTextDocument = editor.Document;
         _lastHandledEditorTextVersion = version;
+        if (_handledPaneTextChanges.Count > 128)
+            _handledPaneTextChanges.RemoveWhere(item => !ReferenceEquals(item.Document, PrimaryEditorTextBox.Document) &&
+                !ReferenceEquals(item.Document, SecondaryEditorTextBox.Document));
         if (ReferenceEquals(otherEditor.Document, editor.Document))
         {
             SavePaneViewState(_editorPane, PrimaryEditorTextBox);
@@ -298,6 +301,12 @@ public partial class MainWindow
         }
         if (ReferenceEquals(EditorSession.Document, editor.Document))
             EditorSession.NotifyDocumentChanged();
+        else if (ReferenceEquals(otherEditor.Document, editor.Document))
+        {
+            var sharedTab = OpenTabs.FirstOrDefault(tab => ReferenceEquals(tab.Document, editor.Document));
+            if (sharedTab is not null && ReferenceEquals(EditorTextBox.Document, editor.Document))
+                sharedTab.IsDirty = true;
+        }
         EditorTextBox_OnTextChanged(editor, e);
     }
 
@@ -360,14 +369,13 @@ public partial class MainWindow
         InvalidateLspPanePresentation(pane);
 
         ScheduleEditorMinimapRefresh();
-        if (!ReferenceEquals(_activeEditorPane, pane) || ReferenceEquals(EditorSession.Document, document))
+        if (ReferenceEquals(_activeEditorPane, pane) || ReferenceEquals(EditorSession.Document, document))
             return;
 
         var filePath = EditorSession.FilePath;
         EditorSession.Dispose();
         _editorSession = new EditorDocumentSession(document);
         EditorSession.SetFilePath(filePath);
-        TrackLspDocument(document);
         _foldingMargin = null;
         ResetLspFoldingState();
     }
@@ -422,6 +430,8 @@ public partial class MainWindow
         ClosePendingAutoCloseUndoGroup();
         SaveCurrentEditorStateIntoTab();
         _activeEditorPane = pane;
+        _deadCodeAppliedSignature = -1;
+        _errorHighlightAppliedSignature = -1;
         _editorHorizontalScrollViewerResolved = false;
         _editorHorizontalScrollViewer = null;
         var nextTab = pane.ActiveTab;
@@ -559,28 +569,38 @@ public partial class MainWindow
 
     private void MoveTabToActivePane(EditorTab tab, bool preserveOtherPaneMembership)
     {
-        if (!IsSplitScreenVisible || preserveOtherPaneMembership)
+        if (!IsSplitScreenVisible)
             return;
 
         var pane = _activeEditorPane;
         var otherPane = ReferenceEquals(pane, _editorPane) ? _secondaryEditorPane : _editorPane;
-        if (pane.Tabs.Contains(tab))
+        if (preserveOtherPaneMembership)
+        {
+            AddTabToPane(pane, tab);
             return;
+        }
 
         var otherIndex = otherPane.Tabs.IndexOf(tab);
-        if (otherIndex < 0)
-            return;
-
-        if (!EditorPaneState.MoveTabMembership(otherPane, pane, tab))
-            return;
+        var wasInOtherPane = otherIndex >= 0;
+        if (!pane.Tabs.Contains(tab))
+            AddTabToPane(pane, tab);
+        if (wasInOtherPane)
+            otherPane.Tabs.Remove(tab);
         if (ReferenceEquals(otherPane.ActiveTab, tab))
         {
-            var replacementIndex = Math.Min(otherIndex, otherPane.Tabs.Count - 1);
-            var replacementTab = otherPane.Tabs.Count > 0 ? otherPane.Tabs[replacementIndex] : null;
+            var replacementTab = otherPane.Tabs.Count > 0
+                ? otherPane.Tabs[Math.Min(Math.Max(0, otherIndex), otherPane.Tabs.Count - 1)]
+                : null;
+            if (replacementTab is null && ActiveEditorTab is { } fallback && !ReferenceEquals(fallback, tab))
+            {
+                otherPane.AddTab(fallback);
+                replacementTab = fallback;
+            }
             SetOtherPaneTab(otherPane, replacementTab);
         }
 
         SaveSettings();
+        CollapseEmptyEditorPanes();
     }
 
     private void AssignUnownedOpenTabsToPane(EditorPaneState pane)
@@ -656,10 +676,23 @@ public partial class MainWindow
         await RequestClosePaneTabAsync(pane, tab);
     }
 
+    private EditorPaneState? GetPaneForContextMenu(object? sender)
+    {
+        if (sender is not MenuItem menuItem || menuItem.GetVisualAncestors().OfType<ContextMenu>().FirstOrDefault() is not { } menu)
+            return null;
+        var target = menu.PlacementTarget as Visual;
+        if (target is null)
+            return null;
+        var ancestors = target.GetSelfAndVisualAncestors();
+        if (ancestors.Any(control => ReferenceEquals(control, SecondaryEditorPane)))
+            return _secondaryEditorPane;
+        return ancestors.Any(control => ReferenceEquals(control, PrimaryEditorPane)) ? _editorPane : null;
+    }
+
     private async void CloseOtherPaneTabsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: EditorTab pivotTab }) return;
-        var pane = _activeEditorPane;
+        var pane = GetPaneForContextMenu(sender) ?? _activeEditorPane;
         foreach (var tab in pane.Tabs.Where(tab => !ReferenceEquals(tab, pivotTab)).ToArray())
         {
             if (!await RequestClosePaneTabAsync(pane, tab))
@@ -670,7 +703,7 @@ public partial class MainWindow
     private async void ClosePaneTabsToRightMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem { Tag: EditorTab pivotTab }) return;
-        var pane = _activeEditorPane;
+        var pane = GetPaneForContextMenu(sender) ?? _activeEditorPane;
         var pivotIndex = pane.Tabs.IndexOf(pivotTab);
         if (pivotIndex < 0) return;
         foreach (var tab in pane.Tabs.Skip(pivotIndex + 1).ToArray())
@@ -682,7 +715,7 @@ public partial class MainWindow
 
     private async void CloseAllPaneTabsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
-        var pane = _activeEditorPane;
+        var pane = GetPaneForContextMenu(sender) ?? _activeEditorPane;
         foreach (var tab in pane.Tabs.ToArray())
         {
             if (!await RequestClosePaneTabAsync(pane, tab))
@@ -692,6 +725,8 @@ public partial class MainWindow
 
     private void ClearAllPaneDiagnosticHighlights()
     {
+        _editorPane.InsightCacheSignature = -1;
+        _secondaryEditorPane.InsightCacheSignature = -1;
         _deadCodeAppliedSignature = -1;
         _errorHighlightAppliedSignature = -1;
         var emptyDead = Array.Empty<DeadCodeSpan>();
@@ -754,6 +789,13 @@ public partial class MainWindow
     private void ClearPaneDiagnosticHighlights(TextEditor editor, bool redraw = true)
     {
         var secondary = ReferenceEquals(editor, SecondaryEditorTextBox);
+        var clearedPane = secondary ? _secondaryEditorPane : _editorPane;
+        clearedPane.InsightCacheSignature = -1;
+        if (ReferenceEquals(clearedPane, _activeEditorPane))
+        {
+            _deadCodeAppliedSignature = -1;
+            _errorHighlightAppliedSignature = -1;
+        }
         var deadRenderer = secondary ? _secondaryDeadCodeHighlightRenderer : _primaryDeadCodeHighlightRenderer;
         var deadTransformer = secondary ? _secondaryDeadCodeTextBrightener : _primaryDeadCodeTextBrightener;
         var errorRenderer = secondary ? _secondaryErrorHighlightRenderer : _primaryErrorHighlightRenderer;
@@ -826,8 +868,6 @@ public partial class MainWindow
             : primaryTab;
         if (secondaryTab is not null)
             CopyMissingPaneViewState(secondaryTab, _editorPane, _secondaryEditorPane);
-        if (useSecondaryTabOverride && secondaryTab is not null && !ReferenceEquals(secondaryTab, primaryTab))
-            _editorPane.Tabs.Remove(secondaryTab);
         _secondaryEditorPane.ActiveTab = secondaryTab;
         if (secondaryTab is not null)
             AddTabToPane(_secondaryEditorPane, secondaryTab);
@@ -875,6 +915,7 @@ public partial class MainWindow
         OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(IsSplitScreenVisible));
+        RefreshPaneTabSelection();
         QueueLspPresentationRefresh();
         if (secondaryTab is { IsUntitled: false } && !string.IsNullOrWhiteSpace(secondaryTab.Path) &&
             !ReferenceEquals(secondaryTab, ActiveEditorTab))
@@ -890,20 +931,26 @@ public partial class MainWindow
         RestorePaneTabMembership(_secondaryEditorPane, OpenTabs, _startupSecondaryPaneTabPaths);
 
 
-        foreach (var tab in _secondaryEditorPane.Tabs.Where(_editorPane.Tabs.Contains).ToArray())
-            _secondaryEditorPane.Tabs.Remove(tab);
-
         EditorTab? FindTab(string? path) => string.IsNullOrWhiteSpace(path)
             ? null
             : OpenTabs.FirstOrDefault(tab => !tab.IsUntitled && FileSystemPaths.Equals(tab.Path, path));
 
         var activeTab = FindTab(_startupActiveTabPath);
-        var primaryTab = FindTab(_startupPrimaryPaneTabPath) ??
+        var primaryTab = FindPersistedPaneTab(_startupPrimaryPaneTabPath, _editorPane) ?? FindTab(_startupPrimaryPaneTabPath) ??
             (!_startupActivePaneIsSecondary ? activeTab : null) ??
             OpenTabs.FirstOrDefault();
-        var secondaryTab = FindTab(_startupSecondaryPaneTabPath) ??
+        var secondaryTab = FindPersistedPaneTab(_startupSecondaryPaneTabPath, _secondaryEditorPane) ?? FindTab(_startupSecondaryPaneTabPath) ??
             (_startupActivePaneIsSecondary ? activeTab : null) ??
             OpenTabs.FirstOrDefault(tab => !ReferenceEquals(tab, primaryTab));
+        foreach (var tab in OpenTabs)
+        {
+            if (!_editorPane.Tabs.Contains(tab) && !_secondaryEditorPane.Tabs.Contains(tab))
+                _editorPane.AddTab(tab);
+        }
+        if (primaryTab is not null)
+            _editorPane.AddTab(primaryTab);
+        if (secondaryTab is not null)
+            _secondaryEditorPane.AddTab(secondaryTab);
 
         if (primaryTab is not null)
         {
@@ -936,8 +983,24 @@ public partial class MainWindow
     {
         foreach (var path in paths)
         {
-            var tab = openTabs.FirstOrDefault(candidate => !candidate.IsUntitled &&
-                !string.IsNullOrWhiteSpace(candidate.Path) && FileSystemPaths.Equals(candidate.Path, path));
+            EditorTab? tab = null;
+            if (path.StartsWith("untitled:", StringComparison.Ordinal))
+            {
+                var parts = path.Split(':', 3);
+                if (parts.Length == 3 && int.TryParse(parts[1], out var index) && index >= 0 && index < pane.Tabs.Count)
+                {
+                    var candidate = pane.Tabs[index];
+                    if (candidate.IsUntitled && string.Equals(candidate.DisplayName, parts[2], StringComparison.Ordinal))
+                        tab = candidate;
+                }
+                tab ??= openTabs.FirstOrDefault(candidate => candidate.IsUntitled &&
+                    string.Equals(candidate.DisplayName, parts[^1], StringComparison.Ordinal));
+            }
+            else
+            {
+                tab = openTabs.FirstOrDefault(candidate => !candidate.IsUntitled &&
+                    !string.IsNullOrWhiteSpace(candidate.Path) && FileSystemPaths.Equals(candidate.Path, path));
+            }
             if (tab is not null)
                 pane.AddTab(tab);
         }
@@ -1181,6 +1244,21 @@ public partial class MainWindow
         target.HasImageViewState = source.HasImageViewState;
     }
 
+    private EditorTab? FindPersistedPaneTab(string? id, EditorPaneState pane)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return null;
+        if (!id.StartsWith("untitled:", StringComparison.Ordinal))
+            return pane.Tabs.FirstOrDefault(tab => !tab.IsUntitled && FileSystemPaths.Equals(tab.Path, id)) ??
+                OpenTabs.FirstOrDefault(tab => !tab.IsUntitled && FileSystemPaths.Equals(tab.Path, id));
+
+        var parts = id.Split(':', 3);
+        if (parts.Length != 3 || !int.TryParse(parts[1], out var index)) return null;
+        if (index >= 0 && index < pane.Tabs.Count && pane.Tabs[index].IsUntitled &&
+            string.Equals(pane.Tabs[index].DisplayName, parts[2], StringComparison.Ordinal))
+            return pane.Tabs[index];
+        return pane.Tabs.FirstOrDefault(tab => tab.IsUntitled && string.Equals(tab.DisplayName, parts[2], StringComparison.Ordinal));
+    }
+
     private void OpenEditorTabToSide(EditorTab tab, EditorPaneState? sourcePaneOverride = null, bool moveFromSourcePane = false)
     {
         if (!OpenTabs.Contains(tab) || !CanDisplayInEditorPane(tab)) return;
@@ -1208,14 +1286,22 @@ public partial class MainWindow
             AddTabToPane(targetPane, tab);
         }
 
-        if (moveFromSourcePane && splitWasVisible && sourcePane.Tabs.Count == 1 && sourcePane.Tabs.Contains(tab))
+        var sourceWasActive = ReferenceEquals(sourcePane.ActiveTab, tab);
+        if (moveFromSourcePane && splitWasVisible && sourceWasActive && sourcePane.Tabs.Count == 1 && sourcePane.Tabs.Contains(tab))
         {
             var replacement = OpenTabs.FirstOrDefault(candidate =>
                 !ReferenceEquals(candidate, tab) &&
                 CanDisplayInEditorPane(candidate) &&
                 !sourcePane.Tabs.Contains(candidate));
-            if (replacement is not null)
-                SetOtherPaneTab(sourcePane, replacement);
+            if (replacement is null)
+            {
+                if (!ReferenceEquals(targetPane.ActiveTab, tab))
+                    SetOtherPaneTab(targetPane, tab);
+                RemoveTabFromSourcePane(sourcePane, tab);
+                CollapseEmptyEditorPanes();
+                return;
+            }
+            SetOtherPaneTab(sourcePane, replacement);
         }
 
         if (!ReferenceEquals(sourcePane, targetPane))
@@ -1228,6 +1314,7 @@ public partial class MainWindow
 
         if (moveFromSourcePane)
             RemoveTabFromSourcePane(sourcePane, tab);
+        CollapseEmptyEditorPanes();
     }
 
     private void RemoveTabFromSourcePane(EditorPaneState sourcePane, EditorTab tab)
@@ -1258,11 +1345,29 @@ public partial class MainWindow
     private void CollapseEmptyEditorPanes()
     {
         if (IsSplitScreenVisible && (_editorPane.Tabs.Count == 0 || _secondaryEditorPane.Tabs.Count == 0))
+        {
+            var replacement = _editorPane.Tabs.Count > 0
+                ? _editorPane.ActiveTab ?? _editorPane.Tabs[0]
+                : _secondaryEditorPane.ActiveTab ?? _secondaryEditorPane.Tabs.FirstOrDefault();
             CloseSplitEditor();
+            if (replacement is not null && OpenTabs.Contains(replacement) && !ReferenceEquals(ActiveEditorTab, replacement))
+            {
+                if (!ReferenceEquals(_activeEditorPane, _editorPane))
+                    ActivateEditorPane(_editorPane, focusEditor: false);
+                ActivateTab(replacement, focusEditor: false, preserveCurrentState: false);
+            }
+        }
     }
 
     private void FocusEditorPane(EditorPaneState pane)
     {
+        if (!IsSplitScreenVisible && ReferenceEquals(pane, _secondaryEditorPane))
+        {
+            ShowSplitEditor();
+            if (IsSplitScreenVisible)
+                ActivateEditorPane(_secondaryEditorPane);
+            return;
+        }
         if (IsSplitScreenVisible && pane.ActiveTab is not null)
             ActivateEditorPane(pane);
     }
@@ -1545,11 +1650,16 @@ public partial class MainWindow
         else
             GetEditorForPane(targetPane).Focus();
 
-        if (sourceWasActive)
+        if (sourceWasActive && sourcePane is not null)
         {
-            var replacement = sourcePane!.Tabs.Count > 0
-                ? sourcePane!.Tabs[Math.Min(sourceIndex, sourcePane!.Tabs.Count - 1)]
+            var replacement = sourcePane.Tabs.Count > 0
+                ? sourcePane.Tabs[Math.Min(Math.Max(0, sourceIndex), sourcePane.Tabs.Count - 1)]
                 : null;
+            if (replacement is null && ActiveEditorTab is { } fallback && !ReferenceEquals(fallback, tab))
+            {
+                sourcePane.AddTab(fallback);
+                replacement = fallback;
+            }
             SetOtherPaneTab(sourcePane, replacement);
         }
         SaveSettings();

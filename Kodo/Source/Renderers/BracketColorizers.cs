@@ -46,6 +46,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
     private string[] _stringDelimiters = ["\"", "'"];
     private string[] _multiLineStringDelimiters = [];
     private bool _isBatch;
+    private BracketParseConfiguration _parseConfiguration = new("//", "/*", "*/", ["\"", "'"], []);
 
     private sealed record BracketParseConfiguration(
         string CommentLine,
@@ -112,6 +113,12 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
                        extension.Id.IndexOf("batch", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        _parseConfiguration = new BracketParseConfiguration(
+            _commentLine,
+            _commentBlockStart,
+            _commentBlockEnd,
+            _stringDelimiters,
+            _multiLineStringDelimiters);
         InvalidateCache();
     }
 
@@ -159,12 +166,7 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
         }
 
         var textView = CurrentContext.TextView;
-        var configuration = new BracketParseConfiguration(
-            _commentLine,
-            _commentBlockStart,
-            _commentBlockEnd,
-            _stringDelimiters,
-            _multiLineStringDelimiters);
+        var configuration = _parseConfiguration;
         var snapshot = _snapshot.GetOrSchedule(
             document,
             (text, lineCount, token) => BuildSnapshot(text, lineCount, token, configuration),

@@ -64,8 +64,9 @@ internal static class GitProcess
             catch (OperationCanceledException)
             {
                 try { process.Kill(entireProcessTree: true); } catch { }
-                var timeoutOutput = await outputTask.ConfigureAwait(false);
-                var timeoutError = await errorTask.ConfigureAwait(false);
+                try { await process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { }
+                var timeoutOutput = await outputTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                var timeoutError = await errorTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
                 if (cancellationToken.IsCancellationRequested) throw;
                 return new GitResult(-1, timeoutOutput, string.IsNullOrWhiteSpace(timeoutError) ? "Git operation timed out." : timeoutError);
             }

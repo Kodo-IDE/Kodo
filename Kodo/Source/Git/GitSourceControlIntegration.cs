@@ -55,6 +55,7 @@ internal sealed class GitSourceControlIntegration
     private bool _hasHead;
     private bool _hasRemote;
     private int _diffRequest;
+    private int _commitRequest;
 
     private const int CommitHistoryCount = 15;
     private const int DefaultRowLimit = 300;
@@ -300,6 +301,11 @@ internal sealed class GitSourceControlIntegration
 
     private void CloseSourcePanel()
     {
+        if (_fallbackWindow is not null)
+        {
+            try { _fallbackWindow.Close(); } catch { }
+            _fallbackWindow = null;
+        }
         if (_sourcePanel is not null)
         {
             try { _rootGrid?.Children.Remove(_sourcePanel); } catch { }
@@ -307,6 +313,7 @@ internal sealed class GitSourceControlIntegration
         _sourcePanel = null;
         _rootGrid = null;
         ForgetPanelControls();
+        RestoreEditorAfterDiff();
         _panelOpen = false;
         SetActivitySelected(false);
         DisposeThemeSyncs(_dynamicThemeSyncs);
@@ -1226,6 +1233,12 @@ internal sealed class GitSourceControlIntegration
                 _branchName = null;
                 _upstreamStatus = string.Empty;
                 _changes = [];
+                _remotes = [];
+                _commits = [];
+                _stashCount = 0;
+                _hasRemote = false;
+                _hasHead = false;
+                _lastOid = null;
                 UpdatePanel();
                 SetStatus(status.Success ? "Too many changes to display." : FormatGitError(status), fromPoll);
                 return;
@@ -1637,7 +1650,7 @@ internal sealed class GitSourceControlIntegration
                 .OrderByDescending(b => b.IsCurrent).ThenBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
             var localNames = new HashSet<string>(branches.Where(b => !b.IsRemote).Select(b => b.Name), StringComparer.Ordinal);
             var remotes = branches.Where(b => b.IsRemote && Matches(b))
-                .Where(b => !localNames.Contains(b.Name[(b.Name.IndexOf('/') + 1)..]))
+                .Where(b => !localNames.Contains(b.Name.IndexOf('/') >= 0 ? b.Name[(b.Name.IndexOf('/') + 1)..] : b.Name))
                 .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
             if (locals.Count > 0) list.Children.Add(Heading("LOCAL BRANCHES"));
@@ -1932,9 +1945,9 @@ internal sealed class GitSourceControlIntegration
     private async Task ShowCommitAsync(GitCommit commit)
     {
         if (_window is null || _repositoryRoot is null) return;
-        var request = ++_diffRequest;
+        var request = ++_commitRequest;
         var result = await GitProcess.RunAsync(_repositoryRoot, GitCommands.ShowCommit(commit.Hash), TimeSpan.FromSeconds(30), _lifetime?.Token ?? CancellationToken.None);
-        if (request != _diffRequest || _window is null) return;
+        if (request != _commitRequest || _window is null) return;
         var content = result.Success
             ? string.IsNullOrWhiteSpace(result.Output) ? "This commit has no changes to show." : result.Output
             : FormatGitError(result);

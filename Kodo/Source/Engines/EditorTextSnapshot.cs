@@ -196,27 +196,34 @@ internal sealed class EditorTextSnapshot
         var starts = new int[_lineCount];
         var startCount = 1;
         starts[0] = 0;
-        var buffer = new char[32 * 1024];
+        var buffer = ArrayPool<char>.Shared.Rent(32 * 1024);
         using var reader = _source.CreateReader();
         var absoluteOffset = 0;
         var pendingCarriageReturn = false;
         int read;
-        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            for (var i = 0; i < read; i++, absoluteOffset++)
+            while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
             {
-                var current = buffer[i];
-                if (pendingCarriageReturn)
+                cancellationToken.ThrowIfCancellationRequested();
+                for (var i = 0; i < read; i++, absoluteOffset++)
                 {
-                    AddLineStart(current == '\n' ? absoluteOffset + 1 : absoluteOffset);
-                    pendingCarriageReturn = false;
-                    if (current == '\n') continue;
-                }
+                    var current = buffer[i];
+                    if (pendingCarriageReturn)
+                    {
+                        AddLineStart(current == '\n' ? absoluteOffset + 1 : absoluteOffset);
+                        pendingCarriageReturn = false;
+                        if (current == '\n') continue;
+                    }
 
-                if (current == '\r') pendingCarriageReturn = true;
-                else if (current == '\n') AddLineStart(absoluteOffset + 1);
+                    if (current == '\r') pendingCarriageReturn = true;
+                    else if (current == '\n') AddLineStart(absoluteOffset + 1);
+                }
             }
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
         }
 
         cancellationToken.ThrowIfCancellationRequested();

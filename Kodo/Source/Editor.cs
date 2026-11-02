@@ -37,8 +37,10 @@ public partial class MainWindow
     private CancellationTokenSource? _lspPresentationCancellation;
     private bool _editorInsightsRefreshRunning;
     private bool _editorInsightsRefreshPending;
-    private readonly List<EditorNavigationLocation> _editorBackHistory = new();
-    private readonly List<EditorNavigationLocation> _editorForwardHistory = new();
+    private InsightRefreshKind _pendingInsightRefreshKind;
+    private readonly InsightRefreshPolicy _insightRefreshPolicy = new();
+    private readonly List<(EditorPaneState Pane, EditorNavigationLocation Location)> _editorBackHistory = new();
+    private readonly List<(EditorPaneState Pane, EditorNavigationLocation Location)> _editorForwardHistory = new();
     private const int EditorNavigationHistoryLimit = 100;
     private const int LspMaxFoldingsApplied = 4_000;
     private const int LocalInsightSkipThreshold = 80_000;
@@ -59,23 +61,18 @@ public partial class MainWindow
         RefreshState(fullRefresh: _pendingFullStateRefresh);
     }
 
-    private void QueueInsightRefresh()
+    private void QueueInsightRefresh(InsightRefreshKind kind = InsightRefreshKind.All)
     {
+        if (kind == InsightRefreshKind.None) return;
+        _pendingInsightRefreshKind |= kind;
+        _insightRefreshPolicy.RecordEdit(System.Diagnostics.Stopwatch.GetTimestamp());
         var document = EditorTextBox?.Document;
+        var activeLineLength = document is not null && EditorTextBox?.TextArea is { } textArea
+            ? document.GetLineByOffset(Math.Clamp(textArea.Caret.Offset, 0, document.TextLength)).Length
+            : 0;
         var hasLsp = !string.IsNullOrWhiteSpace(_currentFilePath) && ResolveLspExtensionForFile(_currentFilePath) is not null;
-        if (hasLsp)
-        {
-            var delay = document is { } doc && (doc.LineCount >= 50_000 || doc.TextLength >= 1_000_000)
-                ? 900
-                : document is { } mediumDocument && (mediumDocument.LineCount >= 5_000 || mediumDocument.TextLength >= 250_000)
-                    ? 450
-                    : 120;
-            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(delay);
-        }
-        else
-        {
-            _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(750);
-        }
+        _InsightRefreshTimer.Interval = TimeSpan.FromMilliseconds(_insightRefreshPolicy.GetDelayMilliseconds(
+            document?.TextLength ?? 0, document?.LineCount ?? 0, activeLineLength, hasLsp, _pendingInsightRefreshKind));
         _InsightRefreshTimer.Stop();
         _InsightRefreshTimer.Start();
     }
@@ -86,6 +83,7 @@ public partial class MainWindow
         var replacement = new CancellationTokenSource();
         current = replacement;
         try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        try { previous.Dispose(); } catch (ObjectDisposedException) { }
         return replacement;
     }
 
@@ -111,22 +109,25 @@ public partial class MainWindow
             return;
         }
         _editorInsightsRefreshRunning = true;
-        _ = RefreshEditorInsightsSafelyAsync();
+        var requestedKind = _pendingInsightRefreshKind;
+        _pendingInsightRefreshKind = InsightRefreshKind.None;
+        _ = RefreshEditorInsightsSafelyAsync(requestedKind);
     }
 
     private sealed record EditorNavigationLocation(string FilePath, int Offset);
 
     private EditorNavigationLocation? CaptureEditorNavigationLocation()
     {
-        if (EditorTextBox?.Document is null || string.IsNullOrWhiteSpace(_currentFilePath)) return null;
+        if (EditorTextBox?.Document is null || EditorTextBox?.TextArea is null || string.IsNullOrWhiteSpace(_currentFilePath)) return null;
         return new EditorNavigationLocation(_currentFilePath, Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, EditorTextBox.Document.TextLength));
     }
 
     private void RecordEditorNavigation(EditorNavigationLocation? location)
     {
         if (location is null) return;
-        if (_editorBackHistory.Count > 0 && _editorBackHistory[^1] == location) return;
-        _editorBackHistory.Add(location);
+        var entry = (_activeEditorPane, location);
+        if (_editorBackHistory.Count > 0 && _editorBackHistory[^1] == entry) return;
+        _editorBackHistory.Add(entry);
         if (_editorBackHistory.Count > EditorNavigationHistoryLimit)
             _editorBackHistory.RemoveAt(0);
         _editorForwardHistory.Clear();
@@ -137,14 +138,16 @@ public partial class MainWindow
         var source = backwards ? _editorBackHistory : _editorForwardHistory;
         var destination = backwards ? _editorForwardHistory : _editorBackHistory;
         if (source.Count == 0) return;
-        var target = source[^1];
-        var targetPane = _activeEditorPane;
+        var (targetPane, target) = source[^1];
+        if (!IsSplitScreenVisible && ReferenceEquals(targetPane, _secondaryEditorPane))
+            targetPane = _editorPane;
         var current = CaptureEditorNavigationLocation();
         if (current is null) return;
 
         try
         {
-            if (!FileSystemPaths.Equals(_currentFilePath, target.FilePath))
+            var openingIntoPane = !FileSystemPaths.Equals(_currentFilePath, target.FilePath);
+            if (openingIntoPane)
                 await OpenFileFromPathAsync(target.FilePath, targetPane);
 
             var restored = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -153,6 +156,8 @@ public partial class MainWindow
                 var destinationEditor = GetEditorForPane(destinationPane);
                 if (!FileSystemPaths.Equals(destinationPane.ActiveTab?.Path, target.FilePath) || destinationEditor.Document is null)
                     return false;
+                if (!ReferenceEquals(_activeEditorPane, destinationPane))
+                    ActivateEditorPane(destinationPane, focusEditor: false);
                 NavigateTo(AppPage.Editor);
                 destinationEditor.TextArea.Caret.Offset = Math.Clamp(target.Offset, 0, destinationEditor.Document.TextLength);
                 destinationEditor.TextArea.Caret.BringCaretToView();
@@ -161,10 +166,12 @@ public partial class MainWindow
             });
             if (!restored) return;
 
-            if (source.Count == 0 || source[^1] != target) return;
+            if (source.Count == 0 || source[^1].Location != target ||
+                (!openingIntoPane && !ReferenceEquals(source[^1].Pane, targetPane))) return;
             source.RemoveAt(source.Count - 1);
-            if (destination.Count == 0 || destination[^1] != current)
-                destination.Add(current);
+            var currentEntry = (_activeEditorPane, current);
+            if (destination.Count == 0 || destination[^1] != currentEntry)
+                destination.Add(currentEntry);
         }
         catch (Exception ex)
         {
@@ -195,11 +202,14 @@ public partial class MainWindow
         EditorTextBox.Focus();
     }
 
-    private async Task RefreshEditorInsightsSafelyAsync()
+    private async Task RefreshEditorInsightsSafelyAsync(InsightRefreshKind requestedKind)
     {
         try
         {
-            await RefreshEditorInsightsAsync();
+            var refreshWatch = System.Diagnostics.Stopwatch.StartNew();
+            await RefreshEditorInsightsAsync(requestedKind);
+            refreshWatch.Stop();
+            _insightRefreshPolicy.RecordCost(refreshWatch.ElapsedMilliseconds);
         }
         catch (OperationCanceledException)
         {
@@ -214,7 +224,9 @@ public partial class MainWindow
             if (_editorInsightsRefreshPending && IsActive)
             {
                 _editorInsightsRefreshPending = false;
-                QueueInsightRefresh();
+                var pendingKind = _pendingInsightRefreshKind;
+                if (pendingKind == InsightRefreshKind.None) pendingKind = InsightRefreshKind.All;
+                QueueInsightRefresh(pendingKind);
             }
             else
             {
@@ -223,7 +235,7 @@ public partial class MainWindow
         }
     }
 
-    private async Task RefreshEditorInsightsAsync()
+    private async Task RefreshEditorInsightsAsync(InsightRefreshKind requestedKind)
     {
         var document = EditorTextBox?.Document;
         var len = document?.TextLength ?? 0;
@@ -236,21 +248,39 @@ public partial class MainWindow
             LspEnabled && ResolveLspExtensionForFile(_currentFilePath) is not null;
         if (deferLocalAnalysis)
         {
-            await UpdateInsightAsync();
+            if ((requestedKind & InsightRefreshKind.Suggestions) != 0) await UpdateInsightAsync();
             refreshWatch.Stop();
             KodoDiagnostics.ReportSlowStage("editor insight refresh", refreshWatch.ElapsedMilliseconds, 250, $"len={len} LSP completion only=true");
             return;
         }
-        if (errorSignature == _errorHighlightAppliedSignature && deadSignature == _deadCodeAppliedSignature)
+        var paneDiagnosticSignature = MixSignatureInt(errorSignature, deadSignature);
+        if ((requestedKind & InsightRefreshKind.Diagnostics) != 0 && errorSignature == _errorHighlightAppliedSignature && deadSignature == _deadCodeAppliedSignature &&
+            _activeEditorPane.InsightCacheSignature == paneDiagnosticSignature)
         {
-            await UpdateInsightAsync();
+            if ((requestedKind & InsightRefreshKind.Suggestions) != 0) await UpdateInsightAsync();
             refreshWatch.Stop();
             KodoDiagnostics.ReportSlowStage("editor insight refresh", refreshWatch.ElapsedMilliseconds, 250, $"len={len} suggestionsOnly=true");
             return;
         }
-        await Task.WhenAll(UpdateInsightAsync(), UpdateDeadCodeHighlightingAsync(), UpdateErrorHighlightingAsync());
+        var refreshTasks = new List<Task>(3);
+        if ((requestedKind & InsightRefreshKind.Suggestions) != 0) refreshTasks.Add(UpdateInsightAsync());
+        if ((requestedKind & InsightRefreshKind.Errors) != 0) refreshTasks.Add(UpdateErrorHighlightingAsync());
+        if ((requestedKind & InsightRefreshKind.DeadCode) != 0) refreshTasks.Add(UpdateDeadCodeWhenIdleAsync());
+        if (refreshTasks.Count > 0) await Task.WhenAll(refreshTasks);
+        if ((requestedKind & InsightRefreshKind.Diagnostics) == InsightRefreshKind.Diagnostics)
+            _activeEditorPane.InsightCacheSignature = paneDiagnosticSignature;
         refreshWatch.Stop();
         KodoDiagnostics.ReportSlowStage("editor insight refresh", refreshWatch.ElapsedMilliseconds, 250, $"len={len} suggestionsAndDiagnostics=true");
+    }
+
+    private async Task UpdateDeadCodeWhenIdleAsync()
+    {
+        var cancellationToken = EditorSession.RevisionCancellationToken;
+        var idleDelay = _insightRefreshPolicy.GetIdleDelayMilliseconds();
+        if (idleDelay > 0)
+            await Task.Delay(idleDelay, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await UpdateDeadCodeHighlightingAsync();
     }
 
     private async void WordCountRefreshTimer_OnTick(object? sender, EventArgs e)
@@ -1059,7 +1089,7 @@ public partial class MainWindow
             ?? changedPane.ActiveTab;
         var changedFilePath = changedTab is { IsUntitled: false } ? changedTab.Path : null;
         var isActiveDocument = ReferenceEquals(changedEditor, EditorTextBox) &&
-            (ReferenceEquals(EditorSession.Document, changedEditor.Document) || EditorSession.Document is null);
+            ReferenceEquals(EditorSession.Document, changedEditor.Document);
         if (isActiveDocument)
         {
             _lspCompletionCts?.Cancel();
@@ -2191,6 +2221,8 @@ public partial class MainWindow
         RedrawVisibleEditorLines();
         RefreshStatusBarDiagnostics();
         _deadCodeAppliedSignature = signature;
+        _activeEditorPane.InsightCacheSignature = MixSignatureInt(
+            ComputeErrorHighlightSignature(scanVersion, filePath, scanExtension), signature);
     }
 
     private static List<DeadCodeSpan> FilterDismissedDeadCodeSpans(

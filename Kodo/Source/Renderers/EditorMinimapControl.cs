@@ -18,6 +18,7 @@ public sealed class EditorMinimapControl : Control
     private int _viewportTopLine = 1;
     private int _viewportBottomLine = 1;
     private bool _isDragging;
+    private bool _visualUpdatePending;
     private double _dragGrabOffset;
     private TextDocument? _document;
     private ITextSourceVersion? _documentVersion;
@@ -53,6 +54,7 @@ public sealed class EditorMinimapControl : Control
             if (_document is not null) _document.Changed += OnDocumentChanged;
             _documentVersion = null;
             _lineLengths = [];
+            _visualUpdatePending = false;
         }
 
         _lineCount = document?.LineCount ?? 0;
@@ -60,6 +62,7 @@ public sealed class EditorMinimapControl : Control
         {
             _documentVersion = null;
             _lineLengths = [];
+            _visualUpdatePending = false;
             _maximumLineLength = 1;
             Array.Clear(_sampledLengthCounts);
             _viewportTopLine = 1;
@@ -69,7 +72,15 @@ public sealed class EditorMinimapControl : Control
         }
 
         var version = document.Version;
-        if (ReferenceEquals(_documentVersion, version)) return;
+        if (ReferenceEquals(_documentVersion, version))
+        {
+            if (_visualUpdatePending)
+            {
+                _visualUpdatePending = false;
+                InvalidateVisual();
+            }
+            return;
+        }
         _documentVersion = version;
         var sampleCount = Math.Min(MaximumSamples, _lineCount);
         var samples = new int[sampleCount];
@@ -92,6 +103,7 @@ public sealed class EditorMinimapControl : Control
         _maximumLineLength = maximumLineLength;
         _viewportTopLine = Math.Clamp(_viewportTopLine, 1, _lineCount);
         _viewportBottomLine = Math.Clamp(_viewportBottomLine, _viewportTopLine, _lineCount);
+        _visualUpdatePending = false;
         InvalidateVisual();
     }
 
@@ -129,7 +141,7 @@ public sealed class EditorMinimapControl : Control
             }
         }
         _documentVersion = document.Version;
-        InvalidateVisual();
+        _visualUpdatePending = true;
     }
 
     private static int FindSampleIndex(int lineNumber, int lineCount, int sampleCount)

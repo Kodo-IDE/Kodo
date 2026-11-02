@@ -435,6 +435,7 @@ internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 
     public void SetSpans(IReadOnlyList<DeadCodeSpan> spans)
     {
+        if (ReferenceEquals(_spans, spans)) return;
         _spans = spans;
         _spanIndex = SpanOverlapIndex.Build(spans, span => span.StartOffset, span => (long)span.StartOffset + span.Length + 1);
         _candidates.Clear();
@@ -479,6 +480,7 @@ internal sealed class DeadCodeHighlightRenderer : IBackgroundRenderer
 
     public void SetSpans(IReadOnlyList<DeadCodeSpan> spans, SpanOverlapIndex spanIndex)
     {
+        if (ReferenceEquals(_spans, spans) && ReferenceEquals(_spanIndex, spanIndex)) return;
         _spans = spans;
         _spanIndex = spanIndex;
         _candidates.Clear();
@@ -562,6 +564,8 @@ internal sealed class ErrorTextDarkener : DocumentColorizingTransformer
         IReadOnlyList<DeadCodeSpan> deadCodeSpans,
         SpanOverlapIndex deadCodeIndex)
     {
+        if (ReferenceEquals(_errorSpans, errorSpans) && ReferenceEquals(_errorIndex, errorIndex) &&
+            ReferenceEquals(_deadCodeSpans, deadCodeSpans) && ReferenceEquals(_deadCodeIndex, deadCodeIndex)) return;
         _errorSpans = errorSpans;
         _deadCodeSpans = deadCodeSpans;
         _errorIndex = errorIndex;
@@ -627,6 +631,7 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public void SetSpans(IReadOnlyList<ErrorSpan> spans, SpanOverlapIndex spanIndex)
     {
+        if (ReferenceEquals(_spans, spans) && ReferenceEquals(_spanIndex, spanIndex)) return;
         _spans = spans;
         _spanIndex = spanIndex;
         _candidates.Clear();
@@ -637,6 +642,7 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
 
     public void SetDeadCodeSpans(IReadOnlyList<DeadCodeSpan> spans, SpanOverlapIndex spanIndex)
     {
+        if (ReferenceEquals(_deadCodeSpans, spans) && ReferenceEquals(_deadCodeIndex, spanIndex)) return;
         _deadCodeSpans = spans;
         _deadCodeIndex = spanIndex;
     }

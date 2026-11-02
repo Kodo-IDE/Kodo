@@ -31,6 +31,7 @@ public partial class MainWindow
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _lspDocumentSyncGates = new(FileSystemPaths.Comparer);
     private readonly Dictionary<string, List<LspRawDiagnostic>> _lspDiagnostics = new(FileSystemPaths.Comparer);
     private readonly object _inactiveTabDiagnosticsLock = new();
+    private readonly SemaphoreSlim _inactiveTabDiagnosticsGate = new(1, 1);
     private readonly Dictionary<EditorTab, CancellationTokenSource> _inactiveTabDiagnosticScans = new();
 
     private CancellationTokenSource BeginInactiveTabDiagnosticScan(EditorTab tab)
@@ -594,7 +595,14 @@ public partial class MainWindow
         }
         foreach (var path in pending)
         {
-            await LspSyncDocumentAsync(path, static () => string.Empty).ConfigureAwait(false);
+            try
+            {
+                await LspSyncDocumentAsync(path, static () => string.Empty).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug($"LSP sync failed for '{path}'", ex);
+            }
         }
     }
 
@@ -1239,7 +1247,21 @@ public partial class MainWindow
                 ? await openSnapshot.GetTextAsync().ConfigureAwait(false)
                 : documentSource.Text;
             if (text is null) return;
-            await LspNotifyDidOpenAsync(filePath, text).ConfigureAwait(false);
+            var reopenGate = GetLspDocumentSyncGate(filePath);
+            await reopenGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                lock (_lspOpenLock) isOpen = _lspOpenDocuments.Contains(filePath);
+                if (!isOpen)
+                {
+                    await LspNotifyDidOpenCoreAsync(filePath, text).ConfigureAwait(false);
+                    return;
+                }
+            }
+            finally
+            {
+                reopenGate.Release();
+            }
             return;
         }
         if (!force)
@@ -1516,6 +1538,8 @@ public partial class MainWindow
                     _lspOpenDocuments.Remove(path);
                     _lspDocumentVersions.Remove(path);
                     _lspPendingChanges.Remove(path);
+                    _lspPendingTexts.Remove(path);
+                    _lspPendingOpens.Remove(path);
                     _lspFullSyncChangedAt.Remove(path);
                 }
             }

@@ -422,6 +422,8 @@ internal sealed class EditorPaneState
 
     public EditorTab? ActiveTab { get; set; }
 
+    public long InsightCacheSignature { get; set; } = -1;
+
     public Bitmap? ImagePreview { get; set; }
 
     public EditorTab? ImagePreviewTab { get; set; }
