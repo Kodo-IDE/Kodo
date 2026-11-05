@@ -7224,6 +7224,64 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
                                 <StackPanel Spacing="8"
                                             IsVisible="{Binding IsDeveloperOptionsVisible}">
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,2,0,0"
+                                               Text="DIAGNOSTICS &amp; LOGGING" />
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <CheckBox IsChecked="{Binding IsRuntimeMetricsLoggingEnabled, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Every 10 seconds, append a GC/heap/thread sample line (METRIC) to kodo.log. Useful for tracking memory pressure over time." />
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Runtime Metrics Logging (10s GC/heap/thread samples)" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="SLOW stage log threshold (ms, 0 = built-in):" />
+                                        <TextBox Width="120"
+                                                 VerticalAlignment="Center"
+                                                 Background="{Binding ButtonBrush}"
+                                                 Foreground="{Binding PrimaryTextBrush}"
+                                                 BorderBrush="{Binding SurfaceBorderBrush}"
+                                                 BorderThickness="1"
+                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                 Padding="4,6"
+                                                 TextAlignment="Center"
+                                                 HorizontalContentAlignment="Center"
+                                                 VerticalContentAlignment="Center"
+                                                 Text="{Binding SlowStageThresholdText, Mode=TwoWay}"
+                                                 PlaceholderText="0"
+                                                 ToolTip.Tip="Replace the built-in thresholds for SLOW log entries. Lower to catch sluggishness, raise to silence noise. Defaults are around 250 ms." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="chrome"
+                                                Click="CopyDiagnosticInfoButton_OnClick"
+                                                ToolTip.Tip="Copy version, OS, runtime, and log paths to the clipboard"
+                                                Content="Copy Diagnostic Info" />
+                                        <Button Classes="chrome"
+                                                Click="ClearLogsButton_OnClick"
+                                                ToolTip.Tip="Delete kodo.log and crash.log from disk"
+                                                Content="Clear Logs" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="FOLDERS" />
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
                                                Text="Open folders Kodo uses on this machine for logs, settings, and extensions." />
@@ -7241,25 +7299,46 @@ ToolTip.Tip="Increase font size" />
                                                 ToolTip.Tip="Open the local Extensions folder used for .kox files"
                                                 Content="Open Extensions Folder" />
                                     </StackPanel>
-
-                                    <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
-                                        <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
-                                                  VerticalAlignment="Center"
-                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
-                                    </StackPanel>
-
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
-                                                Click="CopyDiagnosticInfoButton_OnClick"
-                                                ToolTip.Tip="Copy version, OS, runtime, and log paths to the clipboard"
-                                                Content="Copy Diagnostic Info" />
+                                                Click="OpenPluginCacheFolderButton_OnClick"
+                                                ToolTip.Tip="Open the folder where loaded plugins are unpacked"
+                                                Content="Open Plugin Cache Folder" />
                                         <Button Classes="chrome"
-                                                Click="ClearLogsButton_OnClick"
-                                                ToolTip.Tip="Delete kodo.log and crash.log from disk"
-                                                Content="Clear Logs" />
+                                                Click="OpenDataFolderButton_OnClick"
+                                                ToolTip.Tip="Open Kodo's root data folder (contains settings, caches, and theme data)"
+                                                Content="Open Data Folder" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="SETTINGS DATA" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="chrome"
+                                                Click="BackupSettingsDataButton_OnClick"
+                                                ToolTip.Tip="Regenerate the settings backup file (kodosettings.json.bak) from your current settings"
+                                                Content="Backup Settings Data" />
+                                        <Button Classes="chrome red"
+                                                Click="RestoreSettingsBackupButton_OnClick"
+                                                ToolTip.Tip="Overwrite your current settings with the backup file and relaunch Kodo"
+                                                Content="Restore Settings Backup"
+                                                IsVisible="{Binding HasSettingsBackupFile}" />
+                                        <Button Classes="chrome"
+                                                Click="ResetTutorialPromptsButton_OnClick"
+                                                ToolTip.Tip="Make the first-launch tutorial, data tracking prompt, and privacy policy prompt show again"
+                                                Content="Reset Tutorial &amp; Consent Prompts" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="MAINTENANCE" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="ClearCacheButton_OnClick"
                                                 ToolTip.Tip="Clear all cache files from disk"
@@ -7267,7 +7346,7 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
                                                 ToolTip.Tip="{Binding PersonalizationExportTooltip}"
-                                                Content="Export Kodo Data" />            
+                                                Content="Export Kodo Data" />
                                         <Button Classes="chrome red"
                                                 Click="ResetKodoButton_OnClick"
                                                 ToolTip.Tip="Reset all Kodo data and relaunch the application"

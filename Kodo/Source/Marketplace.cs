@@ -466,13 +466,9 @@ public partial class MainWindow
 
         if (pending.Count == 0)
         {
-            if (marketplaceIconMap.Count > 0)
-            {
-                var count = 0;
-                try { count = await Dispatcher.UIThread.InvokeAsync(() => LoadedExtensions.Count, DispatcherPriority.Background); } catch { }
-                if (count == 0)
-                    Dispatcher.UIThread.Post(() => { _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap); }, DispatcherPriority.Background);
-            }
+            // No matching installed extensions exist yet. The icon map can be
+            // retained and refreshed when extensions finish loading; polling
+            // here needlessly wakes the dispatcher on profiles with none.
             return;
         }
 

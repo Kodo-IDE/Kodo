@@ -25,6 +25,108 @@ internal static class SettingsStore
 
     private static string WritePath => KodoPaths.SettingsWritePath(FileName);
 
+    /// <summary>Path of the on-disk settings backup (kodosettings.json.bak).</summary>
+    public static string BackupFilePath => WritePath + ".bak";
+
+    /// <summary>True when a settings backup file exists on disk.</summary>
+    public static bool HasBackup => File.Exists(BackupFilePath);
+
+    /// <summary>
+    /// Regenerates the settings backup file from the settings currently saved on
+    /// disk. When no settings file exists yet, backs up the in-memory snapshot
+    /// instead so a restore can still recover the current state.
+    /// </summary>
+    public static void CreateBackup()
+    {
+        var writePath = WritePath;
+        var dir = Path.GetDirectoryName(writePath);
+        if (string.IsNullOrWhiteSpace(dir))
+            throw new IOException("Settings path has no parent directory.");
+
+        EnsurePrivateDirectory(dir);
+
+        var payload = File.Exists(writePath)
+            ? File.ReadAllText(writePath)
+            : JsonSerializer.Serialize(Current);
+        if (string.IsNullOrWhiteSpace(payload))
+            payload = JsonSerializer.Serialize(new AppSettings());
+
+        try { JsonNode.Parse(payload); }
+        catch (Exception ex) when (ex is JsonException)
+        {
+            throw new InvalidDataException("Current settings are not readable JSON; refusing to back up a corrupt file.", ex);
+        }
+
+        AtomicWrite(BackupFilePath, payload);
+    }
+
+    /// <summary>
+    /// Overwrites the current settings file with the on-disk backup after
+    /// validating it, and clears the in-memory snapshot so the next
+    /// <see cref="Current"/> read reloads from disk.
+    /// </summary>
+    public static void RestoreBackup()
+    {
+        var backupPath = BackupFilePath;
+        if (!File.Exists(backupPath))
+            throw new FileNotFoundException("No settings backup file exists.", backupPath);
+
+        var payload = File.ReadAllText(backupPath);
+        if (string.IsNullOrWhiteSpace(payload))
+            throw new InvalidDataException("Settings backup file is empty.");
+
+        try { JsonNode.Parse(payload); }
+        catch (Exception ex) when (ex is JsonException)
+        {
+            throw new InvalidDataException("Settings backup is not readable JSON.", ex);
+        }
+
+        AtomicWrite(WritePath, payload);
+        Reload();
+    }
+
+    /// <summary>Atomic write (temp file + move) used for settings and backup files.</summary>
+    private static void AtomicWrite(string path, string payload)
+    {
+        var dir = Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(dir))
+            throw new IOException("Settings path has no parent directory.");
+
+        EnsurePrivateDirectory(dir);
+
+        var tempPath = path + ".tmp";
+        try
+        {
+            if (File.Exists(tempPath))
+                EnsurePrivateFile(tempPath);
+
+            var options = new FileStreamOptions
+            {
+                Mode = FileMode.Create,
+                Access = FileAccess.Write,
+                Share = FileShare.None,
+            };
+            if (!OperatingSystem.IsWindows())
+                options.UnixCreateMode = PrivateFileMode;
+
+            using (var stream = new FileStream(tempPath, options))
+            using (var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), 1024, leaveOpen: true))
+            {
+                writer.Write(payload);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+
+            EnsurePrivateFile(tempPath);
+            File.Move(tempPath, path, overwrite: true);
+            EnsurePrivateFile(path);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
+    }
+
     public static AppSettings Current
     {
         get

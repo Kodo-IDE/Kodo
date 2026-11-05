@@ -78,6 +78,15 @@ internal sealed class AppSettings
     public bool HasRespondedToDataTrackingPrompt { get; set; }
     public bool HasAcceptedPrivacyPolicy { get; set; }
 
+    // Developer options.
+    public bool RuntimeMetricsLoggingEnabled { get; set; }
+
+    /// <summary>
+    /// Global replacement threshold (ms) for SLOW-stage log reports.
+    /// 0 (default) keeps the built-in per-stage thresholds.
+    /// </summary>
+    public int SlowStageReportThresholdMs { get; set; }
+
     public Dictionary<string, string> CustomRunCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> CustomBuildCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> CompilerOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);

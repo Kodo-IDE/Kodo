@@ -200,6 +200,12 @@ internal static class KodoDiagnostics
 
     public static bool VerboseLoggingEnabled { get; set; }
 
+    /// <summary>
+    /// When set above 0, replaces the built-in per-stage threshold for SLOW
+    /// log reports (lower it to spot sluggishness, raise it to silence noise).
+    /// </summary>
+    public static long SlowStageThresholdOverrideMs;
+
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
     private static readonly object _breadcrumbLock = new();
@@ -406,6 +412,8 @@ internal static class KodoDiagnostics
 
     public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, Func<string?> detailFactory)
     {
+        if (SlowStageThresholdOverrideMs > 0)
+            thresholdMs = SlowStageThresholdOverrideMs;
         if (elapsedMs < thresholdMs) return;
         try
         {

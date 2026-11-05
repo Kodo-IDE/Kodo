@@ -161,7 +161,11 @@ public sealed class KodoPluginLoadContext : AssemblyLoadContext
 public sealed class LoadedKodoPlugin
 {
     public required string Version { get; init; }
-    public required KodoPluginLoadContext LoadContext { get; init; }
+    /// <summary>
+    /// Null for built-in plugin replacements that run host-side and never
+    /// load an external assembly.
+    /// </summary>
+    public required KodoPluginLoadContext? LoadContext { get; init; }
     public required List<IKodoPlugin> Instances { get; init; }
     public List<KodoPluginCommandRegistry> CommandRegistries { get; init; } = [];
 }

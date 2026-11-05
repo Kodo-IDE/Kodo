@@ -554,13 +554,13 @@ public partial class MainWindow
             var content = await Task.Run(async () => new FileInfo(tab.Path).Length > MaxFileSizeForFullLoad
                 ? await ReadLargeFileAsync(tab.Path, tab.Encoding).ConfigureAwait(false)
                 : await File.ReadAllTextAsync(tab.Path, tab.Encoding).ConfigureAwait(false)).ConfigureAwait(false);
+            var document = await Task.Run(() => new AvaloniaEdit.Document.TextDocument(content)).ConfigureAwait(false);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (!IsSplitScreenVisible || !ReferenceEquals(pane.ActiveTab, tab) ||
                     !ReferenceEquals(editor.Document, observedDocument) ||
                     (tab.Document is not null && tab.Document.TextLength > 0))
                     return;
-                var document = new AvaloniaEdit.Document.TextDocument(content);
                 tab.Document = document;
                 tab.Content = string.Empty;
                 AssignPaneDocumentWithoutDirtyTracking(editor, document);

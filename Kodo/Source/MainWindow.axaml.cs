@@ -303,6 +303,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _suppressDirtyTracking;
     private bool _suppressSettingsSave;
     private bool _isDeveloperOptionsVisible;
+    private bool _hasSettingsBackupFile;
+    private bool _isRuntimeMetricsLoggingEnabled;
+    private string _slowStageThresholdText = "0";
+    private DispatcherTimer? _runtimeMetricsTimer;
     private bool _isVerboseLoggingEnabled;
     private int _tabSize = 4;
     private bool _insertSpaces = true;
@@ -1046,6 +1050,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
         _isGitSourceControlEnabled = settings.GitSourceControlEnabled;
         _isDeveloperOptionsVisible = settings.DeveloperOptionsVisible;
+        _hasSettingsBackupFile = SettingsStore.HasBackup;
+        _isRuntimeMetricsLoggingEnabled = settings.RuntimeMetricsLoggingEnabled;
+        _slowStageThresholdText = Math.Max(0, settings.SlowStageReportThresholdMs).ToString();
+        KodoDiagnostics.SlowStageThresholdOverrideMs = Math.Max(0, settings.SlowStageReportThresholdMs);
+        _runtimeMetricsTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
+        _runtimeMetricsTimer.Tick += (_, _) => WriteRuntimeMetricsSnapshot();
+        if (_isRuntimeMetricsLoggingEnabled) _runtimeMetricsTimer.Start();
         _isVerboseLoggingEnabled = settings.VerboseLoggingEnabled;
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
@@ -3128,9 +3139,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isDeveloperOptionsVisible == value) return;
             _isDeveloperOptionsVisible = value;
             OnPropertyChanged();
+            RefreshSettingsBackupState();
             SaveSettings();
         }
     }
+
+    public bool HasSettingsBackupFile
+    {
+        get => _hasSettingsBackupFile;
+        private set
+        {
+            if (_hasSettingsBackupFile == value) return;
+            _hasSettingsBackupFile = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Re-evaluated whenever the Dev Options page is shown so the Restore
+    // Settings Backup button appears/disappears with the .bak file on disk.
+    private void RefreshSettingsBackupState() => HasSettingsBackupFile = SettingsStore.HasBackup;
 
     public bool IsVerboseLoggingEnabled
     {
@@ -3158,6 +3185,64 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public bool HasDeveloperOptionsStatus => !string.IsNullOrWhiteSpace(DeveloperOptionsStatusText);
+
+    public bool IsRuntimeMetricsLoggingEnabled
+    {
+        get => _isRuntimeMetricsLoggingEnabled;
+        set
+        {
+            if (_isRuntimeMetricsLoggingEnabled == value) return;
+            _isRuntimeMetricsLoggingEnabled = value;
+            OnPropertyChanged();
+            if (_runtimeMetricsTimer is not null)
+            {
+                if (value)
+                {
+                    _runtimeMetricsTimer.Start();
+                    WriteRuntimeMetricsSnapshot(); // one sample immediately so the log shows it kicked in
+                }
+                else
+                    _runtimeMetricsTimer.Stop();
+            }
+            SaveSettings();
+        }
+    }
+
+    public string SlowStageThresholdText
+    {
+        get => _slowStageThresholdText;
+        set
+        {
+            if (_slowStageThresholdText == value) return;
+            _slowStageThresholdText = value;
+            OnPropertyChanged();
+
+            if (!long.TryParse(value.Trim(), out var parsed) || parsed < 0)
+            {
+                DeveloperOptionsStatusText = "Slow stage threshold must be a whole number of milliseconds (0 = use built-in thresholds).";
+                return;
+            }
+
+            KodoDiagnostics.SlowStageThresholdOverrideMs = parsed;
+            SaveSettings();
+        }
+    }
+
+    private void WriteRuntimeMetricsSnapshot()
+    {
+        if (!_isRuntimeMetricsLoggingEnabled) return;
+        try
+        {
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            var heapMb = GC.GetTotalMemory(forceFullCollection: false) / (1024 * 1024);
+            var wsMb = process.WorkingSet64 / (1024 * 1024);
+            KodoDiagnostics.ReportRuntimeMetric(
+                "gc-heap-mb",
+                heapMb.ToString(),
+                $"ws-mb={wsMb} gen0={GC.CollectionCount(0)} gen1={GC.CollectionCount(1)} gen2={GC.CollectionCount(2)} threads={ThreadPool.ThreadCount}");
+        }
+        catch { }
+    }
 
     public string MainLogFilePath => KodoDiagnostics.MainLogFilePath;
 
@@ -6072,6 +6157,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
             GitSourceControlEnabled = IsGitSourceControlEnabled,
             DeveloperOptionsVisible = IsDeveloperOptionsVisible,
+            RuntimeMetricsLoggingEnabled = IsRuntimeMetricsLoggingEnabled,
+            SlowStageReportThresholdMs = int.TryParse(SlowStageThresholdText.Trim(), out var slowStageThresholdMs) && slowStageThresholdMs > 0
+                ? slowStageThresholdMs : 0,
             VerboseLoggingEnabled = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
             WordWrapEnabled = IsWordWrapEnabled,
@@ -6329,6 +6417,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }).ToArray();
 
                     var results = await Task.WhenAll(readTasks);
+                    var restoredDocuments = await Task.WhenAll(results.Select(async result =>
+                        (result.path, document: result.path is null || result.isCorrupted || IsImagePreviewFile(result.path)
+                            ? null
+                            : await Task.Run(() => new TextDocument(result.content)).ConfigureAwait(false))));
 
                     EditorTab? tabToActivate = null;
                     await Dispatcher.UIThread.InvokeAsync(() =>
@@ -6340,10 +6432,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                             if (OpenTabs.Any(t => !t.IsUntitled && FileSystemPaths.Equals(t.Path, result.path)))
                                 continue;
 
-                            var restoredDocument = CreateStartupRestoredDocument(
-                                result.content,
-                                result.isCorrupted,
-                                IsImagePreviewFile(result.path));
+                            var restoredDocument = restoredDocuments.FirstOrDefault(item => FileSystemPaths.Equals(item.path, result.path)).document;
                             var tab = new EditorTab(result.path, Path.GetFileName(result.path), string.Empty, lineEnding: result.lineEnding)
                             {
                                 Encoding = result.encoding,
@@ -7112,6 +7201,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorPaneState? expectedPane = null,
         EditorTab? expectedTab = null)
     {
+        // TextDocument indexes every line while it is created. Keep that work
+        // off the dispatcher for large files, then install the finished document.
+        var document = await Task.Run(() => new TextDocument(content)).ConfigureAwait(false);
         var dispatchQueuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -7119,7 +7211,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 (expectedPane is not null && !ReferenceEquals(_activeEditorPane, expectedPane)) ||
                 (expectedPane is not null && expectedTab is not null &&
                     !ReferenceEquals(expectedPane.ActiveTab, expectedTab))) return;
-            SetEditorContent(new TextDocument(content));
+            SetEditorContent(document);
         }, DispatcherPriority.Normal);
         KodoDiagnostics.ReportSlowStage(
             "editor document install dispatch",
@@ -8590,6 +8682,63 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void OpenPluginCacheFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = KodoPaths.PluginCacheDir;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Open plugin cache folder", ex);
+        }
+    }
+
+    private async void OpenDataFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var path = KodoPaths.DataRoot;
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            await ShowWarningDialogAsync("Open data folder", ex);
+        }
+    }
+
+    private async void ResetTutorialPromptsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Reset tutorial and consent prompts?",
+            "This re-enables the first-launch tutorial, data tracking prompt, and privacy policy prompt on next use. This can't be undone.",
+            confirmLabel: "Reset",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        _hasCompletedTutorial = false;
+        _hasRespondedToDataTrackingPrompt = false;
+        _hasAcceptedPrivacyPolicy = false;
+        SaveSettings();
+        DeveloperOptionsStatusText = "Tutorial and consent prompts will show again.";
+    }
+
     private void OpenLatestReleaseButton_OnClick(object? sender, RoutedEventArgs e) =>
         OpenUrl(LatestReleaseUrl);
 
@@ -8628,6 +8777,72 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             DeveloperOptionsStatusText = $"Could not copy diagnostic info: {ex.Message}";
         }
+    }
+
+    private void BackupSettingsDataButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SettingsStore.CreateBackup();
+            RefreshSettingsBackupState();
+            DeveloperOptionsStatusText = $"Settings backed up to {Path.GetFileName(SettingsStore.BackupFilePath)}.";
+        }
+        catch (Exception ex)
+        {
+            DeveloperOptionsStatusText = $"Could not back up settings: {ex.Message}";
+            KodoDiagnostics.LogWarning("MainWindow.BackupSettingsDataButton", ex, "Settings backup failed");
+        }
+    }
+
+    private async void RestoreSettingsBackupButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Restore settings backup?",
+            "This overwrites your current settings with the last backup (kodosettings.json.bak) and relaunches Kodo. Your current settings are not backed up first. This can't be undone.",
+            confirmLabel: "Restore",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        try
+        {
+            SettingsStore.RestoreBackup();
+        }
+        catch (Exception ex)
+        {
+            DeveloperOptionsStatusText = $"Could not restore settings backup: {ex.Message}";
+            KodoDiagnostics.LogWarning("MainWindow.RestoreSettingsBackupButton", ex, "Settings backup restore failed");
+            return;
+        }
+
+        // Settings are applied inline in the MainWindow constructor, so a
+        // in-place re-apply is impractical — relaunch like Reset Kodo does.
+        _isConfirmedClose = true;
+        _suppressSettingsSave = true;
+        _settingsSaveDebounceTimer.Stop();
+
+        var exeFileName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            exePath = Path.Combine(AppContext.BaseDirectory, exeFileName);
+        if (File.Exists(exePath))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exePath,
+                    UseShellExecute = true,
+                });
+                Environment.Exit(0);
+            }
+            catch { }
+        }
+
+        // Relaunch failed — tell the user the restore still succeeded.
+        _isConfirmedClose = false;
+        _suppressSettingsSave = false;
+        DeveloperOptionsStatusText = "Backup restored. Relaunch Kodo manually to load it.";
     }
 
     private async void ClearLogsButton_OnClick(object? sender, RoutedEventArgs e)
