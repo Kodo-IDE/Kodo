@@ -1,4 +1,3 @@
-
 // Licensed under the GNU GPL-v3.0
 using Avalonia.Media;
 using Avalonia.Media.Imaging;

@@ -22,8 +22,6 @@ internal static class UpdateService
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions TransactionJsonOptions = new() { PropertyNameCaseInsensitive = true, WriteIndented = false };
 
-
-
     internal static bool IsDevelopmentBuild =>
         KodoDiagnostics.AppVersion.Trim().TrimStart('v', 'V')
             .EndsWith("-DEV", StringComparison.OrdinalIgnoreCase);

@@ -1,5 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-
 using Kodo.Editor;
 using Kodo.Models;
 using System;

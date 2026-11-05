@@ -466,9 +466,7 @@ public partial class MainWindow
 
         if (pending.Count == 0)
         {
-            // No matching installed extensions exist yet. The icon map can be
-            // retained and refreshed when extensions finish loading; polling
-            // here needlessly wakes the dispatcher on profiles with none.
+
             return;
         }
 

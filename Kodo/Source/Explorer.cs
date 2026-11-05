@@ -136,9 +136,6 @@ public partial class MainWindow
         var tab = ActiveEditorTab;
         var document = EditorTextBox.Document;
 
-
-
-
         if (OpenTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Document, document)) is { } ownerTab &&
             !ReferenceEquals(ownerTab, tab))
         {
@@ -497,9 +494,6 @@ public partial class MainWindow
         var editor = ReferenceEquals(pane, _secondaryEditorPane)
             ? SecondaryEditorTextBox
             : PrimaryEditorTextBox;
-
-
-
 
         if (pane.ActiveTab is { } currentActive && ReferenceEquals(editor.Document, currentActive.Document))
             SavePaneViewState(pane, editor);

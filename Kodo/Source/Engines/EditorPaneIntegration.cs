@@ -124,7 +124,6 @@ public partial class MainWindow
             if (!ReferenceEquals(pane.ActiveTab, tab))
             {
 
-
                 if (ReferenceEquals(pane.PendingImageScrollRestoreTab, tab))
                     pane.PendingImageScrollRestoreTab = null;
                 return;
@@ -440,7 +439,6 @@ public partial class MainWindow
         RefreshPanePreviewState(pane);
         RestorePaneImageScrollOffset(pane, pane.ActiveTab);
 
-
         if (nextTab is not null)
             nextTab.IsSelected = true;
 
@@ -452,8 +450,6 @@ public partial class MainWindow
             _isDirty = nextTab.IsDirty;
             _currentLineEnding = nextTab.LineEnding;
             _currentFileEncoding = nextTab.Encoding;
-
-
 
             SetFileCorrupted(_corruptedTabs.Contains(nextTab));
             if (!nextTab.IsUntitled && !IsImagePreviewFile(nextTab.Path))
@@ -930,7 +926,6 @@ public partial class MainWindow
         RestorePaneTabMembership(_editorPane, OpenTabs, _startupPrimaryPaneTabPaths);
         RestorePaneTabMembership(_secondaryEditorPane, OpenTabs, _startupSecondaryPaneTabPaths);
 
-
         EditorTab? FindTab(string? path) => string.IsNullOrWhiteSpace(path)
             ? null
             : OpenTabs.FirstOrDefault(tab => !tab.IsUntitled && FileSystemPaths.Equals(tab.Path, path));
@@ -964,8 +959,6 @@ public partial class MainWindow
                 await SetEditorTabContentSafelyAsync(primaryTab, activationVersion, _editorPane);
             await EnsurePaneDocumentHasContentAsync(_editorPane, primaryTab);
         }
-
-
 
         ShowSplitEditor(secondaryTab, useSecondaryTabOverride: true);
         if (secondaryTab is not null && !ReferenceEquals(_secondaryEditorPane.ActiveTab, secondaryTab))
@@ -1279,7 +1272,6 @@ public partial class MainWindow
             ? _editorPane
             : _secondaryEditorPane;
 
-
         if (!splitWasVisible)
         {
             targetPane.Tabs.Clear();
@@ -1394,8 +1386,6 @@ public partial class MainWindow
 
     private void SecondaryEditorPane_OnPointerPressed(object? sender, RoutedEventArgs e)
     {
-
-
 
         if (IsSplitScreenVisible)
             ActivateEditorPane(_secondaryEditorPane, focusEditor: false);

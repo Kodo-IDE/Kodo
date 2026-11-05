@@ -925,7 +925,6 @@ public partial class MainWindow
             }
         }
 
-
         if (manifest.TryGetProperty("externalTools", out var tools) && tools.ValueKind == JsonValueKind.Array)
         {
             foreach (var tool in tools.EnumerateArray())

@@ -1553,7 +1553,6 @@ public partial class MainWindow
             return true;
         });
 
-
         if (!committed && diskCommit.WrittenFiles.Count > 0)
         {
             var rollbackSucceeded = await RollbackClosedWorkspaceEditsAsync(diskCommit.WrittenFiles).ConfigureAwait(false);
@@ -1726,7 +1725,6 @@ public partial class MainWindow
         }
         return new List<(int Start, int End, string NewText)> { (prefix, originalEnd, updated[prefix..updatedEnd]) };
     }
-
 
     private Popup? _codeActionPopup;
 

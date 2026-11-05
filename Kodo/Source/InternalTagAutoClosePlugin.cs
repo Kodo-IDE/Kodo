@@ -1,47 +1,28 @@
 // Licensed under the GNU GPL-v3.0
-// Built-in replacement for the "TagAutoClose" language plugin.
-//
-// The HTML, XML, XAML, and CSS language .kox packages ship a compiled
-// languagePlugin "TagAutoClose.dll" whose OnLoad self-posts a full
-// visual-tree walk back onto the dispatcher at Background priority until it
-// finds a TextEditor named "EditorTextBox". That editor name no longer
-// exists (the editors are "PrimaryEditorTextBox"/"SecondaryEditorTextBox"
-// since the split-editor work), so the match never succeeds, the posting
-// never stops, and with extensions installed the UI thread burns ~85% of a
-// core while idling (benchmarks/README.md, finding #6).
-//
-// KodoPlugins.LoadLanguagePlugin substitutes this built-in implementation
-// whenever an extension declares TagAutoClose.dll, so the buggy external
-// DLL is never loaded and upstream package refreshes cannot reintroduce
-// the spin. The auto-close behavior below is a faithful reconstruction of
-// the external plugin (decompiled and verified identical across v2.0.0 and
-// v2.1.0) with the hooking replaced by a single visual-tree pass plus a
-// short, spaced, bounded catch-up timer - never a self-reposting walk.
-
+using Avalonia;
+using Avalonia.Input;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using AvaloniaEdit;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Editing;
+using Kodo;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Avalonia;
-using Avalonia.Input;
-using Avalonia.Threading;
-using AvaloniaEdit;
-using AvaloniaEdit.Document;
-using AvaloniaEdit.Editing;
-using Avalonia.VisualTree;
-using Kodo;
-using Kodo.Models;
 
 namespace Kodo;
 
 public sealed class InternalTagAutoClosePlugin : IKodoPlugin
 {
-    /// <summary>Language-plugin file name whose load triggers this built-in.</summary>
+
     public const string ExternalFileName = "TagAutoClose.dll";
 
     private const string PrimaryEditorName = "PrimaryEditorTextBox";
     private const string SecondaryEditorName = "SecondaryEditorTextBox";
-    private const int HookCatchUpTicks = 60;   // 60 × 500 ms = min(30 s) of catch-up, then give up
+    private const int HookCatchUpTicks = 60;
 
     private static readonly HashSet<string> HtmlVoidElements = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -73,16 +54,10 @@ public sealed class InternalTagAutoClosePlugin : IKodoPlugin
         _extension = null;
     }
 
-    // ── Hooking ──────────────────────────────────────────────────────────
-
     private void HookEditors()
     {
         if (_window is null) return;
 
-        // The editor controls are declared statically in MainWindow.axaml, so
-        // one tree walk normally suffices. If content has not been attached
-        // yet (the extension scan can run before the window lays out), a
-        // bounded 500 ms catch-up timer finishes the job and stops.
         _primary = FindEditor(_window, PrimaryEditorName);
         _secondary = FindEditor(_window, SecondaryEditorName);
         if (_primary is not null || _secondary is not null)
@@ -140,7 +115,7 @@ public sealed class InternalTagAutoClosePlugin : IKodoPlugin
     private void Attach(TextEditor? editor)
     {
         if (editor is null || editor.TextArea is null) return;
-        editor.TextArea.TextEntered -= OnTextEntered;   // idempotent by design
+        editor.TextArea.TextEntered -= OnTextEntered;
         editor.TextArea.TextEntered += OnTextEntered;
     }
 
@@ -172,8 +147,6 @@ public sealed class InternalTagAutoClosePlugin : IKodoPlugin
             return null;
         }
     }
-
-    // ── Auto-close behavior (faithful to the external plugin) ────────────
 
     private void OnTextEntered(object? sender, TextInputEventArgs e)
     {

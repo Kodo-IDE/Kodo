@@ -236,17 +236,6 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(ext.LanguagePluginFolderPath) || string.IsNullOrWhiteSpace(ext.LanguagePluginAssemblyFileName))
             return;
 
-        // TagAutoClose.dll ships compiled-only inside the HTML/XML/XAML/CSS
-        // language .kox packages. Its OnLoad self-posts a full visual-tree
-        // walk at Background priority until it finds a TextEditor named
-        // "EditorTextBox" — a name that no longer exists in MainWindow.axaml
-        // (the editors are "PrimaryEditorTextBox"/"SecondaryEditorTextBox"
-        // since the split-editor work). The match never succeeds, so it
-        // re-posts forever and burns ~85% of one core at idle with
-        // extensions installed (benchmarks/README.md, finding #6).
-        // Substitute the built-in, fixed implementation below instead of
-        // loading the external DLL, so extension reinstalls or updates
-        // cannot reintroduce the spin.
         if (string.Equals(ext.LanguagePluginAssemblyFileName, InternalTagAutoClosePlugin.ExternalFileName, StringComparison.OrdinalIgnoreCase))
         {
             LoadInternalTagAutoClose(ext);

@@ -415,7 +415,6 @@ public sealed class InsightEngine
         else freq[word] = nv;
     }
 
-
     private static string BuildMaskedDocument(string documentText, LoadedExtension? extension)
     {
         if (string.IsNullOrEmpty(documentText))

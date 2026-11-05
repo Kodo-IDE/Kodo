@@ -6,7 +6,6 @@ using System.Text;
 
 namespace GitSourceControl;
 
-
 internal sealed record GitChange(string Path, char IndexStatus, char WorktreeStatus, string? OriginalPath = null)
 {
     public bool IsUntracked => IndexStatus == '?' && WorktreeStatus == '?';
@@ -231,7 +230,6 @@ internal static class GitCommands
             ? ["diff", "--cached", "--no-ext-diff", "--no-color", "--", .. change.Pathspecs]
             : ["diff", "--no-ext-diff", "--no-color", "--", .. change.Pathspecs];
     }
-
 
     public static List<GitBranch> ParseBranches(string output)
     {

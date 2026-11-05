@@ -619,7 +619,6 @@ public partial class MainWindow
         var isCurrentFile = FileSystemPaths.Equals(filePath, _currentFilePath);
         if (isCurrentFile && EditorTextBox?.Document is null) return;
 
-
         if (!isCurrentFile &&
             OpenTabs.FirstOrDefault(tab => !tab.IsUntitled && FileSystemPaths.Equals(tab.Path, filePath)) is null)
             return;
@@ -1229,8 +1228,6 @@ public partial class MainWindow
             var documentSource = await Dispatcher.UIThread.InvokeAsync(() =>
             {
 
-
-
                 if (FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is { } activeDocument)
                 {
                     var ownerTab = OpenTabs.FirstOrDefault(tab => FileSystemPaths.Equals(tab.Path, filePath));
@@ -1310,7 +1307,6 @@ public partial class MainWindow
                 if (FileSystemPaths.Equals(_currentFilePath, filePath))
                 {
                     var ownerTab = OpenTabs.FirstOrDefault(tab => FileSystemPaths.Equals(tab.Path, filePath));
-
 
                     if (ownerTab is null || ReferenceEquals(ownerTab.Document, EditorTextBox?.Document))
                         activeDocument = EditorTextBox?.Document;
@@ -2644,7 +2640,6 @@ public partial class MainWindow
             {
                 if (FileSystemPaths.Equals(_currentFilePath, filePath) && EditorTextBox?.Document is { } activeDocument)
                     return (Snapshot: (EditorTextSnapshot?)EditorTextSnapshotStore.GetSnapshot(activeDocument), Document: (AvaloniaEdit.Document.TextDocument?)activeDocument, Version: _insightDocVersion, DocumentVersion: activeDocument.Version, IsActive: true, InactivePane: (EditorPaneState?)null);
-
 
                 var inactivePane = ReferenceEquals(_activeEditorPane, _secondaryEditorPane) ? _editorPane : _secondaryEditorPane;
                 if (IsSplitScreenVisible &&

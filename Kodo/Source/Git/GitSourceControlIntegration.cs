@@ -250,7 +250,6 @@ internal sealed class GitSourceControlIntegration
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool HostIsActiveCore() => _window?.IsActive ?? true;
 
-
     internal void ToggleSourcePanelFromHost() => ToggleSourcePanel();
 
     private void ToggleSourcePanel()
@@ -1132,7 +1131,6 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-
     private async Task RefreshRepositoryAsync(bool fromPoll = false)
     {
         if (_window is null || !_panelOpen) return;
@@ -1846,7 +1844,6 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-
     private sealed class GitDiffLineColorizer : DocumentColorizingTransformer
     {
         private static readonly MethodInfo? SetTextRunPropertiesMethod =
@@ -2099,7 +2096,6 @@ internal sealed class GitSourceControlIntegration
             _editorTextBeforeDiffReadOnly = null;
         }
     }
-
 
     private Button CreateIconButton(string text, string tip, Func<Task> action)
     {

@@ -270,7 +270,6 @@ public partial class MainWindow
         SyncLayout();
         overlay.SizeChanged += (_, _) => SyncLayout();
 
-
         card.AddHandler(InputElement.PointerPressedEvent, (_, _) => _commandPaletteSearchBox?.Focus(), RoutingStrategies.Bubble);
 
         AddHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed, RoutingStrategies.Tunnel);
@@ -477,8 +476,6 @@ public partial class MainWindow
             ShowCommandPalette(prefix: "> Indentation:");
     }
 
-
-
     private static QuickAccessFile CreateQuickAccessFile(string path, string? root, bool? insideRoot = null)
     {
         var inside = insideRoot ?? (!string.IsNullOrWhiteSpace(root) && IsPathInsideDirectory(path, root));
@@ -600,8 +597,6 @@ public partial class MainWindow
         _quickAccessRecentEntries.RemoveAll(entry => FileSystemPaths.Equals(entry.Path, path));
     }
 
-
-
     private static bool IsFuzzySubsequence(string text, string term)
     {
         var termIndex = 0;
@@ -699,8 +694,6 @@ public partial class MainWindow
         }
         return matched;
     }
-
-
 
     private async Task OpenPaletteFileAsync(string path, int line = 0, int column = 1)
     {
@@ -1569,8 +1562,6 @@ public partial class MainWindow
         return ordered.Take(PaletteMaxResults * 2).Select(item => item.Command).ToList();
     }
 
-
-
     private void RefreshCommandPaletteResults()
     {
         if (_commandPaletteList is null || _commandPaletteSearchBox is null) return;
@@ -1885,8 +1876,6 @@ public partial class MainWindow
         }
     }
 
-
-
     private void CommandPaletteSearch_OnKeyDown(object? sender, KeyEventArgs e)
     {
         if (_commandPaletteOverlay is not { IsVisible: true }) return;
@@ -1968,7 +1957,6 @@ public partial class MainWindow
                 if (_recentPaletteCommands.Count > PaletteMaxRecentCommands)
                     _recentPaletteCommands.RemoveRange(PaletteMaxRecentCommands, _recentPaletteCommands.Count - PaletteMaxRecentCommands);
             }
-
 
             DismissCommandPalette(restoreFocus: false);
             ReleasePaletteFocus();

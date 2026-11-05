@@ -1,4 +1,5 @@
 <!-- Licensed under the GNU GPL-v3.0 -->
+
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -687,7 +688,6 @@
             <Setter Property="Opacity" Value="0.55" />
         </Style>
 
-
         <Style Selector="ListBox.searchresults Button.groupheader">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -858,7 +858,6 @@
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
 
-
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
             <Setter Property="Background" Value="{Binding #RootWindow.CardBrush}" />
@@ -896,7 +895,6 @@
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
-
         <Style Selector="ScrollViewer">
             <Setter Property="AllowAutoHide" Value="True" />
             <Setter Property="IsScrollChainingEnabled" Value="True" />
@@ -907,7 +905,6 @@
             <Setter Property="AllowAutoHide" Value="True" />
         </Style>
     </Window.Styles>
-
 
     <Grid ColumnDefinitions="60,Auto,Auto,*" RowDefinitions="Auto,*">
 
@@ -2663,7 +2660,6 @@
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="Auto,*">
 
-
                         <Border Grid.Row="0"
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -2700,7 +2696,6 @@
                                                        Text="🎂" />
                                         </StackPanel>
 
-
                                         <StackPanel Spacing="6">
                                             <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
                                                      HorizontalAlignment="Left"
@@ -2721,7 +2716,6 @@
 
                                         </StackPanel>
                                     </StackPanel>
-
 
                                     <Border Grid.Column="1"
                                             Background="{Binding WindowBackgroundBrush}"
@@ -2746,7 +2740,6 @@
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="32,28,32,36" Spacing="16">
-
 
                             <Border Padding="18,16"
                                     Background="{Binding CardBrush}"
@@ -2779,7 +2772,6 @@
                                             Content="Resume" />
                                 </Grid>
                             </Border>
-
 
                             <ItemsControl ItemsSource="{Binding PinnedRecentFiles}"
                                           IsVisible="{Binding HasPinnedRecentFiles}">
@@ -2943,9 +2935,6 @@
                                                         Content="Clear" />
                                             </Grid>
 
-
-
-
                                             <StackPanel Grid.Row="1"
                                                         IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
@@ -3092,7 +3081,6 @@
                                             Spacing="16"
                                             VerticalAlignment="Top">
 
-
                                     <Border Padding="16,14"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3204,7 +3192,6 @@
                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <Grid RowDefinitions="Auto,*">
 
-
                                             <Border Grid.Row="0"
                                                     BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="0,0,0,1"
@@ -3272,7 +3259,6 @@
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>
-
 
                                             <Border Grid.Row="1"
                                                     Padding="20,14"
@@ -3366,7 +3352,6 @@
                                                     </Grid>
                                                 </Panel>
                                             </Border>
-
 
                                             <Border Grid.Row="1"
                                                     Padding="16,14"
@@ -4046,7 +4031,6 @@
                 </Border>
             </Grid>
 
-
             <Border Classes="searchpanel" x:Name="SearchPanelBorder"
                     IsVisible="{Binding IsSearchPanelActive}"
                     HorizontalAlignment="Right"
@@ -4076,7 +4060,6 @@
                             </Viewbox>
                         </Button>
                     </Grid>
-
 
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
                         <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Margin="0,0,10,0" VerticalAlignment="Center">
@@ -4222,7 +4205,6 @@
                     </Grid>
                 </Border>
 
-
                 <Grid Grid.Row="1"
                       IsVisible="{Binding IsTutorialWelcomeStep}">
                     <StackPanel Spacing="0"
@@ -4294,7 +4276,6 @@
                         </StackPanel>
                     </StackPanel>
                 </Grid>
-
 
                 <Grid Grid.Row="1"
                       IsVisible="{Binding IsNotTutorialWelcomeStep}"
@@ -4372,7 +4353,6 @@
 
                             </StackPanel>
 
-
                                 <StackPanel IsVisible="{Binding IsTutorialSetupStep}" Spacing="28">
 
                                     <StackPanel Spacing="6">
@@ -4392,7 +4372,6 @@
                                     </StackPanel>
 
                                     <Grid ColumnDefinitions="*,1,*" ColumnSpacing="0">
-
 
                                         <StackPanel Grid.Column="0" Spacing="24" Margin="0,0,32,0">
 
@@ -4487,7 +4466,6 @@
                                                     </Button>
                                                 </WrapPanel>
 
-
                                                 <StackPanel Spacing="8" IsVisible="{Binding HasThemeExtensions}">
                                                     <TextBlock FontSize="11"
                                                                FontWeight="SemiBold"
@@ -4503,7 +4481,6 @@
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                                 <StackPanel Spacing="6">
-
 
                                                                     <Button Classes="chrome groupheader"
                                                                             Click="ThemeGroupHeader_OnClick"
@@ -4840,7 +4817,6 @@
                                         </StackPanel>
                                     </Border>
 
-
                                     <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4881,7 +4857,6 @@
                         </Border>
 
                         <StackPanel Grid.Column="1" Spacing="16">
-
 
                             <Border IsVisible="{Binding IsNotTutorialSetupStep}"
                                     Background="{Binding CardBrush}"
@@ -5733,7 +5708,6 @@
                                                     </StackPanel>
                                                 </Grid>
 
-
                                                 <TextBlock Grid.Row="2"
                                                            FontSize="12"
                                                            Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -6193,7 +6167,6 @@
                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                 <StackPanel Spacing="6">
-
 
                                                     <Button Classes="chrome groupheader"
                                                             Click="ThemeGroupHeader_OnClick"
@@ -7756,7 +7729,6 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </StackPanel>
 
-
                         <Border IsVisible="{Binding IsReleaseNotesSectionVisible}"
                                 Background="{Binding WindowBackgroundBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -7812,7 +7784,6 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
-
 
                         <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                 Background="{Binding ButtonBrush}"

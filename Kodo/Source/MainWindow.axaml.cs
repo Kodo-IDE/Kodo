@@ -849,8 +849,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (Math.Abs(_imageZoomLevel - clamped) < 0.001) return;
             _imageZoomLevel = clamped;
 
-
-
             if (_activeEditorPane.ActiveTab is { } activeImageTab &&
                 ReferenceEquals(_activeEditorPane.ImagePreviewTab, activeImageTab) &&
                 _activeEditorPane.ImagePreview is not null)
@@ -988,7 +986,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) =>
         {
             HideDiagnosticPopup();
-
 
             UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
             QueueLspViewportRefresh();
@@ -3155,8 +3152,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    // Re-evaluated whenever the Dev Options page is shown so the Restore
-    // Settings Backup button appears/disappears with the .bak file on disk.
     private void RefreshSettingsBackupState() => HasSettingsBackupFile = SettingsStore.HasBackup;
 
     public bool IsVerboseLoggingEnabled
@@ -3199,7 +3194,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 if (value)
                 {
                     _runtimeMetricsTimer.Start();
-                    WriteRuntimeMetricsSnapshot(); // one sample immediately so the log shows it kicked in
+                    WriteRuntimeMetricsSnapshot();
                 }
                 else
                     _runtimeMetricsTimer.Stop();
@@ -7201,8 +7196,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorPaneState? expectedPane = null,
         EditorTab? expectedTab = null)
     {
-        // TextDocument indexes every line while it is created. Keep that work
-        // off the dispatcher for large files, then install the finished document.
+
         var document = await Task.Run(() => new TextDocument(content)).ConfigureAwait(false);
         var dispatchQueuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         await Dispatcher.UIThread.InvokeAsync(() =>
@@ -8815,8 +8809,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
-        // Settings are applied inline in the MainWindow constructor, so a
-        // in-place re-apply is impractical — relaunch like Reset Kodo does.
         _isConfirmedClose = true;
         _suppressSettingsSave = true;
         _settingsSaveDebounceTimer.Stop();
@@ -8839,7 +8831,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             catch { }
         }
 
-        // Relaunch failed — tell the user the restore still succeeded.
         _isConfirmedClose = false;
         _suppressSettingsSave = false;
         DeveloperOptionsStatusText = "Backup restored. Relaunch Kodo manually to load it.";
@@ -9163,10 +9154,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         var originalActiveTab = ActiveEditorTab;
 
-
-
-
-
         var ownershipSnapshot = tabs.Where(t => t.IsDirty)
             .Select(t => (tab: t, inPrimary: _editorPane.Tabs.Contains(t), inSecondary: _secondaryEditorPane.Tabs.Contains(t)))
             .ToList();
@@ -9182,7 +9169,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     break;
 
                 case UnsavedTabAction.Save:
-
 
                     if (!ReferenceEquals(tab, ActiveEditorTab))
                         ActivateTab(tab, focusEditor: false, preserveOtherPaneMembership: true);

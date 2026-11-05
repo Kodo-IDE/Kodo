@@ -1,5 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-
 using Kodo.HotfixShared;
 using System;
 using System.Collections.Generic;

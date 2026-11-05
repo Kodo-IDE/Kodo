@@ -25,17 +25,10 @@ internal static class SettingsStore
 
     private static string WritePath => KodoPaths.SettingsWritePath(FileName);
 
-    /// <summary>Path of the on-disk settings backup (kodosettings.json.bak).</summary>
     public static string BackupFilePath => WritePath + ".bak";
 
-    /// <summary>True when a settings backup file exists on disk.</summary>
     public static bool HasBackup => File.Exists(BackupFilePath);
 
-    /// <summary>
-    /// Regenerates the settings backup file from the settings currently saved on
-    /// disk. When no settings file exists yet, backs up the in-memory snapshot
-    /// instead so a restore can still recover the current state.
-    /// </summary>
     public static void CreateBackup()
     {
         var writePath = WritePath;
@@ -60,11 +53,6 @@ internal static class SettingsStore
         AtomicWrite(BackupFilePath, payload);
     }
 
-    /// <summary>
-    /// Overwrites the current settings file with the on-disk backup after
-    /// validating it, and clears the in-memory snapshot so the next
-    /// <see cref="Current"/> read reloads from disk.
-    /// </summary>
     public static void RestoreBackup()
     {
         var backupPath = BackupFilePath;
@@ -85,7 +73,6 @@ internal static class SettingsStore
         Reload();
     }
 
-    /// <summary>Atomic write (temp file + move) used for settings and backup files.</summary>
     private static void AtomicWrite(string path, string payload)
     {
         var dir = Path.GetDirectoryName(path);

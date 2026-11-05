@@ -200,10 +200,6 @@ internal static class KodoDiagnostics
 
     public static bool VerboseLoggingEnabled { get; set; }
 
-    /// <summary>
-    /// When set above 0, replaces the built-in per-stage threshold for SLOW
-    /// log reports (lower it to spot sluggishness, raise it to silence noise).
-    /// </summary>
     public static long SlowStageThresholdOverrideMs;
 
     private const int BreadcrumbCapacity = 50;

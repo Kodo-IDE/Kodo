@@ -1083,8 +1083,6 @@ public partial class MainWindow
         if (changedEditor is null) return;
         var changedPane = ReferenceEquals(changedEditor, SecondaryEditorTextBox) ? _secondaryEditorPane : _editorPane;
 
-
-
         var changedTab = OpenTabs.FirstOrDefault(candidate => ReferenceEquals(candidate.Document, changedEditor.Document))
             ?? changedPane.ActiveTab;
         var changedFilePath = changedTab is { IsUntitled: false } ? changedTab.Path : null;
@@ -1593,7 +1591,6 @@ public partial class MainWindow
         if (requestIsCurrent)
             await RunLangRuleFallbackAsync().ConfigureAwait(false);
     }
-
 
     private async void EditorRenameSymbolMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
