@@ -7313,6 +7313,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 ActiveEditorTab.Document = EditorTextBox.Document;
                 ActiveEditorTab.Content = string.Empty;
             }
+            SetEditorSessionDocument(EditorTextBox.Document, _currentFilePath);
             EditorTextBox.TextArea.ClearSelection();
             EditorTextBox.TextArea.Caret.Offset = 0;
             RefreshCurrentFileSyntaxHighlighting();
