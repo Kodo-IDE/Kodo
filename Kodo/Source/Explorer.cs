@@ -276,6 +276,7 @@ public partial class MainWindow
             FocusEditor();
         activateWatch.Stop();
         KodoDiagnostics.ReportSlowStage("tab activation", activateWatch.ElapsedMilliseconds, 1000, $"path={tab.Path} len={tab.Document?.TextLength ?? tab.Content.Length}");
+        RestartAutoSaveTimerIfNeeded();
     }
 
     private async Task SetEditorTabContentSafelyAsync(EditorTab tab, int activationVersion, EditorPaneState activationPane)

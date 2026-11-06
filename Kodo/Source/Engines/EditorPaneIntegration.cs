@@ -516,6 +516,7 @@ public partial class MainWindow
         OnPropertyChanged(nameof(IsDocumentDirty));
         ResetLspFoldingState();
         UpdateCurrentDocumentPresentation();
+        RestartAutoSaveTimerIfNeeded();
         RaiseMany(nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(CanShowSaveActions));
         RefreshState(fullRefresh: true);
         QueueLspPresentationRefresh();

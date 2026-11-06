@@ -6809,6 +6809,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (savingTab is { IsUntitled: false, IsDirty: true, LastKnownLength: > 0 } &&
             savingSnapshot.Source.TextLength == 0 && !IsTabDiskStateChanged(savingTab))
         {
+            if (!allowPromptForPath)
+            {
+                KodoDiagnostics.LogDebug($"Auto-save skipped empty buffer for '{savingPath}' - leaving tab dirty for manual save");
+                return false;
+            }
             var confirmed = await ShowConfirmationDialogAsync(
                 "Save an empty file?",
                 $"The editor buffer for \"{Path.GetFileName(savingPath!)}\" is empty, but the existing file contains {savingTab.LastKnownLength:N0} bytes. Replace the file with an empty file?",
@@ -6860,6 +6865,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 KodoDiagnostics.LogDebug($"Save raced with edits for '{savingPath}' - leaving tab dirty");
                 if (savingTab is not null)
                     savingTab.IsDirty = true;
+                RestartAutoSaveTimerIfNeeded();
             }
             if (savingTab is not null && savingTab.IsUntitled)
             {
