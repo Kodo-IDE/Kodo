@@ -626,9 +626,13 @@ public partial class MainWindow
         Exception? lastIconException = null;
         var rateLimited = 0;
         var successful = new System.Collections.Concurrent.ConcurrentBag<(MarketplaceExtension entry, IconResult icon)>();
+        using var iconGate = new SemaphoreSlim(8);
 
         var tasks = pendingEntries.Select(async entry =>
             {
+                await iconGate.WaitAsync().ConfigureAwait(false);
+                try
+                {
                 Interlocked.Increment(ref iconAttempts);
                 try
                 {
@@ -660,6 +664,11 @@ public partial class MainWindow
                     Interlocked.Increment(ref iconFailures);
                     Interlocked.Exchange(ref lastIconException, ex);
                 }
+                }
+                finally
+                {
+                    iconGate.Release();
+                }
             });
 
         try
@@ -675,14 +684,21 @@ public partial class MainWindow
         {
             try
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                var iconBatch = successful.ToList();
+                const int iconApplyChunkSize = 25;
+                for (var start = 0; start < iconBatch.Count; start += iconApplyChunkSize)
                 {
-                    foreach (var (entry, icon) in successful)
+                    var end = Math.Min(start + iconApplyChunkSize, iconBatch.Count);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        try { ReplaceMarketplaceIcon(entry, icon); }
-                        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply icon for '{entry.Id}'.", ex); }
-                    }
-                }, DispatcherPriority.Background);
+                        for (var i = start; i < end; i++)
+                        {
+                            var (entry, icon) = iconBatch[i];
+                            try { ReplaceMarketplaceIcon(entry, icon); }
+                            catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply icon for '{entry.Id}'.", ex); }
+                        }
+                    }, DispatcherPriority.Background);
+                }
             }
             catch (Exception ex)
             {

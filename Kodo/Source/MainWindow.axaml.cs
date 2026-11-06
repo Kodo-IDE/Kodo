@@ -6159,7 +6159,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return settings;
     }
 
-    private void SaveSettings(bool immediate = false, bool synchronous = false)
+    private void SaveSettings(bool immediate = true, bool synchronous = false)
     {
         if (_suppressSettingsSave) return;
 

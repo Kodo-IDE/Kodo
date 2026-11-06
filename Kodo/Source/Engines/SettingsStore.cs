@@ -20,6 +20,7 @@ internal static class SettingsStore
     private static readonly UnixFileMode PrivateDirectoryMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
     private static readonly UnixFileMode PrivateFileMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> AclAppliedPaths = new();
 
     public static string FilePath => KodoPaths.SettingsFilePath(FileName);
 
@@ -237,9 +238,16 @@ internal static class SettingsStore
 
     private static void EnsurePrivateDirectory(string path)
     {
-        Directory.CreateDirectory(path);
-        if (OperatingSystem.IsWindows())
+        if (!AclAppliedPaths.TryAdd("dir:" + path, 0))
+            return;
+        try
         {
+            Directory.CreateDirectory(path);
+            if (!OperatingSystem.IsWindows())
+            {
+                ApplyUnixModeBestEffort(path, PrivateDirectoryMode);
+                return;
+            }
             var user = WindowsIdentity.GetCurrent().User
                 ?? throw new UnauthorizedAccessException("Could not identify the current Windows user.");
             var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
@@ -250,16 +258,25 @@ internal static class SettingsStore
             security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
             security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
             new DirectoryInfo(path).SetAccessControl(security);
-            return;
         }
-
-        ApplyUnixModeBestEffort(path, PrivateDirectoryMode);
+        catch
+        {
+            AclAppliedPaths.TryRemove("dir:" + path, out _);
+            throw;
+        }
     }
 
     private static void EnsurePrivateFile(string path)
     {
-        if (OperatingSystem.IsWindows())
+        if (!AclAppliedPaths.TryAdd("file:" + path, 0))
+            return;
+        try
         {
+            if (!OperatingSystem.IsWindows())
+            {
+                ApplyUnixModeBestEffort(path, PrivateFileMode);
+                return;
+            }
             var user = WindowsIdentity.GetCurrent().User
                 ?? throw new UnauthorizedAccessException("Could not identify the current Windows user.");
             var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
@@ -269,10 +286,12 @@ internal static class SettingsStore
             security.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.FullControl, AccessControlType.Allow));
             security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
             new FileInfo(path).SetAccessControl(security);
-            return;
         }
-
-        ApplyUnixModeBestEffort(path, PrivateFileMode);
+        catch
+        {
+            AclAppliedPaths.TryRemove("file:" + path, out _);
+            throw;
+        }
     }
 
     private static void ApplyUnixModeBestEffort(string path, UnixFileMode mode)
