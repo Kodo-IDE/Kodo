@@ -25,7 +25,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Xml.Linq;
 using PathShape = Avalonia.Controls.Shapes.Path;
 using Shape = Avalonia.Controls.Shapes.Shape;
 

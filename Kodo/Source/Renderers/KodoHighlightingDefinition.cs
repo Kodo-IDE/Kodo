@@ -1,6 +1,5 @@
 // Licensed under the GNU GPL-v3.0
 using Avalonia.Media;
-using AvaloniaEdit.Document;
 using AvaloniaEdit.Highlighting;
 using Kodo.Models;
 using System;

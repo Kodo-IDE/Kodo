@@ -3,7 +3,7 @@
 A theme extension changes how Kodo looks: window chrome, editor background, text colors, accents.
 It is the simplest extension type - pure JSON, no build step, no code.
 
-Shipped examples: **Dark Themes**, Light Themes, High-Contrast Themes.
+Built-in themes are **Dark**, **Light**, and **System Default**. Custom themes come from extension packages (see below); there are no shipped theme packs in the repo.
 
 ---
 
@@ -31,7 +31,7 @@ my-theme/
 }
 ```
 
-`type` must be exactly `theme`. There is no `extensions` field for a theme, and no engine.
+`type` must be `theme` (case-insensitive). There is no `extensions` field for a theme, and no engine. Other manifest fields are parsed for any package and simply unused by the theme picker.
 
 > Do not add an `icon` field. Kodo finds `icon.png` (preferred) or `icon.svg` (fallback) by
 > filename convention. Some published packages include `"icon": "icon.png"` out of habit; it is
@@ -58,14 +58,18 @@ my-theme/
 }
 ```
 
-Drop the folder into `%LocalAppData%\Kodo\Extensions\` and it appears in the theme list immediately -
-the folder is watched, so later edits reload live.
+Drop the folder into `%LocalAppData%\Kodo\Extensions\` and it appears in the theme list -
+the folder is watched for created/deleted/renamed packages, so dropping in a new package
+reloads live. Editing `theme.json` inside an existing folder will not trigger a reload
+(the watcher does not fire on in-place edits); re-adding the package or restarting Kodo picks it up.
 
 ---
 
 ## Color keys
 
-Every key below is read and applied. Values are hex colors, `#RRGGBB` or `#AARRGGBB`.
+Every key below is read and applied. Values are parsed as Avalonia brushes
+(`#RRGGBB`, `#AARRGGBB`, and named colors all work); an unparsable value silently
+falls back to the Kodo accent color rather than failing.
 
 | Key | Applies to |
 |---|---|
@@ -80,19 +84,21 @@ Every key below is read and applied. Values are hex colors, `#RRGGBB` or `#AARRG
 | `accent` | Accent color - selections, focus, links, highlights |
 | `button` | Button backgrounds |
 | `buttonHover` | Button hover state |
-| `previewBackground` | Hover/preview popup backgrounds |
-| `previewBorder` | Hover/preview popup borders |
+| `previewBackground` | Theme-card preview backgrounds (defaults to `editorBackground`) |
+| `previewBorder` | Theme-card preview borders (defaults to `surfaceBorder`) |
 
 ### Identifying fields
 
 | Field | Meaning |
 |---|---|
-| `themeId` | Unique within the package. Required - it is how Kodo tells your themes apart. |
-| `displayName` | Shown in the theme picker |
-| `baseTheme` | `"Dark"` or `"Light"`. Decides which built-in palette unused areas fall back to. |
+| `themeId` | Identifies the theme within the package. Optional - defaults to the manifest `id`. Keep it unique within the package if you ship more than one theme. |
+| `displayName` | Shown in the theme picker. Optional - defaults to the manifest `name`. |
+| `baseTheme` | `"Light"` (case-insensitive) selects the light Avalonia variant; anything else (including the default `"Dark"`) selects dark. It does **not** supply colors for omitted keys. |
 
-`accent` is the most consequential value. It drives selection highlights, the caret, focus rings,
-and link underlines, so a poor choice is far more noticeable than a background tweak.
+Omitted color keys fall back to Kodo's built-in dark constants (`#000000`, `#0E0E0E`, `#242424`, …), never to the Light palette. A `baseTheme: "Light"` theme that omits `windowBackground` gets `#000000`, not the Light `#F3F3F3` - specify every key you care about.
+
+`accent` drives selection highlights, focus rings, and other chrome. It does not drive the caret
+(that follows `primaryText`) or link underlines (hardcoded blue), so don't expect those to follow it.
 
 **Syntax colors are not themed here.** Editor token colors come from the *language* extension's
 `colorTokens` or from the server. See
@@ -131,12 +137,13 @@ together in the picker under the package name.
 ]
 ```
 
-A single object also works. The array form is what lets one package ship a coordinated family -
-the shipped Dark Themes pack contains 28 entries this way.
+A single object also works. The array form is what lets one package ship a coordinated family.
 
 Rules:
-- Every `themeId` must be unique **within the package**.
-- Omitted keys fall back to the `baseTheme` built-in palette, so a partial theme is valid.
+- Keep `themeId` unique **within the package**. A duplicate is not dropped, but the first entry
+  with that id wins - the duplicate is unreachable in the picker.
+- Omitted keys fall back to Kodo's built-in dark constants (see above), not to the `baseTheme`
+  palette, so a partial theme is valid but its omitted areas will be dark regardless of `baseTheme`.
 - The `manifest.json` `name` is the group label; `displayName` is the individual entry.
 
 ---
@@ -152,7 +159,7 @@ Rename-Item .\my-theme-1.0.0.zip .\my-theme-1.0.0.kox
 (cd my-theme && zip -r ../my-theme-1.0.0.kox . -x "*.pdb" "*.tmp")
 ```
 
-`manifest.json` must land at the archive root. See
+`manifest.json` should sit at the archive root (Kodo also tolerates a nested copy). See
 [KODO-FILE-FORMAT.md](KODO-FILE-FORMAT.md#4-packaging).
 
 ---
@@ -180,13 +187,13 @@ illegible while everything else looks correct.
 
 | Symptom | Check |
 |---|---|
-| Theme does not appear | `manifest.json` at the package root; `type` is exactly `theme`; `theme.json` is valid JSON |
-| Theme appears but colors do not change | the keys are spelled exactly as above; `themeId` is present and unique |
-| Only some colors change | omitted keys fall back to `baseTheme` - that is expected, not a bug |
+| Theme does not appear | `manifest.json` at the package root; `type` is `theme`; `theme.json` is valid JSON |
+| Theme appears but colors do not change | the keys are spelled exactly as above; an unparsable color silently falls back to the Kodo accent instead of failing |
+| Only some colors change | omitted keys fall back to Kodo's built-in dark constants, not the `baseTheme` palette - specify every key you care about |
 | Multi-theme pack shows one entry | `theme.json` is an object, not an array |
-| An entry is missing from a pack | duplicate `themeId` |
+| An entry is missing from a pack | duplicate `themeId` (first entry with that id wins) |
 | Editor text is hard to read | `mutedText` contrast against `editorBackground` |
-| Changes are not picked up | the folder watcher does not recurse and does not fire on in-place edits - re-save, or restart |
+| Changes are not picked up | the folder watcher only fires on created/deleted/renamed packages, not in-place edits - re-add the package, or restart |
 
 ---
 

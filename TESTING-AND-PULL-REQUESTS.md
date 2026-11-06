@@ -72,8 +72,9 @@ bugs surface.
 - [ ] Reload several times in a row and watch for growth in memory or background processes.
 - [ ] Restart Kodo and confirm nothing is left running.
 
-> LangRules assemblies are the exception: they load into a **non-collectible** context, so
-> changing that DLL requires a Kodo restart. Plan for it rather than assuming live reload.
+> LangRules assemblies load into a collectible context, so a changed DLL unloads and reloads on
+> package reload without a restart - but the reload test above is still worth running, because a
+> leaked context shows up as growth in memory across reloads.
 
 ---
 

@@ -24,8 +24,8 @@ public interface IKodoPlugin
 
 | Member | When it runs | Notes |
 |---|---|---|
-| `OnLoad` | Once per plugin class, after Kodo loads the assembly | Runs on the UI thread. `window` is the live `MainWindow`. |
-| `RegisterCommands` | Immediately after `OnLoad` | Optional; runs on the UI thread. Override it to add commands to Ctrl+Shift+P. Kodo removes registrations automatically when the plugin unloads. |
+| `OnLoad` | Once per plugin instance, after Kodo loads the assembly | Runs on the UI thread. `window` is the live `MainWindow`. |
+| `RegisterCommands` | Immediately after that instance's `OnLoad` | Optional; runs on the UI thread. Override it to add commands to Ctrl+Shift+P. Kodo removes registrations automatically when the plugin unloads. (If an assembly has several plugin classes, each instance gets its own `OnLoad` → `RegisterCommands` pair in turn.) |
 | `OnUnload` | Before the plugin is removed, replaced, or reloaded | No arguments. Must be safe to call even if `OnLoad` failed partway. |
 
 `RegisterCommands` has a default no-op implementation, so existing plugins do not need to add it.
@@ -36,13 +36,17 @@ Kodo finds your plugin by reflection. The class must be:
 
 - not `abstract`
 - implement `Kodo.IKodoPlugin`
-- have a **public parameterless constructor**
+- instantiable with a **public parameterless constructor** (`Activator.CreateInstance` needs one)
 
 The type itself does **not** need to be `public` - Kodo filters on `IsAbstract` and the interface
 only, so an `internal` plugin class works fine. (The constructor does need to be public, because Kodo
 instantiates via `Activator.CreateInstance`.)
 
 Every matching class in the assembly is instantiated. One DLL may contain several plugins.
+Note: a class without a usable parameterless constructor throws during instantiation and aborts
+loading the *whole* assembly - already-created instances are unloaded and the failure is recorded
+in the Extensions error list. Keep every discovered class constructible, or hide helpers from
+discovery (abstract, or don't implement the interface).
 
 `OnUnload` receives no arguments because the plugin is expected to have kept hold of whatever it
 created. Store your controls, handlers, timers, and subscriptions in fields.
@@ -66,7 +70,7 @@ created. Store your controls, handlers, timers, and subscriptions in fields.
       ExcludeAssets="runtime" so Avalonia is not copied into your output. Kodo already has
       Avalonia loaded, so a second copy inside the .kox is a version conflict.
     -->
-    <PackageReference Include="Avalonia" Version="12.1.4" ExcludeAssets="runtime" />
+    <PackageReference Include="Avalonia" Version="12.1.5" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Kodo">
@@ -98,8 +102,10 @@ dotnet build Kodo/Source/Kodo.csproj
 
 Adjust `HintPath` to your checkout layout. The path is relative to your `.csproj`.
 
-Ship any **dependencies** of your plugin alongside it. Kodo loads your main assembly and resolves
-sibling assemblies from the plugin folder, so extra DLLs in the package are found automatically.
+Ship any **dependencies** of your plugin alongside it. Kodo resolves sibling assemblies by exact
+filename from the plugin folder only (no subfolder or `runtimes/` search, and `.deps.json` is
+never read - it is inert). Kodo's own assemblies resolve from the host; third-party framework
+dependencies such as Avalonia must match Kodo's versions (see above).
 
 ---
 
@@ -161,11 +167,14 @@ public sealed class HelloPlugin : IKodoPlugin
 }
 ```
 
-Commands appear in the command palette's `>` mode and are grouped under the extension name. The
-registry also supports an optional `canExecute` predicate, display details, fuzzy-search keywords,
-and a shortcut badge (display only; it does not bind a key). `Register` returns an `IDisposable` for commands you want to remove early;
-all remaining commands are removed automatically before `OnUnload` runs. Keep command handlers
-fast and return a `Task` for asynchronous work.
+Commands appear in the command palette's `>` mode under `Plugin` (or your `category`); the
+extension name sorts results but is not a visible group header. The registry also supports an
+optional `canExecute` predicate, display details, fuzzy-search keywords, a `keepPaletteOpen`
+flag, and a shortcut badge (display only; it does not bind a key). `Register` throws on an empty
+`Id`/`Title`, a null `Execute`, or a duplicate `Id` within the same registry (the same `Id` in
+different extensions is allowed). `Register` returns an `IDisposable` for commands you want to
+remove early; all remaining commands are removed automatically before `OnUnload` runs. Keep
+command handlers fast and return a `Task` for asynchronous work.
 
 ### Manifest
 
@@ -181,8 +190,12 @@ fast and return a `Task` for asynchronous work.
 }
 ```
 
-`plugin` must be the **exact filename** of your assembly inside the package. If it is missing or
-wrong, a `type: plugin` package loads inertly - no error, no code runs.
+`plugin` must name the assembly inside the package. Kodo first looks for that exact filename
+(case-insensitively, anywhere in the archive), then falls back to a recursive search, so a
+nested or differently-cased copy still loads. Loading is driven by the `plugin` field being
+present, not by `type: plugin` - a package of any type that names an assembly will load it.
+A wrong/missing name means nothing loads; failures are recorded in the Extensions page error
+list (not shown as a dialog).
 
 ---
 
@@ -194,11 +207,14 @@ wrong, a `type: plugin` package loads inertly - no error, no code runs.
 2. It creates an `AssemblyLoadContext` with `isCollectible: true`.
 3. The main assembly is loaded from a **shadow copy** - the bytes are read into memory and loaded
    from a stream, so the file on disk is never locked and can be replaced while Kodo runs.
-4. Sibling assemblies are resolved from the plugin folder, also shadow-copied.
+4. Sibling assemblies are resolved from the plugin folder **by exact filename** (no subfolder
+   search), also shadow-copied.
 5. Every `IKodoPlugin` implementation in the assembly is constructed, `OnLoad` is called, and then
-   `RegisterCommands` is called. Kodo filters on `IsAbstract` and the interface only - it does
-   **not** require the type to be `public`, so an `internal` plugin class works. There is no "pick
-   one entry point" mechanism, so every implementation in the assembly runs.
+   `RegisterCommands` is called (per instance, in turn). Kodo filters on `IsAbstract` and the
+   interface only - it does **not** require the type to be `public`, so an `internal` plugin class
+   works. There is no "pick one entry point" mechanism, so every implementation in the assembly runs.
+   A plugin whose extension `id` is exactly `git-source-control` is silently excluded from plugin
+   loading entirely.
 6. On unload, Kodo removes each instance's registered commands, calls `OnUnload`, and then unloads
    the context.
 
@@ -208,18 +224,22 @@ Consequences worth designing around:
   Because the context is collectible, a clean unload is possible - **if your `OnUnload` releases
   your references.** A plugin that roots itself through a static event or a running timer will not
   actually be collected.
-- An unpacked plugin folder is used in place rather than extracted.
+- An unpacked plugin folder is used in place rather than extracted (the assembly is still
+  shadow-copied on load). Note: a LangRules assembly from the same folder is *not* shadow-copied -
+  it loads from its real path, keeping the file locked.
 
 ### Reloading: bump the version
 
-Kodo decides whether to reload a plugin by comparing the **manifest `version`** of the currently
-loaded plugin against the one on disk. If they match, the plugin is left alone.
+Kodo decides whether to reload a plugin by comparing the **effective version** - the maximum of
+the manifest `version` and any version parsed from the source filename (e.g. `v1.2.0` in
+`MyPlugin-v1.2.0.kox`) - as a case-sensitive string, not semver. If it matches the loaded plugin,
+it is left alone. Changing only the `plugin` filename with the same version does not reload either.
 
 So rebuilding your DLL is not enough. To see a change, bump `version` in `manifest.json`. Without
 that, the new build sits on disk ignored and the old code keeps running, which reads exactly like
 "my change had no effect".
 
-A collectible context also means this does **not** need a restart, unlike a LangRules assembly.
+A collectible context also means this does **not** need a restart, including for LangRules assemblies.
 
 ### Logging: there is no public API
 
@@ -232,8 +252,10 @@ itself is `internal`, so it is unreachable from a plugin assembly. What you have
 | `Debug.WriteLine` | An attached debugger only. |
 
 Console output is invisible when Kodo is launched from Explorer, a file manager, or an IDE without a
-terminal. Plan for a deployed plugin being close to undebuggable, and prefer surfacing problems in
-your own UI over relying on diagnostics.
+terminal. Load failures are recorded in the Extensions page error list (and on the console), not
+shown as dialogs - the loader uses `Console.WriteLine`, not Kodo's verbose log, so verbose logging
+in settings does not capture them. Plan for a deployed plugin being close to undebuggable, and
+prefer surfacing problems in your own UI over relying on diagnostics.
 
 ---
 
@@ -256,6 +278,12 @@ without giving up the language engine. Name the assembly in `languagePlugin`:
 `plugin` is the assembly Kodo treats as the package's primary code, `languagePlugin` is an extra
 plugin shipped alongside a language. See
 [`plugin` vs `languagePlugin`](KODO-FILE-FORMAT.md#plugin-vs-languageplugin).
+
+Notes:
+- The `plugin` assembly is **also** tried as a LangRules provider - a plugin DLL containing a
+  static `LangRules` class or an `ILangRulesProvider` is dual-loaded as both.
+- `languagePlugin: "TagAutoClose.dll"` (case-insensitive) is intercepted: the external DLL is
+  never loaded; Kodo substitutes its built-in replacement instead.
 
 ---
 
@@ -290,8 +318,7 @@ testable and does not fight the editor's own analysis.
 hello-plugin/
 ├── manifest.json
 ├── MyPlugin.dll
-├── MyPlugin.deps.json      if produced
-├── AnyDependency.dll       ship what you need
+├── AnyDependency.dll       ship what you need (resolved by exact filename, root only)
 ├── icon.png                optional
 └── LICENSE.txt             recommended
 ```
@@ -321,8 +348,8 @@ To submit to the marketplace, add the `.kox` to `Extensions/` and an entry to
    bug, and it only shows up here.
 7. Restart Kodo and confirm nothing is left running - no orphaned processes, no growing memory.
 
-Turn on verbose logging in Kodo's settings if you need to see plugin load failures; load errors
-are logged rather than shown as dialogs.
+Load failures appear in the Extensions page error list (and on the console); there is no dialog.
+Kodo's verbose logging setting does not capture plugin loader output.
 
 ---
 

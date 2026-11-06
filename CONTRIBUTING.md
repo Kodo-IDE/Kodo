@@ -11,11 +11,11 @@ Examples for all types of extensions can be found in [Kodo-Extension-Template](h
 ## Packages
 
 Kodo uses these NuGet packages:
-- `Avalonia` 12.1.4
-- `Avalonia.Desktop` 12.1.4
+- `Avalonia` 12.1.5
+- `Avalonia.Desktop` 12.1.5
 - `Avalonia.AvaloniaEdit` 12.0.0
-- `Avalonia.Themes.Fluent` 12.1.4
-- `Avalonia.Fonts.Inter` 12.1.4
+- `Avalonia.Themes.Fluent` 12.1.5
+- `Avalonia.Fonts.Inter` 12.1.5
 - `AvaloniaUI.DiagnosticsSupport` 2.2.3
 - `DiscordRichPresence` 1.6.1.70
 - `Svg.Controls.Skia.Avalonia` 12.0.0.17

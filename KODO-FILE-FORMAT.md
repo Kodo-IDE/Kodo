@@ -26,12 +26,14 @@ my-extension/
 
 Rules:
 
-- **`manifest.json` must be at the archive root.** Kodo does not look in subdirectories. This is
-  the single most common packaging mistake.
+- **`manifest.json` should be at the archive root.** Folder sources require it at the root; inside a
+  `.kox`, Kodo also finds a nested `manifest.json` by filename (first match wins), but root is the
+  only layout you should ship.
 - **Keep it flat.** The extension folder watcher does not recurse.
 - **Only `manifest.json` is strictly required.** Every other field has a default, so a package
   containing just a manifest loads - it will simply do nothing useful.
-- File names are matched case-insensitively on load, but use lowercase by convention.
+- File names are matched case-insensitively inside `.kox` archives only; folder loading is
+  case-sensitive (matters on Linux), so use lowercase by convention.
 
 ### What Kodo recognizes
 
@@ -43,14 +45,14 @@ Rules:
 | `theme.json` | theme extensions | Object **or** array of objects |
 | `icon.png` | all types | Preferred icon |
 | `icon.svg` | all types | Fallback icon |
-| `*.dll` | plugin, LangRules | Every DLL in a plugin package is extracted |
+| `*.dll` | plugin, LangRules | Extracted only when the package names one via `plugin` or `languagePlugin`; DLLs with no such field are never extracted or loaded. On non-Windows, `.so`/`.dylib` are extracted too |
 | `languagePlugin` target | plugin | Loaded separately from `plugin` |
 
 > **There is no `icon` field in `manifest.json`.** Kodo finds icons by filename convention only.
 > Some published packages include `"icon": "icon.png"` in the manifest out of habit; it is ignored
 > and is not required.
 
-If no icon loads, Kodo shows a two-letter abbreviation derived from the extension name. A
+If no icon loads, Kodo shows a two-letter abbreviation derived from the extension `name`. A
 marketplace `iconUrl`, when set and fetchable, replaces the local icon.
 
 ---
@@ -70,7 +72,7 @@ marketplace `iconUrl`, when set and fetchable, replaces the local icon.
 | `extensions` | string[] | language | File extensions this package claims, **with the leading dot**: `[".py", ".pyw"]`. |
 | `plugin` | string | LangRules / plugin | **Filename of the assembly to load.** For a LangRules package this is your rules assembly; for a plugin package, your plugin. |
 | `languagePlugin` | string | optional | A *second* assembly, loaded with the same `IKodoPlugin` lifecycle. See [`plugin` vs `languagePlugin`](#plugin-vs-languageplugin). |
-| `dependencies` | string[] | optional | IDs of packages that must be installed first. Honored on marketplace install. |
+| `dependencies` | string[] | optional | IDs of packages that must be installed first. **Only honored from the marketplace index entry** - a manifest `dependencies` field is parsed but never consulted during install or load. |
 | `enableSemanticDiagnostics` | bool | optional | `true` opts this language into Kodo's semantic diagnostics pass. Leave unset unless you have tested it. |
 | `overrides` | object | optional | Turns named Kodo features on or off for this language. See [`overrides`](#overrides). |
 | `externalTools` | object[] | optional | Run/build tools associated with this language. See [`externalTools`](#externaltools). |
@@ -78,16 +80,20 @@ marketplace `iconUrl`, when set and fetchable, replaces the local icon.
 | `lsps` | object[] | LSP | Several language servers. |
 | `languageServers` | object[] | LSP | Alias for `lsps`. |
 
-Missing fields default to `""`, `[]`, or `null`. A malformed value is skipped with a log entry
-rather than failing the whole package.
+Missing fields default to `""`, `[]`, or `null`. A malformed JSON document (or a non-array
+`extensions`/`dependencies`) drops the whole package with a per-package load error - individual
+LSP entries are the only values skipped-and-logged rather than failing the package.
 
 ### `type`
 
-| Value | Loads |
+`type` is stored verbatim with no validation. Loading is actually driven by which files are
+present, not by `type`, and different engine files can combine on one package:
+
+| Present | Loads |
 |---|---|
-| `language` | A file-extension association plus one engine (Legacy, LangRules, or LSP) |
-| `theme` | `theme.json` |
-| `plugin` | The assembly named by `plugin` |
+| `theme.json` | A theme (detected case-insensitively) |
+| `plugin` naming an assembly | LangRules (from that assembly) and/or a plugin |
+| `lsp`/`lsps` | A language server |
 
 ### `plugin` vs `languagePlugin`
 
@@ -127,8 +133,9 @@ error but has no effect, so a typo fails silently. Do not add overrides speculat
 
 ### `externalTools`
 
-Declares commands Kodo can run or build against the active file. Use these to offer a
-"Run" or "Build" action for a language.
+Declares commands Kodo runs against the active file **to produce diagnostics** (the sole consumer
+is the external-tools diagnostics pass). This is not a Run/Build menu - for that, see
+[COMPILERS.md](COMPILERS.md).
 
 ```json
 "externalTools": [
@@ -149,8 +156,8 @@ Declares commands Kodo can run or build against the active file. Use these to of
 | `id` | string | `command` | Identifier for this tool. |
 | `command` | string | - | **Required.** Executable name or path. |
 | `arguments` | string[] | `["{file}"]` | Arguments passed to the command. |
-| `format` | string | - | `compiler` groups the tool with the Run/Build menu. |
-| `enabled` | bool | `true` | `false` hides the tool. |
+| `format` | string | - | Only `"json"` is special-cased (JSON diagnostics output); the `"compiler"` default has no menu effect. |
+| `enabled` | bool | `true` | `false` excludes the tool from diagnostics. |
 | `requiresProject` | bool | `false` | `true` hides the tool for standalone files. |
 | `projectFiles` | string[] | `[]` | Glob patterns used to find the owning project, e.g. `["*.csproj", "*.sln"]`. |
 
@@ -158,20 +165,25 @@ Declares commands Kodo can run or build against the active file. Use these to of
 
 | Placeholder | Expands to |
 |---|---|
-| `{file}` | Path to the active file. Tools that only accept real paths get a temporary copy. |
-| `{project}` | Path to the resolved project file, or empty if none was found. |
+| `{file}` | Always a **temporary copy** of the file (never the real path); extension long than 16 chars becomes `.txt` |
+| `{fileName}` | File name of the active file |
+| `{project}` | Path to the resolved project file, or empty if none was found |
+| `{projectName}` | Base name of the resolved project file |
 
-Kodo parses tool output for diagnostics and shows them in the editor. Emitting
-`file(line,col): severity: message` on stderr or stdout is the convention.
+Kodo parses tool output for diagnostics and shows them in the editor. `file(line,col): severity: message`
+on stderr or stdout is the convention; `file:line:col`, Python tracebacks, and JSON-format
+diagnostics are also recognized.
 
 > For a whole toolchain Kodo should *install* - a compiler, a runtime - see
 > [COMPILERS.md](COMPILERS.md). That is a different mechanism with a central index.
 
 ### `lsp` / `lsps`
 
-Configures language servers. Use **`lsp`** for one server, **`lsps`** (or `languageServers`) for
-several. Each entry needs its own `command`; its language and file-extension lists are scoped
-independently, and the top-level `extensions` act as a fallback.
+Configures language servers. Use **`lsp`** for one server, **`lsps`** for several.
+`languageServers` is a fallback alias used only when neither `lsp` nor `lsps` is present; when both
+`lsps` and `lsp` are present, `lsps` wins and `lsp` is ignored. Each entry needs its own
+`command`; its language and file-extension lists are scoped independently, and the top-level
+`extensions` act as a fallback.
 
 ```json
 "lsp": {
@@ -213,62 +225,29 @@ independently, and the top-level `extensions` act as a fallback.
 | `runtimeMinVersion` / `runtimeVersion` | string | Minimum acceptable runtime version. |
 | `allowAutoInstall` / `autoInstall` | bool | Permit Kodo to install without asking. |
 | `allowSystem` / `allowSystemInstall` | bool | Permit using a server already on `PATH`. |
-| `versionArgs` / `versionArgument` | string[] | Arguments that make the server print its version. |
-| `runtimeArgs` | string[] | Launch the server **through** `runtime` instead of executing `command`. `{package}` expands to the installed artifact. |
-| `mainClass` | string | Entry point run after `runtimeArgs`, for runtimes that need one explicitly. |
+| `versionArgs` / `versionArgument` | string[] or string | Arguments that make the server print its version. |
+
+`runtimeArgs` and `mainClass` are **not** read from `manifest.json` - only `args` (alias
+`arguments`) supplies server arguments, and `command` is launched directly. There is no
+runtime-launcher mechanism for bundles shipped in a manifest (e.g. a `.jar` server cannot be
+launched through `java -jar` this way); publish an executable wrapper instead.
 
 #### Servers that are not directly executable
 
-Some language servers ship as a bundle that a runtime consumes rather than as a program Kodo can
-exec - a JVM language server published as a `.jar`, most obviously. A bare `.jar` has no shebang and
-is not an ELF binary, so setting `command` to it fails with `Exec format error`, and no download URL
-changes that.
-
-Set `runtimeArgs` to declare how the runtime is invoked. This is the whole of the mechanism; Kodo
-needs no per-server knowledge, so a hand-written extension can launch anything its runtime supports.
-
-```json
-{
-  "command": "lemminx",
-  "runtime": "java",
-  "runtimeArgs": ["-jar", "{package}"],
-  "mainClass": null,
-  "downloadUrl": "https://download.eclipse.org/lemminx/releases/0.26.0/org.eclipse.lemminx-uber.jar",
-  "sha256": "770d8ecb76488185e97c062299b2a0bf2ebe762ee9586645e5415ce65dadaee0"
-}
-```
-
-The resulting process is `java -jar ~/.local/share/Kodo/Lsp/lemminx/org.eclipse.lemminx-uber.jar`
-(Linux), `%LocalAppData%\Kodo\Lsp\lemminx\...` (Windows).
-
-How it behaves:
-
-- **`command` stays the logical server name.** It is used for display, de-duplication and the managed
-  install directory. The installed artifact is stored under the name the download actually had, so the
-  runtime sees the extension it dispatches on and the version stays visible.
-- **`{package}`** is replaced with the absolute path of that artifact. Substitution happens inside a
-  single argument slot and is passed through `ProcessStartInfo.ArgumentList`, so a path containing
-  spaces stays one argument and no shell ever re-parses it.
-- **`mainClass`** is appended after `runtimeArgs` when a runtime needs an explicit entry point
-  (`["-cp", "{package}"]` plus `"mainClass"`). Omit it when the bundle carries its own `Main-Class`,
-  as `java -jar` reads that itself.
-- **Version probing** uses the same prefix, so `--version` is asked the way the server will actually
-  be started rather than by executing the bundle directly.
-- **Opt-in, and backwards compatible.** `runtime` only becomes the launcher when `runtimeArgs` or
-  `mainClass` is present. Existing providers - where `runtime` is merely a prerequisite, as in
-  `runtime: dotnet` with `command: csharp-ls` or `runtime: node` with
-  `command: pyright-langserver.cmd` - are unaffected.
-
-Point `downloadUrl` at a **self-contained** artifact. LemMinX's plain `org.eclipse.lemminx-*.jar`
-omits its LSP4J dependencies and dies with `NoClassDefFoundError`; the `-uber.jar` alongside it bundles
-them. A single-file download is stored as-is rather than unpacked, so `.jar`, `.exe`, `.dll`, `.msi`,
-`.deb`, `.rpm` and `.appimage` all work without special handling; `.zip` and `.tar.gz` are unpacked.
+Not supported via manifest configuration. If your server is a bundle a runtime consumes (a `.jar`,
+a Node script), ship a wrapper executable (shell script, `.cmd`, or small binary) and point
+`command` at it, or use `installMethod`/`downloadUrl` to install the real server binary.
+A single-file download is stored as-is rather than unpacked, so `.jar`, `.exe`, `.dll`, `.msi`,
+`.deb`, `.rpm`, `.tgz`, `.war` and `.appimage` all work without special handling; `.zip` and
+`.tar.gz` are unpacked (extensionless payloads are sniffed by magic bytes).
 
 #### Cross-platform commands
 
 One `command` value is used on every platform. Prefer an **extensionless** name
-(`mylang-language-server`, not `mylang-language-server.exe`). Kodo strips `.exe`, `.cmd`, and
-`.bat` when spawning on Linux, and maps `python`→`python3` and `powershell`→`pwsh`.
+(`mylang-language-server`, not `mylang-language-server.exe`). On Linux, Kodo strips a trailing
+`.exe`/`.cmd`/`.bat` only as a `PATH` lookup fallback, after trying the exact name first.
+`python`→`python3` and `powershell`→`pwsh` mapping belongs to compiler run/build commands and
+`externalTools`, not to LSP spawning generally.
 
 If a server genuinely needs different binaries per OS, publish two `.kox` files and gate them
 with the marketplace `os` field rather than trying to express conditionals in `command`.
@@ -278,13 +257,16 @@ with the marketplace `os` field rather than trying to express conditionals in `c
 ## 3. Versioning
 
 `version` accepts a leading `v` or not: `v1.0.0`, `1.0.0`, `v0.8.0-BETA` all parse. Ordering
-compares the **numeric parts**, so `1.10.0` is newer than `1.9.0`.
+compares the **numeric parts** (including prerelease digits, so `1.0.0-BETA1` sorts above `1.0.0` - this is not semver prerelease ordering), so `1.10.0` is newer than `1.9.0`.
 
-A version in the **filename** is used when it is higher than the one in `manifest.json`, so
-re-uploading `MyLang-Kodo-Extension-v1.1.0.kox` upgrades an installed `v1.0.0`.
+A version in the **filename** is used when it is higher than the one in `manifest.json`, but only
+when the filename contains a `v` followed by a dotted version (e.g. `-v1.1.0.kox`); a bare
+`-1.1.0` or `-v1` extracts nothing and the manifest version stands. Re-uploading
+`MyLang-Kodo-Extension-v1.1.0.kox` therefore upgrades an installed `v1.0.0`.
 
-Convention is `{Id}-Kodo-Extension-v{version}.kox`, but nothing enforces it - `fileName` and
-`downloadUrl` in the marketplace index must simply agree with each other.
+Convention is `{Id}-Kodo-Extension-v{version}.kox`, but nothing enforces it - if `fileName` and
+`downloadUrl` in the marketplace index disagree, Kodo canonicalizes (rewrites the filename's
+version string and the URL's last segment to match) rather than rejecting the entry.
 
 ---
 
@@ -370,7 +352,7 @@ Each index file is an object with a single array key: `extensions`, `plugins`, o
       "fileName": "MyLang-Kodo-Extension-v1.0.0.kox",
       "downloadUrl": "https://raw.githubusercontent.com/Kodo-IDE/Kodo-Extensions/main/Extensions/MyLang-Kodo-Extension-v1.0.0.kox",
       "iconUrl": "https://raw.githubusercontent.com/Kodo-IDE/Kodo-Extensions/main/Extensions/mylang-icon.png",
-      "extensions": [".myl"],
+      "fileExtensions": [".myl"],
       "os": ["windows", "linux"],
       "arch": ["x64"],
       "dependencies": [],
@@ -388,9 +370,9 @@ Each index file is an object with a single array key: `extensions`, `plugins`, o
 | `fileName` | yes | Must be the last segment of `downloadUrl`. |
 | `downloadUrl` | yes | Raw URL to the `.kox`. |
 | `iconUrl` | recommended | Raw URL to a PNG. |
-| `extensions` | recommended | File extensions, for search and association. |
-| `os` / `platforms` | optional | `["windows"]`, `["linux"]`, `["macos"]`. Honored - incompatible entries show "Not available". |
-| `arch` / `architectures` | optional | `["x64"]`, `["arm64"]`. |
+| `fileExtensions` | recommended | File extensions, for search and association. (A literal `extensions` key is ignored.) |
+| `os` / `platforms` | optional | `["windows"]`, `["linux"]`, `["macos"]` (aliases like `win32`/`darwin` also accepted). Honored - incompatible entries show "Not available". Unknown tokens silently pass. |
+| `arch` / `architectures` | optional | `["x64"]`, `["arm64"]` (aliases like `x86_64`/`any` also accepted). Unknown tokens silently pass. |
 | `dependencies` | optional | IDs that must be installed first. |
 | `sha256` | recommended | Hex checksum of the `.kox`. |
 

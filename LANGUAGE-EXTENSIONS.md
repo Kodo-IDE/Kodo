@@ -3,9 +3,12 @@
 A language extension teaches Kodo about a file type. It always does two things:
 
 1. **Claims file extensions**, so Kodo knows a `.myl` file is a MyLang file.
-2. **Provides one engine**, so Kodo knows what to do with it.
+2. **Provides an engine**, so Kodo knows what to do with it.
 
-Pick exactly one engine. This guide covers all three in full.
+Pick a primary engine. Engines can combine in one package (for example, LSP for language
+features plus `language.json` for the base highlighting profile - `language.json` is parsed for
+every language package), but one primary engine per concern is the norm. This guide covers all
+three in full.
 
 | Engine | Use when | You write | Needs a server? |
 |---|---|---|---|
@@ -124,7 +127,7 @@ match inside `"integer"`.
 |---|---|
 | `blacklist` | Names suppressed from autocomplete inside a call to that same name. Case-insensitive. |
 | `deadCodeIgnore` | Names the dead-code scanner must never flag, e.g. `__init__`, `self`. |
-| `deadCodeEntryPoints` | Extra implicit entry points beyond the built-in `main` / `WinMain`. |
+| `deadCodeEntryPoints` | Extra implicit entry points beyond the built-ins (`main`, `wmain`, `winmain`, `wwinmain`, `dllmain`, `_start`). |
 
 **`colorTokens`** overrides highlighting colors. Omit a key to keep the default.
 
@@ -215,9 +218,10 @@ Kodo loads that one assembly and looks for a type implementing `ILangRulesProvid
 assembly is also scanned for `IKodoPlugin` implementations, so a single DLL can provide both a
 LangRules engine and host UI integration.
 
-> **Development note:** the LangRules assembly is loaded into a **non-collectible**
-> `AssemblyLoadContext`. Replacing or rebuilding your DLL requires restarting Kodo - live reload
-> does not apply to it. Plan your edit/build/restart loop accordingly.
+> **Development note:** the LangRules assembly is loaded into a **collectible**
+> `AssemblyLoadContext` that unloads on reload, so a rebuilt DLL picks up without a restart -
+> but run the reload test (reload several times, watch memory) because a leaked context shows
+> up as growth across reloads.
 
 ### The contract
 
@@ -249,12 +253,13 @@ Kodo/Source/Kodo.csproj`) so the reference resolves.
 
 Kodo finds your provider by reflection. It must be:
 
-- `public`
 - not `abstract`
 - implement `Kodo.ILangRulesProvider`
-- have a **public parameterless constructor**
+- instantiable with a **public parameterless constructor** (`Activator.CreateInstance` needs one)
 
-If any of these fail, the assembly loads and the provider is silently ignored.
+The type itself does **not** need to be `public` - Kodo filters on `IsAbstract` and the interface
+only. If instantiation fails, the assembly loads and the provider is silently ignored (with a
+log entry).
 
 ### Declaring capabilities
 
@@ -641,7 +646,9 @@ One `command` value is used on **every** platform:
 - Kodo does **not** rewrite `python` → `python3` or `powershell` → `pwsh` for language servers. That
   mapping applies to a compiler's run/build commands and to `externalTools`, but a server's `command`
   is launched as written. If your server is a script, name the interpreter explicitly
-  (`command: "python3"`, and use `runtimeArgs` if it needs them).
+  (`command: "python3"`, and pass its arguments via `args`).
+  Note: `runtimeArgs` and `mainClass` are **not** read from `manifest.json` - only `args` (alias
+  `arguments`) supplies server arguments.
 
 If a server genuinely needs different binaries per OS, publish **two `.kox` files** and gate them
 with the marketplace `os` field (`["windows"]` and `["linux"]`). Do not try to encode conditionals
@@ -710,7 +717,9 @@ as follows:
 
 These are not stylistic. Kodo enforces them.
 
-- **Use zero-based UTF-16 line/character positions.** UTF-16, not bytes and not code points.
+- **Use the negotiated position encoding.** Kodo offers `utf-8`, `utf-32`, and `utf-16` during
+  `initialize` and uses whichever your server picks (defaulting to `utf-16`). Use the negotiated
+  encoding for all positions - not bytes, and not UTF-16 if your server picked UTF-8.
 - **Clear diagnostics by publishing an empty array.** Stale errors linger otherwise.
 - **Never return an edit computed from a stale document version.** Kodo rejects formatting and
   rename results if the document changed while the request was in flight, and the user sees nothing
@@ -749,7 +758,7 @@ log file.
 | One file type is colored, another is not | the profile's `extensions` array | a non-empty array scopes the profile; empty merges it |
 | LangRules features missing | `plugin` names your DLL, **not** `languagePlugin` | the type is non-abstract and has a public parameterless constructor (`public` on the type is not required); the method is actually overridden rather than left as the interface default |
 | A feature is offered but returns nothing | the method is implemented, not just declared | ranges are within the document |
-| LangRules changes have no effect | restart Kodo | the LangRules assembly is loaded non-collectibly and is never hot-reloaded |
+| LangRules changes have no effect | reload the package (collectible context) | the new DLL actually replaced the old one - same `version` in the manifest means the old build keeps running |
 | Signature help never appears | - | `GetSignatureHelp` has no UI entry point in Kodo; signature help is LSP-only |
 | Document outline is empty | - | the outline is LSP-only; `AnalyzeSymbols` feeds declaration discovery, not an outline |
 | `language.json` edits do not appear | use the Extensions page refresh, or restart | the folder watcher ignores in-place edits and ignores `language.json` by name |
