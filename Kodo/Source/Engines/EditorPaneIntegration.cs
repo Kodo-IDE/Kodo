@@ -391,9 +391,15 @@ public partial class MainWindow
         {
             FoldingManager.Uninstall(oldManager);
             if (isSecondaryPane)
+            {
                 _secondaryLspFoldingManager = null;
+                _secondaryLspFoldingDocument = null;
+            }
             else
+            {
                 _primaryLspFoldingManager = null;
+                _primaryLspFoldingDocument = null;
+            }
         }
 
         try
@@ -404,9 +410,15 @@ public partial class MainWindow
         {
             var newManager = FoldingManager.Install(editor.TextArea);
             if (isSecondaryPane)
+            {
                 _secondaryLspFoldingManager = newManager;
+                _secondaryLspFoldingDocument = document;
+            }
             else
+            {
                 _primaryLspFoldingManager = newManager;
+                _primaryLspFoldingDocument = document;
+            }
             ApplyFoldingMarginTheme();
         }
     }
@@ -473,7 +485,24 @@ public partial class MainWindow
             CurrentLanguageExtension = null;
         }
 
-        _lspFoldingManager ??= FoldingManager.Install(EditorTextBox.TextArea);
+        if (_lspFoldingManager is null)
+        {
+            var newManager = FoldingManager.Install(EditorTextBox.TextArea);
+            if (ReferenceEquals(_activeEditorPane, _secondaryEditorPane))
+            {
+                _secondaryLspFoldingManager = newManager;
+                _secondaryLspFoldingDocument = EditorTextBox.Document;
+            }
+            else
+            {
+                _primaryLspFoldingManager = newManager;
+                _primaryLspFoldingDocument = EditorTextBox.Document;
+            }
+        }
+        else if (ReferenceEquals(_activeEditorPane, _secondaryEditorPane) && _secondaryLspFoldingDocument is null)
+            _secondaryLspFoldingDocument = EditorTextBox.Document;
+        else if (_primaryLspFoldingDocument is null)
+            _primaryLspFoldingDocument = EditorTextBox.Document;
         UpdateFindHighlights();
         RefreshStatusBarDiagnostics();
         UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);

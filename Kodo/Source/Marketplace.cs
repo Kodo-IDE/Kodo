@@ -2120,9 +2120,9 @@ public partial class MainWindow
     {
         await RefreshExtensionsDataAsync(skipInstalledScan: true, staggerLoadStages: true);
         await Task.Delay(150);
-        await RefreshLatestReleaseAsync(forceNetwork: false);
+        await RefreshLatestReleaseAsync(forceNetwork: true);
         await Task.Delay(150);
-        await FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
+        await FetchAnnouncementsAsync(forceNetwork: true);
         await Task.Delay(150);
         await AutoUpdateExtensionsIfEnabledAsync();
     }

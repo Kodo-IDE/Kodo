@@ -1982,7 +1982,7 @@ public partial class MainWindow
         if ((gesture.KeyModifiers & KeyModifiers.Alt) != 0) parts.Add("Alt");
         if ((gesture.KeyModifiers & KeyModifiers.Shift) != 0) parts.Add("Shift");
         if ((gesture.KeyModifiers & KeyModifiers.Meta) != 0)
-            parts.Add(OperatingSystem.IsMacOS() ? "Cmd" : "Win");
+            parts.Add(OperatingSystem.IsMacOS() ? "Cmd" : OperatingSystem.IsLinux() ? "Meta" : "Win");
         parts.Add(FormatKey(gesture.Key));
         return string.Join("+", parts);
     }

@@ -576,7 +576,8 @@ public partial class MainWindow
         }
         var foldings = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is not { } currentDocument)
+            if (!LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is not { } currentDocument ||
+                !ReferenceEquals(GetLspFoldingDocumentForPane(ctx.Pane), currentDocument))
                 return null;
             var lastLine0 = currentDocument.LineCount - 1;
             var mapped = new List<AvaloniaEdit.Folding.NewFolding>(Math.Min(ranges.Count, LspMaxFoldingsApplied));
@@ -604,7 +605,9 @@ public partial class MainWindow
         var orderedFoldings = foldings.OrderBy(f => f.StartOffset).ToArray();
         var updates = await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) || editor.Document is not { } currentDocument)
+            if (manager is null || !LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) ||
+                editor.Document is not { } currentDocument ||
+                !ReferenceEquals(GetLspFoldingDocumentForPane(ctx.Pane), currentDocument))
                 return null;
             return BuildLspFoldingUpdates(manager, currentDocument, orderedFoldings);
         }, DispatcherPriority.Background);
@@ -646,6 +649,8 @@ public partial class MainWindow
             {
                 if (!LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) ||
                     !ReferenceEquals(otherEditor.Document, ctx.Document) ||
+                    !ReferenceEquals(ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                        ? _secondaryLspFoldingDocument : _primaryLspFoldingDocument, ctx.Document) ||
                     !ReferenceEquals(otherManager, ReferenceEquals(otherEditor, SecondaryEditorTextBox)
                         ? _secondaryLspFoldingManager
                         : _primaryLspFoldingManager))
@@ -662,6 +667,8 @@ public partial class MainWindow
                 {
                     if (!LspFoldingEnabled || !LspPresentationContextIsCurrent(ctx, LspEnabled) ||
                         !ReferenceEquals(otherEditor.Document, ctx.Document) ||
+                        !ReferenceEquals(ReferenceEquals(otherEditor, SecondaryEditorTextBox)
+                            ? _secondaryLspFoldingDocument : _primaryLspFoldingDocument, ctx.Document) ||
                         !ReferenceEquals(otherManager, ReferenceEquals(otherEditor, SecondaryEditorTextBox)
                             ? _secondaryLspFoldingManager
                             : _primaryLspFoldingManager))
@@ -699,6 +706,9 @@ public partial class MainWindow
 
     private AvaloniaEdit.Folding.FoldingManager? GetLspFoldingManagerForPane(EditorPaneState pane) =>
         ReferenceEquals(pane, _secondaryEditorPane) ? _secondaryLspFoldingManager : _primaryLspFoldingManager;
+
+    private TextDocument? GetLspFoldingDocumentForPane(EditorPaneState pane) =>
+        ReferenceEquals(pane, _secondaryEditorPane) ? _secondaryLspFoldingDocument : _primaryLspFoldingDocument;
 
     private static List<Action> BuildLspFoldingUpdates(
         AvaloniaEdit.Folding.FoldingManager manager,

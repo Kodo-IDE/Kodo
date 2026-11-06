@@ -41,7 +41,8 @@ internal static class EditorLineTextCache
             {
                 _invalidatedLines.Clear();
                 foreach (var line in _lines.Keys)
-                    if (line.LineNumber == 0 || line.LineNumber >= firstAffected && line.LineNumber <= lastAffected)
+                    if (line.IsDeleted || line.LineNumber == 0 ||
+                        line.LineNumber >= firstAffected && line.LineNumber <= lastAffected)
                         _invalidatedLines.Add(line);
                 foreach (var line in _invalidatedLines)
                     _lines.Remove(line);

@@ -129,7 +129,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly DispatcherTimer _findHighlightDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _diagnosticPopupHideTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private AvaloniaEdit.Folding.FoldingManager? _primaryLspFoldingManager;
+    private TextDocument? _primaryLspFoldingDocument;
     private AvaloniaEdit.Folding.FoldingManager? _secondaryLspFoldingManager;
+    private TextDocument? _secondaryLspFoldingDocument;
     private AvaloniaEdit.Folding.FoldingManager? _lspFoldingManager
     {
         get => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
@@ -918,6 +920,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public MainWindow(string? startupFilePath)
     {
         _suppressSettingsSave = true;
+        _uiThread = System.Threading.Thread.CurrentThread;
 
         var trimmedStartupPath = startupFilePath?.Trim().Trim('"');
         _startupFilePath = !string.IsNullOrWhiteSpace(trimmedStartupPath)
@@ -952,8 +955,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
         });
         AddHandler(PointerPressedEvent, OnWindowPointerPressedToDismissFocus, RoutingStrategies.Bubble, handledEventsToo: true);
-        _lspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(EditorTextBox.TextArea);
-        _secondaryLspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(SecondaryEditorTextBox.TextArea);
+        void InstallPaneFoldingManager(TextEditor editor, bool isSecondaryPane)
+        {
+            if (isSecondaryPane)
+            {
+                _secondaryLspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(editor.TextArea);
+                _secondaryLspFoldingDocument = editor.Document;
+            }
+            else
+            {
+                _primaryLspFoldingManager = AvaloniaEdit.Folding.FoldingManager.Install(editor.TextArea);
+                _primaryLspFoldingDocument = editor.Document;
+            }
+        }
+        
+        InstallPaneFoldingManager(EditorTextBox, isSecondaryPane: false);
+        InstallPaneFoldingManager(SecondaryEditorTextBox, isSecondaryPane: true);
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.FontFamily = KodoFonts.MonoFamily;
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
@@ -1230,22 +1247,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
             }
 
-            LatestRelease = await FetchLatestReleaseInfoAsync();
-
-            LatestReleaseStatusText = HasLatestRelease
-                ? $"Latest release: {LatestReleaseDisplayName}"
-                : "No releases found.";
-
-            if (HasLatestRelease)
+            var fetchedRelease = await FetchLatestReleaseInfoAsync();
+            if (fetchedRelease is not null)
+            {
+                LatestRelease = fetchedRelease;
+                LatestReleaseStatusText = $"Latest release: {LatestReleaseDisplayName}";
                 SaveLatestReleaseCache();
+            }
+            else if (await LoadCachedLatestReleaseAsync())
+            {
+                LatestReleaseStatusText = $"Latest release: {LatestReleaseDisplayName}";
+            }
+            else
+            {
+                LatestRelease = null;
+                LatestReleaseStatusText = "No releases found.";
+            }
         }
         catch (Exception ex)
         {
-            LatestRelease = null;
-            LatestReleaseStatusText = $"Could not load release info: {DescribeFetchFailure(ex)}";
-
             KodoDiagnostics.LogDebug("Failed to fetch latest release info", ex);
-            await ShowWarningDialogAsync("Latest release info fetch", ex);
+            if (await LoadCachedLatestReleaseAsync())
+            {
+                LatestReleaseStatusText = $"Latest release: {LatestReleaseDisplayName}";
+            }
+            else
+            {
+                LatestRelease = null;
+                LatestReleaseStatusText = $"Could not load release info: {DescribeFetchFailure(ex)}";
+                await ShowWarningDialogAsync("Latest release info fetch", ex);
+            }
         }
         finally
         {
@@ -1266,12 +1297,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         IsNewsLoading = true;
         IsNewsError = false;
-        NewsItems.Clear();
 
         try
         {
-            if (!forceNetwork && await LoadCachedAnnouncementsAsync())
-                return;
+            if (!forceNetwork)
+            {
+                NewsItems.Clear();
+                if (await LoadCachedAnnouncementsAsync())
+                    return;
+            }
 
             foreach (var url in new[]
             {
@@ -1308,19 +1342,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     continue;
 
                 var items = ParseAnnouncementsMd(md);
-                foreach (var item in items)
-                    NewsItems.Add(item);
-                if (NewsItems.Count > 0)
+                if (items.Count > 0)
                 {
+                    NewsItems.Clear();
+                    foreach (var item in items)
+                        NewsItems.Add(item);
                     SaveNewsCache();
                     return;
                 }
             }
+
+            NewsItems.Clear();
+            await LoadCachedAnnouncementsAsync();
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug("Failed to fetch announcements", ex);
             IsNewsError = false;
+            if (NewsItems.Count == 0)
+                await LoadCachedAnnouncementsAsync();
         }
         finally
         {
@@ -6337,8 +6377,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ActivateTab(recoveredTab, focusEditor: false);
     }
 
+    private static System.Threading.Thread? _uiThread;
+
+    internal static TextDocument CreateOffThreadDocument(string content)
+    {
+        var document = new TextDocument(content);
+        document.SetOwnerThread(_uiThread);
+        return document;
+    }
+
     internal static TextDocument? CreateStartupRestoredDocument(string content, bool isCorrupted, bool isImagePreview) =>
-        isCorrupted || isImagePreview ? null : new TextDocument(content);
+        isCorrupted || isImagePreview ? null : CreateOffThreadDocument(content);
 
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
@@ -6415,7 +6464,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     var restoredDocuments = await Task.WhenAll(results.Select(async result =>
                         (result.path, document: result.path is null || result.isCorrupted || IsImagePreviewFile(result.path)
                             ? null
-                            : await Task.Run(() => new TextDocument(result.content)).ConfigureAwait(false))));
+                            : await Task.Run(() => CreateOffThreadDocument(result.content)).ConfigureAwait(false))));
 
                     EditorTab? tabToActivate = null;
                     await Dispatcher.UIThread.InvokeAsync(() =>
@@ -7197,7 +7246,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTab? expectedTab = null)
     {
 
-        var document = await Task.Run(() => new TextDocument(content)).ConfigureAwait(false);
+        var document = await Task.Run(() => CreateOffThreadDocument(content)).ConfigureAwait(false);
         var dispatchQueuedAt = System.Diagnostics.Stopwatch.GetTimestamp();
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
