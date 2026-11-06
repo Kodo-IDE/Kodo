@@ -1248,6 +1248,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
 
             var fetchedRelease = await FetchLatestReleaseInfoAsync();
+            if (fetchedRelease is null)
+            {
+                KodoDiagnostics.LogDebug("Latest release fetch returned nothing; retrying with a fresh HttpClient.");
+                fetchedRelease = await FetchLatestReleaseInfoAsync(CreateHttpClient());
+            }
             if (fetchedRelease is not null)
             {
                 LatestRelease = fetchedRelease;
@@ -1256,7 +1261,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             }
             else if (await LoadCachedLatestReleaseAsync())
             {
-                LatestReleaseStatusText = $"Latest release: {LatestReleaseDisplayName}";
+                LatestReleaseStatusText = $"Latest release (cached): {LatestReleaseDisplayName}";
             }
             else
             {
@@ -1269,7 +1274,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             KodoDiagnostics.LogDebug("Failed to fetch latest release info", ex);
             if (await LoadCachedLatestReleaseAsync())
             {
-                LatestReleaseStatusText = $"Latest release: {LatestReleaseDisplayName}";
+                LatestReleaseStatusText = $"Latest release (cached): {LatestReleaseDisplayName}";
             }
             else
             {
@@ -1561,16 +1566,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return items;
     }
 
-    private async Task<ReleaseInfo?> FetchLatestReleaseInfoAsync()
+    private async Task<ReleaseInfo?> FetchLatestReleaseInfoAsync(HttpClient? client = null)
     {
-        var latestRelease = await TryFetchLatestStableReleaseAsync();
+        var http = client ?? MarketplaceHttpClient;
+        var latestRelease = await TryFetchLatestStableReleaseAsync(http);
         if (latestRelease is not null)
             return latestRelease;
 
-        return await TryFetchLatestListedReleaseAsync();
+        return await TryFetchLatestListedReleaseAsync(http);
     }
 
-    private async Task<ReleaseInfo?> TryFetchLatestStableReleaseAsync()
+    private async Task<ReleaseInfo?> TryFetchLatestStableReleaseAsync(HttpClient http)
     {
         foreach (var url in LatestReleaseApiUrls)
         {
@@ -1581,9 +1587,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Latest stable release fetch",
                 async ct =>
                 {
-                    using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                    using var response = await http.SendAsync(request, ct);
                     if (!response.IsSuccessStatusCode)
+                    {
+                        KodoDiagnostics.LogDebug($"Latest release fetch {url} returned {(int)response.StatusCode} {response.ReasonPhrase}.");
                         return null;
+                    }
 
                     var json = await response.Content.ReadAsStringAsync(ct);
                     using var doc = JsonDocument.Parse(json);
@@ -1597,7 +1606,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return null;
     }
 
-    private async Task<ReleaseInfo?> TryFetchLatestListedReleaseAsync()
+    private async Task<ReleaseInfo?> TryFetchLatestListedReleaseAsync(HttpClient http)
     {
         foreach (var url in ReleasesApiUrls)
         {
@@ -1608,9 +1617,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 "Releases list fetch",
                 async ct =>
                 {
-                    using var response = await MarketplaceHttpClient.SendAsync(request, ct);
+                    using var response = await http.SendAsync(request, ct);
                     if (!response.IsSuccessStatusCode)
+                    {
+                        KodoDiagnostics.LogDebug($"Releases list fetch {url} returned {(int)response.StatusCode} {response.ReasonPhrase}.");
                         return null;
+                    }
 
                     var json = await response.Content.ReadAsStringAsync(ct);
                     using var doc = JsonDocument.Parse(json);
