@@ -634,37 +634,37 @@ public partial class MainWindow
                 await iconGate.WaitAsync().ConfigureAwait(false);
                 try
                 {
-                Interlocked.Increment(ref iconAttempts);
-                try
-                {
-                    if (!marketplaceIconMap.TryGetValue(entry.Id, out var url) || string.IsNullOrWhiteSpace(url))
+                    Interlocked.Increment(ref iconAttempts);
+                    try
+                    {
+                        if (!marketplaceIconMap.TryGetValue(entry.Id, out var url) || string.IsNullOrWhiteSpace(url))
+                        {
+                            Interlocked.Increment(ref iconFailures);
+                            return;
+                        }
+
+                        var icon = await GetCachedIconAsync(url).ConfigureAwait(false);
+                        if (!icon.HasValue)
+                        {
+                            KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {url} - using lettered fallback.");
+                            Interlocked.Increment(ref iconFailures);
+                            return;
+                        }
+
+                        successful.Add((entry, icon));
+                    }
+                    catch (OperationCanceledException)
                     {
                         Interlocked.Increment(ref iconFailures);
-                        return;
                     }
-
-                    var icon = await GetCachedIconAsync(url).ConfigureAwait(false);
-                    if (!icon.HasValue)
+                    catch (Exception ex)
                     {
-                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {url} - using lettered fallback.");
+                        if (IsGitHubRateLimitException(ex))
+                            Interlocked.Increment(ref rateLimited);
+                        KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}' (will use lettered fallback): {marketplaceIconMap.GetValueOrDefault(entry.Id, string.Empty)}", ex);
                         Interlocked.Increment(ref iconFailures);
-                        return;
+                        Interlocked.Exchange(ref lastIconException, ex);
                     }
-
-                    successful.Add((entry, icon));
-                }
-                catch (OperationCanceledException)
-                {
-                    Interlocked.Increment(ref iconFailures);
-                }
-                catch (Exception ex)
-                {
-                    if (IsGitHubRateLimitException(ex))
-                        Interlocked.Increment(ref rateLimited);
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}' (will use lettered fallback): {marketplaceIconMap.GetValueOrDefault(entry.Id, string.Empty)}", ex);
-                    Interlocked.Increment(ref iconFailures);
-                    Interlocked.Exchange(ref lastIconException, ex);
-                }
                 }
                 finally
                 {

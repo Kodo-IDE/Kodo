@@ -967,7 +967,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 _primaryLspFoldingDocument = editor.Document;
             }
         }
-        
+
         InstallPaneFoldingManager(EditorTextBox, isSecondaryPane: false);
         InstallPaneFoldingManager(SecondaryEditorTextBox, isSecondaryPane: true);
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
