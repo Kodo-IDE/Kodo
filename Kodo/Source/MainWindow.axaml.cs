@@ -3078,7 +3078,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialBody => IsAmericanEnglish
         ? CurrentTutorialStep.Body.Replace("accent colour", "accent color")
-        : CurrentTutorialStep.Body;
+        : CurrentTutorialStep.Body.Replace("personalize", "personalise");
 
     public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
 
@@ -4825,13 +4825,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             RaiseWelcomeMessageChanged();
             UpdateLocalizedSpelling();
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling), nameof(CustomizeWorkspaceText), nameof(SyntaxColorsDescriptionText));
             SaveSettings();
         }
     }
 
     private void UpdateLocalizedSpelling()
     {
+        RegionalSpelling.IsAmericanEnglish = IsAmericanEnglish;
         _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
         _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
         if (_secondaryColorSwatchGenerator is not null)
@@ -4842,7 +4843,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public bool IsAmericanEnglish => _userCountry == "US";
-    public string CancelledSpelling => IsAmericanEnglish ? "canceled" : "cancelled";
+    public string CancelledSpelling => RegionalSpelling.Cancelled;
+    public string CustomizeWorkspaceText => IsAmericanEnglish ? "Customize your workspace" : "Customise your workspace";
+    public string SyntaxColorsDescriptionText => IsAmericanEnglish
+        ? "Adds extra syntax colors using language server information. This optional feature is off by default."
+        : "Adds extra syntax colours using language server information. This optional feature is off by default.";
     public string DeadCodeTooltip => IsAmericanEnglish
         ? "Gray out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct."
         : "Grey out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct.";

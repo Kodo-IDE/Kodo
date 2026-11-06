@@ -5103,6 +5103,11 @@
                                 <TextBlock Text="Languages" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" ItemsSource="{Binding FilteredInstalledLanguageExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -5207,6 +5212,11 @@
                                 <TextBlock Text="Plugins" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledPluginExtensions}" ItemsSource="{Binding FilteredInstalledPluginExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -5311,6 +5321,11 @@
                                 <TextBlock Text="Themes" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledThemeExtensions}" ItemsSource="{Binding FilteredInstalledThemeExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -5416,6 +5431,11 @@
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
                                           ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -5973,7 +5993,7 @@
                             </StackPanel>
                             <TextBlock FontSize="11"
                                        Foreground="{Binding MutedTextBrush}"
-                                       Text="Customize your workspace" />
+                                       Text="{Binding CustomizeWorkspaceText}" />
                         </StackPanel>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                             <StackPanel Spacing="4">
@@ -5986,7 +6006,7 @@
                                 <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
                                 <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
                                 <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
-                                <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="Personalization" />
+                                <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="{Binding LabelPersonalization}" />
                                 <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
                                 <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
                             </StackPanel>
@@ -6630,7 +6650,7 @@ ToolTip.Tip="Increase font size" />
                                     <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
-                                               Text="Adds extra syntax colors using language server information. This optional feature is off by default." />
+                                               Text="{Binding SyntaxColorsDescriptionText}" />
 
                                     <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"

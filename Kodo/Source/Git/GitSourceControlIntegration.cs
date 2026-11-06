@@ -1354,7 +1354,7 @@ internal sealed class GitSourceControlIntegration
         }
         catch (OperationCanceledException)
         {
-            operationStatus = _lifetime?.IsCancellationRequested == true ? string.Empty : "Cancelled.";
+            operationStatus = _lifetime?.IsCancellationRequested == true ? string.Empty : RegionalSpelling.Cancelled + ".";
         }
         catch (Exception ex) { operationStatus = $"Git operation failed: {ex.Message}"; }
         finally

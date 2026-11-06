@@ -1030,7 +1030,7 @@ public partial class MainWindow
             if (!CanContinueCodeActionAfterEdit(applied))
             {
                 if (applied == CodeActionOutcome.Cancelled)
-                    await Dispatcher.UIThread.InvokeAsync(() => SetLspFeatureStatus("The quick fix was cancelled."));
+                    await Dispatcher.UIThread.InvokeAsync(() => SetLspFeatureStatus($"The quick fix was {CancelledSpelling}."));
                 return false;
             }
             editApplied = applied == CodeActionOutcome.Applied;

@@ -1113,7 +1113,7 @@ public partial class MainWindow
         AddSettingToggle("Inlay Hints", () => LspInlayHintsEnabled, value => LspInlayHintsEnabled = value, "lsp inline hints");
         AddSettingToggle("Code Folding", () => LspFoldingEnabled, value => LspFoldingEnabled = value, "lsp collapse regions");
         AddSettingToggle("Document Highlights", () => LspDocumentHighlightsEnabled, value => LspDocumentHighlightsEnabled = value, "lsp references occurrences");
-        AddSettingToggle("Semantic Highlighting", () => LspSemanticHighlightingEnabled, value => LspSemanticHighlightingEnabled = value, "lsp colors tokens");
+        AddSettingToggle("Semantic Highlighting", () => LspSemanticHighlightingEnabled, value => LspSemanticHighlightingEnabled = value, "lsp colors colours tokens");
         AddSettingToggle("Automatic Language Server Installation", () => LspAutoInstall, value => LspAutoInstall = value, "lsp install download");
         AddSettingToggle("Prefer Managed Language Servers", () => LspPreferManaged, value => LspPreferManaged = value, "lsp install bundled");
         AddSettingToggle("Prefer System Language Servers", () => LspPreferSystem, value => LspPreferSystem = value, "lsp install external");
@@ -1156,14 +1156,15 @@ public partial class MainWindow
             () => { TabSizeIndex = 2; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 8, "indent tab size"));
         commands.Add(new PaletteCommand("Use Tabs for Indentation", "Settings", string.Empty,
             () => { TabSizeIndex = 3; return Task.CompletedTask; }, () => InsertSpaces, "indent tab size"));
-        commands.Add(new PaletteCommand("Use Kodo Accent Color", "Settings", string.Empty,
-            () => { AccentKodoButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentKodo, "appearance accent color"));
-        commands.Add(new PaletteCommand("Use System Accent Color", "Settings", string.Empty,
-            () => { AccentWindowsButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentWindows, "appearance accent color windows"));
-        commands.Add(new PaletteCommand("Use Theme Accent Color", "Settings", string.Empty,
-            () => { AccentThemeButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentTheme && HasThemeAccent, "appearance accent color theme extension"));
-        commands.Add(new PaletteCommand("Choose Custom Accent Color…", "Settings", string.Empty,
-            () => { AccentColorPickerButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentCustom, "appearance accent color picker dialog"));
+        var accentColorWord = IsAmericanEnglish ? "Color" : "Colour";
+        commands.Add(new PaletteCommand($"Use Kodo Accent {accentColorWord}", "Settings", string.Empty,
+            () => { AccentKodoButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentKodo, $"appearance accent {accentColorWord.ToLowerInvariant()}"));
+        commands.Add(new PaletteCommand($"Use System Accent {accentColorWord}", "Settings", string.Empty,
+            () => { AccentWindowsButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentWindows, $"appearance accent {accentColorWord.ToLowerInvariant()} windows"));
+        commands.Add(new PaletteCommand($"Use Theme Accent {accentColorWord}", "Settings", string.Empty,
+            () => { AccentThemeButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentTheme && HasThemeAccent, $"appearance accent {accentColorWord.ToLowerInvariant()} theme extension"));
+        commands.Add(new PaletteCommand($"Choose Custom Accent {accentColorWord}…", "Settings", string.Empty,
+            () => { AccentColorPickerButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentCustom, $"appearance accent {accentColorWord.ToLowerInvariant()} picker dialog"));
         foreach (var fontFamily in EditorFontChoices)
         {
             var selectedFontFamily = fontFamily;

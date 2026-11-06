@@ -526,14 +526,33 @@ public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
 {
     private static readonly Typeface EmojiTypeface = new(new FontFamily("Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji"));
 
+    private readonly AsyncDocumentSnapshot<EmojiSnapshot> _snapshot = new();
+
     protected override void ColorizeLine(AvaloniaEdit.Document.DocumentLine line)
     {
         var document = CurrentContext.Document;
         if (document is null || line.Length <= 0 || line.Length > PerformanceBudget.MaximumCustomColorizationLineLength)
             return;
 
-        var text = EditorLineTextCache.GetText(document, line);
-        foreach (var (start, end) in EnumerateEmojiRanges(text))
+        var textView = CurrentContext.TextView;
+        var stateSnapshot = _snapshot.GetOrSchedule(
+            document,
+            (source, lineCount, token) => BuildSnapshot(source, lineCount, token),
+            () => textView?.InvalidateLayer(KnownLayer.Text));
+
+        IEnumerable<(int Start, int End)> ranges;
+        if (stateSnapshot is null)
+        {
+            ranges = EnumerateEmojiRanges(EditorLineTextCache.GetText(document, line));
+        }
+        else
+        {
+            ranges = stateSnapshot.GetRanges(line.LineNumber);
+            if (ranges is List<(int, int)> { Count: 0 })
+                return;
+        }
+
+        foreach (var (start, end) in ranges)
         {
             ChangeLinePart(line.Offset + start, line.Offset + end, element =>
             {
@@ -542,6 +561,35 @@ public sealed class EmojiTypefaceColorizer : DocumentColorizingTransformer
                 VisualLineElementAccess.SetTextRunProperties(element, properties);
             });
         }
+    }
+
+    private static EmojiSnapshot BuildSnapshot(string text, int lineCount, CancellationToken cancellationToken)
+    {
+        var ranges = new List<List<(int Start, int End)>>(lineCount);
+        var start = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var end = start;
+            while (end < text.Length && text[end] is not '\r' and not '\n')
+            {
+                if ((end & 0x3fff) == 0) cancellationToken.ThrowIfCancellationRequested();
+                end++;
+            }
+            var lineRanges = new List<(int Start, int End)>();
+            foreach (var (rangeStart, rangeEnd) in EnumerateEmojiRanges(text[start..end]))
+                lineRanges.Add((rangeStart, rangeEnd));
+            ranges.Add(lineRanges);
+            if (end == text.Length) break;
+            start = end + (text[end] == '\r' && end + 1 < text.Length && text[end + 1] == '\n' ? 2 : 1);
+        }
+        return new EmojiSnapshot(ranges);
+    }
+
+    private sealed record EmojiSnapshot(List<List<(int Start, int End)>> LineRanges)
+    {
+        public List<(int Start, int End)> GetRanges(int lineNumber) =>
+            lineNumber >= 1 && lineNumber <= LineRanges.Count ? LineRanges[lineNumber - 1] : LineRanges.Count > 0 ? LineRanges[^1] : [];
     }
 
     private static IEnumerable<(int Start, int End)> EnumerateEmojiRanges(string text)

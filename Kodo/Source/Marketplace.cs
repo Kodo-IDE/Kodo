@@ -41,8 +41,8 @@ public partial class MainWindow
                 await InvokeExtensionUiAsync(() =>
                 {
                     var combined = earlyParsed.Where(e => !string.Equals(e.Type, "plugin", StringComparison.OrdinalIgnoreCase)).Concat(_pluginsIndexEntries).ToList();
-                    SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined);
-                    NotifyExtensionFiltersChanged();
+                    if (SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined))
+                        NotifyExtensionFiltersChanged();
                 });
                 _ = Task.Run(async () =>
                 {
@@ -211,7 +211,7 @@ public partial class MainWindow
             .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         await InvokeExtensionUiAsync(() =>
         {
-            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
+            var marketplaceChanged = SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
             SyncObservableCollection(
                 ExtensionLoadErrors,
                 ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
@@ -219,7 +219,8 @@ public partial class MainWindow
 
             SyncMarketplaceInstallStates();
             RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
-            NotifyExtensionFiltersChanged();
+            if (marketplaceChanged)
+                NotifyExtensionFiltersChanged();
         });
         if (_extensionFilterBatchDepth > 0)
         {
@@ -1319,7 +1320,7 @@ public partial class MainWindow
         NotifyExtensionFiltersChangedCore();
     }
 
-    private static void SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
+    private static bool SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
         => SyncObservableCollection(target, source, e => e.Id, (existing, incoming) =>
         {
             if (existing.IconImage is not null && incoming.IconImage is null) incoming.IconImage = existing.IconImage;
@@ -1932,13 +1933,14 @@ public partial class MainWindow
         owner.Equals(KodoExtensionsOwner, StringComparison.OrdinalIgnoreCase) &&
         repo.Equals(KodoExtensionsRepo, StringComparison.OrdinalIgnoreCase);
 
-    private static void SyncObservableCollection<T, TKey>(
+    private static bool SyncObservableCollection<T, TKey>(
         ObservableCollection<T> target,
         IList<T> source,
         Func<T, TKey> keySelector,
         Action<T, T>? merge = null)
         where TKey : notnull
     {
+        var changed = false;
         var dedupedSource = source
             .GroupBy(keySelector)
             .Select(group => group.First())
@@ -1952,6 +1954,7 @@ public partial class MainWindow
             {
                 var removedIcon = (target[i] as MarketplaceExtension)?.IconImage;
                 target.RemoveAt(i);
+                changed = true;
                 BitmapLifetime.DisposeAfterLayout(removedIcon);
             }
         }
@@ -1969,6 +1972,7 @@ public partial class MainWindow
             if (existingIndex == -1)
             {
                 target.Insert(Math.Min(i, target.Count), item);
+                changed = true;
                 for (var j = i; j < target.Count; j++)
                     targetIndexByKey[keySelector(target[j])] = j;
                 continue;
@@ -1977,6 +1981,7 @@ public partial class MainWindow
             if (existingIndex != i)
             {
                 target.Move(existingIndex, i);
+                changed = true;
                 var start = Math.Min(existingIndex, i);
                 for (var j = start; j < target.Count; j++)
                     targetIndexByKey[keySelector(target[j])] = j;
@@ -1986,9 +1991,11 @@ public partial class MainWindow
             {
                 merge?.Invoke(target[i], item);
                 target[i] = item;
+                changed = true;
                 targetIndexByKey[key] = i;
             }
         }
+        return changed;
     }
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
