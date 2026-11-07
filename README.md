@@ -44,7 +44,6 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 * **Minimap and Navigation** - Scroll through the editor minimap, navigate between problems and code locations, and use per-pane breadcrumbs.
 * **Editor and Settings** - Refreshed Settings, integrated encoding, line-ending, and indentation choices, and more commands for common editor actions.
 * **Performance and Reliability** - Faster startup, less lag when closing folders, improved large-file handling, and fixes across editor rendering, split tabs, completions, and language-server startup.
-* **Linux and Extensions** - Retains native Linux support, language-server support, verified hotfixes, and the cross-platform updater introduced in v2.1.0.
 
 ---
 

@@ -250,8 +250,8 @@ public partial class MainWindow
         editor.TextArea.TextView.ElementGenerators.Add(new StrictLinkElementGenerator());
         _secondaryColorSwatchGenerator = new ColorSwatchElementGenerator
         {
-            PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker",
-            EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour"
+            PickerTitle = $"{char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]} Picker",
+            EditColorTooltip = $"Edit {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}"
         };
         editor.TextArea.TextView.ElementGenerators.Add(_secondaryColorSwatchGenerator);
         editor.TextArea.TextView.PointerMoved += EditorTextView_OnPointerMoved;

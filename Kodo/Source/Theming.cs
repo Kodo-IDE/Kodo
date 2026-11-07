@@ -43,6 +43,7 @@ public partial class MainWindow
             "integrations" => "SectionHeaderIntegrations",
             "updates" => "SectionHeaderUpdates",
             "performance" => "SectionHeaderPerformance",
+            "accessibility" => "SectionHeaderAccessibility",
             "privacy" => "SectionHeaderPrivacy",
             "personalization" => "SectionHeaderPersonalization",
             "devoptions" => "SectionHeaderDeveloperOptions",
@@ -97,6 +98,7 @@ public partial class MainWindow
             ("integrations", "SectionHeaderIntegrations"),
             ("updates", "SectionHeaderUpdates"),
             ("performance", "SectionHeaderPerformance"),
+            ("accessibility", "SectionHeaderAccessibility"),
             ("privacy", "SectionHeaderPrivacy"),
             ("personalization", "SectionHeaderPersonalization"),
             ("devoptions", "SectionHeaderDeveloperOptions"),
@@ -709,7 +711,7 @@ public partial class MainWindow
                 },
                 new TextBlock
                 {
-                    Text = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
+                    Text = $"Custom Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}",
                     FontSize = 15,
                     FontWeight = FontWeight.SemiBold,
                     Foreground = PrimaryTextBrush,
@@ -740,7 +742,7 @@ public partial class MainWindow
             Children =
             {
                 headerRow,
-                new TextBlock { Text = IsAmericanEnglish ? "Pick a color for highlights, selections and buttons" : "Pick a colour for highlights, selections and buttons", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
+                new TextBlock { Text = $"Pick a {RegionalSpelling.Color} for highlights, selections and buttons", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
                 headerDivider,
                 new Border
                 {
@@ -787,7 +789,7 @@ public partial class MainWindow
             CanResize = false,
             ShowInTaskbar = false,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title = IsAmericanEnglish ? "Custom Accent Color" : "Custom Accent Colour",
+            Title = $"Custom Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}",
             Background = WindowBackgroundBrush,
             Content = CreateDialogSurface(inner)
         };

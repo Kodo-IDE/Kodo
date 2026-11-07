@@ -727,6 +727,17 @@
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
         </Style>
 
+        <Style Selector="Window.reducedmotion Button">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Window.reducedmotion Border">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+
         <Style Selector="Button.editortab:pointerover">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -916,7 +927,8 @@
 
                 <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch"
                             IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
-                    <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" AutomationProperties.Name="{Binding SettingsTooltip}"
+                            ToolTip.Tip="{Binding SettingsTooltip}">
                         <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
@@ -930,7 +942,8 @@
 
                 <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch"
                             IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
-                    <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" AutomationProperties.Name="{Binding HomeTooltip}"
+                            ToolTip.Tip="{Binding HomeTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -938,7 +951,8 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Classes.active="{Binding IsEditorPageVisible}" Click="EditorButton_OnClick" ToolTip.Tip="{Binding EditorTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsEditorPageVisible}" Click="EditorButton_OnClick" AutomationProperties.Name="{Binding EditorTooltip}"
+                            ToolTip.Tip="{Binding EditorTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -949,6 +963,7 @@
                     <Button Classes="activity"
                             Classes.active="{Binding IsGitSourceControlPanelOpen}"
                             Click="GitSourceControlActivityButton_OnClick"
+                            AutomationProperties.Name="Source Control (Ctrl+Shift+G)"
                             ToolTip.Tip="Source Control (Ctrl+Shift+G)"
                             IsVisible="{Binding IsGitSourceControlEnabled}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -967,7 +982,8 @@
                             Opacity="0.6"
                             HorizontalAlignment="Center"
                             Margin="0,2,0,2" />
-                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="{Binding NewFileTooltip}">
+                    <Button Classes="activity" Click="NewFileButton_OnClick" AutomationProperties.Name="{Binding NewFileTooltip}"
+                            ToolTip.Tip="{Binding NewFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -975,7 +991,8 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="{Binding OpenFileTooltip}">
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" AutomationProperties.Name="{Binding OpenFileTooltip}"
+                            ToolTip.Tip="{Binding OpenFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -985,6 +1002,7 @@
                     </Button>
                     <Button Classes="activity"
                             Click="OpenFolderButton_OnClick"
+                            AutomationProperties.Name="{Binding OpenFolderTooltip}"
                             ToolTip.Tip="{Binding OpenFolderTooltip}"
                             IsVisible="{Binding !IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -997,6 +1015,7 @@
                     <Button Classes="activity"
                             Classes.active="{Binding IsFileExplorerVisible}"
                             Click="CollapseExplorerButton_OnClick"
+                            AutomationProperties.Name="{Binding ToggleExplorerTooltip}"
                             ToolTip.Tip="{Binding ToggleExplorerTooltip}"
                             IsVisible="{Binding IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -1012,7 +1031,8 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Classes.active="{Binding IsExtensionsPageVisible}" Click="ExtensionsButton_OnClick" ToolTip.Tip="{Binding OpenExtensionsTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsExtensionsPageVisible}" Click="ExtensionsButton_OnClick" AutomationProperties.Name="{Binding OpenExtensionsTooltip}"
+                            ToolTip.Tip="{Binding OpenExtensionsTooltip}">
                         <Viewbox Width="20" Height="20"
                                  HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -1637,8 +1657,9 @@
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Kodo" />
-                                <TextBlock FontSize="12"
+                                <TextBlock x:Name="FileSummaryLiveRegion" FontSize="12"
                                            Foreground="{Binding MutedTextBrush}"
+                                           AutomationProperties.LiveSetting="Polite"
                                            Text="{Binding FileSummaryText}" />
                             </StackPanel>
                         </StackPanel>
@@ -3972,8 +3993,9 @@
                                         Spacing="4"
                                         VerticalAlignment="Center"
                                         IsVisible="{Binding IsDocumentViewVisible}">
-                                <TextBlock Classes="statusDim"
+                                <TextBlock x:Name="StatusBarCaretLiveRegion" Classes="statusDim"
                                            Text="{Binding StatusBarCaretText}"
+                                           AutomationProperties.LiveSetting="Polite"
                                            ToolTip.Tip="Cursor position"
                                            VerticalAlignment="Center" />
                                 <TextBlock Classes="statusDim"
@@ -6005,6 +6027,7 @@
                                 <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
                                 <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
                                 <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
+                            <Button Classes="settingsnav" Tag="accessibility" Click="SettingsSectionButton_OnClick" Content="Accessibility" />
                                 <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
                                 <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="{Binding LabelPersonalization}" />
                                 <Button Classes="settingsnav" Tag="devoptions" Click="SettingsSectionButton_OnClick" Content="Developer Options" />
@@ -7039,6 +7062,59 @@ ToolTip.Tip="Increase font size" />
                                            FontSize="11"
                                            TextWrapping="Wrap"
                                            Text="When Performance mode is on, you can choose which features to disable individually. Disabled features are hidden from the home screen and their refresh buttons are turned off." />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid x:Name="SectionHeaderAccessibility" Tag="accessibility" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="ACCESSIBILITY" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
+                        </Grid>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                x:Name="AccessibilitySettingsCard" Tag="accessibility">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Accessibility" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsScreenReaderAnnouncementsEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Screen reader announcements" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Announces save status, cursor position, and document changes to screen readers. Turn off if announcements are distracting." />
+                                <CheckBox IsChecked="{Binding IsReduceMotionEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Reduce motion" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Turns off hover and fade transitions across the UI." />
+                                <CheckBox IsChecked="{Binding IsLargeTextEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Large text" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Enlarges editor text by 30% for easier reading." />
                             </StackPanel>
                         </Border>
 

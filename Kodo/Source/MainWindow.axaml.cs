@@ -256,6 +256,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isSaving;
     private bool _isDiscordRichPresenceEnabled;
     private bool _isGitSourceControlEnabled;
+    private bool _isScreenReaderAnnouncementsEnabled = true;
+    private bool _isReduceMotionEnabled;
+    private bool _isLargeTextEnabled;
     private bool _hasUntitledDocument;
     private bool _isRefreshingExtensions;
     private Task? _initialExtensionScanTask;
@@ -1110,6 +1113,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
         if (_isPerformanceModeEnabled)
             _latestReleaseStatusText = "Disabled by Performance mode.";
+        _isScreenReaderAnnouncementsEnabled = settings.ScreenReaderAnnouncementsEnabled;
+        _isReduceMotionEnabled = settings.ReduceMotionEnabled;
+        _isLargeTextEnabled = settings.LargeTextEnabled;
         _newsDisabled = settings.NewsDisabled;
         _whatsNewDisabled = settings.WhatsNewDisabled;
         _isDebouncedSearchEnabled = settings.DebouncedSearchEnabled;
@@ -1219,6 +1225,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsHomePageVisible = true;
 
         ApplyEditorSettings();
+        ApplyReduceMotion();
+        ApplyScreenReaderAnnouncements();
         Opened += MainWindow_OnOpened;
         Activated += (_, _) => _stallWatchdog.Reset();
         Closing += MainWindow_OnClosing;
@@ -2050,7 +2058,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         editor.WordWrap = IsWordWrapEnabled;
         editor.Options.IndentationSize = TabSize;
         editor.Options.ConvertTabsToSpaces = InsertSpaces;
-        editor.FontSize = EditorFontSize;
+        editor.FontSize = EditorFontSize * (IsLargeTextEnabled ? 1.3 : 1.0);
         editor.FontFamily = KodoFonts.ResolveEditorFamily(EditorFontFamily);
     }
 
@@ -3087,9 +3095,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialTitle => CurrentTutorialStep.Title;
 
-    public string TutorialBody => IsAmericanEnglish
-        ? CurrentTutorialStep.Body.Replace("accent colour", "accent color")
-        : CurrentTutorialStep.Body.Replace("personalize", "personalise");
+    public string TutorialBody => RegionalSpelling.ApplyTutorial(CurrentTutorialStep.Body);
 
     public string TutorialShortcutText => CurrentTutorialStep.Shortcut;
 
@@ -3097,13 +3103,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public string TutorialHighlightOne => CurrentTutorialStep.HighlightOne;
 
-    public string TutorialHighlightTwo => (!IsAmericanEnglish && TutorialStepIndex == 4)
-        ? CurrentTutorialStep.HighlightTwo.Replace("tab behavior", "tab behaviour")
-        : CurrentTutorialStep.HighlightTwo;
+    public string TutorialHighlightTwo => RegionalSpelling.ApplyTutorial(CurrentTutorialStep.HighlightTwo);
 
-    public string TutorialHighlightThree => IsAmericanEnglish
-        ? CurrentTutorialStep.HighlightThree.Replace("accent colour", "accent color")
-        : CurrentTutorialStep.HighlightThree;
+    public string TutorialHighlightThree => RegionalSpelling.ApplyTutorial(CurrentTutorialStep.HighlightThree);
 
     public bool CanGoToPreviousTutorialStep => TutorialStepIndex > 0;
 
@@ -3164,6 +3166,66 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             SaveSettings();
             UpdateGitSourceControlLifecycle();
+        }
+    }
+
+    public bool IsScreenReaderAnnouncementsEnabled
+    {
+        get => _isScreenReaderAnnouncementsEnabled;
+        set
+        {
+            if (_isScreenReaderAnnouncementsEnabled == value) return;
+            _isScreenReaderAnnouncementsEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            ApplyScreenReaderAnnouncements();
+        }
+    }
+
+    public bool IsReduceMotionEnabled
+    {
+        get => _isReduceMotionEnabled;
+        set
+        {
+            if (_isReduceMotionEnabled == value) return;
+            _isReduceMotionEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            ApplyReduceMotion();
+        }
+    }
+
+    public bool IsLargeTextEnabled
+    {
+        get => _isLargeTextEnabled;
+        set
+        {
+            if (_isLargeTextEnabled == value) return;
+            _isLargeTextEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            ApplyEditorSettings(PrimaryEditorTextBox);
+            ApplyEditorSettings(SecondaryEditorTextBox);
+        }
+    }
+
+    private void ApplyReduceMotion()
+    {
+        if (_isReduceMotionEnabled)
+            RootWindow.Classes.Add("reducedmotion");
+        else
+            RootWindow.Classes.Remove("reducedmotion");
+    }
+
+    private void ApplyScreenReaderAnnouncements()
+    {
+        var setting = _isScreenReaderAnnouncementsEnabled
+            ? Avalonia.Automation.AutomationLiveSetting.Polite
+            : Avalonia.Automation.AutomationLiveSetting.Off;
+        foreach (var name in new[] { "FileSummaryLiveRegion", "StatusBarCaretLiveRegion", "AutoSaveStatusLiveRegion" })
+        {
+            if (this.FindControl<Control>(name) is { } control)
+                Avalonia.Automation.AutomationProperties.SetLiveSetting(control, setting);
         }
     }
 
@@ -4843,27 +4905,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void UpdateLocalizedSpelling()
     {
-        RegionalSpelling.IsAmericanEnglish = IsAmericanEnglish;
-        _colorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
-        _colorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+        RegionalSpelling.SetFromUserCountry(_userCountry);
+        var pickerTitle = $"{char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]} Picker";
+        var editColorTooltip = $"Edit {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}";
+        _colorSwatchGenerator.PickerTitle = pickerTitle;
+        _colorSwatchGenerator.EditColorTooltip = editColorTooltip;
         if (_secondaryColorSwatchGenerator is not null)
         {
-            _secondaryColorSwatchGenerator.PickerTitle = IsAmericanEnglish ? "Color Picker" : "Colour Picker";
-            _secondaryColorSwatchGenerator.EditColorTooltip = IsAmericanEnglish ? "Edit Color" : "Edit Colour";
+            _secondaryColorSwatchGenerator.PickerTitle = pickerTitle;
+            _secondaryColorSwatchGenerator.EditColorTooltip = editColorTooltip;
         }
     }
 
-    public bool IsAmericanEnglish => _userCountry == "US";
+    public bool IsAmericanEnglish => RegionalSpelling.IsAmericanEnglish;
     public string CancelledSpelling => RegionalSpelling.Cancelled;
-    public string CustomizeWorkspaceText => IsAmericanEnglish ? "Customize your workspace" : "Customise your workspace";
-    public string SyntaxColorsDescriptionText => IsAmericanEnglish
-        ? "Adds extra syntax colors using language server information. This optional feature is off by default."
-        : "Adds extra syntax colours using language server information. This optional feature is off by default.";
-    public string DeadCodeTooltip => IsAmericanEnglish
-        ? "Gray out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct."
-        : "Grey out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct.";
+    public string CustomizeWorkspaceText => $"{char.ToUpperInvariant(RegionalSpelling.Customize[0])}{RegionalSpelling.Customize[1..]} your workspace";
+    public string SyntaxColorsDescriptionText => $"Adds extra syntax {RegionalSpelling.Color}s using language server information. This optional feature is off by default.";
+    public string DeadCodeTooltip => $"{RegionalSpelling.Gray} out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct.";
 
-    public string LabelAccentColour => IsAmericanEnglish ? "Accent Color" : "Accent Colour";
+    public string LabelAccentColour => $"Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}";
     public string LabelAccentSystem => SystemThemeHelper.AccentModeDisplayName(IsAmericanEnglish);
     public string TooltipSystemTheme => SystemThemeHelper.SystemThemeTooltip(IsAmericanEnglish);
     public string RevealInFileManagerText => SystemThemeHelper.RevealInFileManagerText(IsAmericanEnglish);
@@ -4900,7 +4960,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? "New terminal sessions use the selected shell. PowerShell is preferred when it is available."
             : "New terminal sessions use the selected shell, starting in the folder you have open.";
 
-    public string TooltipAccentTheme => IsAmericanEnglish ? "Use the accent color preset by the active theme" : "Use the accent colour preset by the active theme";
+    public string TooltipAccentTheme => $"Use the accent {RegionalSpelling.Color} preset by the active theme";
     public string TooltipAccentWindows
     {
         get
@@ -4911,15 +4971,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 : baseText + " \u2013 no system accent detected, using the theme accent instead.";
         }
     }
-    public string TooltipAccentCustom => IsAmericanEnglish ? "Choose a custom accent color" : "Choose a custom accent colour";
-    public string LabelPersonalization => IsAmericanEnglish ? "Personalization" : "Personalisation";
-    public string LabelPersonalizationHeader => IsAmericanEnglish ? "PERSONALIZATION" : "PERSONALISATION";
-    public string PersonalizationExportTooltip => IsAmericanEnglish
-        ? "Save a formatted .txt file with all of Kodo's settings, personalization, open/recent files, and installed extensions"
-        : "Save a formatted .txt file with all of Kodo's settings, personalisation, open/recent files, and installed extensions";
-    public string LabelPersonalizationDescription => IsAmericanEnglish
-        ? "These settings personalize the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible."
-        : "These settings personalise the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
+    public string TooltipAccentCustom => $"Choose a custom accent {RegionalSpelling.Color}";
+    public string LabelPersonalization => char.ToUpperInvariant(RegionalSpelling.Personalization[0]) + RegionalSpelling.Personalization[1..];
+    public string LabelPersonalizationHeader => LabelPersonalization.ToUpperInvariant();
+    public string PersonalizationExportTooltip => $"Save a formatted .txt file with all of Kodo's settings, {RegionalSpelling.Personalization}, open/recent files, and installed extensions";
+    public string LabelPersonalizationDescription => $"These settings {RegionalSpelling.Personalize} the welcome message on the Home screen. Your name is used in greetings when set. Country is auto-detected from your system if left blank. Hemisphere and time zone are also auto-detected when possible.";
 
     public int UserHemisphereIndex
     {
@@ -6207,6 +6263,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             AutoSaveEnabled = IsAutoSaveEnabled,
             DiscordRichPresenceEnabled = IsDiscordRichPresenceEnabled,
             GitSourceControlEnabled = IsGitSourceControlEnabled,
+            ScreenReaderAnnouncementsEnabled = IsScreenReaderAnnouncementsEnabled,
+            ReduceMotionEnabled = IsReduceMotionEnabled,
+            LargeTextEnabled = IsLargeTextEnabled,
             DeveloperOptionsVisible = IsDeveloperOptionsVisible,
             RuntimeMetricsLoggingEnabled = IsRuntimeMetricsLoggingEnabled,
             SlowStageReportThresholdMs = int.TryParse(SlowStageThresholdText.Trim(), out var slowStageThresholdMs) && slowStageThresholdMs > 0

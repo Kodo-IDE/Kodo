@@ -15,6 +15,9 @@ internal sealed class AppSettings
     public bool AutoSaveEnabled { get; set; }
     public bool DiscordRichPresenceEnabled { get; set; }
     public bool GitSourceControlEnabled { get; set; }
+    public bool ScreenReaderAnnouncementsEnabled { get; set; } = true;
+    public bool ReduceMotionEnabled { get; set; }
+    public bool LargeTextEnabled { get; set; }
     public bool DeveloperOptionsVisible { get; set; }
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;

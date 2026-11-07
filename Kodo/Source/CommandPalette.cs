@@ -233,7 +233,8 @@ public partial class MainWindow
             var frame = useOverlaySearchBox ? null : this.FindControl<Border>("QuickAccessSearchFrame");
             var frameWidth = frame is { Bounds.Width: > 0 } ? frame.Bounds.Width : 560;
             var available = overlay.Bounds.Width > 0 ? Math.Max(1, overlay.Bounds.Width - 16) : frameWidth;
-            card.Width = Math.Min(Math.Max(frameWidth, 520), available);
+            var preferredWidth = Math.Max(frameWidth, 520);
+            card.Width = Math.Min(preferredWidth, available);
             var resultsTop = useOverlaySearchBox ? 80d : 0d;
             if (frame is not null && overlay.Bounds.Width > 0)
             {
@@ -245,7 +246,11 @@ public partial class MainWindow
                     card.Margin = new Thickness(left, resultsTop, 0, 0);
                 }
             }
-            scroll.MaxHeight = overlay.Bounds.Height > 0 ? Math.Clamp(overlay.Bounds.Height - resultsTop - 30, 160, 460) : 460;
+            else if (overlay.Bounds.Width > 0)
+            {
+                card.Margin = new Thickness(Math.Max(8, (overlay.Bounds.Width - card.Width) / 2), resultsTop, 0, 0);
+            }
+            scroll.MaxHeight = overlay.Bounds.Height > 0 ? Math.Clamp(overlay.Bounds.Height - resultsTop - 30, 120, 460) : 460;
         }
 
         Grid.SetRow(overlay, 1);
@@ -1141,7 +1146,7 @@ public partial class MainWindow
             () => { TabSizeIndex = 2; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 8, "indent tab size"));
         commands.Add(new PaletteCommand("Use Tabs for Indentation", "Settings", string.Empty,
             () => { TabSizeIndex = 3; return Task.CompletedTask; }, () => InsertSpaces, "indent tab size"));
-        var accentColorWord = IsAmericanEnglish ? "Color" : "Colour";
+        var accentColorWord = char.ToUpperInvariant(RegionalSpelling.Color[0]) + RegionalSpelling.Color[1..];
         commands.Add(new PaletteCommand($"Use Kodo Accent {accentColorWord}", "Settings", string.Empty,
             () => { AccentKodoButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentKodo, $"appearance accent {accentColorWord.ToLowerInvariant()}"));
         commands.Add(new PaletteCommand($"Use System Accent {accentColorWord}", "Settings", string.Empty,
@@ -1280,6 +1285,12 @@ public partial class MainWindow
                 if (shown.Add(file.Path))
                     entries.Add(CreateQuickAccessFileEntry(file, "Recent", null, null, line, column));
             }
+            var recentCommands = _recentPaletteCommands
+                .Select(title => BuildCommandPaletteCommands().FirstOrDefault(command => command.Title == title))
+                .Where(command => command is not null && command.IsAvailable?.Invoke() != false)
+                .Select(command => command! with { Section = "Recently Used" })
+                .ToList();
+            entries.AddRange(recentCommands);
             entries.AddRange(BuildQuickAccessHintEntries());
 
             var filesShown = 0;
@@ -1310,6 +1321,10 @@ public partial class MainWindow
             if (queue.Count > PaletteMaxResults)
                 queue.Dequeue();
         }
+        foreach (var file in _quickAccessOpenEntries)
+            Consider(file);
+        foreach (var file in _quickAccessRecentEntries)
+            Consider(file);
         foreach (var file in _quickAccessWorkspaceEntries)
             Consider(file);
         foreach (var file in _quickAccessExtraEntries)
@@ -1822,6 +1837,7 @@ public partial class MainWindow
             Child = grid,
             Tag = command,
         };
+        Avalonia.Automation.AutomationProperties.SetName(row, command.Title);
         return (row, accent);
     }
 
@@ -1947,6 +1963,8 @@ public partial class MainWindow
             DismissCommandPalette(restoreFocus: false);
             ReleasePaletteFocus();
             await command.Execute();
+            ReleasePaletteFocus();
+            Dispatcher.UIThread.Post(ReleasePaletteFocus, Avalonia.Threading.DispatcherPriority.Background);
         }
         catch (Exception ex)
         {
