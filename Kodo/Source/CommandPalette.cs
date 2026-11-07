@@ -226,6 +226,12 @@ public partial class MainWindow
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
+        overlay.Children.Add(new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        });
         overlay.Children.Add(card);
 
         void SyncLayout()
@@ -235,7 +241,7 @@ public partial class MainWindow
             var available = overlay.Bounds.Width > 0 ? Math.Max(1, overlay.Bounds.Width - 16) : frameWidth;
             var preferredWidth = Math.Max(frameWidth, 520);
             card.Width = Math.Min(preferredWidth, available);
-            var resultsTop = useOverlaySearchBox ? 80d : 0d;
+            var resultsTop = useOverlaySearchBox ? 64d : 0d;
             if (frame is not null && overlay.Bounds.Width > 0)
             {
                 var frameOrigin = frame.TranslatePoint(new Point(0, 0), overlay);
@@ -1089,10 +1095,6 @@ public partial class MainWindow
                 Keywords: $"settings preferences toggle {keywords}"));
         }
 
-        AddSettingToggle("Developer Options", () => IsDeveloperOptionsVisible, value => IsDeveloperOptionsVisible = value, "developer advanced");
-        AddSettingToggle("Verbose Logging", () => IsVerboseLoggingEnabled, value => IsVerboseLoggingEnabled = value, "logs diagnostics");
-        AddSettingToggle("Discord Rich Presence", () => IsDiscordRichPresenceEnabled, value => IsDiscordRichPresenceEnabled = value, "activity status discord");
-        AddSettingToggle("Git Source Control", () => IsGitSourceControlEnabled, value => IsGitSourceControlEnabled = value, "git source control version control");
         AddSettingToggle("Code Suggestions", () => IsInsightCodeSuggestionsEnabled, value => IsInsightCodeSuggestionsEnabled = value, "insight completion autocomplete");
         AddSettingToggle("Dead Code Detection", () => IsInsightDeadCodeEnabled, value => IsInsightDeadCodeEnabled = value, "insight analysis");
         AddSettingToggle("Error Detection", () => IsInsightErrorDetectionEnabled, value => IsInsightErrorDetectionEnabled = value, "insight diagnostics errors");
@@ -1109,28 +1111,6 @@ public partial class MainWindow
         AddSettingToggle("Prefer System Language Servers", () => LspPreferSystem, value => LspPreferSystem = value, "lsp install external");
         AddSettingToggle("Confirm Before Closing Unsaved Tabs", () => IsConfirmBeforeClosingUnsavedTabsEnabled, value => IsConfirmBeforeClosingUnsavedTabsEnabled = value, "close save prompt");
         AddSettingToggle("Restore Open Tabs on Launch", () => IsRestoreOpenTabsOnLaunchEnabled, value => IsRestoreOpenTabsOnLaunchEnabled = value, "startup session restore");
-        AddSettingToggle("Automatic Extension Updates", () => IsAutoUpdateExtensionsEnabled, value => IsAutoUpdateExtensionsEnabled = value, "plugins marketplace");
-        AddSettingToggle("Background Extension Updates", () => IsAutoUpdateExtensionsInBackgroundEnabled, value => IsAutoUpdateExtensionsInBackgroundEnabled = value, "plugins marketplace");
-        AddSettingToggle("Automatic App Updates", () => IsAutoUpdateAppEnabled, value => IsAutoUpdateAppEnabled = value, "kodo version");
-        AddSettingToggle("Background App Updates", () => IsAutoUpdateAppInBackgroundEnabled, value => IsAutoUpdateAppInBackgroundEnabled = value, "kodo version", () => IsAutoUpdateAppEnabled);
-        AddSettingToggle("PowerShell Prediction", () => IsPSReadLinePredictionEnabled, value => IsPSReadLinePredictionEnabled = value, "terminal shell psreadline windows", OperatingSystem.IsWindows);
-        AddSettingToggle("Anonymous Usage Data", () => IsDataTrackingEnabled, value => IsDataTrackingEnabled = value, "privacy analytics telemetry");
-        AddSettingToggle("Debounced Search Results", () => IsDebouncedSearchEnabled, value => IsDebouncedSearchEnabled = value, "performance search", () => IsPerformanceModeEnabled);
-
-        commands.Add(new PaletteCommand(
-            NewsDisabled ? "Enable News and Announcements" : "Disable News and Announcements",
-            "Settings",
-            string.Empty,
-            () => { NewsDisabled = !NewsDisabled; return Task.CompletedTask; },
-            () => IsPerformanceModeEnabled,
-            "performance home feed privacy"));
-        commands.Add(new PaletteCommand(
-            WhatsNewDisabled ? "Enable What's New" : "Disable What's New",
-            "Settings",
-            string.Empty,
-            () => { WhatsNewDisabled = !WhatsNewDisabled; return Task.CompletedTask; },
-            () => IsPerformanceModeEnabled,
-            "performance home release notes"));
 
         commands.Add(new PaletteCommand("Increase Editor Font Size", "Settings", string.Empty,
             () => { EditorFontSize = Math.Min(32, EditorFontSize + 1); return Task.CompletedTask; },
@@ -1146,15 +1126,6 @@ public partial class MainWindow
             () => { TabSizeIndex = 2; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 8, "indent tab size"));
         commands.Add(new PaletteCommand("Use Tabs for Indentation", "Settings", string.Empty,
             () => { TabSizeIndex = 3; return Task.CompletedTask; }, () => InsertSpaces, "indent tab size"));
-        var accentColorWord = char.ToUpperInvariant(RegionalSpelling.Color[0]) + RegionalSpelling.Color[1..];
-        commands.Add(new PaletteCommand($"Use Kodo Accent {accentColorWord}", "Settings", string.Empty,
-            () => { AccentKodoButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentKodo, $"appearance accent {accentColorWord.ToLowerInvariant()}"));
-        commands.Add(new PaletteCommand($"Use System Accent {accentColorWord}", "Settings", string.Empty,
-            () => { AccentWindowsButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentWindows, $"appearance accent {accentColorWord.ToLowerInvariant()} windows"));
-        commands.Add(new PaletteCommand($"Use Theme Accent {accentColorWord}", "Settings", string.Empty,
-            () => { AccentThemeButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentTheme && HasThemeAccent, $"appearance accent {accentColorWord.ToLowerInvariant()} theme extension"));
-        commands.Add(new PaletteCommand($"Choose Custom Accent {accentColorWord}…", "Settings", string.Empty,
-            () => { AccentColorPickerButton_OnClick(null, null!); return Task.CompletedTask; }, () => !IsAccentCustom, $"appearance accent {accentColorWord.ToLowerInvariant()} picker dialog"));
         foreach (var fontFamily in EditorFontChoices)
         {
             var selectedFontFamily = fontFamily;
