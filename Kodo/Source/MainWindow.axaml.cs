@@ -583,6 +583,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private LoadedExtension? _primaryAppliedSyntaxExtension;
     private LoadedExtension? _secondaryAppliedSyntaxExtension;
+    private string? _highlightedPath;
     private LoadedExtension? _appliedSyntaxExtension
     {
         get => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
@@ -2147,7 +2148,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (langExt is null)
         {
-            ClearEditorSyntaxState();
+            if (_appliedSyntaxExtension is null || !FileSystemPaths.Equals(_highlightedPath, _currentFilePath))
+                ClearEditorSyntaxState();
         }
         else
         {
@@ -2163,7 +2165,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (EditorTextBox is null)
             return;
 
+        KodoDiagnostics.LogDebug($"ClearEditorSyntaxState called path={_currentFilePath}");
         _appliedSyntaxExtension = null;
+        _highlightedPath = null;
         EditorTextBox.SyntaxHighlighting = null;
         ConfigureRainbowBrackets(null);
         ConfigureInterpolatedStrings(null);

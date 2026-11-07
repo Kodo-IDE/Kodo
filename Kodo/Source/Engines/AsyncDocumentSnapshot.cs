@@ -29,16 +29,18 @@ internal sealed class AsyncDocumentSnapshot<T> where T : class
         {
             if (ReferenceEquals(_document, document) && ReferenceEquals(_version, version)) return _snapshot;
 
+            var documentChanged = !ReferenceEquals(_document, document);
             _pending?.Cancel();
             _pending?.Dispose();
             _version = version;
             _document = document;
-            _snapshot = null;
+            if (documentChanged)
+                _snapshot = null;
             var source = EditorTextSnapshotStore.GetSnapshot(document);
             var cancellation = _pending = new CancellationTokenSource();
             var token = cancellation.Token;
             _ = BuildSnapshotAfterDelayAsync(document, version, documentLength, documentLineCount, source, build, completed, cancellation);
-            return null;
+            return _snapshot;
         }
     }
 
@@ -117,6 +119,7 @@ internal sealed class AsyncDocumentSnapshot<T> where T : class
                 {
                     if (!ReferenceEquals(_pending, cancellation)) return;
                     _pending = null;
+                    _version = null;
                     cancellation.Dispose();
                 }
             }, DispatcherPriority.Background);
@@ -130,9 +133,7 @@ internal sealed class AsyncDocumentSnapshot<T> where T : class
             _pending?.Cancel();
             _pending?.Dispose();
             _pending = null;
-            _document = null;
             _version = null;
-            _snapshot = null;
         }
     }
 }

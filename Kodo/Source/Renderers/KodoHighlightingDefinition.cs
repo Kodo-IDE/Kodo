@@ -229,7 +229,7 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
                 mainRuleSet.Spans.Add(CreateRegexStringSpan("(?i)(?:fr|rf|br|rb|ur|ru|cr|rc|f|r|u|b|c)\\\"", "\\\"", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
 
             if (ext.StringDelimiters.Contains("'"))
-                mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?i)(?:fr|rf|br|rb|ur|ru|cr|rc|f|r|u|b|c)'", @"'", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
+                mainRuleSet.Spans.Add(CreateRegexStringSpan(@"(?i)(?<![\p{L}\p{Nd}_])(?:fr|rf|br|rb|ur|ru|cr|rc|f|r|u|b|c)'", @"'", stringColor, emptyRuleSet, allowEndOfLineFallback: true));
         }
 
         if (ext.DisableSingleQuoteStrings && ext.StringDelimiters.Contains("\""))
@@ -304,7 +304,10 @@ public sealed class KodoHighlightingDefinition : IHighlightingDefinition
         bool allowEndOfLineFallback)
     {
         var escapedDelimiter = Regex.Escape(delimiter);
-        return CreateRegexStringSpan(escapedDelimiter, escapedDelimiter, stringColor, emptyRuleSet, allowEndOfLineFallback);
+        var startPattern = delimiter == "'"
+            ? @"(?<![\p{L}\p{Nd}_])'"
+            : escapedDelimiter;
+        return CreateRegexStringSpan(startPattern, escapedDelimiter, stringColor, emptyRuleSet, allowEndOfLineFallback);
     }
 
     private static HighlightingSpan CreateRegexStringSpan(

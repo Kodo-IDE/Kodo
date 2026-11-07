@@ -193,11 +193,6 @@ internal static class SettingsStore
             var path = FilePath;
             if (!File.Exists(path)) return new AppSettings();
 
-            var dir = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(dir))
-                EnsurePrivateDirectory(dir);
-            EnsurePrivateFile(path);
-
             var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return new AppSettings();
 

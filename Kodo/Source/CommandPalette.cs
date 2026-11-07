@@ -74,7 +74,7 @@ public partial class MainWindow
     private bool _commandPaletteUsesOverlaySearchBox;
     private List<PaletteCommand> _commandPaletteCommands = [];
     private List<PaletteCommand> _filteredPaletteCommands = [];
-    private readonly List<(Border Row, Border Accent)> _paletteRows = [];
+    private readonly List<(Button Row, Border Accent)> _paletteRows = [];
     private readonly List<string> _recentPaletteCommands = [];
     private int _paletteSelectedIndex = -1;
     private int _palettePressedIndex = -1;
@@ -1608,12 +1608,17 @@ public partial class MainWindow
                     SetPaletteSelection(index, scrollIntoView: false);
                 }
             };
-            row.PointerReleased += async (_, e) =>
+            row.PointerReleased += (_, e) =>
             {
                 if (e.InitialPressMouseButton != MouseButton.Left || _palettePressedIndex != index)
                     return;
                 _palettePressedIndex = -1;
                 SetPaletteSelection(index, scrollIntoView: false);
+            };
+            row.Click += async (_, _) =>
+            {
+                if (_paletteSelectedIndex != index)
+                    SetPaletteSelection(index, scrollIntoView: false);
                 await ExecuteSelectedPaletteCommandAsync();
             };
             list.Children.Add(row);
@@ -1694,7 +1699,7 @@ public partial class MainWindow
         }
     }
 
-    private (Border Row, Border Accent) CreatePaletteCommandRow(PaletteCommand command, PaletteMode mode)
+    private (Button Row, Border Accent) CreatePaletteCommandRow(PaletteCommand command, PaletteMode mode)
     {
         var isFileResult = command.Category == "File";
         var accent = new Border
@@ -1799,13 +1804,16 @@ public partial class MainWindow
             Grid.SetColumn(keycap, 3);
         }
 
-        var row = new Border
+        var row = new Button
         {
             MinHeight = isFileResult && detail.Length > 0 ? 42 : 30,
             Padding = new Thickness(2, isFileResult && detail.Length > 0 ? 3 : 0, 10, isFileResult && detail.Length > 0 ? 3 : 0),
             CornerRadius = KodoDesignTokens.CompactRadius,
             Background = Brushes.Transparent,
-            Child = grid,
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = grid,
             Tag = command,
         };
         Avalonia.Automation.AutomationProperties.SetName(row, command.Title);

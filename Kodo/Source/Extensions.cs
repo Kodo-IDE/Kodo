@@ -1824,6 +1824,8 @@ public partial class MainWindow
         KodoDiagnostics.ReportSlowStage("syntax profile compile", syntaxWatch.ElapsedMilliseconds, 500, $"ext={ext.Id}");
 
         _appliedSyntaxExtension = ext;
+        _highlightedPath = _currentFilePath;
+        KodoDiagnostics.LogDebug($"ApplySyntaxHighlighting ext={ext.Id} path={_currentFilePath}");
         EditorTextBox.SyntaxHighlighting = definition;
         ArmLayoutProbe("layout/after syntax apply");
         ConfigureRainbowBrackets(ext);
