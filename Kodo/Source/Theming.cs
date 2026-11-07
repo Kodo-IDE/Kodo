@@ -45,7 +45,7 @@ public partial class MainWindow
             "performance" => "SectionHeaderPerformance",
             "privacy" => "SectionHeaderPrivacy",
             "personalization" => "SectionHeaderPersonalization",
-            "advanced" => "SectionHeaderAdvanced",
+            "devoptions" => "SectionHeaderDeveloperOptions",
             "helpabout" => "SectionHeaderHelpAbout",
             _ => null,
         };
@@ -99,7 +99,7 @@ public partial class MainWindow
             ("performance", "SectionHeaderPerformance"),
             ("privacy", "SectionHeaderPrivacy"),
             ("personalization", "SectionHeaderPersonalization"),
-            ("advanced", "SectionHeaderAdvanced"),
+            ("devoptions", "SectionHeaderDeveloperOptions"),
             ("helpabout", "SectionHeaderHelpAbout")
         };
         var activeSection = settingsSections

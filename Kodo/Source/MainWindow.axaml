@@ -6007,7 +6007,7 @@
                                 <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
                                 <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
                                 <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="{Binding LabelPersonalization}" />
-                                <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
+                                <Button Classes="settingsnav" Tag="devoptions" Click="SettingsSectionButton_OnClick" Content="Developer Options" />
                                 <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
                             </StackPanel>
                         </ScrollViewer>
@@ -7184,7 +7184,7 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderAdvanced" Tag="advanced" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderDeveloperOptions" Tag="devoptions" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -7203,7 +7203,7 @@ ToolTip.Tip="Increase font size" />
                                 BorderThickness="1"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
-                                x:Name="DeveloperOptionsSettingsCard" Tag="advanced">
+                                x:Name="DeveloperOptionsSettingsCard" Tag="devoptions">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
