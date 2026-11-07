@@ -12,7 +12,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/downloads/Kodo-IDE/Kodo/total?style=for-the-badge&label=Downloads&color=8C00FF" alt="Downloads" />
-  <img src="https://img.shields.io/github/commit-activity/t/Kodo-IDE/Kodo?style=for-the-badge&label=Activity&color=8C00FF" alt="Commit Activity" />
+  <img src="https://img.shields.io/github/commit-activity/t/Kodo-IDE/Kodo?branch=dev&style=for-the-badge&label=Activity&color=8C00FF" alt="Commit Activity" />
   <img src="https://img.shields.io/github/v/tag/Kodo-IDE/Kodo?style=for-the-badge&label=Latest%20Version&color=8C00FF" alt="Latest Version" />
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-8C00FF?style=for-the-badge" alt="Windows and Linux"/>
   <img src="https://img.shields.io/badge/License-GPL--3.0-8C00FF?style=for-the-badge" alt="GPL-3.0 License"/>
