@@ -108,6 +108,14 @@ public partial class MainWindow
             .Select(section => (section.Key, Position: section.Header!.TranslatePoint(new Point(0, 0), scrollViewer)?.Y ?? double.MaxValue))
             .Where(section => section.Position <= 160)
             .LastOrDefault();
+        var scrollableHeight = scrollViewer.Extent.Height - scrollViewer.Viewport.Height;
+        if (scrollableHeight > 0 && scrollViewer.Offset.Y >= scrollableHeight - 4)
+        {
+            var lastVisible = settingsSections
+                .LastOrDefault(section => this.FindControl<Control>(section.Header) is { IsVisible: true });
+            if (!string.IsNullOrEmpty(lastVisible.Key))
+                activeSection = (lastVisible.Key, 0.0);
+        }
         if (activeSection.Key is not null)
             SetActiveSettingsNavigation(activeSection.Key);
 
