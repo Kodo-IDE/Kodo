@@ -1,0 +1,57 @@
+{
+  "scenario": "smallfile",
+  "session": {
+    "appVersion": "v2.2.0-DEV",
+    "buildConfiguration": "Release",
+    "operatingSystem": "Microsoft Windows 10.0.26300",
+    "runtime": ".NET 10.0.8",
+    "startedUtc": "2026-11-07T20:02:53.7379253Z",
+    "durationMilliseconds": 20015.8,
+    "flushedFor": "periodic",
+    "keystrokesObserved": 0,
+    "textChangedEvents": 3
+  },
+  "measurements": {
+    "keystrokeSources": {},
+    "typingLatency": {
+      "description": "Milliseconds from the tunnel-phase TextInput event to the Kodo pane TextChanged handler start, when directly following a typed key.",
+      "stats": {
+        "Count": 0,
+        "MeanMilliseconds": 0,
+        "P50Milliseconds": 0,
+        "P95Milliseconds": 0,
+        "MaximumMilliseconds": 0
+      }
+    },
+    "textChangedHandlerBody": {
+      "description": "Duration of the synchronous Kodo pane TextChanged handler body.",
+      "stats": {
+        "Count": 3,
+        "MeanMilliseconds": 0.7849,
+        "P50Milliseconds": 1.0939,
+        "P95Milliseconds": 1.0939,
+        "MaximumMilliseconds": 1.2294
+      }
+    },
+    "dispatcherLateness": {
+      "description": "Lateness of a 50 ms background dispatcher timer; indicates UI lingering/backlog on the UI thread.",
+      "stats": {
+        "Count": 325,
+        "MeanMilliseconds": 61.5623,
+        "P50Milliseconds": 50.0112,
+        "P95Milliseconds": 52.9595,
+        "MaximumMilliseconds": 2929.1862
+      }
+    },
+    "keystrokeIntervals": {
+      "description": "Intervals between successive TextInput events as seen by the app (test cadence).",
+      "stats": {
+        "Count": 0,
+        "MeanMilliseconds": 0,
+        "P50Milliseconds": 0,
+        "P95Milliseconds": 0,
+        "MaximumMilliseconds": 0
+      }
+    }
+  }
+}

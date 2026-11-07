@@ -76,6 +76,18 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 ---
 
+## Benchmarks
+
+| Benchmark | Kodo Result | VS Code Result | Kodo's Advantage |
+|---|---:|---:|---|
+| Private Memory (Welcome Idle) | **241 MB** | 2,213 MB | ~89% less private memory |
+| Large Project Memory (2,501 files / 51 MB) | **~292 MB WS** | ~2.2 GB WS | ~87% less working-set memory |
+| Idle CPU | **1.9–2.1%** | 16.5% | ~8× lower measured CPU usage |
+
+These results were gathered from the same machine, opening the same projects during our benchmarks.
+
+---
+
 ## Getting Started
 
 Download the latest release from the [Releases page](https://github.com/Kodo-IDE/Kodo/releases), choose the appropriate package for your platform, install Kodo, and launch it. Available package formats include `.exe`, `.deb`, `.tar.gz`, and `.AppImage`.
