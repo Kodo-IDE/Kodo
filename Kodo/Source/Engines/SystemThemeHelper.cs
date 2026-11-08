@@ -1,10 +1,10 @@
 // Licensed under the GNU GPL-v3.0
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
-using Microsoft.Win32;
 
 namespace Kodo;
 
@@ -58,7 +58,6 @@ internal static class SystemThemeHelper
         : OperatingSystem.IsMacOS() ? "Reveal in Finder"
         : isAmericanEnglish ? "Reveal in File Manager" : "Reveal in File Manager";
 
-
     [SupportedOSPlatform("windows")]
     private static string? GetWindowsAccentHex()
     {
@@ -91,7 +90,6 @@ internal static class SystemThemeHelper
         catch { }
         return null;
     }
-
 
     private static readonly string[] GSettingsKeys =
         ["accent-bg-color", "accent-color", "color-scheme", "gtk-theme"];
@@ -506,7 +504,6 @@ internal static class SystemThemeHelper
             if (!char.IsAsciiHexDigit(c)) return false;
         return true;
     }
-
 
     private const double KdeLightLuminanceThreshold = 0.4;
 

@@ -2,21 +2,21 @@
 #pragma warning disable CA1416
 using Avalonia.Threading;
 using Kodo.Models;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
 using System.Threading;
-using System;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
 internal sealed class LspManager : IDisposable
 {
     private readonly object _lock = new();
-    private readonly Dictionary<string, LspClient> _clients = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Task<LspClient>> _starting = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, LspClient> _clients = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Task<LspClient>> _starting = new(StringComparer.Ordinal);
     private bool _disposed;
 
     public LspClient? TryGetClient(string workspaceRoot, LspConfiguration config)
@@ -25,26 +25,17 @@ internal sealed class LspManager : IDisposable
         lock (_lock)
         {
             if (_clients.TryGetValue(key, out var c)) return c;
-            var root = NormalizeRoot(workspaceRoot);
+            var compatibleKey = MakeKey(workspaceRoot, config, includeCommand: false);
             foreach (var candidate in _clients.Values)
             {
-                if (!candidate.IsInitialized) continue;
-                if (!FileSystemPaths.Equals(NormalizeRoot(candidate.ClientWorkspaceRoot), root)) continue;
-                try
-                {
-                    if (string.Equals(candidate.Configuration.EffectiveProviderId, config.EffectiveProviderId, StringComparison.OrdinalIgnoreCase))
-                        return candidate;
-                }
-                catch { }
+                if (candidate.IsInitialized && string.Equals(
+                    MakeKey(candidate.ClientWorkspaceRoot, candidate.Configuration, includeCommand: false),
+                    compatibleKey,
+                    StringComparison.Ordinal))
+                    return candidate;
             }
             return null;
         }
-    }
-
-    private static string NormalizeRoot(string workspaceRoot)
-    {
-        try { return Path.GetFullPath(workspaceRoot ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar); }
-        catch { return workspaceRoot ?? string.Empty; }
     }
 
     public Task<LspClient> GetOrStartAsync(string workspaceRoot, LspConfiguration config, CancellationToken ct = default)
@@ -159,11 +150,26 @@ internal sealed class LspManager : IDisposable
         get { lock (_lock) return new List<LspClient>(_clients.Values).AsReadOnly(); }
     }
 
-    private static string MakeKey(string workspaceRoot, LspConfiguration config)
+    private static string MakeKey(string workspaceRoot, LspConfiguration config, bool includeCommand = true)
     {
         var root = Path.GetFullPath(workspaceRoot ?? string.Empty).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var expandedArgs = string.Join(" ", config.Arguments.Select(a => a.Replace("{workspace}", root, StringComparison.OrdinalIgnoreCase).Replace("{workspaceFolder}", root, StringComparison.OrdinalIgnoreCase).Replace("{root}", root, StringComparison.OrdinalIgnoreCase)));
-        return $"{root}|{config.Command}|{expandedArgs}";
+        var rootIdentity = OperatingSystem.IsWindows() ? root.ToUpperInvariant() : root;
+        string Expand(string value) => value
+            .Replace("{workspace}", root, StringComparison.OrdinalIgnoreCase)
+            .Replace("{workspaceFolder}", root, StringComparison.OrdinalIgnoreCase)
+            .Replace("{root}", root, StringComparison.OrdinalIgnoreCase);
+
+        var identity = new
+        {
+            Root = rootIdentity,
+            Command = includeCommand ? Expand(config.Command) : null,
+            Arguments = config.Arguments.Select(Expand).ToArray(),
+            WorkingDirectory = config.WorkingDirectory is null ? null : Expand(config.WorkingDirectory),
+            Environment = config.Env.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(pair => new[] { pair.Key, Expand(pair.Value) }).ToArray(),
+            InitializationOptions = config.InitializationOptions?.GetRawText()
+        };
+        return System.Text.Json.JsonSerializer.Serialize(identity);
     }
 
     public void Dispose()

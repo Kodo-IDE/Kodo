@@ -1,4 +1,3 @@
-
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
@@ -22,7 +21,7 @@ internal sealed class SearchIgnoreRules
         ".git", "node_modules", "bin", "obj", "dist", ".vs",
     };
 
-    private readonly List<(string Pattern, string Root, bool Negated)> _rules = new();
+    private readonly List<(string Pattern, string Root, bool Negated, bool Anchored)> _rules = new();
     private readonly List<string> _includePatterns = new();
     private readonly List<string> _excludePatterns = new();
     public string IncludeFilterSnapshot { get; set; } = "";
@@ -33,16 +32,19 @@ internal sealed class SearchIgnoreRules
     {
         var rules = new SearchIgnoreRules();
         var dir = projectRoot;
+        var gitignoreFiles = new List<(string Path, string Root)>();
         while (!string.IsNullOrEmpty(dir))
         {
             var gitignore = Path.Combine(dir, ".gitignore");
             if (File.Exists(gitignore))
-                rules.LoadFile(gitignore, dir);
+                gitignoreFiles.Add((gitignore, dir));
 
             var parent = Path.GetDirectoryName(dir);
             if (parent is null || parent == dir) break;
             dir = parent;
         }
+        for (var i = gitignoreFiles.Count - 1; i >= 0; i--)
+            rules.LoadFile(gitignoreFiles[i].Path, gitignoreFiles[i].Root);
 
         if (!string.IsNullOrWhiteSpace(includeFilter))
         {
@@ -71,11 +73,12 @@ internal sealed class SearchIgnoreRules
                 if (negated) line = line[1..];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                if (line[0] is '/' or '\\')
+                var anchored = line[0] is '/' or '\\';
+                if (anchored)
                     line = line[1..];
                 if (string.IsNullOrWhiteSpace(line)) continue;
 
-                _rules.Add((line, rootDir, negated));
+                _rules.Add((line, rootDir, negated, anchored));
             }
         }
         catch { }
@@ -89,21 +92,22 @@ internal sealed class SearchIgnoreRules
         if (DefaultIgnoreDirectories.Contains(name)) return true;
         if (IsHiddenOnDisk(dirPath)) return true;
 
-        foreach (var (pattern, root, negated) in _rules)
+        var ignored = false;
+        foreach (var (pattern, root, negated, anchored) in _rules)
         {
             if (pattern.Length > 0 && pattern[^1] == '/')
             {
                 var p = pattern[..^1];
-                if (MatchesFileName(p, name))
-                    return !negated;
+                if (MatchesDirectoryPath(p, root, dirPath, name, anchored))
+                    ignored = !negated;
                 continue;
             }
 
-            if (MatchesAnyPathComponent(pattern, name))
-                return !negated;
+            if (MatchesDirectoryPath(pattern, root, dirPath, name, anchored))
+                ignored = !negated;
         }
 
-        return false;
+        return ignored;
     }
 
     public bool ShouldSkipFile(string filePath)
@@ -113,11 +117,13 @@ internal sealed class SearchIgnoreRules
         var name = Path.GetFileName(filePath);
         if (string.IsNullOrEmpty(name)) return false;
 
-        foreach (var (pattern, root, negated) in _rules)
+        var ignored = false;
+        foreach (var (pattern, root, negated, anchored) in _rules)
         {
-            if (MatchesFilePath(pattern, root, filePath))
-                return !negated;
+            if (MatchesFilePath(pattern, root, filePath, anchored))
+                ignored = !negated;
         }
+        if (ignored) return true;
 
         if (_excludePatterns.Count > 0)
         {
@@ -168,23 +174,30 @@ internal sealed class SearchIgnoreRules
 
     private static string NormalizeFilterPattern(string pattern) => pattern.Trim().Replace('\\', '/');
 
-    private static bool MatchesAnyPathComponent(string pattern, string componentName)
+    private static bool MatchesDirectoryPath(string pattern, string ruleRoot, string directoryPath, string name, bool anchored)
     {
-        if (!pattern.Contains('/') && !pattern.Contains('\\'))
-            return MatchesFileName(pattern, componentName);
-
-        return false;
-    }
-
-    private static bool MatchesFilePath(string pattern, string ruleRoot, string fullPath)
-    {
-        if (!pattern.Contains('/') && !pattern.Contains('\\'))
-        {
-            return MatchesFileName(pattern, Path.GetFileName(fullPath));
-        }
-
         try
         {
+            if (!FileSystemPaths.IsPrefixOf(directoryPath, ruleRoot))
+                return false;
+            if (!anchored && !pattern.Contains('/') && !pattern.Contains('\\'))
+                return MatchesFileName(pattern, name);
+
+            var relative = Path.GetRelativePath(ruleRoot, directoryPath).Replace('\\', '/');
+            return relative != ".." && !relative.StartsWith("../", StringComparison.Ordinal) && MatchesGlob(pattern, relative);
+        }
+        catch { return false; }
+    }
+
+    private static bool MatchesFilePath(string pattern, string ruleRoot, string fullPath, bool anchored)
+    {
+        try
+        {
+            if (!FileSystemPaths.IsPrefixOf(fullPath, ruleRoot))
+                return false;
+            if (!anchored && !pattern.Contains('/') && !pattern.Contains('\\'))
+                return MatchesFileName(pattern, Path.GetFileName(fullPath));
+
             var relative = Path.GetRelativePath(ruleRoot, fullPath)
                 .Replace('\\', '/');
             return MatchesGlob(pattern, relative);

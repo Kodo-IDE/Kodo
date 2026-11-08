@@ -1,8 +1,8 @@
 // Licensed under the GNU GPL-v3.0
-using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using System.Collections.Generic;
 
 namespace Kodo.Models;
 

@@ -1,8 +1,8 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Input;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using Avalonia.Input;
 
 namespace Kodo.Models;
 
@@ -14,11 +14,15 @@ internal sealed class AppSettings
     public string ThemeName { get; set; } = "Dark";
     public bool AutoSaveEnabled { get; set; }
     public bool DiscordRichPresenceEnabled { get; set; }
-    public bool DiscordImprovedRpcEnabled { get; set; }
+    public bool GitSourceControlEnabled { get; set; }
+    public bool ScreenReaderAnnouncementsEnabled { get; set; } = true;
+    public bool ReduceMotionEnabled { get; set; }
+    public bool LargeTextEnabled { get; set; }
     public bool DeveloperOptionsVisible { get; set; }
     public bool VerboseLoggingEnabled { get; set; }
     public bool StatusBarFilePathVisible { get; set; } = true;
     public bool WordWrapEnabled { get; set; }
+    public bool MinimapVisible { get; set; } = true;
     public bool InsightEnabled { get; set; } = true;
     public bool InsightCodeSuggestionsEnabled { get; set; } = true;
     public bool InsightDeadCodeEnabled { get; set; } = true;
@@ -51,6 +55,12 @@ internal sealed class AppSettings
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }
+    public bool SplitEditorVisible { get; set; }
+    public string? PrimaryPaneTabPath { get; set; }
+    public string? SecondaryPaneTabPath { get; set; }
+    public List<string> PrimaryPaneTabPaths { get; set; } = [];
+    public List<string> SecondaryPaneTabPaths { get; set; } = [];
+    public bool ActivePaneIsSecondary { get; set; }
     public string? LastOpenedFolderPath { get; set; }
     public List<RecentFileEntry> RecentFiles { get; set; } = [];
     public bool HasCompletedTutorial { get; set; }
@@ -70,6 +80,10 @@ internal sealed class AppSettings
     public bool DebouncedSearchEnabled { get; set; }
     public bool HasRespondedToDataTrackingPrompt { get; set; }
     public bool HasAcceptedPrivacyPolicy { get; set; }
+
+    public bool RuntimeMetricsLoggingEnabled { get; set; }
+
+    public int SlowStageReportThresholdMs { get; set; }
 
     public Dictionary<string, string> CustomRunCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> CustomBuildCommands { get; set; } = new(StringComparer.OrdinalIgnoreCase);

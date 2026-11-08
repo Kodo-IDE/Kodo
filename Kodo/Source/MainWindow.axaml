@@ -1,4 +1,5 @@
-<!-- Licensed under the GNU GPL-v3.0 -->
+<!--Licensed under the GNU GPL-v3.0-->
+
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -7,6 +8,7 @@
         xmlns:svg="clr-namespace:Avalonia.Svg.Skia;assembly=Svg.Controls.Skia.Avalonia"
         xmlns:kodo="clr-namespace:Kodo"
         xmlns:kodoModels="clr-namespace:Kodo.Models"
+        xmlns:kodoRenderers="clr-namespace:Kodo.Renderers"
         mc:Ignorable="d"
         x:Class="Kodo.MainWindow"
         x:DataType="kodo:MainWindow"
@@ -65,6 +67,19 @@
         </Style>
         <Style Selector="TextBox:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="TextBox.quickaccesssearch">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.quickaccesssearch:focus">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="TextBox.quickaccesssearch:focus /template/ Border#PART_BorderElement">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
         </Style>
         <Style Selector="ComboBox:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
@@ -156,11 +171,12 @@
                                               Content="{TemplateBinding Content}"
                                               ContentTemplate="{TemplateBinding ContentTemplate}" />
                         </Border>
+
                     </Border>
                 </ControlTemplate>
             </Setter>
         </Style>
-        
+
         <Style Selector="Button.chrome.groupheader /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent" />
         </Style>
@@ -265,14 +281,21 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
-            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
+            <Setter Property="Padding" Value="12,9" />
             <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
         </Style>
         <Style Selector="Button.settingsnav:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Button.settingsnav.active">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
         </Style>
         <Style Selector="Button.settingsnav:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
@@ -665,7 +688,6 @@
             <Setter Property="Opacity" Value="0.55" />
         </Style>
 
-
         <Style Selector="ListBox.searchresults Button.groupheader">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
@@ -703,6 +725,17 @@
         </Style>
         <Style Selector="Border.tabwrap.active">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
+        </Style>
+
+        <Style Selector="Window.reducedmotion Button">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Window.reducedmotion Border">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
         </Style>
 
         <Style Selector="Button.editortab:pointerover">
@@ -836,7 +869,6 @@
             <Setter Property="AcceptsTab" Value="True" />
         </Style>
 
-        
         <Style Selector="ToolTip">
             <Setter Property="MaxWidth" Value="480" />
             <Setter Property="Background" Value="{Binding #RootWindow.CardBrush}" />
@@ -866,7 +898,7 @@
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="Opacity" Value="0.8" />
         </Style>
-        
+
         <Style Selector="CheckBox:checked /template/ Path#CheckGlyph">
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
@@ -874,40 +906,44 @@
             <Setter Property="Fill" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
-        
         <Style Selector="ScrollViewer">
             <Setter Property="AllowAutoHide" Value="True" />
             <Setter Property="IsScrollChainingEnabled" Value="True" />
         </Style>
-        
+
         <Style Selector="Menu ScrollViewer, ContextMenu ScrollViewer, ComboBox ScrollViewer">
             <Setter Property="MaxHeight" Value="420" />
             <Setter Property="AllowAutoHide" Value="True" />
         </Style>
     </Window.Styles>
 
-    
-    <Grid ColumnDefinitions="60,Auto,Auto,*">
+    <Grid ColumnDefinitions="60,Auto,Auto,*" RowDefinitions="Auto,*">
 
-        <Border Grid.Column="0"
+        <Border Grid.Row="1" Grid.Column="0"
                 Background="{Binding SidebarBrush}"
                 BorderBrush="{Binding SurfaceBorderBrush}"
                 BorderThickness="0,0,1,0">
             <DockPanel>
-                
-                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" ToolTip.Tip="{Binding SettingsTooltip}">
+
+                <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" Spacing="0" HorizontalAlignment="Stretch"
+                            IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
+                    <Button Classes="activity" Classes.active="{Binding IsSettingsPageVisible}" Click="SettingsButton_OnClick" AutomationProperties.Name="{Binding SettingsTooltip}"
+                            ToolTip.Tip="{Binding SettingsTooltip}">
                         <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
-                                <Path Fill="{Binding $parent[Button].Foreground}"
+                                <Path Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
+                                      Stretch="Uniform"
+                                      Fill="{Binding $parent[Button].Foreground}"
                                       Data="M11.828 2.25c-.916 0-1.699.663-1.85 1.567l-.091.549a.798.798 0 0 1-.517.608 7.45 7.45 0 0 0-.478.198.798.798 0 0 1-.796-.064l-.453-.324a1.875 1.875 0 0 0-2.416.2l-.243.243a1.875 1.875 0 0 0-.2 2.416l.324.453a.798.798 0 0 1 .064.796 7.448 7.448 0 0 0-.198.478.798.798 0 0 1-.608.517l-.55.092a1.875 1.875 0 0 0-1.566 1.849v.344c0 .916.663 1.699 1.567 1.85l.549.091c.281.047.508.25.608.517.06.162.127.321.198.478a.798.798 0 0 1-.064.796l-.324.453a1.875 1.875 0 0 0 .2 2.416l.243.243c.648.648 1.67.733 2.416.2l.453-.324a.798.798 0 0 1 .796-.064c.157.071.316.137.478.198.267.1.47.327.517.608l.092.55c.15.903.932 1.566 1.849 1.566h.344c.916 0 1.699-.663 1.85-1.567l.091-.549a.798.798 0 0 1 .517-.608 7.52 7.52 0 0 0 .478-.198.798.798 0 0 1 .796.064l.453.324a1.875 1.875 0 0 0 2.416-.2l.243-.243c.648-.648.733-1.67.2-2.416l-.324-.453a.798.798 0 0 1-.064-.796c.071-.157.137-.316.198-.478.1-.267.327-.47.608-.517l.55-.091a1.875 1.875 0 0 0 1.566-1.85v-.344c0-.916-.663-1.699-1.567-1.85l-.549-.091a.798.798 0 0 1-.608-.517 7.507 7.507 0 0 0-.198-.478.798.798 0 0 1 .064-.796l.324-.453a1.875 1.875 0 0 0-.2-2.416l-.243-.243a1.875 1.875 0 0 0-2.416-.2l-.453.324a.798.798 0 0 1-.796.064 7.462 7.462 0 0 0-.478-.198.798.798 0 0 1-.517-.608l-.091-.55a1.875 1.875 0 0 0-1.85-1.566h-.344ZM12 15.75a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5Z" />
                             </Canvas>
                         </Viewbox>
                     </Button>
                 </StackPanel>
 
-                <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
-                    <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" ToolTip.Tip="{Binding HomeTooltip}">
+                <StackPanel x:Name="ActivityBarPanel" Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch"
+                            IsHitTestVisible="{Binding AreSidebarButtonsEnabled}">
+                    <Button Classes="activity" Classes.active="{Binding IsHomePageVisible}" Click="HomeButton_OnClick" AutomationProperties.Name="{Binding HomeTooltip}"
+                            ToolTip.Tip="{Binding HomeTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -915,11 +951,27 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Classes.active="{Binding IsEditorPageVisible}" Click="EditorButton_OnClick" ToolTip.Tip="{Binding EditorTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsEditorPageVisible}" Click="EditorButton_OnClick" AutomationProperties.Name="{Binding EditorTooltip}"
+                            ToolTip.Tip="{Binding EditorTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
                                       Data="M18.16,1.66 L21.84,5.34 L8.17,19.01 L3.5,20 L4.49,15.33 Z" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
+                    <Button Classes="activity"
+                            Classes.active="{Binding IsGitSourceControlPanelOpen}"
+                            Click="GitSourceControlActivityButton_OnClick"
+                            AutomationProperties.Name="Source Control (Ctrl+Shift+G)"
+                            ToolTip.Tip="Source Control (Ctrl+Shift+G)"
+                            IsVisible="{Binding IsGitSourceControlEnabled}">
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="24" Height="24">
+                                <Path Width="22" Height="22" Canvas.Left="1" Canvas.Top="1"
+                                      Stretch="Uniform"
+                                      Fill="{Binding $parent[Button].Foreground}"
+                                      Data="M41.4395 69.3848C28.8066 67.8535 19.9062 58.7617 19.9062 46.9902C19.9062 42.2051 21.6289 37.0371 24.5 33.5918C23.2559 30.4336 23.4473 23.7344 24.8828 20.959C28.7109 20.4805 33.8789 22.4902 36.9414 25.2656C40.5781 24.1172 44.4062 23.543 49.0957 23.543C53.7852 23.543 57.6133 24.1172 61.0586 25.1699C64.0254 22.4902 69.2891 20.4805 73.1172 20.959C74.457 23.543 74.6484 30.2422 73.4043 33.4961C76.4668 37.1328 78.0937 42.0137 78.0937 46.9902C78.0937 58.7617 69.1934 67.6621 56.3691 69.2891C59.623 71.3945 61.8242 75.9883 61.8242 81.252L61.8242 91.2051C61.8242 94.0762 64.2168 95.7031 67.0879 94.5547C84.4102 87.9512 98 70.6289 98 49.1914C98 22.1074 75.9883 6.69539e-07 48.9043 4.309e-07C21.8203 1.92261e-07 -1.9479e-07 22.1074 -4.3343e-07 49.1914C-6.20631e-07 70.4375 13.4941 88.0469 31.6777 94.6504C34.2617 95.6074 36.75 93.8848 36.75 91.3008L36.75 83.6445C35.4102 84.2188 33.6875 84.6016 32.1562 84.6016C25.8398 84.6016 22.1074 81.1563 19.4277 74.7441C18.375 72.1602 17.2266 70.6289 15.0254 70.3418C13.877 70.2461 13.4941 69.7676 13.4941 69.1934C13.4941 68.0449 15.4082 67.1836 17.3223 67.1836C20.0977 67.1836 22.4902 68.9063 24.9785 72.4473C26.8926 75.2227 28.9023 76.4668 31.2949 76.4668C33.6875 76.4668 35.2187 75.6055 37.4199 73.4043C39.0469 71.7773 40.291 70.3418 41.4395 69.3848Z" />
                             </Canvas>
                         </Viewbox>
                     </Button>
@@ -930,7 +982,8 @@
                             Opacity="0.6"
                             HorizontalAlignment="Center"
                             Margin="0,2,0,2" />
-                    <Button Classes="activity" Click="NewFileButton_OnClick" ToolTip.Tip="{Binding NewFileTooltip}">
+                    <Button Classes="activity" Click="NewFileButton_OnClick" AutomationProperties.Name="{Binding NewFileTooltip}"
+                            ToolTip.Tip="{Binding NewFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -938,7 +991,8 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Click="OpenFileButton_OnClick" ToolTip.Tip="{Binding OpenFileTooltip}">
+                    <Button Classes="activity" Click="OpenFileButton_OnClick" AutomationProperties.Name="{Binding OpenFileTooltip}"
+                            ToolTip.Tip="{Binding OpenFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
                                 <Path Fill="{Binding $parent[Button].Foreground}"
@@ -948,6 +1002,7 @@
                     </Button>
                     <Button Classes="activity"
                             Click="OpenFolderButton_OnClick"
+                            AutomationProperties.Name="{Binding OpenFolderTooltip}"
                             ToolTip.Tip="{Binding OpenFolderTooltip}"
                             IsVisible="{Binding !IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -960,22 +1015,24 @@
                     <Button Classes="activity"
                             Classes.active="{Binding IsFileExplorerVisible}"
                             Click="CollapseExplorerButton_OnClick"
+                            AutomationProperties.Name="{Binding ToggleExplorerTooltip}"
                             ToolTip.Tip="{Binding ToggleExplorerTooltip}"
                             IsVisible="{Binding IsFolderOpen}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
-                                
+
                                 <Path IsVisible="{Binding IsFileExplorerVisible}"
                                       Fill="{Binding $parent[Button].Foreground}"
                                       Data="M15.5000 14.7500 L14.0000 14.7500 C13.4477 14.7500 13.0000 15.1977 13.0000 15.7500 L13.0000 15.7500 C13.0000 16.3023 12.6370 16.4879 12.1893 16.1645 L9.3107 14.0855 C8.8630 13.7621 8.8630 13.2379 9.3107 12.9145 L12.1893 10.8355 C12.6370 10.5121 13.0000 10.6977 13.0000 11.2500 L13.0000 11.2500 C13.0000 11.8023 13.4477 12.2500 14.0000 12.2500 L15.5000 12.2500 C16.0523 12.2500 16.5000 12.6977 16.5000 13.2500 L16.5000 13.7500 C16.5000 14.3023 16.0523 14.7500 15.5000 14.7500 Z M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z" />
-                                
+
                                 <Path IsVisible="{Binding !IsFileExplorerVisible}"
                                       Fill="{Binding $parent[Button].Foreground}"
                                       Data="M9.5000 12.2500 L11.0000 12.2500 C11.5523 12.2500 12.0000 11.8023 12.0000 11.2500 L12.0000 11.2500 C12.0000 10.6977 12.3630 10.5121 12.8107 10.8355 L15.6893 12.9145 C16.1370 13.2379 16.1370 13.7621 15.6893 14.0855 L12.8107 16.1645 C12.3630 16.4879 12.0000 16.3023 12.0000 15.7500 L12.0000 15.7500 C12.0000 15.1977 11.5523 14.7500 11.0000 14.7500 L9.5000 14.7500 C8.9477 14.7500 8.5000 14.3023 8.5000 13.7500 L8.5000 13.2500 C8.5000 12.6977 8.9477 12.2500 9.5000 12.2500 Z M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z" />
                             </Canvas>
                         </Viewbox>
                     </Button>
-                    <Button Classes="activity" Classes.active="{Binding IsExtensionsPageVisible}" Click="ExtensionsButton_OnClick" ToolTip.Tip="{Binding OpenExtensionsTooltip}">
+                    <Button Classes="activity" Classes.active="{Binding IsExtensionsPageVisible}" Click="ExtensionsButton_OnClick" AutomationProperties.Name="{Binding OpenExtensionsTooltip}"
+                            ToolTip.Tip="{Binding OpenExtensionsTooltip}">
                         <Viewbox Width="20" Height="20"
                                  HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Canvas Width="24" Height="24">
@@ -988,7 +1045,7 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Column="1"
+        <Border Grid.Row="1" Grid.Column="1"
                 Width="{Binding ExplorerPanelWidth}"
                 MinWidth="{Binding ExplorerPanelMinWidth}"
                 MaxWidth="600"
@@ -1134,6 +1191,9 @@
                                                 <MenuItem Header="Open in Integrated Terminal"
                                                           Tag="{Binding}"
                                                           Click="OpenEditorTabInTerminalMenuItem_OnClick" />
+                                                <MenuItem Header="Open to the Side"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabToSideMenuItem_OnClick" />
                                                 <Separator />
                                                 <MenuItem Header="Close File"
                                                           Tag="{Binding}"
@@ -1240,6 +1300,11 @@
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding FileTreeItems}" Margin="4,4,4,8">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="kodoModels:FileTreeItem"
                                           x:CompileBindings="True">
@@ -1271,6 +1336,10 @@
                                             <MenuItem Header="Open"
                                                       Tag="{Binding}"
                                                       Click="OpenExplorerItemMenuItem_OnClick" />
+                                            <MenuItem Header="Open to the Side"
+                                                      Tag="{Binding}"
+                                                      IsEnabled="{Binding !IsDirectory}"
+                                                      Click="OpenExplorerItemToSideMenuItem_OnClick" />
                                             <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
                                                       Tag="{Binding}"
                                                       Click="RevealExplorerItemMenuItem_OnClick" />
@@ -1346,12 +1415,12 @@
                                                     Orientation="Horizontal"
                                                     Spacing="6"
                                                     Margin="0,1">
-                                            
+
                                             <Viewbox Width="32" Height="15"
                                                      VerticalAlignment="Center"
                                                      IsVisible="{Binding IsDirectory}">
                                                 <Canvas Width="24" Height="24">
-                                                    
+
                                                     <Path Fill="{Binding #RootWindow.MutedTextBrush}"
                                                           Data="M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C21.9847 10.8192 22 12.7539 22 14.688C22 15.8044 21.9415 16.7698 21.7613 17.5804C21.5787 18.4024 21.2579 19.1251 20.6915 19.6915C20.1251 20.2579 19.4024 20.5787 18.5804 20.7613C17.7698 20.9415 16.8044 21 15.688 21H8.312C7.19557 21 6.23018 20.9415 5.41959 20.7613C4.59764 20.5787 3.87488 20.2579 3.30848 19.6915C2.74209 19.1251 2.42133 18.4024 2.23866 17.5804C2.05852 16.7698 2 15.8044 2 14.688V9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z">
                                                         <Path.IsVisible>
@@ -1361,7 +1430,7 @@
                                                             </MultiBinding>
                                                         </Path.IsVisible>
                                                     </Path>
-                                                    
+
                                                     <Path Fill="{Binding #RootWindow.AccentBrush}"
                                                           Opacity="0.65"
                                                           Data="M5.41959 3.23866C6.23018 3.05852 7.19557 3 8.312 3H9.92963C10.9327 3 11.8694 3.5013 12.4258 4.3359L13.2383 5.5547C13.4238 5.83288 13.736 6 14.0704 6H19.1258C20.7233 6 22.0181 7.26115 22.0029 8.8852C22.0132 9.2 21.98 9.55 21.6 9.85C21.2 10.15 20.55 10.3 19.5 10.3H4.5C3.45 10.3 2.8 10.15 2.4 9.85C2.02 9.55 1.99 9.2 2 9.312C2 8.19557 2.05852 7.23018 2.23866 6.41959C2.42133 5.59764 2.74209 4.87488 3.30848 4.30848C3.87488 3.74209 4.59764 3.42133 5.41959 3.23866Z M1.75 12.3L22.25 10.6L22.25 18.5C22.25 19.6 21.35 20.5 20.25 20.5L3.75 20.5C2.65 20.5 1.75 19.6 1.75 18.5Z">
@@ -1374,7 +1443,7 @@
                                                     </Path>
                                                 </Canvas>
                                             </Viewbox>
-                                            
+
                                             <Viewbox Width="32" Height="15"
                                                      IsVisible="{Binding !IsDirectory}"
                                                      VerticalAlignment="Center"
@@ -1441,7 +1510,7 @@
             </Grid>
         </Border>
 
-        <Border Grid.Column="2"
+        <Border Grid.Row="1" Grid.Column="2"
                 x:Name="ExplorerPanelSplitter"
                 Width="4"
                 Background="Transparent"
@@ -1454,10 +1523,10 @@
                 PointerCaptureLost="ExplorerPanelSplitter_OnPointerCaptureLost"
                 DoubleTapped="ExplorerPanelSplitter_OnDoubleTapped" />
 
-        <Grid Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
+        <Grid Grid.Row="1" Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
 
             <StackPanel Grid.Row="0" Spacing="1">
-                
+
                 <Border IsVisible="{Binding IsAppUpdateAvailable}"
                         Background="{Binding AccentBrush}"
                         Padding="18,8">
@@ -1572,6 +1641,7 @@
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
                         Padding="18,12">
+                    <Grid>
                     <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <Border Width="28"
@@ -1587,8 +1657,9 @@
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            Text="Kodo" />
-                                <TextBlock FontSize="12"
+                                <TextBlock x:Name="FileSummaryLiveRegion" FontSize="12"
                                            Foreground="{Binding MutedTextBrush}"
+                                           AutomationProperties.LiveSetting="Polite"
                                            Text="{Binding FileSummaryText}" />
                             </StackPanel>
                         </StackPanel>
@@ -1598,7 +1669,7 @@
                                     Spacing="6"
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding IsEditorTabsVisible}">
-                            
+
                             <Button Classes="chrome"
                                     ToolTip.Tip="{Binding SaveTooltip}"
                                     IsEnabled="{Binding HasOpenEditors}"
@@ -1616,6 +1687,11 @@
                                     IsEnabled="{Binding HasMultipleOpenEditors}"
                                     Click="ToolbarSaveAllButton_OnClick"
                                     Content="Save All" />
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="Show or close the side-by-side editor pane"
+                                    IsEnabled="{Binding CanToggleSplitEditor}"
+                                    Click="ToggleSplitEditorButton_OnClick"
+                                    Content="{Binding SplitEditorButtonText}" />
                         </StackPanel>
 
                         <Border Grid.Column="2"
@@ -1631,7 +1707,7 @@
                                     Spacing="12"
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding IsEditorTabsVisible}">
-                            
+
                             <Border Classes="runbuildgroup">
                                 <Grid ColumnDefinitions="Auto,Auto">
                                     <Button Classes="runbuildprimary"
@@ -1688,13 +1764,80 @@
                             </Button>
                         </StackPanel>
                     </Grid>
+<Border x:Name="QuickAccessSearchFrame"
+                                Classes="quickaccessframe"
+
+                                Width="520"
+                                MaxWidth="640"
+                                Height="36"
+                                Margin="8,0"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding QuickAccessSearchBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                Padding="10,0"
+                                PointerPressed="QuickAccessSearchFrame_OnPointerPressed">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+                                <Viewbox Width="14" Height="14" VerticalAlignment="Center">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Fill="{Binding MutedTextBrush}"
+                                              Data="M10.5 3.75a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM2.25 10.5a8.25 8.25 0 1 1 14.59 5.28l4.69 4.69a.75.75 0 1 1-1.06 1.06l-4.69-4.69A8.25 8.25 0 0 1 2.25 10.5Z" />
+                                    </Canvas>
+                                </Viewbox>
+                                <TextBox x:Name="QuickAccessSearchBox"
+                                         Grid.Column="1"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Center"
+                                         PlaceholderText=""
+                                         FontSize="13"
+                                         Padding="2,0"
+                                         Classes="quickaccesssearch"
+                                         Background="Transparent"
+                                         Foreground="{Binding PrimaryTextBrush}"
+                                         BorderBrush="Transparent"
+                                         BorderThickness="0"
+                                         FocusAdorner="{x:Null}"
+                                         CornerRadius="0"
+                                         VerticalContentAlignment="Center"
+                                         TextChanged="QuickAccessSearchBox_OnTextChanged"
+                                         GotFocus="QuickAccessSearchBox_OnGotFocus"
+                                         LostFocus="QuickAccessSearchBox_OnLostFocus"
+                                         KeyDown="CommandPaletteSearch_OnKeyDown" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="2,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           IsVisible="{Binding IsCommandPaletteRarePreviewVisible}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           FontSize="13">
+                                    <TextBlock.Inlines><Run Text="Code fast, stay"/><Run Text=" "/><Run Text="light" Foreground="{Binding AccentBrush}"/><Run Text="."/></TextBlock.Inlines>
+                                </TextBlock>
+                                <Border Grid.Column="2"
+                                        Background="{Binding WindowBackgroundBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                        Padding="5,2"
+                                        VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding QuickAccessShortcutText}"
+                                               FontSize="10"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        </Grid>
+
                 </Border>
 
                 <Border Grid.Row="1"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="0,0,0,1"
-                        IsVisible="{Binding IsEditorTabsVisible}">
+                        IsVisible="{Binding IsSharedEditorTabsVisible}">
                     <ScrollViewer x:Name="EditorTabScrollViewer"
                                    AllowAutoHide="True"
                                    HorizontalScrollBarVisibility="Auto"
@@ -1736,6 +1879,9 @@
                                                 <MenuItem Header="Open in Integrated Terminal"
                                                           Tag="{Binding}"
                                                           Click="OpenEditorTabInTerminalMenuItem_OnClick" />
+                                                <MenuItem Header="Open to the Side"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabToSideMenuItem_OnClick" />
                                                 <Separator />
                                                 <MenuItem Header="Close"
                                                           Tag="{Binding}"
@@ -1844,9 +1990,159 @@
                 </Border>
 
                 <Grid Grid.Row="2"
+                      x:Name="EditorWorkspaceGrid"
+                      ColumnDefinitions="*,5,0"
                       Background="{Binding EditorBackgroundBrush}"
                       IsVisible="{Binding IsDocumentViewVisible}">
-                    <avaloniaEdit:TextEditor x:Name="EditorTextBox"
+                    <Grid x:Name="PrimaryEditorPane" Grid.Column="0" RowDefinitions="Auto,Auto,*" ColumnDefinitions="*,Auto" MinWidth="180" Background="{Binding EditorBackgroundBrush}">
+                        <ScrollViewer Grid.Row="0" Grid.ColumnSpan="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Background="{Binding TopBarBrush}" IsVisible="{Binding IsSplitScreenVisible}">
+                            <ItemsControl ItemsSource="{Binding PrimaryPaneTabs}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="kodoModels:EditorTab" x:CompileBindings="True">
+                                    <Border Classes="tabwrap"
+                                            Classes.active="{Binding IsPrimaryPaneSelected}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu Opening="EditorTabContextMenu_OnOpening">
+                                                <MenuItem Header="Save"
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabMenuItem_OnClick" />
+                                                <MenuItem Header="Save As..."
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabAsMenuItem_OnClick" />
+                                                <MenuItem Header="Rename..."
+                                                          Tag="{Binding}"
+                                                          Click="RenameEditorTabMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Copy Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabPathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy Relative Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabRelativePathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy File Name"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabNameMenuItem_OnClick" />
+                                                <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
+                                                          Tag="{Binding}"
+                                                          Click="RevealEditorTabInExplorerMenuItem_OnClick" />
+                                                <MenuItem Header="Open in Integrated Terminal"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabInTerminalMenuItem_OnClick" />
+                                                <MenuItem Header="Open to the Side"
+                                                          Tag="{Binding}"
+                                                          Click="OpenPrimaryEditorTabToSideMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Close"
+                                                          Tag="{Binding}"
+                                                          Click="ClosePaneTabMenuItem_OnClick" />
+                                                <MenuItem Header="Close Others"
+                                                          Tag="{Binding}"
+                                                          Click="CloseOtherPaneTabsMenuItem_OnClick" />
+                                                <MenuItem Header="Close Tabs to the Right"
+                                                          Tag="{Binding}"
+                                                          Click="ClosePaneTabsToRightMenuItem_OnClick" />
+                                                <MenuItem Header="Close All"
+                                                          Click="CloseAllPaneTabsMenuItem_OnClick" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Grid RowDefinitions="Auto,2.5"
+                                              ColumnDefinitions="*,Auto">
+                                            <Button Grid.Row="0"
+                                                    Grid.Column="0"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="editortab"
+                                                    Classes.active="{Binding IsPrimaryPaneSelected}"
+                                                    Tag="{Binding}"
+                                                    Click="OpenPrimaryPaneTab_OnClick"
+                                                    IsVisible="{Binding !IsRenamingInPrimaryPane}"
+                                                    Padding="12,10,38,10">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <Viewbox Width="26" Height="13" VerticalAlignment="Center" Stretch="Uniform">
+                                                        <TextBlock FontSize="11"
+                                                                   FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   Width="34"
+                                                                   Height="14"
+                                                                   TextAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Icon}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Opacity="0.85" />
+                                                    </Viewbox>
+<TextBlock FontSize="13"
+                                                               Classes="tablabel"
+                                                               Classes.active="{Binding IsPrimaryPaneSelected}"
+                                                               Text="{Binding DisplayName}" />
+                                                    <Border Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="4"
+                                                            Padding="4,0"
+                                                            IsVisible="{Binding HasErrorDiagnostics}"
+                                                            ToolTip.Tip="{Binding DiagnosticsTooltip}">
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                   Text="{Binding ErrorCount}"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
+                                                     <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
+                                                              IsVisible="{Binding IsDirty}">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding #RootWindow.AccentBrush}"
+                                                                  Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Grid.Row="0"
+                                                    Grid.Column="1"
+                                                    Classes="tabclose"
+                                                    Classes.active="{Binding IsPrimaryPaneSelected}"
+                                                    Tag="{Binding}"
+                                                    Click="ClosePaneTabButton_OnClick"
+                                                    Margin="0,0,7,0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="Close this tab">
+                                                <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Canvas Width="24" Height="24">
+                                                        <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
+                                                              Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                                    </Canvas>
+                                                </Viewbox>
+                                            </Button>
+                                            <TextBox Grid.Row="0"
+                                                     Grid.Column="0"
+                                                     FontSize="13"
+                                                     IsVisible="{Binding IsRenamingInPrimaryPane}"
+                                                     Text="{Binding RenameText, Mode=TwoWay}"
+                                                     KeyDown="InlineTabRenameTextBox_OnKeyDown"
+                                                     LostFocus="InlineTabRenameTextBox_OnLostFocus"
+                                                     MinWidth="150"
+                                                     Margin="12,0,0,0"
+                                                     Padding="4,1"
+                                                     VerticalAlignment="Center"
+                                                     VerticalContentAlignment="Center" />
+                                            <Border Grid.Row="1"
+                                                    Grid.Column="0"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="tabunderline tabunderlinebase"
+                                                    Height="2.5"
+                                                    CornerRadius="1.5,1.5,0,0"
+                                                    Background="{Binding #RootWindow.AccentBrush}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <Border Grid.Row="1" Grid.ColumnSpan="2" Background="{Binding TopBarBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,0,0,1" Padding="12,6">
+                            <TextBlock Text="{Binding PrimaryPaneBreadcrumbText}" FontSize="11" Foreground="{Binding MutedTextBrush}" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsStatusBarFilePathVisible}" />
+                        </Border>
+                    <avaloniaEdit:TextEditor Grid.Column="0"
+                                                   Grid.Row="2"
+                                                   x:Name="PrimaryEditorTextBox"
                                              Background="{Binding EditorBackgroundBrush}"
                                              Foreground="{Binding PrimaryTextBrush}"
                                              FontSize="14"
@@ -1856,7 +2152,7 @@
                                              WordWrap="{Binding IsWordWrapEnabled}"
                                              HorizontalScrollBarVisibility="Auto"
                                              VerticalScrollBarVisibility="Auto"
-                                             IsVisible="{Binding IsTextEditorVisible}">
+                                             IsVisible="{Binding IsPrimaryPaneTextEditorVisible}">
                         <avaloniaEdit:TextEditor.ContextMenu>
                             <ContextMenu Opening="EditorContextMenu_Opening">
                                 <MenuItem Name="EditorCutMenuItem"
@@ -1916,6 +2212,16 @@
                             </ContextMenu>
                         </avaloniaEdit:TextEditor.ContextMenu>
                     </avaloniaEdit:TextEditor>
+                    <Grid Grid.Row="2" Grid.Column="1" IsVisible="{Binding IsPrimaryPaneTextEditorVisible}">
+                        <Border Width="96"
+                                Background="{Binding EditorBackgroundBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1,0,0,0"
+                                IsVisible="{Binding IsPrimaryPaneMinimapVisible}"
+                                ToolTip.Tip="Editor minimap. Click or drag to navigate.">
+                            <kodoRenderers:EditorMinimapControl x:Name="EditorMinimapView" />
+                        </Border>
+                    </Grid>
                     <Popup x:Name="DiagnosticPopup"
                             Placement="AnchorAndGravity"
                             PlacementAnchor="TopLeft"
@@ -1962,24 +2268,24 @@
                         </Border>
                         </Border>
                     </Popup>
-                    <Grid IsVisible="{Binding IsImagePreviewVisible}"
+                    <Grid Grid.Row="2" Grid.ColumnSpan="2" IsVisible="{Binding IsPrimaryPaneImagePreviewVisible}"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"
                           RowDefinitions="*,Auto">
-                        
+
                         <ScrollViewer x:Name="ImageScrollViewer"
                                       Grid.Row="0"
                                       HorizontalScrollBarVisibility="Auto"
                                       VerticalScrollBarVisibility="Auto">
-                            <Image Source="{Binding CurrentImagePreview}"
-                                   Width="{Binding ImageZoomedWidth}"
-                                   Height="{Binding ImageZoomedHeight}"
+                            <Image Source="{Binding PrimaryPaneImagePreview}"
+                                   Width="{Binding PrimaryPaneImageZoomedWidth}"
+                                   Height="{Binding PrimaryPaneImageZoomedHeight}"
                                    Stretch="Fill"
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Center"
                                    Margin="24" />
                         </ScrollViewer>
-                        
+
                         <Border Grid.Row="1"
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -2010,7 +2316,7 @@
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ZoomResetTooltip}"
                                         Click="ZoomResetButton_OnClick">
-                                    <TextBlock Text="{Binding ImageZoomPercent}"
+                                    <TextBlock Text="{Binding PrimaryPaneImageZoomPercent}"
                                                FontSize="12"
                                                Foreground="{Binding AccentBrush}"
                                                HorizontalAlignment="Center"
@@ -2035,7 +2341,7 @@
                         </Border>
                     </Grid>
 
-                    <Grid IsVisible="{Binding IsCorruptedFileViewVisible}"
+                    <Grid Grid.Row="2" Grid.ColumnSpan="2" IsVisible="{Binding IsPrimaryPaneCorruptedFileViewVisible}"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch">
                         <StackPanel HorizontalAlignment="Center"
@@ -2056,19 +2362,330 @@
                                            Text="This file is corrupted or unsupported" />
                                 <TextBlock FontSize="13"
                                            HorizontalAlignment="Center"
+                                           TextWrapping="Wrap"
                                            Foreground="{Binding MutedTextBrush}"
                                            Opacity="0.4"
                                            Text="The file appears to be binary and cannot be displayed as text." />
                             </StackPanel>
                         </StackPanel>
                     </Grid>
+                    </Grid>
+                    <GridSplitter x:Name="EditorPaneSplitter"
+                                  Grid.Column="1"
+                                  ResizeDirection="Columns"
+                                  ResizeBehavior="PreviousAndNext"
+                                  HorizontalAlignment="Stretch"
+                                  Background="{Binding SurfaceBorderBrush}"
+                                  IsVisible="{Binding IsSplitScreenVisible}" />
+                    <Grid Grid.Column="2"
+                          x:Name="SecondaryEditorPane"
+                          Background="{Binding EditorBackgroundBrush}"
+                          MinWidth="180"
+                          RowDefinitions="Auto,Auto,*"
+                          IsVisible="{Binding IsSplitScreenVisible}">
+                        <Grid Grid.Row="0" Background="{Binding TopBarBrush}">
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <ItemsControl ItemsSource="{Binding SecondaryPaneTabs}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodoModels:EditorTab" x:CompileBindings="True">
+                                    <Border Classes="tabwrap"
+                                            Classes.active="{Binding IsSecondaryPaneSelected}">
+                                        <Border.ContextMenu>
+                                            <ContextMenu Opening="EditorTabContextMenu_OnOpening">
+                                                <MenuItem Header="Save"
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabMenuItem_OnClick" />
+                                                <MenuItem Header="Save As..."
+                                                          Tag="{Binding}"
+                                                          Click="SaveEditorTabAsMenuItem_OnClick" />
+                                                <MenuItem Header="Rename..."
+                                                          Tag="{Binding}"
+                                                          Click="RenameEditorTabMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Copy Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabPathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy Relative Path"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabRelativePathMenuItem_OnClick" />
+                                                <MenuItem Header="Copy File Name"
+                                                          Tag="{Binding}"
+                                                          Click="CopyEditorTabNameMenuItem_OnClick" />
+                                                <MenuItem Header="{Binding #RootWindow.RevealInFileManagerText}"
+                                                          Tag="{Binding}"
+                                                          Click="RevealEditorTabInExplorerMenuItem_OnClick" />
+                                                <MenuItem Header="Open in Integrated Terminal"
+                                                          Tag="{Binding}"
+                                                          Click="OpenEditorTabInTerminalMenuItem_OnClick" />
+                                                <MenuItem Header="Open to the Side"
+                                                          Tag="{Binding}"
+                                                          Click="OpenSecondaryEditorTabToSideMenuItem_OnClick" />
+                                                <Separator />
+                                                <MenuItem Header="Close"
+                                                          Tag="{Binding}"
+                                                          Click="ClosePaneTabMenuItem_OnClick" />
+                                                <MenuItem Header="Close Others"
+                                                          Tag="{Binding}"
+                                                          Click="CloseOtherPaneTabsMenuItem_OnClick" />
+                                                <MenuItem Header="Close Tabs to the Right"
+                                                          Tag="{Binding}"
+                                                          Click="ClosePaneTabsToRightMenuItem_OnClick" />
+                                                <MenuItem Header="Close All"
+                                                          Click="CloseAllPaneTabsMenuItem_OnClick" />
+                                            </ContextMenu>
+                                        </Border.ContextMenu>
+                                        <Grid RowDefinitions="Auto,2.5"
+                                              ColumnDefinitions="*,Auto">
+                                            <Button Grid.Row="0"
+                                                    Grid.Column="0"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="editortab"
+                                                    Classes.active="{Binding IsSecondaryPaneSelected}"
+                                                    Tag="{Binding}"
+                                                    Click="OpenSecondaryPaneTab_OnClick"
+                                                    IsVisible="{Binding !IsRenamingInSecondaryPane}"
+                                                    Padding="12,10,38,10">
+                                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                                    <Viewbox Width="26" Height="13" VerticalAlignment="Center" Stretch="Uniform">
+                                                        <TextBlock FontSize="11"
+                                                                   FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Monospace"
+                                                                   Width="34"
+                                                                   Height="14"
+                                                                   TextAlignment="Center"
+                                                                   VerticalAlignment="Center"
+                                                                   Text="{Binding Icon}"
+                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                   Opacity="0.85" />
+                                                    </Viewbox>
+<TextBlock FontSize="13"
+                                                               Classes="tablabel"
+                                                               Classes.active="{Binding IsSecondaryPaneSelected}"
+                                                               Text="{Binding DisplayName}" />
+                                                    <Border Background="{Binding #RootWindow.ButtonBrush}"
+                                                            BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                            BorderThickness="1"
+                                                            CornerRadius="4"
+                                                            Padding="4,0"
+                                                            IsVisible="{Binding HasErrorDiagnostics}"
+                                                            ToolTip.Tip="{Binding DiagnosticsTooltip}">
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                   Text="{Binding ErrorCount}"
+                                                                   VerticalAlignment="Center" />
+                                                    </Border>
+                                                     <Viewbox Classes="dirtydot" Width="7" Height="7" VerticalAlignment="Center"
+                                                              IsVisible="{Binding IsDirty}">
+                                                        <Canvas Width="24" Height="24">
+                                                            <Path Fill="{Binding #RootWindow.AccentBrush}"
+                                                                  Data="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z" />
+                                                        </Canvas>
+                                                    </Viewbox>
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Grid.Row="0"
+                                                    Grid.Column="1"
+                                                    Classes="tabclose"
+                                                    Classes.active="{Binding IsSecondaryPaneSelected}"
+                                                    Tag="{Binding}"
+                                                    Click="ClosePaneTabButton_OnClick"
+                                                    Margin="0,0,7,0"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="Close this tab">
+                                                <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Canvas Width="24" Height="24">
+                                                        <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
+                                                              Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                                    </Canvas>
+                                                </Viewbox>
+                                            </Button>
+                                            <TextBox Grid.Row="0"
+                                                     Grid.Column="0"
+                                                     FontSize="13"
+                                                     IsVisible="{Binding IsRenamingInSecondaryPane}"
+                                                     Text="{Binding RenameText, Mode=TwoWay}"
+                                                     KeyDown="InlineTabRenameTextBox_OnKeyDown"
+                                                     LostFocus="InlineTabRenameTextBox_OnLostFocus"
+                                                     MinWidth="150"
+                                                     Margin="12,0,0,0"
+                                                     Padding="4,1"
+                                                     VerticalAlignment="Center"
+                                                     VerticalContentAlignment="Center" />
+                                            <Border Grid.Row="1"
+                                                    Grid.Column="0"
+                                                    Grid.ColumnSpan="2"
+                                                    Classes="tabunderline tabunderlinebase"
+                                                    Height="2.5"
+                                                    CornerRadius="1.5,1.5,0,0"
+                                                    Background="{Binding #RootWindow.AccentBrush}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Grid>
+                        <Border Grid.Row="1" Background="{Binding TopBarBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="0,0,0,1" Padding="12,6">
+                            <TextBlock Text="{Binding SecondaryPaneBreadcrumbText}" FontSize="11" Foreground="{Binding MutedTextBrush}" TextTrimming="CharacterEllipsis" IsVisible="{Binding IsStatusBarFilePathVisible}" />
+                        </Border>
+                        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" Background="{Binding EditorBackgroundBrush}">
+                        <avaloniaEdit:TextEditor Grid.Column="0"
+                                                 x:Name="SecondaryEditorTextBox"
+                                                 Background="{Binding EditorBackgroundBrush}"
+                                                 Foreground="{Binding PrimaryTextBrush}"
+                                                 FontSize="14"
+                                                 Padding="8,12,18,36"
+                                                 KeyboardNavigation.TabNavigation="None"
+                                                 ShowLineNumbers="True"
+                                                 WordWrap="{Binding IsWordWrapEnabled}"
+                                                 HorizontalScrollBarVisibility="Auto"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 IsVisible="{Binding IsSecondaryPaneTextEditorVisible}">
+                            <avaloniaEdit:TextEditor.ContextMenu>
+                                <ContextMenu Opening="EditorContextMenu_Opening">
+                                    <MenuItem Name="SecondaryEditorCutMenuItem" Header="Cut" Click="EditorCutMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorCopyMenuItem" Header="Copy" Click="EditorCopyMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorPasteMenuItem" Header="Paste" Click="EditorPasteMenuItem_OnClick" />
+                                    <Separator />
+                                    <MenuItem Name="SecondaryEditorFindAllOccurrencesMenuItem" Header="Find All Occurrences" Click="EditorFindAllOccurrencesMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorChangeAllOccurrencesMenuItem" Header="Change All Occurrences" Click="EditorChangeAllOccurrencesMenuItem_OnClick" />
+                                    <Separator />
+                                    <MenuItem Name="SecondaryEditorGoToDefinitionMenuItem" Header="Go to Definition" Click="EditorGoToDefinitionMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorFindReferencesMenuItem" Header="Find References" Click="EditorFindReferencesMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorRenameSymbolMenuItem" Header="Rename Symbol…" ToolTip.Tip="Rename this symbol using the language server" Click="EditorRenameSymbolMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorTypeDefinitionMenuItem" Header="Go to Type Definition" ToolTip.Tip="Ask the language server for the symbol's type definition" Click="EditorTypeDefinitionMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorImplementationMenuItem" Header="Go to Implementation" ToolTip.Tip="Ask the language server for an implementation" Click="EditorImplementationMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorDocumentSymbolsMenuItem" Header="Show Document Symbols" ToolTip.Tip="List symbols reported by the language server" Click="EditorDocumentSymbolsMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorSignatureHelpMenuItem" Header="Signature Help" ToolTip.Tip="Show parameter and documentation help at the caret" Click="EditorSignatureHelpMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorFormatDocumentMenuItem" Header="Format Document" Click="EditorFormatDocumentMenuItem_OnClick" />
+                                    <MenuItem Name="SecondaryEditorQuickFixMenuItem" Header="Quick Fix…" ToolTip.Tip="Find an applicable LSP or language-rule fix at the caret" Click="EditorQuickFixMenuItem_OnClick" />
+                                    <Separator />
+                                    <MenuItem Name="SecondaryEditorDismissDiagnosticMenuItem" Header="Dismiss Diagnostic" Click="EditorDismissDiagnosticMenuItem_OnClick" />
+                                </ContextMenu>
+                            </avaloniaEdit:TextEditor.ContextMenu>
+                        </avaloniaEdit:TextEditor>
+                        <Border Grid.Column="1"
+                                Width="96"
+                                Background="{Binding EditorBackgroundBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1,0,0,0"
+                                IsVisible="{Binding IsSecondaryPaneMinimapVisible}"
+                                ToolTip.Tip="Editor minimap. Click or drag to navigate.">
+                            <kodoRenderers:EditorMinimapControl x:Name="SecondaryEditorMinimapView" />
+                        </Border>
+                        <Grid Grid.ColumnSpan="2"
+                              IsVisible="{Binding IsSecondaryPaneImagePreviewVisible}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              RowDefinitions="*,Auto"
+                              Background="{Binding EditorBackgroundBrush}">
+                            <ScrollViewer x:Name="SecondaryImageScrollViewer"
+                                          Grid.Row="0"
+                                          HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Auto">
+                                <Image Source="{Binding SecondaryPaneImagePreview}"
+                                       Width="{Binding SecondaryPaneImageZoomedWidth}"
+                                       Height="{Binding SecondaryPaneImageZoomedHeight}"
+                                       Stretch="Fill"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Margin="24" />
+                            </ScrollViewer>
+                            <Border Grid.Row="1"
+                                    Background="{Binding TopBarBrush}"
+                                    BorderBrush="{Binding SurfaceBorderBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="10,6">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="4">
+                                    <Button Classes="chrome"
+                                            Width="30" Height="28"
+                                            FontSize="14"
+                                            Padding="0"
+                                            HorizontalContentAlignment="Center"
+                                            VerticalContentAlignment="Center"
+                                            ToolTip.Tip="{Binding ZoomOutTooltip}"
+                                            Click="ZoomOutButton_OnClick">
+                                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Fill="{Binding PrimaryTextBrush}"
+                                                      Data="M4.5 12a.75.75 0 0 1 .75-.75h13.5a.75.75 0 0 1 0 1.5H5.25A.75.75 0 0 1 4.5 12Z" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                    <Button Classes="chrome"
+                                            MinWidth="56" Height="28"
+                                            Padding="8,0"
+                                            HorizontalContentAlignment="Center"
+                                            VerticalContentAlignment="Center"
+                                            ToolTip.Tip="{Binding ZoomResetTooltip}"
+                                            Click="ZoomResetButton_OnClick">
+                                        <TextBlock Text="{Binding SecondaryPaneImageZoomPercent}"
+                                                   FontSize="12"
+                                                   Foreground="{Binding AccentBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                    </Button>
+                                    <Button Classes="chrome"
+                                            Width="30" Height="28"
+                                            FontSize="14"
+                                            Padding="0"
+                                            HorizontalContentAlignment="Center"
+                                            VerticalContentAlignment="Center"
+                                            ToolTip.Tip="{Binding ZoomInTooltip}"
+                                            Click="ZoomInButton_OnClick">
+                                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <Canvas Width="24" Height="24">
+                                                <Path Fill="{Binding PrimaryTextBrush}"
+                                                      Data="M12 4.5a.75.75 0 0 1 .75.75v6h6a.75.75 0 0 1 0 1.5h-6v6a.75.75 0 0 1-1.5 0v-6h-6a.75.75 0 0 1 0-1.5h6v-6A.75.75 0 0 1 12 4.5Z" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                        <Grid Grid.ColumnSpan="2"
+                              IsVisible="{Binding IsSecondaryPaneCorruptedFileViewVisible}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="{Binding EditorBackgroundBrush}">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+                                <Viewbox Width="40" Height="40" HorizontalAlignment="Center" Opacity="0.35">
+                                    <Canvas Width="24" Height="24">
+                                        <Path Fill="{Binding MutedTextBrush}"
+                                              Data="M12 2.25c.43 0 .822.247 1.007.633l8.25 17.25c.21.44.16.96-.13 1.354a1.125 1.125 0 0 1-.917.513H3.79a1.125 1.125 0 0 1-.917-.513 1.293 1.293 0 0 1-.13-1.354l8.25-17.25A1.117 1.117 0 0 1 12 2.25Zm0 5.25a.75.75 0 0 1 .75.75v5.25a.75.75 0 0 1-1.5 0V8.25A.75.75 0 0 1 12 7.5Zm0 8.25a.9.9 0 1 0 0 1.8.9.9 0 0 0 0-1.8Z" />
+                                    </Canvas>
+                                </Viewbox>
+                                <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                    <TextBlock FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Opacity="0.6"
+                                               Text="This file is corrupted or unsupported" />
+                                    <TextBlock FontSize="13" HorizontalAlignment="Center" TextWrapping="Wrap"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Opacity="0.4"
+                                               Text="The file appears to be binary and cannot be displayed as text." />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        </Grid>
+                    </Grid>
+                    <Border x:Name="TabDropIndicator"
+                            Grid.Column="0"
+                            Grid.ColumnSpan="3"
+                            IsHitTestVisible="False"
+                            IsVisible="False"
+                            Background="{Binding AccentBrush}"
+                            Opacity="0.22"
+                            BorderBrush="{Binding AccentBrush}"
+                            BorderThickness="2" />
                 </Grid>
                 <Border Grid.Row="2"
                         Background="{Binding EditorBackgroundBrush}"
                         IsVisible="{Binding IsEmptyStateVisible}">
                     <Grid RowDefinitions="Auto,*">
 
-                        
                         <Border Grid.Row="0"
                                 Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -2078,7 +2695,7 @@
                                 Padding="0"
                                 ClipToBounds="True">
                             <Panel>
-                                
+
                                 <Border Background="{Binding AccentBrush}"
                                         Opacity="0.035"
                                         CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
@@ -2105,7 +2722,6 @@
                                                        Text="🎂" />
                                         </StackPanel>
 
-                                        
                                         <StackPanel Spacing="6">
                                             <Viewbox Stretch="Uniform" StretchDirection="DownOnly"
                                                      HorizontalAlignment="Left"
@@ -2127,7 +2743,6 @@
                                         </StackPanel>
                                     </StackPanel>
 
-                                    
                                     <Border Grid.Column="1"
                                             Background="{Binding WindowBackgroundBrush}"
                                             BorderBrush="{Binding AccentBrush}"
@@ -2152,7 +2767,6 @@
                                       HorizontalScrollBarVisibility="Disabled">
                         <StackPanel Margin="32,28,32,36" Spacing="16">
 
-                            
                             <Border Padding="18,16"
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding AccentBrush}"
@@ -2185,7 +2799,6 @@
                                 </Grid>
                             </Border>
 
-                            
                             <ItemsControl ItemsSource="{Binding PinnedRecentFiles}"
                                           IsVisible="{Binding HasPinnedRecentFiles}">
                                 <ItemsControl.ItemsPanel>
@@ -2195,7 +2808,7 @@
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:RecentFileItem" x:CompileBindings="True">
-                                        
+
                                         <Button Tag="{Binding}"
                                                 Click="RecentFileButton_OnClick"
                                                 Background="{Binding #RootWindow.ButtonBrush}"
@@ -2326,7 +2939,7 @@
                                             BorderThickness="1"
                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <Grid RowDefinitions="Auto,*">
-                                            
+
                                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                                                 <StackPanel Grid.Column="0"
                                                             Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
@@ -2348,9 +2961,6 @@
                                                         Content="Clear" />
                                             </Grid>
 
-                                            
-
-                                            
                                             <StackPanel Grid.Row="1"
                                                         IsVisible="{Binding !HasRecentFiles}"
                                                         HorizontalAlignment="Center"
@@ -2403,7 +3013,7 @@
                                                                     </TextBlock>
                                                                 </StackPanel>
                                                             </ToolTip.Tip>
-                                                            
+
                                                             <Grid ColumnDefinitions="Auto,*,110,64,40" ColumnSpacing="14">
 
                                                                 <Grid Grid.Column="0" VerticalAlignment="Center">
@@ -2420,7 +3030,7 @@
                                                                              Width="15" Height="15"
                                                                              VerticalAlignment="Center">
                                                                         <Canvas Width="24" Height="24">
-                                                                            
+
                                                                             <Path Fill="{Binding #RootWindow.MutedTextBrush}"
                                                                                   Opacity="0.55"
                                                                                   Data="F0 M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625ZM7.5 15a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 7.5 15Zm.75 2.25a.75.75 0 0 0 0 1.5H12a.75.75 0 0 0 0-1.5H8.25Z" />
@@ -2497,7 +3107,6 @@
                                             Spacing="16"
                                             VerticalAlignment="Top">
 
-                                    
                                     <Border Padding="16,14"
                                             Background="{Binding CardBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -2598,7 +3207,7 @@
                                                         </Canvas>
                                                     </Viewbox>
                                                 </Button>
-                                               
+
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
@@ -2609,7 +3218,6 @@
                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <Grid RowDefinitions="Auto,*">
 
-                                            
                                             <Border Grid.Row="0"
                                                     BorderBrush="{Binding AccentBrush}"
                                                     BorderThickness="0,0,0,1"
@@ -2678,7 +3286,6 @@
                                                 </Grid>
                                             </Border>
 
-                                            
                                             <Border Grid.Row="1"
                                                     Padding="20,14"
                                                     MaxHeight="310"
@@ -2772,13 +3379,12 @@
                                                 </Panel>
                                             </Border>
 
-                                            
                                             <Border Grid.Row="1"
                                                     Padding="16,14"
                                                     MaxHeight="420"
                                                     IsVisible="{Binding IsHomeNewsTabActive}">
                                                 <Panel ClipToBounds="True">
-                                                    
+
                                                     <StackPanel IsVisible="{Binding IsNewsDisabled}"
                                                                 HorizontalAlignment="Center"
                                                                 VerticalAlignment="Center"
@@ -3314,7 +3920,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="File encoding - click to change"
-                                    Click="EncodingStatusBarButton_OnClick"
+                                    Click="EncodingStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3335,7 +3941,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Line ending - click to change"
-                                    Click="LineEndingStatusBarButton_OnClick"
+                                    Click="LineEndingStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3356,7 +3962,7 @@
 
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Indentation - click to change"
-                                    Click="IndentationStatusBarButton_OnClick"
+                                    Click="IndentationStatusBarPaletteButton_OnClick"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3387,8 +3993,9 @@
                                         Spacing="4"
                                         VerticalAlignment="Center"
                                         IsVisible="{Binding IsDocumentViewVisible}">
-                                <TextBlock Classes="statusDim"
+                                <TextBlock x:Name="StatusBarCaretLiveRegion" Classes="statusDim"
                                            Text="{Binding StatusBarCaretText}"
+                                           AutomationProperties.LiveSetting="Polite"
                                            ToolTip.Tip="Cursor position"
                                            VerticalAlignment="Center" />
                                 <TextBlock Classes="statusDim"
@@ -3451,7 +4058,6 @@
                 </Border>
             </Grid>
 
-            
             <Border Classes="searchpanel" x:Name="SearchPanelBorder"
                     IsVisible="{Binding IsSearchPanelActive}"
                     HorizontalAlignment="Right"
@@ -3459,7 +4065,7 @@
                     Margin="0,107,28,0"
                     ZIndex="100">
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnDefinitions="*">
-                    
+
                     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
                         <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="{Binding FindInFileTooltip}">
@@ -3482,7 +4088,6 @@
                         </Button>
                     </Grid>
 
-                    
                     <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,0,0,8">
                         <Border Grid.Column="0" Background="{Binding ButtonBrush}" BorderBrush="{Binding SurfaceBorderBrush}" BorderThickness="1" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Margin="0,0,10,0" VerticalAlignment="Center">
                             <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
@@ -3553,7 +4158,7 @@
                                     <DataTemplate x:DataType="kodoModels:SearchDisplayItem" x:CompileBindings="True">
                                         <Border Background="Transparent">
                                             <Panel>
-                                            
+
                                             <Button IsVisible="{Binding IsGroupHeader}" Classes="chrome groupheader" Tag="{Binding Group}" HorizontalContentAlignment="Left" Padding="8,6" Margin="0" BorderThickness="0"
                                                     Click="SearchGroupHeader_OnClick">
                                                 <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="0">
@@ -3564,7 +4169,7 @@
                                                     <TextBlock Grid.Column="4" Text="{Binding Group.MatchCount, StringFormat='{}{0} matches'}" FontSize="11" Foreground="{Binding #RootWindow.MutedTextBrush}" VerticalAlignment="Center" Margin="8,0,0,0" />
                                                 </Grid>
                                             </Button>
-                                            
+
                                             <Grid IsVisible="{Binding IsGroupHeader, Converter={x:Static kodoModels:BoolInverter.Instance}}" ColumnDefinitions="Auto,Auto,*" RowDefinitions="Auto,Auto" Margin="8,5" ClipToBounds="True" ToolTip.Tip="{Binding Result.Path}">
                                                 <Grid.ContextMenu>
                                                     <ContextMenu>
@@ -3627,13 +4232,12 @@
                     </Grid>
                 </Border>
 
-                
                 <Grid Grid.Row="1"
                       IsVisible="{Binding IsTutorialWelcomeStep}">
                     <StackPanel Spacing="0"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center">
-                        
+
                         <Border Width="72" Height="72"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 ClipToBounds="True"
@@ -3665,13 +4269,26 @@
                                    TextWrapping="Wrap"
                                    MaxWidth="420"
                                    LineHeight="26"
-                                   Text="A fast, focused code editor built to stay out of your way. This short tutorial walks you through the essentials - it only takes a minute." />
+                                   Text="A fast, focused code editor built to stay out of your way. Take five short steps to get oriented, then jump straight into your work." />
+
+                        <Border Background="{Binding ButtonBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.PillRadius}"
+                                Padding="12,7"
+                                HorizontalAlignment="Center"
+                                Margin="0,28,0,0">
+                            <TextBlock FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding AccentBrush}"
+                                       Text="5 STEPS  ·  ABOUT A MINUTE  ·  REVISIT ANYTIME IN SETTINGS" />
+                        </Border>
 
                         <TextBlock FontSize="13"
                                    Foreground="{Binding MutedTextBrush}"
                                    HorizontalAlignment="Center"
                                    Text="{Binding TutorialProgressDotsText}"
-                                   Margin="0,32,0,0" />
+                                   Margin="0,14,0,0" />
 
                         <StackPanel Orientation="Horizontal"
                                     HorizontalAlignment="Center"
@@ -3687,9 +4304,10 @@
                     </StackPanel>
                 </Grid>
 
-                
-                <ScrollViewer Grid.Row="1"
-                              IsVisible="{Binding IsNotTutorialWelcomeStep}"
+                <Grid Grid.Row="1"
+                      IsVisible="{Binding IsNotTutorialWelcomeStep}"
+                      RowDefinitions="*,Auto">
+                <ScrollViewer Grid.Row="0"
                               Padding="24"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
@@ -3702,7 +4320,7 @@
                                 Margin="0,0,16,0">
                             <StackPanel Spacing="18">
                             <Panel>
-                                
+
                                 <StackPanel IsVisible="{Binding IsNotTutorialSetupStep}"
                                             Spacing="18">
                                 <StackPanel Spacing="6">
@@ -3710,9 +4328,12 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding AccentBrush}"
                                                Text="{Binding TutorialStepLabel}" />
-                                    <TextBlock FontSize="13"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               Text="{Binding TutorialProgressDotsText}" />
+                                    <ProgressBar Height="4"
+                                                 Minimum="0"
+                                                 Maximum="100"
+                                                 Value="{Binding TutorialProgressPercent}"
+                                                 Foreground="{Binding AccentBrush}"
+                                                 Background="{Binding ButtonBrush}" />
                                 </StackPanel>
 
                                 <StackPanel Spacing="10">
@@ -3759,7 +4380,6 @@
 
                             </StackPanel>
 
-                                
                                 <StackPanel IsVisible="{Binding IsTutorialSetupStep}" Spacing="28">
 
                                     <StackPanel Spacing="6">
@@ -3780,7 +4400,6 @@
 
                                     <Grid ColumnDefinitions="*,1,*" ColumnSpacing="0">
 
-                                        
                                         <StackPanel Grid.Column="0" Spacing="24" Margin="0,0,32,0">
 
                                             <StackPanel Spacing="12">
@@ -3792,7 +4411,7 @@
                                                                VerticalAlignment="Center"
                                                                Text="THEME" />
                                                 </StackPanel>
-                                                
+
                                                 <WrapPanel Orientation="Horizontal" ItemSpacing="10" LineSpacing="10">
                                                     <Button Classes="chrome"
                                                             Click="ThemeButton_OnClick"
@@ -3874,13 +4493,12 @@
                                                     </Button>
                                                 </WrapPanel>
 
-                                                
                                                 <StackPanel Spacing="8" IsVisible="{Binding HasThemeExtensions}">
                                                     <TextBlock FontSize="11"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding MutedTextBrush}"
                                                                Text="INSTALLED THEME EXTENSIONS" />
-                                                    
+
                                                     <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                                         <ItemsControl.ItemsPanel>
                                                             <ItemsPanelTemplate>
@@ -3891,7 +4509,6 @@
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                                 <StackPanel Spacing="6">
 
-                                                                    
                                                                     <Button Classes="chrome groupheader"
                                                                             Click="ThemeGroupHeader_OnClick"
                                                                             IsVisible="{Binding IsMultiTheme}">
@@ -4177,24 +4794,39 @@
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                                 <Border Width="3" Height="18" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                                <TextBlock FontSize="15"
+                                                <TextBlock FontSize="18"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
                                                            VerticalAlignment="Center"
-                                                           Text="Privacy Policy" />
+                                                           Text="Required: Privacy Policy" />
                                             </StackPanel>
                                             <TextBlock FontSize="12"
-                                                       Foreground="{Binding MutedTextBrush}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding PrimaryTextBrush}"
                                                        TextWrapping="Wrap"
-                                                       Text="Please scroll to the end to enable Accept." />
+                                                       Text="Scroll through the document to its last line. Accept stays locked until you reach the end." />
+                                            <Border Background="{Binding ButtonBrush}"
+                                                    BorderBrush="{Binding AccentBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                    Padding="10,8">
+                                                <TextBlock FontSize="12"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding PrimaryTextBrush}"
+                                                           TextWrapping="Wrap"
+                                                           Text="{Binding PrivacyPolicyScrollStatusText}" />
+                                            </Border>
                                             <Border Background="{Binding WindowBackgroundBrush}"
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     BorderThickness="1"
                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                     Padding="16"
-                                                    MaxHeight="220">
+                                                    MinHeight="180"
+                                                    MaxHeight="260">
                                                 <ScrollViewer x:Name="PrivacyPolicyScrollViewerTutorial"
-                                                              ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged">
+                                                              ScrollChanged="PrivacyPolicyScrollViewer_OnScrollChanged"
+                                                              VerticalScrollBarVisibility="Visible"
+                                                              HorizontalScrollBarVisibility="Disabled">
                                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                                TextWrapping="Wrap"
                                                                LineHeight="18"
@@ -4207,12 +4839,11 @@
                                                 <Button Classes="marketaction"
                                                         IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
                                                         Click="AcceptPrivacyPolicyButton_OnClick"
-                                                        Content="Accept" />
+                                                        Content="Accept Privacy Policy" />
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
 
-                                    
                                     <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                             Background="{Binding ButtonBrush}"
                                             BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4248,29 +4879,12 @@
 
                             </Panel>
 
-                            <StackPanel Orientation="Horizontal"
-                                        HorizontalAlignment="Right"
-                                        Spacing="10">
-                                <Button Classes="chrome"
-                                        Click="PreviousTutorialStepButton_OnClick"
-                                        IsVisible="{Binding CanGoToPreviousTutorialStep}"
-                                        Content="Back" />
-                                <Button Classes="chrome"
-                                        Click="SkipTutorialButton_OnClick"
-                                        Content="Skip Tutorial" />
-                                <Button Classes="marketaction"
-                                        Click="NextTutorialStepButton_OnClick"
-                                        MinWidth="148"
-                                        Content="{Binding TutorialPrimaryButtonText}" />
-                            </StackPanel>
-
                             </StackPanel>
 
                         </Border>
 
                         <StackPanel Grid.Column="1" Spacing="16">
 
-                            
                             <Border IsVisible="{Binding IsNotTutorialSetupStep}"
                                     Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -4281,7 +4895,7 @@
                                     <TextBlock FontSize="12"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding AccentBrush}"
-                                               Text="Spotlight" />
+                                               Text="WHAT TO TRY" />
                                     <TextBlock FontSize="22"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -4302,6 +4916,39 @@
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
+                <Border Grid.Row="1"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="0,1,0,0"
+                        Padding="24,14">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                        <TextBlock VerticalAlignment="Center"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding IsTutorialSetupStep}"
+                                   Text="{Binding TutorialSetupStatusText}" />
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    Spacing="10">
+                            <Button Classes="chrome"
+                                    Click="PreviousTutorialStepButton_OnClick"
+                                    IsVisible="{Binding CanGoToPreviousTutorialStep}"
+                                    Content="Back" />
+                            <Button Classes="chrome"
+                                    Click="SkipTutorialButton_OnClick"
+                                    IsVisible="{Binding IsNotTutorialSetupStep}"
+                                    IsEnabled="{Binding CanSkipTutorial}"
+                                    Content="Skip tutorial" />
+                            <Button Classes="marketaction"
+                                    Click="NextTutorialStepButton_OnClick"
+                                    MinWidth="148"
+                                    IsEnabled="{Binding CanAdvanceTutorial}"
+                                    Content="{Binding TutorialPrimaryButtonText}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                </Grid>
             </Grid>
 
             <Grid IsVisible="{Binding IsExtensionsPageVisible}"
@@ -4386,7 +5033,7 @@
                                      Height="36"
                                      Padding="12,0"
                                      VerticalContentAlignment="Center" />
-                            
+
                             <Border Grid.Column="1"
                                     MinWidth="96"
                                     MaxWidth="180"
@@ -4469,15 +5116,20 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
-                            
+
                             <Border Classes="extensionlistcard" IsVisible="{Binding HasVisibleInstalledExtensionsOrCompilers}">
                             <StackPanel Spacing="0">
-                            
+
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" Margin="14,12,14,6" VerticalAlignment="Center">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Languages" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" ItemsSource="{Binding FilteredInstalledLanguageExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -4576,12 +5228,17 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <Border IsVisible="{Binding IsInstalledLanguageDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
-                            
+
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledPluginExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Plugins" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledPluginExtensions}" ItemsSource="{Binding FilteredInstalledPluginExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -4680,12 +5337,17 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <Border IsVisible="{Binding IsInstalledPluginDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
-                            
+
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledThemeExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Themes" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledThemeExtensions}" ItemsSource="{Binding FilteredInstalledThemeExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:LoadedExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -4784,13 +5446,18 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                             <Border IsVisible="{Binding IsInstalledThemeDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="0.7"/>
-                            
+
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledCompilerExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
                                 <Border Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Compilers" FontSize="12" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
                                           ItemsSource="{Binding FilteredInstalledCompilerExtensions}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <VirtualizingStackPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
                                         <Border Classes="extensionrow">
@@ -4912,7 +5579,7 @@
                                                Text="Browse the Marketplace to add language support and themes." />
                                 </StackPanel>
                             </Border>
-                            
+
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -4978,7 +5645,7 @@
                         </StackPanel>
 
                         <StackPanel IsVisible="{Binding IsMarketplaceSectionTabSelected}">
-                            
+
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -5000,7 +5667,7 @@
                                                Text="The Marketplace is currently unavailable. Please wait a few minutes." />
                                 </StackPanel>
                             </Border>
-                            
+
                             <Border Background="{Binding ButtonBrush}"
                                     BorderBrush="{Binding AccentBrush}"
                                     BorderThickness="1"
@@ -5034,7 +5701,7 @@
                                                 Background="{Binding #RootWindow.CardBrush}"
                                                 BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-                                                
+
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                                     <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                                             Background="{Binding #RootWindow.AccentBrush}"
@@ -5088,7 +5755,6 @@
                                                     </StackPanel>
                                                 </Grid>
 
-                                                
                                                 <TextBlock Grid.Row="2"
                                                            FontSize="12"
                                                            Foreground="{Binding #RootWindow.MutedTextBrush}"
@@ -5098,7 +5764,7 @@
                                                            MaxLines="3" />
 
                                                 <Grid Grid.Row="3">
-                                                    
+
                                                     <Border Classes="installedtag"
                                                             HorizontalAlignment="Stretch"
                                                             Opacity="0.7"
@@ -5109,7 +5775,7 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="Installed" />
                                                     </Border>
-                                                    
+
                                                     <Button Classes="chrome"
                                                             HorizontalAlignment="Stretch"
                                                             HorizontalContentAlignment="Center"
@@ -5121,7 +5787,7 @@
                                                             IsEnabled="{Binding IsInstallEnabled}"
                                                             Content="{Binding InstallButtonText}"
                                                             IsVisible="{Binding IsUpdateAvailable}" />
-                                                    
+
                                                     <Button Classes="marketinstall"
                                                             HorizontalAlignment="Stretch"
                                                             HorizontalContentAlignment="Center"
@@ -5139,7 +5805,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            
+
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -5160,7 +5826,7 @@
                                                Text="{Binding MarketplaceEmptyStateText}" />
                                 </StackPanel>
                             </Border>
-                            
+
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -5229,7 +5895,7 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="{Binding Name}"
                                                                    TextTrimming="CharacterEllipsis" />
-                                                        
+
                                                     </StackPanel>
                                                 </Grid>
 
@@ -5298,7 +5964,7 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            
+
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                     BorderThickness="1"
@@ -5329,74 +5995,91 @@
                   IsVisible="{Binding IsSettingsPageVisible}"
                   IsHitTestVisible="{Binding IsSettingsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
-                  RowDefinitions="Auto,Auto,*"
+                  ColumnDefinitions="232,*"
+                  RowDefinitions="*"
                   Focusable="True"
                   PointerPressed="SettingsPage_OnPointerPressed">
-                <Border Grid.Row="0"
+                <Border Grid.Column="0"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,0,0,1"
-                        Padding="24,18">
-                    <Grid ColumnDefinitions="*,Auto">
-                        <StackPanel Spacing="4">
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <Border Width="3" Height="32" CornerRadius="2" Background="{Binding AccentBrush}" />
-                                <TextBlock FontSize="28"
+                        BorderThickness="0,0,1,0"
+                        Padding="18,22">
+                    <Grid RowDefinitions="Auto,*">
+                        <StackPanel Spacing="5" Margin="4,0,4,20">
+                            <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
+                                <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                <TextBlock FontSize="20"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
-                                           VerticalAlignment="Center"
                                            Text="Settings" />
                             </StackPanel>
+                            <TextBlock FontSize="11"
+                                       Foreground="{Binding MutedTextBrush}"
+                                       Text="{Binding CustomizeWorkspaceText}" />
                         </StackPanel>
-
-                        <TextBox x:Name="SettingsSearchTextBox"
-                                 Grid.Column="1"
-                                 Width="260"
-                                 VerticalAlignment="Center"
-                                 Text="{Binding SettingsSearchText, Mode=TwoWay}"
-                                 PlaceholderText="Search settings..."
-                                 Background="{Binding ButtonBrush}"
-                                 Foreground="{Binding PrimaryTextBrush}"
-                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                 Height="36"
-                                 Padding="12,0"
-                                 VerticalContentAlignment="Center"
-                                 LostFocus="SettingsSearchTextBox_OnLostFocus" />
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel Spacing="4">
+                                <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
+                                <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
+                                <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
+                                <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
+                                <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
+                                <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
+                                <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
+                                <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
+                            <Button Classes="settingsnav" Tag="accessibility" Click="SettingsSectionButton_OnClick" Content="Accessibility" />
+                                <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
+                                <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="{Binding LabelPersonalization}" />
+                                <Button Classes="settingsnav" Tag="devoptions" Click="SettingsSectionButton_OnClick" Content="Developer Options" />
+                                <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
+                            </StackPanel>
+                        </ScrollViewer>
                     </Grid>
                 </Border>
 
-                <Border Grid.Row="1"
-                        Background="{Binding TopBarBrush}"
-                        BorderBrush="{Binding SurfaceBorderBrush}"
-                        BorderThickness="0,0,0,1">
-                    <WrapPanel Orientation="Horizontal" ItemSpacing="6" LineSpacing="6" Margin="16,8">
-                            <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
-                            <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
-                            <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
-                            <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
-                            <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
-                            <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
-                            <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
-                            <Button Classes="settingsnav" Tag="performance" Click="SettingsSectionButton_OnClick" Content="Performance" />
-                            <Button Classes="settingsnav" Tag="privacy" Click="SettingsSectionButton_OnClick" Content="Privacy" />
-                            <Button Classes="settingsnav" Tag="personalization" Click="SettingsSectionButton_OnClick" Content="Personalization" />
-                            <Button Classes="settingsnav" Tag="advanced" Click="SettingsSectionButton_OnClick" Content="Advanced" />
-                            <Button Classes="settingsnav" Tag="helpabout" Click="SettingsSectionButton_OnClick" Content="Help &amp; About" />
-                    </WrapPanel>
-                </Border>
+                <Grid Grid.Column="1" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            Background="{Binding TopBarBrush}"
+                            BorderBrush="{Binding SurfaceBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="28,14">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="20">
+                            <StackPanel Spacing="3" VerticalAlignment="Center">
+                                <TextBlock FontSize="22"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="Configure Kodo" />
+                                <TextBlock FontSize="11"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="Search and adjust how the editor works." />
+                            </StackPanel>
+                            <TextBox x:Name="SettingsSearchTextBox"
+                                     Grid.Column="1"
+                                     Width="320"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding SettingsSearchText, Mode=TwoWay}"
+                                     PlaceholderText="Search settings..."
+                                     Background="{Binding ButtonBrush}"
+                                     Foreground="{Binding PrimaryTextBrush}"
+                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                     Height="38"
+                                     Padding="12,0"
+                                     VerticalContentAlignment="Center"
+                                     LostFocus="SettingsSearchTextBox_OnLostFocus" />
+                        </Grid>
+                    </Border>
 
                 <ScrollViewer x:Name="SettingsScrollViewer"
-                              Grid.Row="2"
+                              Grid.Row="1"
                               VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled"
                               ScrollChanged="SettingsScrollViewer_OnScrollChanged">
                     <StackPanel x:Name="SettingsCardsPanel"
-                                Margin="32,28,32,36"
+                                Margin="36,28,36,36"
                                 Spacing="16"
-                                Width="760"
-                                MaxWidth="760"
-                                HorizontalAlignment="Center"
+                                MaxWidth="920"
+                                HorizontalAlignment="Stretch"
                                 VerticalAlignment="Top">
 
                         <Grid x:Name="SectionHeaderAppearance" Tag="appearance" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
@@ -5522,7 +6205,7 @@
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Installed Theme Extensions" />
-                                    
+
                                     <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
@@ -5533,7 +6216,6 @@
                                                             <DataTemplate x:DataType="kodoModels:ThemeExtensionGroup" x:CompileBindings="True">
                                                 <StackPanel Spacing="6">
 
-                                                    
                                                     <Button Classes="chrome groupheader"
                                                             Click="ThemeGroupHeader_OnClick"
                                                             IsVisible="{Binding IsMultiTheme}">
@@ -5764,6 +6446,10 @@
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
+                                <CheckBox IsChecked="{Binding IsMinimapVisible, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Show a code overview beside the editor for quick navigation"
+                                          Content="Show minimap" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -5987,7 +6673,7 @@ ToolTip.Tip="Increase font size" />
                                     <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
-                                               Text="Adds extra syntax colors using language server information. This optional feature is off by default." />
+                                               Text="{Binding SyntaxColorsDescriptionText}" />
 
                                     <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
@@ -6191,24 +6877,33 @@ ToolTip.Tip="Increase font size" />
                                 <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable Discord Rich Presence" />
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
-                                      IsVisible="{Binding IsDiscordRichPresenceEnabled}">
-                                    <CheckBox Grid.Column="0"
-                                              IsChecked="{Binding IsDiscordImprovedRpcEnabled, Mode=TwoWay}"
-                                              VerticalAlignment="Center" />
-                                    <StackPanel Grid.Column="1" Spacing="2">
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Show detailed activity" />
-                                        <TextBlock Foreground="{Binding MutedTextBrush}"
-                                                   FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Text="Shows language, page context, and open tab count." />
-                                    </StackPanel>
-                                </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding DiscordRichPresenceStatusText}" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                x:Name="GitSourceControlSettingsCard" Tag="integrations">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Git Source Control" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsGitSourceControlEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Enable Git Source Control" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Adds Git status, staging, diffs, branches, commits, and remote actions to the activity bar. Requires Git on PATH." />
                             </StackPanel>
                         </Border>
 
@@ -6370,6 +7065,59 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </Border>
 
+                        <Grid x:Name="SectionHeaderAccessibility" Tag="accessibility" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="12"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="ACCESSIBILITY" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="0.18" />
+                        </Grid>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                x:Name="AccessibilitySettingsCard" Tag="accessibility">
+                            <StackPanel Spacing="14">
+                                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                    <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
+                                    <TextBlock FontSize="18"
+                                               FontWeight="SemiBold"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               VerticalAlignment="Center"
+                                               Text="Accessibility" />
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsScreenReaderAnnouncementsEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Screen reader announcements" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Announces save status, cursor position, and document changes to screen readers. Turn off if announcements are distracting." />
+                                <CheckBox IsChecked="{Binding IsReduceMotionEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Reduce motion" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Turns off hover and fade transitions across the UI." />
+                                <CheckBox IsChecked="{Binding IsLargeTextEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          Content="Large text" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           FontSize="11"
+                                           TextWrapping="Wrap"
+                                           Text="Enlarges editor text by 30% for easier reading." />
+                            </StackPanel>
+                        </Border>
+
                         <Grid x:Name="SectionHeaderPrivacy" Tag="privacy" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
@@ -6512,7 +7260,7 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </Border>
 
-                        <Grid x:Name="SectionHeaderAdvanced" Tag="advanced" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                        <Grid x:Name="SectionHeaderDeveloperOptions" Tag="devoptions" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="12"
                                        FontWeight="Bold"
@@ -6531,7 +7279,7 @@ ToolTip.Tip="Increase font size" />
                                 BorderThickness="1"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
-                                x:Name="DeveloperOptionsSettingsCard" Tag="advanced">
+                                x:Name="DeveloperOptionsSettingsCard" Tag="devoptions">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Width="3" Height="22" CornerRadius="2" Background="{Binding AccentBrush}" />
@@ -6550,6 +7298,64 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
                                 <StackPanel Spacing="8"
                                             IsVisible="{Binding IsDeveloperOptionsVisible}">
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,2,0,0"
+                                               Text="DIAGNOSTICS &amp; LOGGING" />
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <CheckBox IsChecked="{Binding IsRuntimeMetricsLoggingEnabled, Mode=TwoWay}"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Every 10 seconds, append a GC/heap/thread sample line (METRIC) to kodo.log. Useful for tracking memory pressure over time." />
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Runtime Metrics Logging (10s GC/heap/thread samples)" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="SLOW stage log threshold (ms, 0 = built-in):" />
+                                        <TextBox Width="120"
+                                                 VerticalAlignment="Center"
+                                                 Background="{Binding ButtonBrush}"
+                                                 Foreground="{Binding PrimaryTextBrush}"
+                                                 BorderBrush="{Binding SurfaceBorderBrush}"
+                                                 BorderThickness="1"
+                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                 Padding="4,6"
+                                                 TextAlignment="Center"
+                                                 HorizontalContentAlignment="Center"
+                                                 VerticalContentAlignment="Center"
+                                                 Text="{Binding SlowStageThresholdText, Mode=TwoWay}"
+                                                 PlaceholderText="0"
+                                                 ToolTip.Tip="Replace the built-in thresholds for SLOW log entries. Lower to catch sluggishness, raise to silence noise. Defaults are around 250 ms." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="chrome"
+                                                Click="CopyDiagnosticInfoButton_OnClick"
+                                                ToolTip.Tip="Copy version, OS, runtime, and log paths to the clipboard"
+                                                Content="Copy Diagnostic Info" />
+                                        <Button Classes="chrome"
+                                                Click="ClearLogsButton_OnClick"
+                                                ToolTip.Tip="Delete kodo.log and crash.log from disk"
+                                                Content="Clear Logs" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="FOLDERS" />
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
                                                Text="Open folders Kodo uses on this machine for logs, settings, and extensions." />
@@ -6567,25 +7373,46 @@ ToolTip.Tip="Increase font size" />
                                                 ToolTip.Tip="Open the local Extensions folder used for .kox files"
                                                 Content="Open Extensions Folder" />
                                     </StackPanel>
-
-                                    <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
-                                        <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
-                                                  VerticalAlignment="Center"
-                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
-                                    </StackPanel>
-
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
-                                                Click="CopyDiagnosticInfoButton_OnClick"
-                                                ToolTip.Tip="Copy version, OS, runtime, and log paths to the clipboard"
-                                                Content="Copy Diagnostic Info" />
+                                                Click="OpenPluginCacheFolderButton_OnClick"
+                                                ToolTip.Tip="Open the folder where loaded plugins are unpacked"
+                                                Content="Open Plugin Cache Folder" />
                                         <Button Classes="chrome"
-                                                Click="ClearLogsButton_OnClick"
-                                                ToolTip.Tip="Delete kodo.log and crash.log from disk"
-                                                Content="Clear Logs" />
+                                                Click="OpenDataFolderButton_OnClick"
+                                                ToolTip.Tip="Open Kodo's root data folder (contains settings, caches, and theme data)"
+                                                Content="Open Data Folder" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="SETTINGS DATA" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="chrome"
+                                                Click="BackupSettingsDataButton_OnClick"
+                                                ToolTip.Tip="Regenerate the settings backup file (kodosettings.json.bak) from your current settings"
+                                                Content="Backup Settings Data" />
+                                        <Button Classes="chrome red"
+                                                Click="RestoreSettingsBackupButton_OnClick"
+                                                ToolTip.Tip="Overwrite your current settings with the backup file and relaunch Kodo"
+                                                Content="Restore Settings Backup"
+                                                IsVisible="{Binding HasSettingsBackupFile}" />
+                                        <Button Classes="chrome"
+                                                Click="ResetTutorialPromptsButton_OnClick"
+                                                ToolTip.Tip="Make the first-launch tutorial, data tracking prompt, and privacy policy prompt show again"
+                                                Content="Reset Tutorial &amp; Consent Prompts" />
+                                    </StackPanel>
+
+                                    <TextBlock FontSize="12"
+                                               FontWeight="Bold"
+                                               LetterSpacing="1"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               Margin="0,8,0,0"
+                                               Text="MAINTENANCE" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="ClearCacheButton_OnClick"
                                                 ToolTip.Tip="Clear all cache files from disk"
@@ -6593,7 +7420,7 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
                                                 ToolTip.Tip="{Binding PersonalizationExportTooltip}"
-                                                Content="Export Kodo Data" />            
+                                                Content="Export Kodo Data" />
                                         <Button Classes="chrome red"
                                                 Click="ResetKodoButton_OnClick"
                                                 ToolTip.Tip="Reset all Kodo data and relaunch the application"
@@ -6969,6 +7796,7 @@ ToolTip.Tip="Increase font size" />
 
                     </StackPanel>
                 </ScrollViewer>
+                </Grid>
             </Grid>
             <Grid IsVisible="{Binding IsUpdateSplashVisible}"
                   IsHitTestVisible="{Binding IsUpdateSplashVisible}"
@@ -7002,7 +7830,6 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </StackPanel>
 
-                        
                         <Border IsVisible="{Binding IsReleaseNotesSectionVisible}"
                                 Background="{Binding WindowBackgroundBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -7059,7 +7886,6 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </Border>
 
-                        
                         <Border IsVisible="{Binding IsDataTrackingPromptVisible}"
                                 Background="{Binding ButtonBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"

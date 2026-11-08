@@ -1,16 +1,16 @@
 // Licensed under the GNU GPL-v3.0
 #pragma warning disable CA1416
 using Kodo.Models;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Text;
-using System.Threading.Tasks;
+using System.Text.Json;
 using System.Threading;
-using System;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -106,6 +106,8 @@ internal sealed class LspClient : IDisposable
                 method == "textDocument/semanticTokens/full" && _registeredCapabilities.Values.Contains("textDocument/semanticTokens", StringComparer.Ordinal))
                 return true;
         if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
+        if (method == "codeAction/resolve")
+            return SupportsCodeActionResolve(caps);
         var property = method switch
         {
             "textDocument/signatureHelp" => "signatureHelpProvider",
@@ -142,8 +144,18 @@ internal sealed class LspClient : IDisposable
         return value.ValueKind is JsonValueKind.True or JsonValueKind.Object;
     }
 
+    internal static bool SupportsCodeActionResolve(JsonElement capabilities)
+    {
+        if (capabilities.ValueKind != JsonValueKind.Object ||
+            !capabilities.TryGetProperty("codeActionProvider", out var provider) ||
+            provider.ValueKind != JsonValueKind.Object ||
+            !provider.TryGetProperty("resolveProvider", out var resolveProvider))
+            return false;
+        return resolveProvider.ValueKind == JsonValueKind.True;
+    }
+
     public event Action<string, JsonElement?>? OnNotification;
-    public event Func<string, JsonElement?, Task<object?>>? OnServerRequest;
+    public event Func<LspClient, string, JsonElement?, Task<object?>>? OnServerRequest;
     public event Action<string>? OnStderr;
     public event Action<int>? OnExit;
 
@@ -274,7 +286,11 @@ internal sealed class LspClient : IDisposable
                         ["workspaceFolders"] = true,
                         ["workspaceEdit"] = new Dictionary<string, object?>(StringComparer.Ordinal)
                         {
-                            ["documentChanges"] = true
+                            ["documentChanges"] = true,
+                            ["changeAnnotationSupport"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                            {
+                                ["groupsOnLabel"] = false
+                            }
                         }
                     },
                     ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -371,7 +387,12 @@ internal sealed class LspClient : IDisposable
             KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialized. Server caps: {LspProtocol.Preview(ServerCapabilities?.GetRawText() ?? "<none>")}");
             return result;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
+        {
+            lock (_initLock) _initTask = null;
+            throw;
+        }
+        catch (Exception ex)
         {
             if (!cancellationToken.IsCancellationRequested)
                 KodoDiagnostics.LogDebug($"LSP '{_config.Command}' initialization failed", ex);
@@ -840,8 +861,8 @@ internal sealed class LspClient : IDisposable
             else if (OnServerRequest is { } requestHandlers)
             {
                 JsonElement? parameters = root.TryGetProperty("params", out var requestParams) ? requestParams.Clone() : null;
-                foreach (Func<string, JsonElement?, Task<object?>> handler in requestHandlers.GetInvocationList())
-                    result = await handler(method, parameters).ConfigureAwait(false);
+                foreach (Func<LspClient, string, JsonElement?, Task<object?>> handler in requestHandlers.GetInvocationList())
+                    result = await handler(this, method, parameters).ConfigureAwait(false);
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP server request {method} failed", ex); }
@@ -958,7 +979,7 @@ internal sealed class LspClient : IDisposable
                         }
                     }
                 }
-                results.Add(null);
+                results.Add(new Dictionary<string, object?>(StringComparer.Ordinal));
             }
             return results.ToArray();
         }

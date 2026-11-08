@@ -1,5 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Serialization;

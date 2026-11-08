@@ -1,4 +1,5 @@
 // Licensed under the GNU GPL-v3.0
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -8,7 +9,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Text.RegularExpressions;
-using Microsoft.Win32;
 
 namespace Kodo;
 
@@ -199,6 +199,8 @@ internal static class KodoDiagnostics
     public static string OSDescription { get; } = ResolveOSDescription();
 
     public static bool VerboseLoggingEnabled { get; set; }
+
+    public static long SlowStageThresholdOverrideMs;
 
     private const int BreadcrumbCapacity = 50;
     private static readonly Queue<string> _breadcrumbs = new();
@@ -406,11 +408,25 @@ internal static class KodoDiagnostics
 
     public static void ReportSlowStage(string stage, long elapsedMs, long thresholdMs, Func<string?> detailFactory)
     {
+        if (SlowStageThresholdOverrideMs > 0)
+            thresholdMs = SlowStageThresholdOverrideMs;
         if (elapsedMs < thresholdMs) return;
         try
         {
             var detailText = detailFactory();
             var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] SLOW  {stage} took {elapsedMs}ms{(string.IsNullOrWhiteSpace(detailText) ? "" : " " + detailText)}";
+            EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
+            PushBreadcrumb(line);
+            WritePayloadToDisk(line, MainLogFilePath);
+        }
+        catch { }
+    }
+
+    public static void ReportRuntimeMetric(string metric, string value, string? detail = null)
+    {
+        try
+        {
+            var line = $"[{UtcNow():yyyy-MM-dd HH:mm:ss} UTC] METRIC  {metric}={value}{(string.IsNullOrWhiteSpace(detail) ? string.Empty : " " + detail)}";
             EnsureSessionLog(MainLogFilePath, ref _kodoLogSessionInitialized);
             PushBreadcrumb(line);
             WritePayloadToDisk(line, MainLogFilePath);

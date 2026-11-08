@@ -1,17 +1,17 @@
 // Licensed under the GNU GPL-v3.0
 #pragma warning disable CA1416
 using Kodo.Models;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO.Compression;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net.Http;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
 using System.Threading;
-using System;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -668,7 +668,7 @@ internal static class LspInstallationManager
         {
             try { if (File.Exists(tempFile)) File.Delete(tempFile); } catch { }
             try { if (Directory.Exists(stagingDir)) Directory.Delete(stagingDir, true); } catch { }
-            return new(InstallResultKind.Cancelled, "Installation cancelled", null);
+            return new(InstallResultKind.Cancelled, $"Installation {RegionalSpelling.Cancelled}", null);
         }
         catch (Exception ex) when (IsOffline(ex))
         {
@@ -1046,7 +1046,7 @@ internal static class LspRuntimeDetector
         catch (OperationCanceledException)
         {
             return (false, null, ct.IsCancellationRequested
-                ? $"Probing {exe} was cancelled."
+                ? $"Probing {exe} was {RegionalSpelling.Cancelled}."
                 : $"Timed out probing {exe}.");
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or FileNotFoundException or UnauthorizedAccessException or PlatformNotSupportedException)

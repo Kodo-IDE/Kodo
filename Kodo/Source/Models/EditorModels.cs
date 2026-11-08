@@ -1,5 +1,7 @@
-
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using AvaloniaEdit.Document;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -7,7 +9,6 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
-using Avalonia.Media;
 
 namespace Kodo.Models;
 
@@ -117,9 +118,14 @@ internal enum UnsavedTabAction
 
 public class EditorTab : INotifyPropertyChanged
 {
+    private readonly Dictionary<Guid, EditorViewState> _viewStates = new();
     private string _content = string.Empty;
     private bool _isDirty;
     private bool _isSelected;
+    private bool _isPrimaryPaneSelected;
+    private bool _isSecondaryPaneSelected;
+    private bool _isRenamingInPrimaryPane;
+    private bool _isRenamingInSecondaryPane;
     private IBrush _backgroundBrush = Brushes.Transparent;
     private IBrush _foregroundBrush = Brushes.White;
 
@@ -141,6 +147,12 @@ public class EditorTab : INotifyPropertyChanged
     public bool IsUntitled { get; set; }
 
     public LineEnding LineEnding { get; set; }
+
+    internal TextDocument? Document { get; set; }
+
+    internal ITextSourceVersion? IndentationDetectionVersion { get; set; }
+
+    internal (bool InsertSpaces, int TabSize)? DetectedIndentation { get; set; }
 
     public static readonly System.Text.Encoding DefaultEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
@@ -198,6 +210,28 @@ public class EditorTab : INotifyPropertyChanged
         }
     }
 
+    public bool IsPrimaryPaneSelected
+    {
+        get => _isPrimaryPaneSelected;
+        set
+        {
+            if (_isPrimaryPaneSelected == value) return;
+            _isPrimaryPaneSelected = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool IsSecondaryPaneSelected
+    {
+        get => _isSecondaryPaneSelected;
+        set
+        {
+            if (_isSecondaryPaneSelected == value) return;
+            _isSecondaryPaneSelected = value;
+            OnPropertyChanged();
+        }
+    }
+
     public IBrush BackgroundBrush
     {
         get => _backgroundBrush;
@@ -236,7 +270,29 @@ public class EditorTab : INotifyPropertyChanged
     public bool IsRenaming
     {
         get => _isRenaming;
-        set { if (_isRenaming == value) return; _isRenaming = value; OnPropertyChanged(); }
+        set
+        {
+            if (_isRenaming == value) return;
+            _isRenaming = value;
+            OnPropertyChanged();
+            if (!value)
+            {
+                IsRenamingInPrimaryPane = false;
+                IsRenamingInSecondaryPane = false;
+            }
+        }
+    }
+
+    public bool IsRenamingInPrimaryPane
+    {
+        get => _isRenamingInPrimaryPane;
+        set { if (_isRenamingInPrimaryPane == value) return; _isRenamingInPrimaryPane = value; OnPropertyChanged(); }
+    }
+
+    public bool IsRenamingInSecondaryPane
+    {
+        get => _isRenamingInSecondaryPane;
+        set { if (_isRenamingInSecondaryPane == value) return; _isRenamingInSecondaryPane = value; OnPropertyChanged(); }
     }
 
     public string RenameText
@@ -245,11 +301,16 @@ public class EditorTab : INotifyPropertyChanged
         set { if (_renameText == value) return; _renameText = value; OnPropertyChanged(); }
     }
 
-    public int TopLineNumber { get; set; } = 1;
+    internal EditorViewState GetViewState(Guid paneId)
+    {
+        if (!_viewStates.TryGetValue(paneId, out var state))
+        {
+            state = new EditorViewState();
+            _viewStates.Add(paneId, state);
+        }
 
-    public double ScrollOffsetY { get; set; } = 0.0;
-
-    public int CaretOffset { get; set; } = 0;
+        return state;
+    }
 
     private int _errorCount;
     private int _warningCount;
@@ -337,10 +398,59 @@ public class EditorTab : INotifyPropertyChanged
     }
 }
 
-public enum ExplorerClipboardMode
+internal sealed class EditorPaneState
 {
-    Copy,
-    Cut
+    public Guid Id { get; } = Guid.NewGuid();
+
+    public ObservableCollection<EditorTab> Tabs { get; } = new();
+
+    public bool AddTab(EditorTab tab)
+    {
+        if (Tabs.Contains(tab))
+            return false;
+        Tabs.Add(tab);
+        return true;
+    }
+
+    internal static bool MoveTabMembership(EditorPaneState source, EditorPaneState destination, EditorTab tab)
+    {
+        var removedFromSource = source.Tabs.Remove(tab);
+        var addedToDestination = destination.AddTab(tab);
+        return removedFromSource || addedToDestination;
+    }
+
+    public EditorTab? ActiveTab { get; set; }
+
+    public long InsightCacheSignature { get; set; } = -1;
+
+    public Bitmap? ImagePreview { get; set; }
+
+    public EditorTab? ImagePreviewTab { get; set; }
+
+    public string? ImagePreviewPath { get; set; }
+
+    public EditorTab? PendingImageScrollRestoreTab { get; set; }
+}
+
+internal sealed class EditorViewState
+{
+    public bool HasTextViewState { get; set; }
+
+    public int TopLineNumber { get; set; } = 1;
+
+    public double ScrollOffsetY { get; set; }
+
+    public double ScrollOffsetX { get; set; }
+
+    public int CaretOffset { get; set; }
+
+    public bool HasImageViewState { get; set; }
+
+    public double ImageZoomLevel { get; set; } = 1.0;
+
+    public double ImageScrollOffsetX { get; set; }
+
+    public double ImageScrollOffsetY { get; set; }
 }
 
 public class FileNode
@@ -374,6 +484,7 @@ public class FileTreeItem : INotifyPropertyChanged
     public string FullPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
+    internal int ExpansionRequestVersion { get; set; }
 
     public bool IsRenaming
     {

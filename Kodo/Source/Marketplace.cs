@@ -1,4 +1,9 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -10,11 +15,6 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Controls;
-using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using Kodo.Models;
 
 namespace Kodo;
 
@@ -41,8 +41,8 @@ public partial class MainWindow
                 await InvokeExtensionUiAsync(() =>
                 {
                     var combined = earlyParsed.Where(e => !string.Equals(e.Type, "plugin", StringComparison.OrdinalIgnoreCase)).Concat(_pluginsIndexEntries).ToList();
-                    SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined);
-                    NotifyExtensionFiltersChanged();
+                    if (SyncMarketplaceExtensionCollection(MarketplaceExtensions, combined))
+                        NotifyExtensionFiltersChanged();
                 });
                 _ = Task.Run(async () =>
                 {
@@ -211,7 +211,7 @@ public partial class MainWindow
             .ToDictionary(g => g.Key, g => g.First().IconUrl, StringComparer.OrdinalIgnoreCase);
         await InvokeExtensionUiAsync(() =>
         {
-            SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
+            var marketplaceChanged = SyncMarketplaceExtensionCollection(MarketplaceExtensions, combinedForIconMap);
             SyncObservableCollection(
                 ExtensionLoadErrors,
                 ExtensionLoadErrors.Concat(extensionLoadErrors).Distinct().ToList(),
@@ -219,7 +219,8 @@ public partial class MainWindow
 
             SyncMarketplaceInstallStates();
             RaiseMany(nameof(ExtensionLoadErrors), nameof(IsMarketplaceUnavailableVisible), nameof(IsMarketplacePartialErrorVisible), nameof(IsMarketplaceEmptyVisible));
-            NotifyExtensionFiltersChanged();
+            if (marketplaceChanged)
+                NotifyExtensionFiltersChanged();
         });
         if (_extensionFilterBatchDepth > 0)
         {
@@ -466,13 +467,7 @@ public partial class MainWindow
 
         if (pending.Count == 0)
         {
-            if (marketplaceIconMap.Count > 0)
-            {
-                var count = 0;
-                try { count = await Dispatcher.UIThread.InvokeAsync(() => LoadedExtensions.Count, DispatcherPriority.Background); } catch { }
-                if (count == 0)
-                    Dispatcher.UIThread.Post(() => { _ = FetchInstalledExtensionIconsAsync(marketplaceIconMap); }, DispatcherPriority.Background);
-            }
+
             return;
         }
 
@@ -553,7 +548,6 @@ public partial class MainWindow
                     if (!extension.HasIcon)
                     {
                         extension.SvgData = svg;
-                        extension.IconImage?.Dispose();
                         extension.IconImage = null;
                         extension.IconBytes = null;
                         extension.NotifyIconChanged();
@@ -579,9 +573,7 @@ public partial class MainWindow
                     {
                         if (!extension.HasIcon)
                         {
-                            var old = extension.IconImage;
                             extension.IconImage = bmp;
-                            old?.Dispose();
                             extension.SvgData = null;
                             extension.IconBytes = null;
                             extension.NotifyIconChanged();
@@ -632,39 +624,48 @@ public partial class MainWindow
         Exception? lastIconException = null;
         var rateLimited = 0;
         var successful = new System.Collections.Concurrent.ConcurrentBag<(MarketplaceExtension entry, IconResult icon)>();
+        using var iconGate = new SemaphoreSlim(8);
 
         var tasks = pendingEntries.Select(async entry =>
             {
-                Interlocked.Increment(ref iconAttempts);
+                await iconGate.WaitAsync().ConfigureAwait(false);
                 try
                 {
-                    if (!marketplaceIconMap.TryGetValue(entry.Id, out var url) || string.IsNullOrWhiteSpace(url))
+                    Interlocked.Increment(ref iconAttempts);
+                    try
+                    {
+                        if (!marketplaceIconMap.TryGetValue(entry.Id, out var url) || string.IsNullOrWhiteSpace(url))
+                        {
+                            Interlocked.Increment(ref iconFailures);
+                            return;
+                        }
+
+                        var icon = await GetCachedIconAsync(url).ConfigureAwait(false);
+                        if (!icon.HasValue)
+                        {
+                            KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {url} - using lettered fallback.");
+                            Interlocked.Increment(ref iconFailures);
+                            return;
+                        }
+
+                        successful.Add((entry, icon));
+                    }
+                    catch (OperationCanceledException)
                     {
                         Interlocked.Increment(ref iconFailures);
-                        return;
                     }
-
-                    var icon = await GetCachedIconAsync(url).ConfigureAwait(false);
-                    if (!icon.HasValue)
+                    catch (Exception ex)
                     {
-                        KodoDiagnostics.LogDebug($"Icon fetch returned no data for marketplace extension '{entry.Id}': {url} - using lettered fallback.");
+                        if (IsGitHubRateLimitException(ex))
+                            Interlocked.Increment(ref rateLimited);
+                        KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}' (will use lettered fallback): {marketplaceIconMap.GetValueOrDefault(entry.Id, string.Empty)}", ex);
                         Interlocked.Increment(ref iconFailures);
-                        return;
+                        Interlocked.Exchange(ref lastIconException, ex);
                     }
-
-                    successful.Add((entry, icon));
                 }
-                catch (OperationCanceledException)
+                finally
                 {
-                    Interlocked.Increment(ref iconFailures);
-                }
-                catch (Exception ex)
-                {
-                    if (IsGitHubRateLimitException(ex))
-                        Interlocked.Increment(ref rateLimited);
-                    KodoDiagnostics.LogDebug($"Icon fetch failed for marketplace extension '{entry.Id}' (will use lettered fallback): {marketplaceIconMap.GetValueOrDefault(entry.Id, string.Empty)}", ex);
-                    Interlocked.Increment(ref iconFailures);
-                    Interlocked.Exchange(ref lastIconException, ex);
+                    iconGate.Release();
                 }
             });
 
@@ -681,14 +682,21 @@ public partial class MainWindow
         {
             try
             {
-                await Dispatcher.UIThread.InvokeAsync(() =>
+                var iconBatch = successful.ToList();
+                const int iconApplyChunkSize = 25;
+                for (var start = 0; start < iconBatch.Count; start += iconApplyChunkSize)
                 {
-                    foreach (var (entry, icon) in successful)
+                    var end = Math.Min(start + iconApplyChunkSize, iconBatch.Count);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        try { ReplaceMarketplaceIcon(entry, icon); }
-                        catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply icon for '{entry.Id}'.", ex); }
-                    }
-                }, DispatcherPriority.Background);
+                        for (var i = start; i < end; i++)
+                        {
+                            var (entry, icon) = iconBatch[i];
+                            try { ReplaceMarketplaceIcon(entry, icon); }
+                            catch (Exception ex) { KodoDiagnostics.LogDebug($"Failed to apply icon for '{entry.Id}'.", ex); }
+                        }
+                    }, DispatcherPriority.Background);
+                }
             }
             catch (Exception ex)
             {
@@ -1309,10 +1317,10 @@ public partial class MainWindow
         NotifyExtensionFiltersChangedCore();
     }
 
-    private static void SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
+    private static bool SyncMarketplaceExtensionCollection(ObservableCollection<MarketplaceExtension> target, IList<MarketplaceExtension> source)
         => SyncObservableCollection(target, source, e => e.Id, (existing, incoming) =>
         {
-            if (existing.IconImage is not null && incoming.IconImage is null) incoming.IconImage = existing.IconImage; else existing.IconImage?.Dispose();
+            if (existing.IconImage is not null && incoming.IconImage is null) incoming.IconImage = existing.IconImage;
             if (existing.SvgData is not null && incoming.SvgData is null) incoming.SvgData = existing.SvgData;
         });
 
@@ -1841,13 +1849,11 @@ public partial class MainWindow
         if (icon.Bitmap is not null)
         {
             if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            extension.IconImage?.Dispose();
             extension.IconImage = icon.Bitmap;
             extension.SvgData = null;
         }
         else if (icon.SvgData is not null)
         {
-            extension.IconImage?.Dispose();
             extension.IconImage = null;
             extension.SvgData = icon.SvgData;
         }
@@ -1919,13 +1925,14 @@ public partial class MainWindow
         owner.Equals(KodoExtensionsOwner, StringComparison.OrdinalIgnoreCase) &&
         repo.Equals(KodoExtensionsRepo, StringComparison.OrdinalIgnoreCase);
 
-    private static void SyncObservableCollection<T, TKey>(
+    private static bool SyncObservableCollection<T, TKey>(
         ObservableCollection<T> target,
         IList<T> source,
         Func<T, TKey> keySelector,
         Action<T, T>? merge = null)
         where TKey : notnull
     {
+        var changed = false;
         var dedupedSource = source
             .GroupBy(keySelector)
             .Select(group => group.First())
@@ -1937,8 +1944,8 @@ public partial class MainWindow
             var key = keySelector(target[i]);
             if (!sourceByKey.ContainsKey(key))
             {
-                if (target[i] is MarketplaceExtension mex) mex.IconImage?.Dispose();
                 target.RemoveAt(i);
+                changed = true;
             }
         }
 
@@ -1955,6 +1962,7 @@ public partial class MainWindow
             if (existingIndex == -1)
             {
                 target.Insert(Math.Min(i, target.Count), item);
+                changed = true;
                 for (var j = i; j < target.Count; j++)
                     targetIndexByKey[keySelector(target[j])] = j;
                 continue;
@@ -1963,6 +1971,7 @@ public partial class MainWindow
             if (existingIndex != i)
             {
                 target.Move(existingIndex, i);
+                changed = true;
                 var start = Math.Min(existingIndex, i);
                 for (var j = start; j < target.Count; j++)
                     targetIndexByKey[keySelector(target[j])] = j;
@@ -1972,13 +1981,16 @@ public partial class MainWindow
             {
                 merge?.Invoke(target[i], item);
                 target[i] = item;
+                changed = true;
                 targetIndexByKey[key] = i;
             }
         }
+        return changed;
     }
 
     private void ExtensionsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsFirstRunTutorialActive) return;
         OpenExtensionsPage(showMarketplaceTab: false, forceRefresh: false);
     }
 
@@ -2121,9 +2133,9 @@ public partial class MainWindow
     {
         await RefreshExtensionsDataAsync(skipInstalledScan: true, staggerLoadStages: true);
         await Task.Delay(150);
-        await RefreshLatestReleaseAsync(forceNetwork: false);
+        await RefreshLatestReleaseAsync(forceNetwork: true);
         await Task.Delay(150);
-        await FetchAnnouncementsAsync(forceNetwork: !IsPerformanceModeEnabled);
+        await FetchAnnouncementsAsync(forceNetwork: true);
         await Task.Delay(150);
         await AutoUpdateExtensionsIfEnabledAsync();
     }

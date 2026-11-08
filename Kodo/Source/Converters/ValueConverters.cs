@@ -1,10 +1,10 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Controls.Documents;
+using Avalonia.Data.Converters;
+using Avalonia.Media;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Avalonia.Data.Converters;
-using Avalonia.Media;
-using Avalonia.Controls.Documents;
 
 namespace Kodo.Models;
 

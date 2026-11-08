@@ -1,7 +1,7 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia;
 using System;
 using System.Collections.Generic;
-using Avalonia;
 
 namespace Kodo.Models;
 

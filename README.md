@@ -12,8 +12,10 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/downloads/Kodo-IDE/Kodo/total?style=for-the-badge&label=Downloads&color=8C00FF" alt="Downloads" />
-  <img src="https://img.shields.io/github/commit-activity/t/Kodo-IDE/Kodo?style=for-the-badge&label=Activity&color=8C00FF" alt="Commit Activity" />
-  <img src="https://img.shields.io/github/v/tag/Kodo-IDE/Kodo?style=for-the-badge&label=Latest%20Version&color=8C00FF" alt="Latest Version" />
+  <img src="https://img.shields.io/github/v/release/Kodo-IDE/Kodo?style=for-the-badge&label=Latest%20Release&color=8C00FF" alt="Latest Release" />
+  <img src="https://img.shields.io/github/commit-activity/t/Kodo-IDE/Kodo/dev?style=for-the-badge&label=Commits&color=8C00FF" alt="Commits on dev" />
+  <img src="https://img.shields.io/github/commit-activity/w/Kodo-IDE/Kodo/dev?style=for-the-badge&label=Weekly%20Commits&color=8C00FF" alt="Weekly Commit Activity on dev" />
+  <img src="https://img.shields.io/github/last-commit/Kodo-IDE/Kodo/dev?style=for-the-badge&label=Last%20Commit&color=8C00FF" alt="Last Commit on dev" />
   <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-8C00FF?style=for-the-badge" alt="Windows and Linux"/>
   <img src="https://img.shields.io/badge/License-GPL--3.0-8C00FF?style=for-the-badge" alt="GPL-3.0 License"/>
 </p>
@@ -22,7 +24,9 @@
 
 Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a few simple ideas: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding. We want to make coding human again; no bloat, but still a good user experience.
 
-**v2.1.0 is here** - Native Linux support (x64 and ARM64), independent hotfixes with verification and rollback, a completely rewritten cross-platform updater, and language-server support - still around **~87% lighter** than VSCode with no extensions installed.
+**Kodo v2.2.0** adds a command palette, side-by-side editing, native Git integration, and an editor minimap. It also brings faster startup, smoother large-file editing, and broad editor and language-server fixes.
+
+A fresh Kodo install is **15.4%** of VS Code's initial size (i.e. **84.6%** less disk). In ratio terms, a fresh install of VS Code is **6.48x** bigger. 
 
 Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE).
 
@@ -37,16 +41,14 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 ---
 
-## What's New in v2.1.0
+## What's New in v2.2.0
 
-* **Linux Support** - Kodo now runs natively on Linux (x64 and ARM64), with a proper integrated terminal, cross-platform updates, and a rewritten updater that works on both Windows and Linux
-* **Hotfixes** - Critical fixes delivered independently of full releases, verified before being applied, with rollback support if something goes wrong
-* **Extensions v2.0.0** - A complete overhaul of the `.kox` framework: language extensions can define their own Insight rules, use `IKodoPlugin` to add UI and C# code, and override certain Kodo behaviours
-* **Language Server Support** - Added code completion, diagnostics, hover information, and navigation where supported by extensions
-* **Rewritten Updater** - Updates are now downloaded and prepared before installation, with integrity verification, and support both Windows and Linux
-* **Editor & UI** - Reworked status bar with diagnostic info, new editor tab right-click options, and Shift + Scroll for horizontal scrolling
-* **Keyboard Shortcuts** - Individual shortcuts can be disabled and re-enabled directly from the Keyboard Shortcuts window
-* **Performance** - Significantly improved responsiveness, large-file handling, and startup times
+* **Command Palette** - Search and open files, run editor commands, navigate to lines and symbols, and invoke commands registered by plugins.
+* **Split Editor** - Work in two editor groups side by side, with pane-aware tabs and language-server documents.
+* **Native Git** - Use Git Source Control from Kodo and toggle it in Integrations Settings.
+* **Minimap and Navigation** - Scroll through the editor minimap, navigate between problems and code locations, and use per-pane breadcrumbs.
+* **Editor and Settings** - Refreshed Settings, integrated encoding, line-ending, and indentation choices, and more commands for common editor actions.
+* **Performance and Reliability** - Faster startup, less lag when closing folders, improved large-file handling, and fixes across editor rendering, split tabs, completions, and language-server startup.
 
 ---
 
@@ -61,6 +63,10 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | 🎨 **Themes**                       | Built-in Dark, Light, and System Default modes + custom extension themes                                |
 | 📁 **Folder Support**               | Browse, auto-refresh, and resize the file explorer; rename inline                                       |
 | 🔎 **Search**                       | Find in file, file-name search, and project-wide search (`Ctrl+Shift+F`)                                |
+| ⌘ **Command Palette**                | Open files, run commands, navigate to lines and symbols, and run plugin commands                        |
+| ↔ **Split Editor**                   | Edit two files side by side with independent editor groups                                                |
+| 🌿 **Git Source Control**            | Review repository changes and use Git tools from the native Integrations UI                              |
+| 🗺️ **Editor Minimap**               | See and scroll through a compact map of the current file                                                   |
 | 💾 **Autosave**                     | Configurable autosave so you never lose work                                                            |
 | 🔤 **Syntax Highlighting**          | Language support delivered through the extension system                                                 |
 | 🎨 **Color Picker & Smart Editing** | Built-in color picker, change-all-occurrences, auto-closing brackets, auto-indent                       |
@@ -72,6 +78,18 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | 🚀 **Guided Tutorial**              | Short built-in walkthrough for first-time setup, revisitable from Settings                              |
 
 **Coming soon:** real-time collaborative editing · macOS support · experimental code optimization · and more!
+
+---
+
+## Benchmarks
+
+| Benchmark | Kodo Result | VS Code Result | Kodo's Advantage |
+|---|---:|---:|---|
+| Private Memory (Welcome Idle) | **241 MB** | 2,213 MB | ~89% less private memory |
+| Large Project Memory (2,501 files / 51 MB) | **~292 MB WS** | ~2.2 GB WS | ~87% less working-set memory |
+| Idle CPU | **1.9–2.1%** | 16.5% | ~8× lower measured CPU usage |
+
+These results were gathered from the same machine, opening the same projects during our benchmarks.
 
 ---
 

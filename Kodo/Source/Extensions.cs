@@ -1,16 +1,19 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using AvaloniaEdit;
+using AvaloniaEdit.Rendering;
+using Kodo.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
-using Avalonia.Threading;
-using AvaloniaEdit.Rendering;
-using Kodo.Models;
 
 namespace Kodo;
 
@@ -84,7 +87,6 @@ public partial class MainWindow
             return;
 
         using var loading = showLoadingIndicator ? BeginAppLoading("Refreshing extensions") : null;
-        this._cachedThemeScan = null;
 
         if (!force && DateTime.UtcNow - _lastExtensionsRefreshUtc < ExtensionsRefreshCooldown)
             return;
@@ -297,7 +299,9 @@ public partial class MainWindow
         if (!anyFolderFound)
             extensionLoadErrors.Add($"Extensions folder not found. Expected: {ExtensionsFolderPath}");
 
-        return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+        var result = new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+        SaveInstalledThemeCache(result.Extensions, ComputeInstalledThemeFingerprint());
+        return result;
     }
 
     private ExtensionScanResult ScanInstalledThemeExtensions()
@@ -341,6 +345,157 @@ public partial class MainWindow
         }
 
         return new ExtensionScanResult(loadedExtensions, extensionLoadErrors);
+    }
+
+    private sealed class InstalledThemeCache
+    {
+        public int Version { get; set; }
+        public string Fingerprint { get; set; } = string.Empty;
+        public List<CachedThemeEntry> Themes { get; set; } = [];
+    }
+
+    private sealed class CachedThemeEntry
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Version { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Type { get; set; } = string.Empty;
+        public string SourcePath { get; set; } = string.Empty;
+        public bool IsDirectorySource { get; set; }
+        public bool IsThemeSubEntry { get; set; }
+        public ExtensionThemeDefinition Theme { get; set; } = new();
+    }
+
+    private const int InstalledThemeCacheVersion = 1;
+    private static string InstalledThemeCachePath => KodoPaths.CacheFile("installed-themes.json");
+
+    private void LoadOrScanStartupThemes()
+    {
+        var fingerprint = ComputeInstalledThemeFingerprint();
+        List<LoadedExtension>? themes = null;
+        try
+        {
+            if (File.Exists(InstalledThemeCachePath))
+            {
+                var cache = JsonSerializer.Deserialize<InstalledThemeCache>(File.ReadAllText(InstalledThemeCachePath));
+                if (cache?.Version == InstalledThemeCacheVersion && cache.Fingerprint == fingerprint)
+                    themes = cache.Themes.Select(CreateCachedThemeExtension).ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Unable to read installed theme cache", ex);
+        }
+
+        if (themes is null)
+        {
+            try
+            {
+                themes = ScanInstalledThemeExtensions().Extensions;
+                SaveInstalledThemeCache(themes, fingerprint);
+            }
+            catch (Exception ex)
+            {
+                KodoDiagnostics.LogDebug("Theme preload failed", ex);
+                return;
+            }
+        }
+
+        foreach (var theme in themes)
+            LoadedExtensions.Add(theme);
+    }
+
+    private static LoadedExtension CreateCachedThemeExtension(CachedThemeEntry entry) => new()
+    {
+        Id = entry.Id,
+        Version = entry.Version,
+        Name = entry.Name,
+        Type = entry.Type,
+        SourcePath = entry.SourcePath,
+        IsDirectorySource = entry.IsDirectorySource,
+        IsThemeSubEntry = entry.IsThemeSubEntry,
+        ThemeDefinition = entry.Theme,
+    };
+
+    private static void SaveInstalledThemeCache(IEnumerable<LoadedExtension> themes, string fingerprint)
+    {
+        try
+        {
+            var cache = new InstalledThemeCache
+            {
+                Version = InstalledThemeCacheVersion,
+                Fingerprint = fingerprint,
+                Themes = themes
+                    .Where(extension => extension.ThemeDefinition is not null)
+                    .Select(extension => new CachedThemeEntry
+                    {
+                        Id = extension.Id,
+                        Version = extension.Version,
+                        Name = extension.Name,
+                        Type = extension.Type,
+                        SourcePath = extension.SourcePath,
+                        IsDirectorySource = extension.IsDirectorySource,
+                        IsThemeSubEntry = extension.IsThemeSubEntry,
+                        Theme = extension.ThemeDefinition!,
+                    })
+                    .ToList(),
+            };
+
+            var path = InstalledThemeCachePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(cache));
+            File.Move(temporaryPath, path, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Unable to save installed theme cache", ex);
+        }
+    }
+
+    private string ComputeInstalledThemeFingerprint()
+    {
+        var sources = new List<string>();
+        foreach (var searchPath in GetExtensionSearchPaths())
+        {
+            try
+            {
+                sources.Add($"root:{Path.GetFullPath(searchPath)}:{Directory.Exists(searchPath)}");
+                if (!Directory.Exists(searchPath))
+                    continue;
+
+                foreach (var packagePath in EnumerateKoxFiles(searchPath).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                    AddFileFingerprint(sources, packagePath);
+
+                foreach (var folderPath in Directory.EnumerateDirectories(searchPath).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+                {
+                    sources.Add($"folder:{Path.GetFullPath(folderPath)}");
+                    AddFileFingerprint(sources, Path.Combine(folderPath, "manifest.json"));
+                    AddFileFingerprint(sources, Path.Combine(folderPath, "theme.json"));
+                }
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                sources.Add($"unavailable-root:{searchPath}");
+            }
+        }
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', sources))));
+    }
+
+    private static void AddFileFingerprint(List<string> sources, string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            sources.Add(info.Exists
+                ? $"file:{Path.GetFullPath(path)}:{info.Length}:{info.LastWriteTimeUtc.Ticks}"
+                : $"missing:{Path.GetFullPath(path)}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            sources.Add($"unavailable:{path}");
+        }
     }
 
     private static bool IsThemeKox(string koxPath)
@@ -433,9 +588,7 @@ public partial class MainWindow
                 {
                     try { ext.SvgData = System.Text.Encoding.UTF8.GetString(ext.IconBytes); }
                     catch { }
-                    var oldImg = ext.IconImage;
                     ext.IconImage = null;
-                    oldImg?.Dispose();
                     ext.IconBytes = null;
                     ext.NotifyIconChanged();
                 }
@@ -483,9 +636,7 @@ public partial class MainWindow
                                 ext.IconBytes = null;
                                 continue;
                             }
-                            var old = ext.IconImage;
                             ext.IconImage = bmp;
-                            old?.Dispose();
                             ext.IconBytes = null;
                             ext.NotifyIconChanged();
                         }
@@ -517,6 +668,16 @@ public partial class MainWindow
         LspProviderRegistry.RefreshFromLoadedExtensions(LoadedExtensions);
         stageWatch.Stop();
         KodoDiagnostics.ReportSlowStage("apply/lsp provider registry", stageWatch.ElapsedMilliseconds, 250, $"extensions={LoadedExtensions.Count}");
+
+        if (PrimaryEditorTextBox is not null)
+            ApplyPaneSyntaxHighlighting(_editorPane, PrimaryEditorTextBox, _editorPane.ActiveTab);
+        if (SecondaryEditorTextBox is not null)
+            ApplyPaneSyntaxHighlighting(_secondaryEditorPane, SecondaryEditorTextBox, _secondaryEditorPane.ActiveTab);
+        CurrentLanguageExtension = string.IsNullOrWhiteSpace(_currentFilePath)
+            ? null
+            : GetLanguageExtension(_currentFilePath);
+        RefreshRunBuildState();
+        _ = EnsureVisiblePaneLspDocumentsOpenAsync();
 
         applyWatch.Stop();
         KodoDiagnostics.ReportSlowStage("extension scan apply", applyWatch.ElapsedMilliseconds, 1000, $"extensions={result.Extensions.Count}");
@@ -759,7 +920,6 @@ public partial class MainWindow
                     extension.FeatureOverrides[prop.Name] = bVal;
             }
         }
-
 
         if (manifest.TryGetProperty("externalTools", out var tools) && tools.ValueKind == JsonValueKind.Array)
         {
@@ -1363,13 +1523,11 @@ public partial class MainWindow
         if (icon.Bitmap is not null)
         {
             if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            extension.IconImage?.Dispose();
             extension.IconImage = icon.Bitmap;
             extension.SvgData = null;
         }
         else if (icon.SvgData is not null)
         {
-            extension.IconImage?.Dispose();
             extension.IconImage = null;
             extension.SvgData = icon.SvgData;
         }
@@ -1658,6 +1816,8 @@ public partial class MainWindow
         KodoDiagnostics.ReportSlowStage("syntax profile compile", syntaxWatch.ElapsedMilliseconds, 500, $"ext={ext.Id}");
 
         _appliedSyntaxExtension = ext;
+        _highlightedPath = _currentFilePath;
+        KodoDiagnostics.LogDebug($"ApplySyntaxHighlighting ext={ext.Id} path={_currentFilePath}");
         EditorTextBox.SyntaxHighlighting = definition;
         ArmLayoutProbe("layout/after syntax apply");
         ConfigureRainbowBrackets(ext);
@@ -1666,6 +1826,33 @@ public partial class MainWindow
         ConfigureMarkdownHighlighting(ext);
 
         EditorTextBox.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+    }
+
+    private void ApplyPaneSyntaxHighlighting(EditorPaneState pane, TextEditor editor, EditorTab? tab)
+    {
+        var isSecondary = ReferenceEquals(pane, _secondaryEditorPane);
+        var extension = tab is null || tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path)
+            ? null
+            : GetLanguageExtension(tab.Path);
+        var definition = extension is null || tab is null ? null : GetSyntaxHighlightingForPath(tab.Path);
+        editor.SyntaxHighlighting = definition;
+        if (isSecondary)
+            _secondaryAppliedSyntaxExtension = extension;
+        else
+            _primaryAppliedSyntaxExtension = extension;
+
+        var isMarkdown = KodoExtensionIds.IsMarkdown(extension?.Id);
+        (isSecondary ? _secondaryRainbowBracketColorizer : _primaryRainbowBracketColorizer)
+            .UpdateSyntax(isMarkdown ? null : extension);
+        (isSecondary ? _secondaryInterpolatedStringColorizer : _primaryInterpolatedStringColorizer)
+            .UpdateSyntax(extension is null ? null : ResolveCompiledSyntaxProfile(extension));
+        (isSecondary ? _secondaryHtmlEmbeddedColorizer : _primaryHtmlEmbeddedColorizer)
+            .UpdateSyntax(extension, ResolveHtmlEmbeddedSyntaxProfile);
+        (isSecondary ? _secondaryMarkdownColorizer : _primaryMarkdownColorizer)
+            .UpdateSyntax(extension, ResolveFenceLanguageSyntaxProfile, ResolveInlineCodeLanguageExtension);
+        (isSecondary ? _secondaryIndentGuideRenderer : _primaryIndentGuideRenderer).IsEnabled = extension is not null;
+        editor.TextArea.TextView.InvalidateLayer(KnownLayer.Text);
+        editor.TextArea.TextView.InvalidateLayer(KnownLayer.Background);
     }
 
     public KodoHighlightingDefinition? GetSyntaxHighlightingForPath(string filePath)
@@ -1681,12 +1868,12 @@ public partial class MainWindow
 
     private CompiledSyntaxProfile ResolveCompiledSyntaxProfile(LoadedExtension extension)
     {
-        if (_compiledSyntaxProfileCache.TryGetValue(extension, out var cached))
-            return cached;
-
-        var profile = CompiledSyntaxProfile.Create(extension);
-        _compiledSyntaxProfileCache[extension] = profile;
-        return profile;
+        var profile = _compiledSyntaxProfileCache.GetOrAdd(
+            extension,
+            static item => new Lazy<CompiledSyntaxProfile>(
+                () => CompiledSyntaxProfile.Create(item),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        return profile.Value;
     }
 
     private void ConfigureHtmlEmbeddedHighlighting(LoadedExtension? extension)
@@ -1701,7 +1888,9 @@ public partial class MainWindow
 
     private CompiledSyntaxProfile? FindLanguageSyntaxProfileForFileExtension(string extension)
     {
-        var loadedExtension = LoadedExtensions.FirstOrDefault(loadedExtension =>
+        List<LoadedExtension> snapshot;
+        lock (LoadedExtensionsLock) snapshot = LoadedExtensions.ToList();
+        var loadedExtension = snapshot.FirstOrDefault(loadedExtension =>
             string.Equals(loadedExtension.Type, "language", StringComparison.OrdinalIgnoreCase) &&
             loadedExtension.Extensions.Any(ext => string.Equals(ext, extension, StringComparison.OrdinalIgnoreCase)));
 
