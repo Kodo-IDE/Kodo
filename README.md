@@ -26,6 +26,8 @@ Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](
 
 **Kodo v2.2.0** adds a command palette, side-by-side editing, native Git integration, and an editor minimap. It also brings faster startup, smoother large-file editing, and broad editor and language-server fixes.
 
+A fresh Kodo install is **15.4%** of VS Code's initial size (i.e. **84.6%** less disk). In ratio terms, a fresh install of VS Code is **6.48x** bigger. 
+
 Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE).
 
 <p align="center">
