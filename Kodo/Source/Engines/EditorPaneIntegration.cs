@@ -182,21 +182,17 @@ public partial class MainWindow
             return;
         }
 
-        var previousPreview = pane.ImagePreview;
         pane.ImagePreviewTab = tab;
         pane.ImagePreviewPath = path;
         pane.ImagePreview = TryLoadImagePreview(path);
-        BitmapLifetime.DisposeAfterLayout(previousPreview);
         NotifyPanePreviewStateChanged(pane);
     }
 
     private void ReleasePanePreviewState(EditorPaneState pane)
     {
-        var previousPreview = pane.ImagePreview;
         pane.ImagePreview = null;
         pane.ImagePreviewTab = null;
         pane.ImagePreviewPath = null;
-        BitmapLifetime.DisposeAfterLayout(previousPreview);
         NotifyPanePreviewStateChanged(pane);
     }
 

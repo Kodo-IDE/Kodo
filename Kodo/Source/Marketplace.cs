@@ -548,7 +548,6 @@ public partial class MainWindow
                     if (!extension.HasIcon)
                     {
                         extension.SvgData = svg;
-                        BitmapLifetime.DisposeAfterLayout(extension.IconImage);
                         extension.IconImage = null;
                         extension.IconBytes = null;
                         extension.NotifyIconChanged();
@@ -574,12 +573,10 @@ public partial class MainWindow
                     {
                         if (!extension.HasIcon)
                         {
-                            var old = extension.IconImage;
                             extension.IconImage = bmp;
                             extension.SvgData = null;
                             extension.IconBytes = null;
                             extension.NotifyIconChanged();
-                            BitmapLifetime.DisposeAfterLayout(old);
                         }
                         else
                         {
@@ -1324,7 +1321,6 @@ public partial class MainWindow
         => SyncObservableCollection(target, source, e => e.Id, (existing, incoming) =>
         {
             if (existing.IconImage is not null && incoming.IconImage is null) incoming.IconImage = existing.IconImage;
-            else BitmapLifetime.DisposeAfterLayout(existing.IconImage);
             if (existing.SvgData is not null && incoming.SvgData is null) incoming.SvgData = existing.SvgData;
         });
 
@@ -1850,21 +1846,17 @@ public partial class MainWindow
 
     private static void ReplaceMarketplaceIcon(MarketplaceExtension extension, IconResult icon)
     {
-        Bitmap? previous = null;
         if (icon.Bitmap is not null)
         {
             if (ReferenceEquals(extension.IconImage, icon.Bitmap)) return;
-            previous = extension.IconImage;
             extension.IconImage = icon.Bitmap;
             extension.SvgData = null;
         }
         else if (icon.SvgData is not null)
         {
-            previous = extension.IconImage;
             extension.IconImage = null;
             extension.SvgData = icon.SvgData;
         }
-        BitmapLifetime.DisposeAfterLayout(previous);
     }
 
     private void TryWriteMarketplaceIndexETag(string etag)
@@ -1952,10 +1944,8 @@ public partial class MainWindow
             var key = keySelector(target[i]);
             if (!sourceByKey.ContainsKey(key))
             {
-                var removedIcon = (target[i] as MarketplaceExtension)?.IconImage;
                 target.RemoveAt(i);
                 changed = true;
-                BitmapLifetime.DisposeAfterLayout(removedIcon);
             }
         }
 

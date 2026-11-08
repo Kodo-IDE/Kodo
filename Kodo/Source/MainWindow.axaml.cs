@@ -837,11 +837,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (ReferenceEquals(_currentImagePreview, value))
                 return;
 
-            var previousPreview = _currentImagePreview;
             _currentImagePreview = value;
             OnPropertyChanged();
             RaiseMany(nameof(HasImagePreview), nameof(IsImagePreviewVisible), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText), nameof(ImageZoomedWidth), nameof(ImageZoomedHeight), nameof(ImageZoomPercent));
-            BitmapLifetime.DisposeAfterLayout(previousPreview);
         }
     }
 

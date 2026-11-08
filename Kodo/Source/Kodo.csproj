@@ -18,7 +18,7 @@
     <InformationalVersion>v2.2.0-DEV</InformationalVersion>
     <HotfixStampBaseVersion>2.2.0-DEV</HotfixStampBaseVersion>
     <NuGetAudit>false</NuGetAudit>
-    <!-- ReadyToRun: pre-compiles IL to native code at publish time, cutting warm startup ~38% (1328 -> 823 ms on the bench rig). -->
+    
     <PublishReadyToRun Condition="'$(Configuration)' == 'Release'">true</PublishReadyToRun>
   </PropertyGroup>
 
