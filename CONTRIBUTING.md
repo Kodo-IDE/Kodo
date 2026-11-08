@@ -1,8 +1,11 @@
 ﻿# Contributing to Kodo
 
-Thanks for your interest in contributing! Kodo is a small project built by two people, so every contribution genuinely matters. This document covers everything you need to know to get started.
+Thanks for your interest in contributing! Kodo is a small project built by two people, so every contribution genuinely matters.
 
-Detailed information regarding individual types of contributions can be found in sibling files to this document. Please refer to this as a quick-start guide, and find detailed information in this document's sibling documents.
+This file is a quick-start overview. **Full contributor documentation lives in the [Kodo wiki](https://github.com/Kodo-IDE/Kodo/wiki).**
+
+- 📖 [User Guide](https://github.com/Kodo-IDE/Kodo/wiki/User-Guide) — for using Kodo
+- 🤝 [Contributions](https://github.com/Kodo-IDE/Kodo/wiki/Contributions) — for building Kodo and its extensions
 
 Examples for all types of extensions can be found in [Kodo-Extension-Template](https://github.com/Kodo-IDE/Kodo-Extension-Template).
 
@@ -34,6 +37,8 @@ To run Kodo locally, you'll need:
 That's it. No complicated build pipeline, no extra tools.
 
 > **Plugin authors:** build `Kodo.csproj` once first so that your plugin can find `Kodo\Source\bin\Debug\net10.0\Kodo.dll` (`Source\bin\Debug\net10.0\Kodo.dll` from the repo root; `..\..\Kodo\Kodo\Source\bin\Debug\net10.0\Kodo.dll` from `TemplatePlugin` - `HintPath` with `Private=false`).
+
+See [Getting Started](https://github.com/Kodo-IDE/Kodo/wiki/Getting-Started) in the wiki for the full guide.
 
 ---
 
@@ -76,6 +81,20 @@ Look at the existing code and match it. A few things to keep consistent:
 - Instead of a per-file changelog comment, make a good PR - a clear title and description of what you changed and why goes a long way for review.
 - Keep comments descriptive but not excessive - explain *why*, not just *what*
 - Don't leave dead code or commented-out blocks behind
+
+---
+
+## Extension Development
+
+Detailed guides for building themes, language extensions, plugins, and compilers live in the wiki:
+
+- [Extension Development](https://github.com/Kodo-IDE/Kodo/wiki/Extension-Development) — which kind of extension to build
+- [Theme Extensions](https://github.com/Kodo-IDE/Kodo/wiki/Theme-Extensions) — every theme color key
+- [Language Extensions](https://github.com/Kodo-IDE/Kodo/wiki/Language-Extensions) — Legacy, LangRules, and LSP engines
+- [Plugins](https://github.com/Kodo-IDE/Kodo/wiki/Plugins) — `IKodoPlugin`, lifecycle, debugging
+- [Compilers](https://github.com/Kodo-IDE/Kodo/wiki/Compilers) — registering a run/build toolchain
+- [Kodo File Format](https://github.com/Kodo-IDE/Kodo/wiki/Kodo-File-Format) — `.kox` anatomy and `manifest.json` reference
+- [Testing and Pull Requests](https://github.com/Kodo-IDE/Kodo/wiki/Testing-and-Pull-Requests) — checklists and marketplace submission
 
 ---
 
