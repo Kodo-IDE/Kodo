@@ -97,3 +97,7 @@ Expect frequent hotfix tests and patch updates over the next several hours while
 > 2026-10-24
 Hotfix testing is now complete and all bugs have been addressed.
 ---
+
+## v2.2.0 is here!
+> 2026-11-08
+This update features a command palette, editor minimap, native Git Source Control, a split editor, and a much faster editor and startup times.
