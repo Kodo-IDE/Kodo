@@ -52,14 +52,6 @@ public partial class App : Application
         }
     }
 
-    private static readonly Color KodoDarkSurface = DialogPalette.Surface;
-    private static readonly Color KodoDarkSurfaceDeep = DialogPalette.SurfaceDeep;
-    private static readonly Color KodoDarkBorder = DialogPalette.Border;
-    private static readonly Color KodoDarkBadgeBg = DialogPalette.BadgeBg;
-    private static readonly Color KodoTextMuted = DialogPalette.TextMuted;
-    private static readonly Color KodoTextDim = DialogPalette.TextDim;
-    private static readonly Color KodoTokenBlue = DialogPalette.TokenBlue;
-    private static readonly Color KodoTokenOrange = DialogPalette.TokenOrange;
 
     public override void Initialize()
     {
@@ -542,8 +534,8 @@ public partial class App : Application
         var terminatingBanner = new Border
         {
             IsVisible = isTerminating,
-            Background = new SolidColorBrush(Color.Parse("#3D1A00")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#7A3A00")),
+            Background = new SolidColorBrush(KodoDesignTokens.WarningSurfaceColor),
+            BorderBrush = new SolidColorBrush(KodoDesignTokens.WarningBorderColor),
             BorderThickness = new Thickness(1),
             CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(10, 6),
@@ -558,8 +550,8 @@ public partial class App : Application
 
         var sourceBadge = new Border
         {
-            Background = new SolidColorBrush(KodoDarkBadgeBg),
-            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            Background = new SolidColorBrush(palette.BadgeBg),
+            BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
             CornerRadius = KodoDesignTokens.CompactRadius,
             Padding = new Thickness(10, 5),
@@ -569,7 +561,7 @@ public partial class App : Application
                 Text = source,
                 FontSize = 12,
                 FontFamily = KodoFonts.MonoFamily,
-                Foreground = new SolidColorBrush(KodoTokenBlue),
+                Foreground = new SolidColorBrush(palette.TextMuted),
             },
         };
 
@@ -578,7 +570,7 @@ public partial class App : Application
             Text = KodoDiagnostics.BuildDiagnosticSummary(source, isTerminating),
             FontSize = 11,
             FontFamily = KodoFonts.MonoFamily,
-            Foreground = new SolidColorBrush(KodoTextMuted),
+            Foreground = new SolidColorBrush(palette.TextMuted),
             TextWrapping = TextWrapping.Wrap,
         };
 
@@ -587,7 +579,7 @@ public partial class App : Application
             Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
             FontSize = 12,
             FontFamily = KodoFonts.MonoFamily,
-            Foreground = new SolidColorBrush(KodoTokenOrange),
+            Foreground = new SolidColorBrush(accentColor),
             TextWrapping = TextWrapping.Wrap,
         };
 
@@ -613,7 +605,7 @@ public partial class App : Application
         {
             Text = $"Full details in: {KodoDiagnostics.DisplayLogPath}",
             FontSize = 11,
-            Foreground = new SolidColorBrush(KodoTextDim),
+            Foreground = new SolidColorBrush(palette.TextDim),
             TextWrapping = TextWrapping.Wrap,
         };
 
@@ -622,9 +614,9 @@ public partial class App : Application
             Content = "Copy to Clipboard",
             HorizontalAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(16, 8),
-            Background = new SolidColorBrush(KodoDarkBadgeBg),
-            Foreground = new SolidColorBrush(KodoTextMuted),
-            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            Background = new SolidColorBrush(palette.BadgeBg),
+            Foreground = new SolidColorBrush(palette.TextMuted),
+            BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
             CornerRadius = KodoDesignTokens.ControlRadius,
         };
@@ -634,9 +626,9 @@ public partial class App : Application
             Content = "Report on GitHub",
             HorizontalAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(16, 8),
-            Background = new SolidColorBrush(KodoDarkBadgeBg),
-            Foreground = new SolidColorBrush(KodoTextMuted),
-            BorderBrush = new SolidColorBrush(KodoDarkBorder),
+            Background = new SolidColorBrush(palette.BadgeBg),
+            Foreground = new SolidColorBrush(palette.TextMuted),
+            BorderBrush = new SolidColorBrush(palette.Border),
             BorderThickness = new Thickness(1),
             CornerRadius = KodoDesignTokens.ControlRadius,
             Margin = new Thickness(8, 0, 0, 0),

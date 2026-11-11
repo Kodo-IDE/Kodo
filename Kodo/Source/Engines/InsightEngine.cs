@@ -671,6 +671,20 @@ public sealed class InsightEngine
         return result;
     }
 
+    public static bool HasMaskedCharacterBetween(string documentText, int start, int end, LoadedExtension? extension)
+    {
+        if (string.IsNullOrEmpty(documentText)) return false;
+        start = Math.Max(0, start);
+        end = Math.Clamp(end, 0, documentText.Length);
+        if (start >= end)
+            return end > 0 && end <= documentText.Length && BuildMaskedDocument(documentText, extension)[end - 1] != documentText[end - 1];
+        var masked = BuildMaskedDocument(documentText, extension);
+        for (var i = start; i < end; i++)
+            if (masked[i] != documentText[i])
+                return true;
+        return false;
+    }
+
     private static readonly Dictionary<string, (DateTime mtime, string? masked)> _folderMaskCache = new(FileSystemPaths.Comparer);
     private static string? BuildFolderMaskedText(string folderPath, string currentFilePath, LoadedExtension? ext)
     {

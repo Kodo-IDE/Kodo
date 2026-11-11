@@ -14,6 +14,6 @@ public static class KodoDesignTokens
 
     public static Color DangerColor { get; } = Color.Parse("#E5484D");
     public static Color WarningColor { get; } = Color.Parse("#FFA040");
-    public static Color WarningSurfaceColor { get; } = Color.Parse("#2D1F00");
-    public static Color WarningBorderColor { get; } = Color.Parse("#6B4800");
+    public static Color WarningSurfaceColor { get; } = Color.FromArgb(0x26, WarningColor.R, WarningColor.G, WarningColor.B);
+    public static Color WarningBorderColor { get; } = Color.FromArgb(0x59, WarningColor.R, WarningColor.G, WarningColor.B);
 }

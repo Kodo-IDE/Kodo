@@ -570,6 +570,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isResizingExplorerPanel;
     private double _explorerPanelDragStartPointerX;
     private double _explorerPanelDragStartWidth;
+    private bool _quickAccessFrameLayoutPending;
     private string? _deferredPreferredShellId;
     private static readonly IBrush SharedLinkTextBrush = Brush.Parse("#5BA3D9");
 
@@ -946,6 +947,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         PrimaryEditorTextBox.TextChanged += EditorTextBox_OnPaneTextChanged;
         SecondaryEditorTextBox.TextChanged += EditorTextBox_OnPaneTextChanged;
         CenterQuickAccessSearchFrame();
+        LayoutUpdated += (_, _) => CenterQuickAccessSearchFrame();
+        SizeChanged += (_, _) => QueueCenterQuickAccessSearchFrame();
         InsightWorkerGateway.Default.SetRegistryProvider(() =>
         {
             lock (LoadedExtensionsLock)
@@ -1135,6 +1138,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         TerminalHostControl.MaxScrollbackLines = _terminalScrollbackLines;
         _terminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
         _explorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
+        _commandPaletteWidth = NormalizeCommandPaletteWidth(settings.CommandPaletteWidth);
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
             ? DetectCountryCode()
             : settings.UserCountry.ToUpperInvariant();
@@ -2466,9 +2470,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (this.FindControl<Border>("QuickAccessSearchFrame") is not { } frame)
             return;
+        var (width, delta) = GetFrameGeometry();
+        frame.MinWidth = Math.Min(140, width);
+        frame.Width = width;
+        frame.IsVisible = width >= 140;
+        frame.RenderTransform = new TranslateTransform(delta, 0);
+    }
 
-        var leftSidebarWidth = 60d + (IsFileExplorerVisible ? ExplorerPanelWidth + 4d : 0d);
-        frame.RenderTransform = new TranslateTransform(-leftSidebarWidth / 2, 0);
+    private void QueueCenterQuickAccessSearchFrame()
+    {
+        if (_quickAccessFrameLayoutPending) return;
+        _quickAccessFrameLayoutPending = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            _quickAccessFrameLayoutPending = false;
+            CenterQuickAccessSearchFrame();
+            _commandPaletteSyncLayout?.Invoke();
+        }, DispatcherPriority.Background);
     }
 
     public bool IsEditorPageVisible => !IsHomePageVisible && !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
@@ -2508,9 +2526,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasFileOpen => _currentFilePath is not null;
 
-    public bool IsFolderOpen => _currentFolderPath is not null;
+    public bool IsFolderOpen => _currentFolderPath is not null && Directory.Exists(_currentFolderPath);
 
-    public string? WorkspaceFolderPath => _currentFolderPath;
+    public string? WorkspaceFolderPath => IsFolderOpen ? _currentFolderPath : null;
+
+    public bool IsProjectFileContext =>
+        IsFolderOpen &&
+        _currentFilePath is not null &&
+        IsPathInsideDirectory(_currentFilePath, _currentFolderPath!);
+
+    public bool IsCompilerUiVisible => IsEditorTabsVisible && IsProjectFileContext;
 
     public bool IsEmptyStateVisible => IsHomePageVisible || (IsEditorPageVisible && !HasDocumentOpen);
 
@@ -3488,6 +3513,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             var top = textView.VisualLines[0].FirstDocumentLine.LineNumber;
             var bottom = textView.VisualLines[^1].LastDocumentLine.LineNumber;
             minimap?.SetViewport(top, Math.Max(top, bottom));
+            SetMinimapScrollability(editor, bottom - top + 1 < document.LineCount);
             return;
         }
 
@@ -3495,6 +3521,24 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
         var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
         minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
+        SetMinimapScrollability(editor, document.LineCount > visibleLines);
+    }
+
+    private void SetMinimapScrollability(TextEditor? editor, bool scrollable)
+    {
+        if (editor is null) return;
+        if (ReferenceEquals(editor, PrimaryEditorTextBox))
+        {
+            if (_isPrimaryPaneMinimapScrollable == scrollable) return;
+            _isPrimaryPaneMinimapScrollable = scrollable;
+            RaiseMany(nameof(IsPrimaryPaneMinimapVisible));
+        }
+        else if (ReferenceEquals(editor, SecondaryEditorTextBox))
+        {
+            if (_isSecondaryPaneMinimapScrollable == scrollable) return;
+            _isSecondaryPaneMinimapScrollable = scrollable;
+            RaiseMany(nameof(IsSecondaryPaneMinimapVisible));
+        }
     }
 
     private void EditorMinimapView_OnScrollRequested(TextEditor editor, double fraction)
@@ -5218,7 +5262,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (!IsAutoUpdateAppEnabled)
                 return "Kodo only updates when you download a new installer yourself.";
             return IsAutoUpdateAppInBackgroundEnabled
-                ? "Checking for new Kodo versions on launch and every few hours, and installing them automatically in the background once Kodo is closed."
+                ? "Checking for new Kodo versions on launch and every few hours, downloading them in the background, and prompting you to restart when it's ready."
                 : "Checking for new Kodo versions on launch and every few hours, and prompting to install them.";
         }
     }
@@ -5292,7 +5336,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public string StatusBarFilePathTooltip => _currentFilePath ?? "No file open";
+    public string StatusBarFilePathTooltip =>
+        _currentFilePath is null ? "No file open" : $"{_currentFilePath}\nClick to copy path";
 
     public string StatusBarCaretText
     {
@@ -5876,7 +5921,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
         nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
         nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
-        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen),
+        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsProjectFileContext), nameof(IsCompilerUiVisible),
         nameof(HomeQuickSearchPlaceholderText), nameof(WorkspaceFolderPath), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
         nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection),
@@ -6230,6 +6275,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         settings.TabSize = NormalizeTabSize(settings.TabSize);
         settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
         settings.ExplorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
+        settings.CommandPaletteWidth = NormalizeCommandPaletteWidth(settings.CommandPaletteWidth);
         return settings;
     }
 
@@ -6303,6 +6349,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             TerminalVisible = IsTerminalVisible,
             TerminalPanelHeight = TerminalPanelHeight,
             ExplorerPanelWidth = ExplorerPanelWidth,
+            CommandPaletteWidth = CommandPaletteWidth,
             HasCompletedTutorial = _hasCompletedTutorial,
             AccentColorMode = _accentColorMode,
             CustomAccentHex = _customAccentHex,
@@ -6678,7 +6725,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
                     UpdateExtensionAutoUpdateLifecycle();
                     _appUpdateScheduler.UpdateLifecycle();
-                    _marketplaceRefreshTimer.Start();
 
                     if (SystemThemeHelper.SupportsAccent)
                     {
@@ -7892,11 +7938,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RestartTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
         RestartActiveTerminal();
-
-    private void StatusBar_OnPointerPressed(object? sender, PointerPressedEventArgs e)
-    {
-        e.Handled = true;
-    }
 
     private async void StatusBarFilePathButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -11471,7 +11512,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (MatchesKeybind(e, "ToggleFileExplorer"))
         {
-            IsFileExplorerVisible = !IsFileExplorerVisible;
+            if (IsFolderOpen)
+                IsFileExplorerVisible = !IsFileExplorerVisible;
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "ToggleTerminal") || MatchesKeybind(e, "ToggleTerminalAlt"))

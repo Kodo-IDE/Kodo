@@ -82,6 +82,78 @@ public partial class MainWindow
     private bool _suppressQuickAccessTextChanged;
     private bool _isCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
 
+    internal const double MinCommandPaletteWidth = 320;
+    internal const double MaxCommandPaletteWidth = 760;
+
+    internal static double NormalizeCommandPaletteWidth(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(value, MinCommandPaletteWidth, MaxCommandPaletteWidth)
+            : AppSettings.DefaultCommandPaletteWidth;
+
+    private double _commandPaletteWidth = AppSettings.DefaultCommandPaletteWidth;
+    private Action? _commandPaletteSyncLayout;
+    private bool _isResizingCommandPalette;
+    private bool _commandPaletteResizeFromLeft;
+    private double _commandPaletteResizeStartX;
+    private double _commandPaletteResizeStartWidth;
+    private bool _isResizingQuickAccessSearch;
+    private bool _quickAccessResizeFromLeft;
+    private double _quickAccessResizeStartX;
+    private double _quickAccessResizeStartWidth;
+
+    public double CommandPaletteWidth
+    {
+        get => _commandPaletteWidth;
+        set
+        {
+            var normalized = NormalizeCommandPaletteWidth(value);
+            if (Math.Abs(_commandPaletteWidth - normalized) < 0.5) return;
+            _commandPaletteWidth = normalized;
+            OnPropertyChanged();
+            CenterQuickAccessSearchFrame();
+            _commandPaletteSyncLayout?.Invoke();
+            SaveSettings(immediate: false);
+        }
+    }
+
+    private double GetEffectiveCommandPaletteWidth() => GetFrameGeometry().Width;
+
+    private (double Width, double Delta) GetFrameGeometry()
+    {
+        var frame = this.FindControl<Border>("QuickAccessSearchFrame");
+        if (frame?.Parent is not Panel host || host.Bounds.Width <= 0 ||
+            Content is not Grid root || root.Bounds.Width <= 0)
+            return (CommandPaletteWidth, 0);
+        if (host.TranslatePoint(new Point(0, 0), root) is not { } origin)
+            return (CommandPaletteWidth, 0);
+
+        var windowCenter = root.Bounds.Width / 2 - origin.X;
+        var brandRight = NaturalHorizontalWidth(this.FindControl<StackPanel>("TopBarBrandPanel"));
+        var buttonsLeft = host.Bounds.Width - NaturalHorizontalWidth(this.FindControl<StackPanel>("TopBarRightToolbarStack"));
+
+        const double gap = 12;
+        var leftRoom = (windowCenter - brandRight - gap) * 2;
+        var rightRoom = (buttonsLeft - windowCenter - gap) * 2;
+        var width = Math.Max(0, Math.Min(CommandPaletteWidth, Math.Min(leftRoom, rightRoom)));
+        var delta = windowCenter - host.Bounds.Width / 2;
+        return (width, delta);
+    }
+
+    private static double NaturalHorizontalWidth(StackPanel? stack)
+    {
+        if (stack is null)
+            return 0;
+
+        double width = 0;
+        double spacingTotal = 0;
+        foreach (var child in stack.Children.OfType<Control>())
+        {
+            width += child.DesiredSize.Width;
+            spacingTotal += stack.Spacing;
+        }
+        return width + Math.Max(0, spacingTotal - stack.Spacing);
+    }
+
     public bool IsCommandPaletteRarePreviewVisible
     {
         get => _isCommandPaletteRarePreviewVisible;
@@ -219,8 +291,12 @@ public partial class MainWindow
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 14, Spread = 0, Color = Color.FromArgb(55, 0, 0, 0) }),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
-            Child = body,
         };
+        var cardContent = new Grid();
+        cardContent.Children.Add(body);
+        cardContent.Children.Add(CreateCommandPaletteResizeGrip(isLeft: true));
+        cardContent.Children.Add(CreateCommandPaletteResizeGrip(isLeft: false));
+        card.Child = cardContent;
         var overlay = new Grid
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
@@ -237,27 +313,41 @@ public partial class MainWindow
         void SyncLayout()
         {
             var frame = useOverlaySearchBox ? null : this.FindControl<Border>("QuickAccessSearchFrame");
-            var frameWidth = frame is { Bounds.Width: > 0 } ? frame.Bounds.Width : 560;
+            if (frame is { IsVisible: false })
+                frame = null;
+            var frameWidth = frame is null ? CommandPaletteWidth : GetEffectiveCommandPaletteWidth();
             var available = overlay.Bounds.Width > 0 ? Math.Max(1, overlay.Bounds.Width - 16) : frameWidth;
-            var preferredWidth = Math.Max(frameWidth, 520);
-            card.Width = Math.Min(preferredWidth, available);
-            var resultsTop = useOverlaySearchBox ? 64d : 0d;
+            card.Width = Math.Max(MinCommandPaletteWidth, Math.Min(frameWidth, available));
+            var resultsTop = useOverlaySearchBox ? 64d : 8d;
             if (frame is not null && overlay.Bounds.Width > 0)
             {
                 var frameOrigin = frame.TranslatePoint(new Point(0, 0), overlay);
                 if (frameOrigin is { } origin)
                 {
                     var left = Math.Clamp(origin.X + frame.Bounds.Width / 2 - card.Width / 2, 8, Math.Max(8, overlay.Bounds.Width - card.Width - 8));
-                    resultsTop = origin.Y + frame.Bounds.Height + 20;
+                    resultsTop = Math.Max(8, origin.Y + frame.Bounds.Height + 20);
                     card.Margin = new Thickness(left, resultsTop, 0, 0);
                 }
             }
             else if (overlay.Bounds.Width > 0)
             {
-                card.Margin = new Thickness(Math.Max(8, (overlay.Bounds.Width - card.Width) / 2), resultsTop, 0, 0);
+                var content = this.FindControl<Grid>("ContentRegionGrid");
+                if (content?.TranslatePoint(new Point(0, 0), overlay) is { } contentOrigin)
+                {
+                    var left = Math.Clamp(
+                        contentOrigin.X + (content.Bounds.Width - card.Width) / 2,
+                        8,
+                        Math.Max(8, overlay.Bounds.Width - card.Width - 8));
+                    card.Margin = new Thickness(left, resultsTop, 0, 0);
+                }
+                else
+                {
+                    card.Margin = new Thickness(Math.Max(8, (overlay.Bounds.Width - card.Width) / 2), resultsTop, 0, 0);
+                }
             }
             scroll.MaxHeight = overlay.Bounds.Height > 0 ? Math.Clamp(overlay.Bounds.Height - resultsTop - 30, 120, 460) : 460;
         }
+        _commandPaletteSyncLayout = SyncLayout;
 
         Grid.SetRow(overlay, 1);
         Grid.SetColumnSpan(overlay, Math.Max(1, root.ColumnDefinitions.Count));
@@ -330,6 +420,8 @@ public partial class MainWindow
     {
         if (_commandPaletteOverlay is null)
             return;
+        if (_isResizingCommandPalette || _isResizingQuickAccessSearch)
+            return;
         if (e.Source is Visual source)
         {
             var frame = this.FindControl<Border>("QuickAccessSearchFrame");
@@ -358,6 +450,7 @@ public partial class MainWindow
         _commandPaletteList = null;
         _commandPaletteStatus = null;
         _commandPalettePreviewText = null;
+        _commandPaletteSyncLayout = null;
         _paletteRows.Clear();
         _filteredPaletteCommands = [];
         _paletteSelectedIndex = -1;
@@ -446,13 +539,143 @@ public partial class MainWindow
 
         Dispatcher.UIThread.Post(() =>
         {
-            if (_commandPaletteOverlay is { IsVisible: true } && IsActive && _commandPaletteSearchBox?.IsKeyboardFocusWithin != true)
+            if (_commandPaletteOverlay is { IsVisible: true } && IsActive &&
+                !_isResizingCommandPalette && !_isResizingQuickAccessSearch &&
+                _commandPaletteSearchBox?.IsKeyboardFocusWithin != true)
                 DismissCommandPalette(restoreFocus: false);
         }, DispatcherPriority.Input);
     }
 
-    private void QuickAccessSearchFrame_OnPointerPressed(object? sender, PointerPressedEventArgs e) =>
+    private static readonly Cursor CommandPaletteResizeCursor = new(StandardCursorType.SizeWestEast);
+
+    private Border CreateCommandPaletteResizeGrip(bool isLeft)
+    {
+        var grip = new Border
+        {
+            Width = 7,
+            Background = Brushes.Transparent,
+            HorizontalAlignment = isLeft ? HorizontalAlignment.Left : HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Cursor = CommandPaletteResizeCursor,
+        };
+        ToolTip.SetTip(grip, "Drag to resize the command palette · double-click to reset");
+        Avalonia.Automation.AutomationProperties.SetName(grip,
+            isLeft ? "Resize command palette from the left" : "Resize command palette from the right");
+        grip.PointerPressed += (_, e) => BeginCommandPaletteResize(e, grip, isLeft);
+        grip.PointerMoved += (_, e) => ContinueCommandPaletteResize(e);
+        grip.PointerReleased += (_, e) => EndCommandPaletteResize(e, grip);
+        grip.PointerCaptureLost += (_, _) => EndCommandPaletteResize(null, grip);
+        grip.DoubleTapped += (_, e) =>
+        {
+            CommandPaletteWidth = AppSettings.DefaultCommandPaletteWidth;
+            SaveSettings(immediate: true);
+            e.Handled = true;
+        };
+        return grip;
+    }
+
+    private void BeginCommandPaletteResize(PointerPressedEventArgs e, Border grip, bool isLeft)
+    {
+        if (!e.GetCurrentPoint(grip).Properties.IsLeftButtonPressed) return;
+        _isResizingCommandPalette = true;
+        _commandPaletteResizeFromLeft = isLeft;
+        _commandPaletteResizeStartX = e.GetPosition(this).X;
+        _commandPaletteResizeStartWidth = CommandPaletteWidth;
+        e.Pointer.Capture(grip);
+        e.Handled = true;
+    }
+
+    private void ContinueCommandPaletteResize(PointerEventArgs e)
+    {
+        if (!_isResizingCommandPalette) return;
+        var delta = e.GetPosition(this).X - _commandPaletteResizeStartX;
+        if (_commandPaletteResizeFromLeft) delta = -delta;
+        CommandPaletteWidth = _commandPaletteResizeStartWidth + delta * 2;
+        e.Handled = true;
+    }
+
+    private void EndCommandPaletteResize(PointerReleasedEventArgs? e, Border grip)
+    {
+        if (!_isResizingCommandPalette) return;
+        _isResizingCommandPalette = false;
+        e?.Pointer.Capture(null);
+        if (_commandPaletteOverlay is { IsVisible: true })
+            _commandPaletteSearchBox?.Focus();
+        SaveSettings(immediate: true);
+        if (e is not null) e.Handled = true;
+    }
+
+    private static bool IsNearQuickAccessResizeEdge(Border frame, Point point, out bool fromLeft)
+    {
+        const double edge = 7;
+        fromLeft = point.X <= edge;
+        return fromLeft || point.X >= frame.Bounds.Width - edge;
+    }
+
+    private void QuickAccessSearchFrame_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Border frame &&
+            e.GetCurrentPoint(frame).Properties.IsLeftButtonPressed &&
+            IsNearQuickAccessResizeEdge(frame, e.GetPosition(frame), out var fromLeft))
+        {
+            _isResizingQuickAccessSearch = true;
+            _quickAccessResizeFromLeft = fromLeft;
+            _quickAccessResizeStartX = e.GetPosition(this).X;
+            _quickAccessResizeStartWidth = CommandPaletteWidth;
+            e.Pointer.Capture(frame);
+            e.Handled = true;
+            return;
+        }
+
         _commandPaletteSearchBox?.Focus();
+    }
+
+    private void QuickAccessSearchFrame_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Border frame) return;
+
+        if (_isResizingQuickAccessSearch)
+        {
+            var delta = e.GetPosition(this).X - _quickAccessResizeStartX;
+            if (_quickAccessResizeFromLeft) delta = -delta;
+            CommandPaletteWidth = _quickAccessResizeStartWidth + delta * 2;
+            e.Handled = true;
+            return;
+        }
+
+        frame.Cursor = IsNearQuickAccessResizeEdge(frame, e.GetPosition(frame), out _)
+            ? CommandPaletteResizeCursor
+            : null;
+    }
+
+    private void QuickAccessSearchFrame_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isResizingQuickAccessSearch) return;
+        _isResizingQuickAccessSearch = false;
+        e.Pointer.Capture(null);
+        if (_commandPaletteOverlay is { IsVisible: true })
+            _commandPaletteSearchBox?.Focus();
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    private void QuickAccessSearchFrame_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_isResizingQuickAccessSearch) return;
+        _isResizingQuickAccessSearch = false;
+        if (_commandPaletteOverlay is { IsVisible: true })
+            _commandPaletteSearchBox?.Focus();
+        SaveSettings(immediate: true);
+    }
+
+    private void QuickAccessSearchFrame_OnDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Border frame ||
+            !IsNearQuickAccessResizeEdge(frame, e.GetPosition(frame), out _)) return;
+        CommandPaletteWidth = AppSettings.DefaultCommandPaletteWidth;
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
 
     private void EncodingStatusBarPaletteButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -1057,7 +1280,7 @@ public partial class MainWindow
             new(IsInsightEnabled ? "Disable Insight" : "Enable Insight", "Editor", "", () => { IsInsightEnabled = !IsInsightEnabled; return Task.CompletedTask; }, Keywords: "toggle language intelligence completion errors"),
             new(LspDiagnosticsEnabled ? "Disable Language Server Diagnostics" : "Enable Language Server Diagnostics", "Editor", "", () => { LspDiagnosticsEnabled = !LspDiagnosticsEnabled; return Task.CompletedTask; }, Keywords: "toggle lsp errors warnings"),
 
-            new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, Keywords: "sidebar"),
+            new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, () => IsFolderOpen, Keywords: "sidebar"),
             new("New File in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true); }, () => IsFolderOpen, "create explorer"),
             new("New Folder in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false); }, () => IsFolderOpen, "create directory explorer"),
             new("Refresh File Explorer", "View", "", async () => await RefreshExplorerTreeAsync(), () => IsFolderOpen, "reload refresh project tree"),

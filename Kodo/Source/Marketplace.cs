@@ -2111,8 +2111,12 @@ public partial class MainWindow
     private void UpdateExtensionAutoUpdateLifecycle()
     {
         _extensionAutoUpdateTimer.Stop();
+        _marketplaceRefreshTimer.Stop();
         if (IsAutoUpdateExtensionsEnabled)
+        {
             _extensionAutoUpdateTimer.Start();
+            _marketplaceRefreshTimer.Start();
+        }
     }
 
     private async void ExtensionAutoUpdateTimer_OnTick(object? sender, EventArgs e)
@@ -2131,7 +2135,8 @@ public partial class MainWindow
 
     private async Task RunStaggeredStartupLoadingAsync()
     {
-        await RefreshExtensionsDataAsync(skipInstalledScan: true, staggerLoadStages: true);
+        if (IsAutoUpdateExtensionsEnabled)
+            await RefreshExtensionsDataAsync(skipInstalledScan: true, staggerLoadStages: true);
         await Task.Delay(150);
         await RefreshLatestReleaseAsync(forceNetwork: true);
         await Task.Delay(150);

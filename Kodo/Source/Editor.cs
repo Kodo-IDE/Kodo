@@ -31,6 +31,8 @@ public partial class MainWindow
 
     private CancellationTokenSource? _lspCompletionCts;
     private bool _completionTypingPending;
+    private TextDocument? _completionDismissedDocument;
+    private int _completionDismissedWordStart = -1;
     private bool _completionRefreshRequestedByTyping;
     private CancellationTokenSource? _lspPresentationCancellation;
     private bool _editorInsightsRefreshRunning;
@@ -1009,6 +1011,44 @@ public partial class MainWindow
         _hoveredDiagnosticFilePath = null;
     }
 
+    private bool TryGetHoveredDocumentPosition(
+        Point pointerPosition,
+        AvaloniaEdit.Rendering.TextView textView,
+        TextEditor editor,
+        out AvaloniaEdit.Document.DocumentLine? line,
+        out int colOffset,
+        out int offset)
+    {
+        line = null;
+        colOffset = 0;
+        offset = 0;
+        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
+        if (pos is null) return false;
+
+        var doc = editor.Document;
+        var lineNumber = pos.Value.Line;
+        if (lineNumber < 1 || lineNumber > doc.LineCount) return false;
+        line = doc.GetLineByNumber(lineNumber);
+        colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
+        offset = line.Offset + colOffset;
+
+        try
+        {
+            var lineHeight = Math.Max(1, textView.DefaultLineHeight);
+            var mappedPosition = new AvaloniaEdit.TextViewPosition(lineNumber, colOffset + 1);
+            var y = textView.GetVisualPosition(mappedPosition, AvaloniaEdit.Rendering.VisualYPosition.LineTop).Y - textView.ScrollOffset.Y;
+            if (pointerPosition.Y < y - 1 || pointerPosition.Y > y + lineHeight + 1) return false;
+            var x = textView.GetVisualPosition(mappedPosition, AvaloniaEdit.Rendering.VisualYPosition.LineTop).X - textView.ScrollOffset.X;
+            if (Math.Abs(pointerPosition.X - x) > Math.Max(10, lineHeight * 0.75)) return false;
+        }
+        catch
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     private string? GetErrorReasonAt(
         Point pointerPosition,
         AvaloniaEdit.Rendering.TextView textView,
@@ -1022,20 +1062,14 @@ public partial class MainWindow
         if (renderer.Spans.Count == 0)
             return null;
 
-        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
-        if (pos is null) return null;
+        if (!TryGetHoveredDocumentPosition(pointerPosition, textView, editor, out var line, out var colOffset, out var offset))
+            return null;
 
         try
         {
-            var doc = editor.Document;
-            var ln = pos.Value.Line;
-            if (ln < 1 || ln > doc.LineCount) return null;
-            var line = doc.GetLineByNumber(ln);
-            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
-            var offset = line.Offset + colOffset;
             var msg = renderer.GetMessageAt(offset);
             if (msg is not null) return msg;
-            bool hasEolSpanOnLine = renderer.HasEolSpanOnLine(line.Offset, line.EndOffset);
+            bool hasEolSpanOnLine = renderer.HasEolSpanOnLine(line!.Offset, line.EndOffset);
             if (hasEolSpanOnLine && colOffset >= Math.Max(0, line.Length - 4))
                 return renderer.GetMessageForLine(line.Offset, line.EndOffset);
             return null;
@@ -1056,17 +1090,12 @@ public partial class MainWindow
         if (!IsInsightEnabled || !IsInsightDeadCodeEnabled || IsErrorDeadCodeBlacklisted(filePath))
             return null;
 
-        var pos = textView.GetPositionFloor(pointerPosition + textView.ScrollOffset);
-        if (pos is null) return null;
+        if (!TryGetHoveredDocumentPosition(pointerPosition, textView, editor, out var line, out var colOffset, out var offset))
+            return null;
 
         try
         {
-            var doc = editor.Document;
-            var ln = pos.Value.Line;
-            if (ln < 1 || ln > doc.LineCount) return null;
-            var line = doc.GetLineByNumber(ln);
-            var colOffset = Math.Clamp(pos.Value.Column - 1, 0, line.Length);
-            return renderer.GetReasonAt(line.Offset + colOffset);
+            return renderer.GetReasonAt(offset);
         }
         catch
         {
@@ -1895,6 +1924,12 @@ public partial class MainWindow
             return;
         }
 
+        if (needsFullDocumentText && InsightEngine.HasMaskedCharacterBetween(text, wordStart, offset, lspForFile))
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
         var hasLspForCompletion = lspForFile is not null;
         if (prefix.Length == 0)
         {
@@ -1916,13 +1951,25 @@ public partial class MainWindow
                 CloseCompletionWindow();
                 return;
             }
-            var isTrigger = prevChar is '.' or '(' or '[' or '{' or ':' or '/' or '\\' or '"' or '\'' or '<' or ',';
+            var isTrigger = prevChar is '.' or '(' or '[' or '{' or ':' or '<';
 
             if (!isTrigger)
             {
                 CloseCompletionWindow();
                 return;
             }
+        }
+
+        if (ReferenceEquals(_completionDismissedDocument, doc) && _completionDismissedWordStart == wordStart)
+        {
+            CloseCompletionWindow();
+            return;
+        }
+
+        if (prefix.Length == 1)
+        {
+            CloseCompletionWindow();
+            return;
         }
 
         List<InsightSuggestion> suggestions;
@@ -2024,6 +2071,8 @@ public partial class MainWindow
                 _completionWindow.CompletionList.CompletionData.Add(suggestion);
             _completionWindow.Show();
             _lastSuggestionsText = suggestionsText;
+            _completionDismissedDocument = null;
+            _completionDismissedWordStart = -1;
         }
         else if (_lastSuggestionsText != suggestionsText)
         {
