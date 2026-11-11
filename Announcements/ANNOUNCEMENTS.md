@@ -101,3 +101,10 @@ Hotfix testing is now complete and all bugs have been addressed.
 ## v2.2.0 is here!
 > 2026-11-08
 This update features a command palette, editor minimap, native Git Source Control, a split editor, and a much faster editor and startup times.
+
+---
+
+## v2.2.1 is here!
+> 2026-11-11
+This patch features UI improvements, editor fixes, Marketplace refinements, and various bug fixes for a smoother Kodo experience.
+---
