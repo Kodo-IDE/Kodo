@@ -89,7 +89,7 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | Large Project Memory (2,501 files / 51 MB) | **~292 MB WS** | ~2.2 GB WS | ~87% less working-set memory |
 | Idle CPU | **1.9–2.1%** | 16.5% | ~8× lower measured CPU usage |
 
-These results were gathered from the same machine, opening the same projects during our benchmarks.
+These results were gathered from the same machine, opening the same project during our benchmarks.
 
 ---
 
