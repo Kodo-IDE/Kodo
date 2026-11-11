@@ -2232,12 +2232,12 @@ public partial class MainWindow
         }
     }
 
-    public bool IsCompilerIconVisible => ActiveCompilerExtension is not null && IsProjectFileContext;
+    public bool IsCompilerIconVisible => ActiveCompilerExtension is not null;
 
     public string ActiveCompilerDisplayName => ActiveCompilerExtension?.Name ?? "No compiler";
 
-    public bool IsRunButtonEnabled => IsProjectFileContext && _activeRunCommandLine is not null;
-    public bool IsBuildButtonEnabled => IsProjectFileContext && _activeBuildCommandLine is not null;
+    public bool IsRunButtonEnabled => _currentFilePath is not null && _activeRunCommandLine is not null;
+    public bool IsBuildButtonEnabled => _currentFilePath is not null && _activeBuildCommandLine is not null;
 
     public string? ActiveRunCommandText => _activeRunCommandLine;
     public string? ActiveBuildCommandText => _activeBuildCommandLine;
@@ -2293,7 +2293,7 @@ public partial class MainWindow
             _activeBuildCommandLine = ActiveCompilerExtension is null
                 ? null : BuildCommandLineText(ActiveCompilerExtension, isBuild: true);
 
-        RaiseMany(nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled), nameof(IsCompilerIconVisible), nameof(ActiveCompilerDisplayName), nameof(RunBuildButtonTooltip), nameof(ActiveRunCommandText), nameof(ActiveBuildCommandText), nameof(IsProjectFileContext), nameof(IsCompilerUiVisible));
+        RaiseMany(nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled), nameof(IsCompilerIconVisible), nameof(ActiveCompilerDisplayName), nameof(RunBuildButtonTooltip), nameof(ActiveRunCommandText), nameof(ActiveBuildCommandText), nameof(IsProjectFileContext));
     }
 
     private MarketplaceExtension? ResolveActiveCompiler()

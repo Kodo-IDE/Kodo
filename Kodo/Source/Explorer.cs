@@ -193,12 +193,6 @@ public partial class MainWindow
             {
                 _ = SetEditorTabContentSafelyAsync(tab, _activeTabVersion, _activeEditorPane);
             }
-            _isHomePageVisible = false;
-            _isSettingsPageVisible = false;
-            _isExtensionsPageVisible = false;
-            _isTutorialPageVisible = false;
-            _isWhatsNewPageVisible = false;
-            RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible));
             NavigateTo(AppPage.Editor);
             RefreshState(fullRefresh: true);
             Dispatcher.UIThread.Post(() =>
@@ -217,11 +211,6 @@ public partial class MainWindow
         ClosePendingAutoCloseUndoGroup();
         if (preserveCurrentState)
             SaveCurrentEditorStateIntoTab();
-        _isHomePageVisible = false;
-        OnPropertyChanged(nameof(IsHomePageVisible));
-        OnPropertyChanged(nameof(IsEditorPageVisible));
-        OnPropertyChanged(nameof(IsHomeOrEditorPageVisible));
-        OnPropertyChanged(nameof(IsEditorTabsVisible));
         ActiveEditorTab = tab;
         ImageZoomLevel = tab.GetViewState(_activeEditorPane.Id).ImageZoomLevel;
         _activeTabVersion++;

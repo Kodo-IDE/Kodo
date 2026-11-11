@@ -2246,7 +2246,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
         nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
         nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
-        nameof(IsPrimaryPaneMinimapVisible), nameof(IsSecondaryPaneMinimapVisible)
+        nameof(IsPrimaryPaneMinimapVisible), nameof(IsSecondaryPaneMinimapVisible),
+        nameof(IsProjectFileContext),
+        nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled)
     ];
 
     public bool IsSettingsPageVisible
@@ -2312,7 +2314,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions));
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions),
+                      nameof(IsProjectFileContext),
+                      nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled));
         }
     }
 
@@ -2534,8 +2538,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         IsFolderOpen &&
         _currentFilePath is not null &&
         IsPathInsideDirectory(_currentFilePath, _currentFolderPath!);
-
-    public bool IsCompilerUiVisible => IsEditorTabsVisible && IsProjectFileContext;
 
     public bool IsEmptyStateVisible => IsHomePageVisible || (IsEditorPageVisible && !HasDocumentOpen);
 
@@ -5921,7 +5923,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
         nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
         nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
-        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsProjectFileContext), nameof(IsCompilerUiVisible),
+        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsProjectFileContext),
+        nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled),
         nameof(HomeQuickSearchPlaceholderText), nameof(WorkspaceFolderPath), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
         nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection),

@@ -1805,12 +1805,12 @@
                                 Height="20"
                                 Background="{Binding SurfaceBorderBrush}"
                                 VerticalAlignment="Center"
-                                IsVisible="{Binding IsCompilerUiVisible}" />
+                                IsVisible="{Binding IsEditorTabsVisible}" />
 
                         <StackPanel Orientation="Horizontal"
                                     Spacing="12"
                                     VerticalAlignment="Center"
-                                    IsVisible="{Binding IsCompilerUiVisible}">
+                                    IsVisible="{Binding IsEditorTabsVisible}">
 
                             <Border Classes="runbuildgroup">
                                 <Grid ColumnDefinitions="Auto,Auto">
