@@ -78,6 +78,11 @@ public partial class MainWindow
         if (_completionWindow is not null && e.Key is Key.Escape or Key.Enter
             or Key.Up or Key.Down or Key.PageUp or Key.PageDown)
         {
+            if (e.Key == Key.Escape)
+            {
+                _completionDismissedDocument = EditorTextBox?.Document;
+                _completionDismissedWordStart = _completionWindow.StartOffset;
+            }
             return;
         }
 

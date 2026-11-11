@@ -148,8 +148,8 @@ internal sealed class WorkerExtensionSnapshot
             MultiLineStringDelimiters = ext.MultiLineStringDelimiters ?? [],
             DisableSingleQuoteStrings = ext.DisableSingleQuoteStrings,
             EnableSemanticDiagnostics = ext.EnableSemanticDiagnostics,
-            LanguagePluginFolderPath = ext.LanguagePluginFolderPath,
-            LanguagePluginAssemblyFileName = ext.LanguagePluginAssemblyFileName,
+            LanguagePluginFolderPath = ext.LanguagePluginFolderPath ?? ext.PluginFolderPath,
+            LanguagePluginAssemblyFileName = ext.LanguagePluginAssemblyFileName ?? ext.PluginAssemblyFileName,
             SyntaxProfileExtensions = [.. ext.SyntaxProfiles.Select(p => p.Extensions ?? [])]
         };
     }

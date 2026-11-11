@@ -162,7 +162,9 @@ internal sealed class LspClient : IDisposable
     public LspClient(LspConfiguration config, string workspaceRoot)
     {
         _config = config;
-        _workspaceRoot = string.IsNullOrWhiteSpace(workspaceRoot) ? Environment.CurrentDirectory : workspaceRoot;
+        _workspaceRoot = string.IsNullOrWhiteSpace(workspaceRoot)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+            : workspaceRoot;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken = default)

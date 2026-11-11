@@ -635,7 +635,7 @@ public partial class MainWindow
                     Text = context.Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
                     FontSize = 12,
                     FontFamily = KodoFonts.MonoFamily,
-                    Foreground = new SolidColorBrush(Color.Parse("#9CDCFE")),
+                    Foreground = MutedTextBrush,
                     TextWrapping = TextWrapping.Wrap,
                     MaxWidth = 500,
                 },
@@ -665,7 +665,7 @@ public partial class MainWindow
                 Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, false, KodoSeverity.Warning, context, redactPaths: true),
                 FontSize = 12,
                 FontFamily = KodoFonts.MonoFamily,
-                Foreground = new SolidColorBrush(Color.Parse("#CE9178")),
+                Foreground = PrimaryTextBrush,
                 TextWrapping = TextWrapping.Wrap,
             };
 

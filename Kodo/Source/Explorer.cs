@@ -670,6 +670,7 @@ public partial class MainWindow
         if (existingTab is not null)
         {
             AddRecentFile(path);
+            NavigateTo(AppPage.Editor);
             destinationPane = ResolveEditorPaneForOpen(destinationPane);
             if (!ReferenceEquals(_activeEditorPane, destinationPane))
                 ActivateEditorPane(destinationPane, focusEditor: false);
@@ -732,6 +733,7 @@ public partial class MainWindow
         if (loadedExistingTab is not null)
         {
             AddRecentFile(path);
+            NavigateTo(AppPage.Editor);
             destinationPane = ResolveEditorPaneForOpen(destinationPane);
             if (!ReferenceEquals(_activeEditorPane, destinationPane))
                 ActivateEditorPane(destinationPane, focusEditor: false);
@@ -776,6 +778,7 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path)) return;
 
         await OpenFolderFromPathAsync(path);
+        NavigateTo(AppPage.Editor);
     }
 
     private async Task PopulateFileTreeAsync(string folderPath)
@@ -1350,7 +1353,7 @@ public partial class MainWindow
 
     private void CollapseExplorerButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (IsFirstRunTutorialActive) return;
+        if (IsFirstRunTutorialActive || !IsFolderOpen) return;
         IsFileExplorerVisible = !IsFileExplorerVisible;
     }
 
@@ -1376,15 +1379,8 @@ public partial class MainWindow
                 await ShowNotFoundDialogAsync(item.Path, isFolder: true);
                 return;
             }
-            _currentFolderPath = item.Path;
-            _searchFileCache = null;
-            InvalidateLspResolutionCaches();
-            InvalidateDotnetProjectCache();
-            AddRecentFolder(item.Path);
-            await PopulateFileTreeAsync(item.Path);
-            SetupProjectFolderWatcher(item.Path);
-            IsFileExplorerVisible = true;
-            RefreshState(fullRefresh: true);
+            await OpenFolderFromPathAsync(item.Path);
+            NavigateTo(AppPage.Editor);
         }
         else
         {
@@ -1957,13 +1953,21 @@ public partial class MainWindow
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
         await CreateExplorerEntryAsync(GetExplorerTargetDirectory(item), "new-file", ".txt", true);
     }
-    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e) => await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true);
+    private async void ExplorerHeaderNewFileButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!IsFolderOpen) return;
+        await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true);
+    }
     private async void NewFolderInExplorerMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<FileTreeItem>(sender) is not { } item) return;
         await CreateExplorerEntryAsync(GetExplorerTargetDirectory(item), "New Folder", null, false);
     }
-    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e) => await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false);
+    private async void ExplorerHeaderNewFolderButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!IsFolderOpen) return;
+        await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false);
+    }
 
     private async void OpenExplorerItemMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {

@@ -10,6 +10,7 @@ internal sealed class AppSettings
 {
     public const double DefaultTerminalPanelHeight = 300;
     public const double DefaultExplorerPanelWidth = 260;
+    public const double DefaultCommandPaletteWidth = 520;
 
     public string ThemeName { get; set; } = "Dark";
     public bool AutoSaveEnabled { get; set; }
@@ -53,6 +54,7 @@ internal sealed class AppSettings
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
     public int TerminalScrollbackLines { get; set; } = 5000;
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
+    public double CommandPaletteWidth { get; set; } = DefaultCommandPaletteWidth;
     public List<string> OpenTabPaths { get; set; } = [];
     public string? ActiveTabPath { get; set; }
     public bool SplitEditorVisible { get; set; }

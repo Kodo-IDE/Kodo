@@ -16,7 +16,7 @@
         x:CompileBindings="True"
         Width="1100"
         Height="810"
-        MinWidth="900"
+        MinWidth="1280"
         MinHeight="620"
         Title="Kodo"
         Background="{Binding WindowBackgroundBrush}"
@@ -162,6 +162,8 @@
                         <Border Name="PART_Border"
                                 Margin="4,0"
                                 Background="Transparent"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter Name="PART_ContentPresenter"
@@ -299,6 +301,7 @@
         </Style>
         <Style Selector="Button.settingsnav:focus">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="Button.recent">
@@ -325,6 +328,14 @@
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="Button.chrome.groupheader:focus">
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+
+        <Style Selector="Button.recentpin:focus">
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="Button.recentpin:pointerover">
@@ -537,6 +548,9 @@
         <Style Selector="Button.statusitem:pointerover">
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
+        <Style Selector="Button.statusitem:focus">
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
         <Style Selector="Button.statusitem:pressed /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
         </Style>
@@ -742,6 +756,9 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
         </Style>
+        <Style Selector="Button.editortab:focus">
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
 
         <Style Selector="Button.editortab.active">
             <Setter Property="Background" Value="Transparent" />
@@ -775,6 +792,9 @@
         <Style Selector="Button.openeditor:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Button.openeditor:focus">
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="Button.openeditor.active">
@@ -855,6 +875,9 @@
 
         <Style Selector="Button.fileitem:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+        <Style Selector="Button.fileitem:focus">
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="TextBox.editor">
@@ -1082,6 +1105,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="ExplorerHeaderNewFileButton_OnClick"
+                                AutomationProperties.Name="Create a new file in this folder"
                                 ToolTip.Tip="Create a new file in this folder">
                             <Viewbox Width="16" Height="16"
                                      HorizontalAlignment="Center"
@@ -1098,6 +1122,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="ExplorerHeaderNewFolderButton_OnClick"
+                                AutomationProperties.Name="Create a new folder in this folder"
                                 ToolTip.Tip="Create a new folder in this folder">
                             <Viewbox Width="16" Height="16"
                                      HorizontalAlignment="Center"
@@ -1114,6 +1139,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="CollapseAllTreeButton_OnClick"
+                                AutomationProperties.Name="Expand or collapse all folders"
                                 ToolTip.Tip="Expand or collapse all folders">
                             <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
@@ -1128,6 +1154,7 @@
                                 Height="28"
                                 IsVisible="{Binding IsFolderOpen}"
                                 Click="CloseFolderButton_OnClick"
+                                AutomationProperties.Name="{Binding CloseFolderTooltip}"
                                 ToolTip.Tip="{Binding CloseFolderTooltip}">
                             <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
@@ -1222,6 +1249,7 @@
                                                     Tag="{Binding}"
                                                     Click="OpenEditorTabButton_OnClick"
                                                     ToolTip.Tip="{Binding Path}"
+                                                     AutomationProperties.Name="{Binding Path}"
                                                     HorizontalContentAlignment="Stretch">
                                                 <Grid ColumnDefinitions="Auto,*,Auto,Auto">
                                                     <Viewbox Grid.Column="0"
@@ -1277,6 +1305,7 @@
                                                     Tag="{Binding}"
                                                     Click="CloseEditorTabButton_OnClick"
                                                     Margin="4,0,3,0"
+                                                    AutomationProperties.Name="Close this tab"
                                                     ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
@@ -1523,7 +1552,7 @@
                 PointerCaptureLost="ExplorerPanelSplitter_OnPointerCaptureLost"
                 DoubleTapped="ExplorerPanelSplitter_OnDoubleTapped" />
 
-        <Grid Grid.Row="1" Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
+        <Grid x:Name="ContentRegionGrid" Grid.Row="1" Grid.Column="3" RowDefinitions="Auto,*" VerticalAlignment="Stretch">
 
             <StackPanel Grid.Row="0" Spacing="1">
 
@@ -1550,6 +1579,7 @@
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0"
                                 ToolTip.Tip="Download the latest version of Kodo"
+                                AutomationProperties.Name="Download the latest version of Kodo"
                                 Content="Download Update" />
                         <Button Grid.Column="2"
                                 Background="Transparent"
@@ -1583,6 +1613,7 @@
                                 VerticalAlignment="Center"
                                 Margin="0,0,8,0"
                                 ToolTip.Tip="Go to the Extensions Marketplace"
+                                AutomationProperties.Name="Go to the Extensions Marketplace"
                                 Content="Open Marketplace" />
                         <Button Grid.Column="2"
                                 Background="Transparent"
@@ -1642,8 +1673,8 @@
                         BorderThickness="0,0,0,1"
                         Padding="18,12">
                     <Grid>
-                    <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-                        <StackPanel Orientation="Horizontal" Spacing="12">
+                    <Panel>
+                        <StackPanel x:Name="TopBarBrandPanel" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" HorizontalAlignment="Left">
                             <Border Width="28"
                                     Height="28"
                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
@@ -1664,121 +1695,24 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <StackPanel Grid.Column="1"
-                                    Orientation="Horizontal"
-                                    Spacing="6"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding IsEditorTabsVisible}">
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveTooltip}"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveButton_OnClick"
-                                    Content="Save" />
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveAsTooltip}"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveAsButton_OnClick"
-                                    Content="Save As" />
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="Save All"
-                                    IsEnabled="{Binding HasMultipleOpenEditors}"
-                                    Click="ToolbarSaveAllButton_OnClick"
-                                    Content="Save All" />
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="Show or close the side-by-side editor pane"
-                                    IsEnabled="{Binding CanToggleSplitEditor}"
-                                    Click="ToggleSplitEditorButton_OnClick"
-                                    Content="{Binding SplitEditorButtonText}" />
-                        </StackPanel>
-
-                        <Border Grid.Column="2"
-                                Width="1"
-                                Height="20"
-                                Background="{Binding SurfaceBorderBrush}"
-                                Margin="8,0"
-                                VerticalAlignment="Center"
-                                IsVisible="{Binding IsEditorTabsVisible}" />
-
-                        <StackPanel Grid.Column="3"
-                                    Orientation="Horizontal"
-                                    Spacing="12"
-                                    VerticalAlignment="Center"
-                                    IsVisible="{Binding IsEditorTabsVisible}">
-
-                            <Border Classes="runbuildgroup">
-                                <Grid ColumnDefinitions="Auto,Auto">
-                                    <Button Classes="runbuildprimary"
-                                            IsEnabled="{Binding IsRunButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunButton_OnClick">
-                                        <TextBlock Text="Run" LineHeight="16"/>
-                                    </Button>
-                                    <Button Grid.Column="1"
-                                            Classes="runbuildarrow"
-                                            IsEnabled="{Binding IsRunButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="RunMenuButton_OnClick">
-                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <Border Classes="runbuildgroup">
-                                <Grid ColumnDefinitions="Auto,Auto">
-                                    <Button Classes="runbuildprimary"
-                                            IsEnabled="{Binding IsBuildButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildButton_OnClick">
-                                        <TextBlock Text="Build" LineHeight="16"/>
-                                    </Button>
-                                    <Button Grid.Column="1"
-                                            Classes="runbuildarrow"
-                                            IsEnabled="{Binding IsBuildButtonEnabled}"
-                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                            Click="BuildMenuButton_OnClick">
-                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
-                                    </Button>
-                                </Grid>
-                            </Border>
-
-                            <Button Classes="compilericon"
-                                    IsVisible="{Binding IsCompilerIconVisible}"
-                                    ToolTip.Tip="{Binding RunBuildButtonTooltip}"
-                                    Click="CompilerIconButton_OnClick">
-                                <Panel>
-                                    <Image Source="{Binding ActiveCompilerExtension.IconImage}"
-                                           Width="22"
-                                           Height="22"
-                                           Stretch="Uniform"
-                                           IsHitTestVisible="False"
-                                           IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                    <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
-                                             Width="22"
-                                             Height="22"
-                                             IsHitTestVisible="False"
-                                             IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                </Panel>
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-<Border x:Name="QuickAccessSearchFrame"
+                        <Border x:Name="QuickAccessSearchFrame"
                                 Classes="quickaccessframe"
-
-                                Width="520"
-                                MaxWidth="640"
+                                MinWidth="140"
+                                MaxWidth="760"
                                 Height="36"
-                                Margin="8,0"
                                 HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
-                                Background="{Binding ButtonBrush}"
+                                Background="{Binding EditorBackgroundBrush}"
                                 BorderBrush="{Binding QuickAccessSearchBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
                                 Padding="10,0"
-                                PointerPressed="QuickAccessSearchFrame_OnPointerPressed">
+                                PointerPressed="QuickAccessSearchFrame_OnPointerPressed"
+                                PointerMoved="QuickAccessSearchFrame_OnPointerMoved"
+                                PointerReleased="QuickAccessSearchFrame_OnPointerReleased"
+                                PointerCaptureLost="QuickAccessSearchFrame_OnPointerCaptureLost"
+                                DoubleTapped="QuickAccessSearchFrame_OnDoubleTapped"
+                                ToolTip.Tip="Drag an edge to resize the command palette · double-click to reset">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
                                 <Viewbox Width="14" Height="14" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
@@ -1815,7 +1749,7 @@
                                     <TextBlock.Inlines><Run Text="Code fast, stay"/><Run Text=" "/><Run Text="light" Foreground="{Binding AccentBrush}"/><Run Text="."/></TextBlock.Inlines>
                                 </TextBlock>
                                 <Border Grid.Column="2"
-                                        Background="{Binding WindowBackgroundBrush}"
+                                        Background="{Binding ButtonBrush}"
                                         BorderBrush="{Binding SurfaceBorderBrush}"
                                         BorderThickness="1"
                                         CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
@@ -1829,7 +1763,117 @@
                             </Grid>
                         </Border>
 
-                        </Grid>
+                        <StackPanel x:Name="TopBarRightToolbarStack"
+                                    Orientation="Horizontal"
+                                    Spacing="12"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Right">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsEditorTabsVisible}">
+
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="{Binding SaveTooltip}"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveButton_OnClick"
+                                    AutomationProperties.Name="{Binding SaveTooltip}"
+                                    Content="Save" />
+
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="{Binding SaveAsTooltip}"
+                                    IsEnabled="{Binding HasOpenEditors}"
+                                    Click="ToolbarSaveAsButton_OnClick"
+                                    AutomationProperties.Name="{Binding SaveAsTooltip}"
+                                    Content="Save As" />
+
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="Save All"
+                                    IsEnabled="{Binding HasMultipleOpenEditors}"
+                                    Click="ToolbarSaveAllButton_OnClick"
+                                    AutomationProperties.Name="Save All"
+                                    Content="Save All" />
+                            <Button Classes="chrome"
+                                    ToolTip.Tip="Show or close the side-by-side editor pane"
+                                    IsEnabled="{Binding CanToggleSplitEditor}"
+                                    Click="ToggleSplitEditorButton_OnClick"
+                                    AutomationProperties.Name="Show or close the side-by-side editor pane"
+                                    Content="{Binding SplitEditorButtonText}" />
+                        </StackPanel>
+
+                        <Border Width="1"
+                                Height="20"
+                                Background="{Binding SurfaceBorderBrush}"
+                                VerticalAlignment="Center"
+                                IsVisible="{Binding IsCompilerUiVisible}" />
+
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="12"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsCompilerUiVisible}">
+
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            Click="RunButton_OnClick">
+                                        <TextBlock Text="Run" LineHeight="16"/>
+                                    </Button>
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            IsEnabled="{Binding IsRunButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            AutomationProperties.Name="{Binding RunBuildButtonTooltip}"
+                                            Click="RunMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <Border Classes="runbuildgroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="runbuildprimary"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            AutomationProperties.Name="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildButton_OnClick">
+                                        <TextBlock Text="Build" LineHeight="16"/>
+                                    </Button>
+                                    <Button Grid.Column="1"
+                                            Classes="runbuildarrow"
+                                            IsEnabled="{Binding IsBuildButtonEnabled}"
+                                            ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                            AutomationProperties.Name="{Binding RunBuildButtonTooltip}"
+                                            Click="BuildMenuButton_OnClick">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16"/>
+                                    </Button>
+                                </Grid>
+                            </Border>
+
+                            <Button Classes="compilericon"
+                                    IsVisible="{Binding IsCompilerIconVisible}"
+                                    ToolTip.Tip="{Binding RunBuildButtonTooltip}"
+                                    AutomationProperties.Name="{Binding RunBuildButtonTooltip}"
+                                    Click="CompilerIconButton_OnClick">
+                                <Panel>
+                                    <Image Source="{Binding ActiveCompilerExtension.IconImage}"
+                                           Width="22"
+                                           Height="22"
+                                           Stretch="Uniform"
+                                           IsHitTestVisible="False"
+                                           IsVisible="{Binding ActiveCompilerExtension.IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                    <svg:Svg Source="{Binding ActiveCompilerExtension.SvgData}"
+                                             Width="22"
+                                             Height="22"
+                                             IsHitTestVisible="False"
+                                             IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                </Panel>
+                            </Button>
+                        </StackPanel>
+                        </StackPanel>
+                    </Panel>
+                    </Grid>
 
                 </Border>
 
@@ -1919,7 +1963,7 @@
                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Opacity="0.85" />
                                                     </Viewbox>
-<TextBlock FontSize="13"
+                                                               <TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSelected}"
                                                                Text="{Binding DisplayName}" />
@@ -1954,6 +1998,7 @@
                                                     Margin="0,0,7,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
+                                                    AutomationProperties.Name="Close this tab"
                                                     ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
@@ -2069,7 +2114,7 @@
                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Opacity="0.85" />
                                                     </Viewbox>
-<TextBlock FontSize="13"
+                                                               <TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsPrimaryPaneSelected}"
                                                                Text="{Binding DisplayName}" />
@@ -2104,6 +2149,7 @@
                                                     Margin="0,0,7,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
+                                                    AutomationProperties.Name="Close this tab"
                                                     ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
@@ -2263,6 +2309,7 @@
                                         Click="DiagnosticPopupDismiss_OnClick"
                                         ToolTip.Tip="Dismiss this diagnostic (never show again)"
                                         VerticalAlignment="Center"
+                                        AutomationProperties.Name="Dismiss this diagnostic (never show again)"
                                         HorizontalAlignment="Center" />
                             </Grid>
                         </Border>
@@ -2301,6 +2348,7 @@
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ZoomOutTooltip}"
+                                        AutomationProperties.Name="{Binding ZoomOutTooltip}"
                                         Click="ZoomOutButton_OnClick">
                                     <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Canvas Width="24" Height="24">
@@ -2315,6 +2363,7 @@
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ZoomResetTooltip}"
+                                        AutomationProperties.Name="{Binding ZoomResetTooltip}"
                                         Click="ZoomResetButton_OnClick">
                                     <TextBlock Text="{Binding PrimaryPaneImageZoomPercent}"
                                                FontSize="12"
@@ -2329,6 +2378,7 @@
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ZoomInTooltip}"
+                                        AutomationProperties.Name="{Binding ZoomInTooltip}"
                                         Click="ZoomInButton_OnClick">
                                     <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Canvas Width="24" Height="24">
@@ -2458,7 +2508,7 @@
                                                                    Foreground="{Binding #RootWindow.MutedTextBrush}"
                                                                    Opacity="0.85" />
                                                     </Viewbox>
-<TextBlock FontSize="13"
+                                                               <TextBlock FontSize="13"
                                                                Classes="tablabel"
                                                                Classes.active="{Binding IsSecondaryPaneSelected}"
                                                                Text="{Binding DisplayName}" />
@@ -2493,6 +2543,7 @@
                                                     Margin="0,0,7,0"
                                                     HorizontalAlignment="Right"
                                                     VerticalAlignment="Center"
+                                                    AutomationProperties.Name="Close this tab"
                                                     ToolTip.Tip="Close this tab">
                                                 <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                     <Canvas Width="24" Height="24">
@@ -2606,6 +2657,7 @@
                                             HorizontalContentAlignment="Center"
                                             VerticalContentAlignment="Center"
                                             ToolTip.Tip="{Binding ZoomOutTooltip}"
+                                            AutomationProperties.Name="{Binding ZoomOutTooltip}"
                                             Click="ZoomOutButton_OnClick">
                                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Canvas Width="24" Height="24">
@@ -2620,6 +2672,7 @@
                                             HorizontalContentAlignment="Center"
                                             VerticalContentAlignment="Center"
                                             ToolTip.Tip="{Binding ZoomResetTooltip}"
+                                            AutomationProperties.Name="{Binding ZoomResetTooltip}"
                                             Click="ZoomResetButton_OnClick">
                                         <TextBlock Text="{Binding SecondaryPaneImageZoomPercent}"
                                                    FontSize="12"
@@ -2634,6 +2687,7 @@
                                             HorizontalContentAlignment="Center"
                                             VerticalContentAlignment="Center"
                                             ToolTip.Tip="{Binding ZoomInTooltip}"
+                                            AutomationProperties.Name="{Binding ZoomInTooltip}"
                                             Click="ZoomInButton_OnClick">
                                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Canvas Width="24" Height="24">
@@ -2819,7 +2873,8 @@
                                                 Margin="0,0,8,8"
                                                 Padding="12,7"
                                                 Content="{Binding DisplayName}"
-                                                ToolTip.Tip="{Binding Path}" />
+                                                AutomationProperties.Name="{Binding Path}"
+ToolTip.Tip="{Binding Path}" />
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
@@ -2854,6 +2909,7 @@
                                                     HorizontalContentAlignment="Left"
                                                     Padding="12,9"
                                                     Click="HomeQuickSearchButton_OnClick"
+                                                    AutomationProperties.Name="{Binding HomeQuickSearchPlaceholderText}"
                                                     ToolTip.Tip="{Binding HomeQuickSearchPlaceholderText}">
                                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                                     <Viewbox Width="13" Height="13">
@@ -2879,6 +2935,7 @@
                                                         MinHeight="72"
                                                         Padding="14,14"
                                                         Click="NewFileButton_OnClick"
+                                                        AutomationProperties.Name="{Binding NewFileTooltip}"
                                                         ToolTip.Tip="{Binding NewFileTooltip}">
                                                     <StackPanel Spacing="8" HorizontalAlignment="Center">
                                                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center">
@@ -2898,6 +2955,7 @@
                                                         MinHeight="72"
                                                         Padding="14,14"
                                                         Click="OpenFileButton_OnClick"
+                                                        AutomationProperties.Name="{Binding OpenFileTooltip}"
                                                         ToolTip.Tip="{Binding OpenFileTooltip}">
                                                     <StackPanel Spacing="8" HorizontalAlignment="Center">
                                                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center">
@@ -2917,6 +2975,7 @@
                                                         MinHeight="72"
                                                         Padding="14,14"
                                                         Click="OpenFolderButton_OnClick"
+                                                        AutomationProperties.Name="{Binding OpenFolderTooltip}"
                                                         ToolTip.Tip="{Binding OpenFolderTooltip}">
                                                     <StackPanel Spacing="8" HorizontalAlignment="Center">
                                                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center">
@@ -2958,6 +3017,7 @@
                                                         FontSize="12"
                                                         Padding="8,4"
                                                         ToolTip.Tip="Clear the list of recently opened files"
+                                                        AutomationProperties.Name="Clear the list of recently opened files"
                                                         Content="Clear" />
                                             </Grid>
 
@@ -3080,6 +3140,7 @@
                                                                         ToolTip.Tip="{Binding PinTooltipText}"
                                                                         Padding="6"
                                                                         VerticalAlignment="Center"
+                                                                        AutomationProperties.Name="{Binding PinTooltipText}"
                                                                         HorizontalAlignment="Center">
                                                                     <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                                                         <Canvas Width="24" Height="24">
@@ -3142,6 +3203,7 @@
                                                         VerticalAlignment="Center"
                                                         FontSize="12"
                                                         Padding="10,5"
+                                                        AutomationProperties.Name="{Binding OpenExtensionsTooltip}"
                                                         Content="Browse" />
                                             </Grid>
 
@@ -3151,6 +3213,7 @@
                                                 <Button Classes="chrome"
                                                         Padding="8"
                                                         Click="OpenDiscordButton_OnClick"
+                                                        AutomationProperties.Name="Join the Kodo Discord server"
                                                         ToolTip.Tip="Join the Kodo Discord server">
                                                     <Viewbox Width="14" Height="14">
                                                         <Canvas Width="24" Height="24">
@@ -3162,6 +3225,7 @@
                                                 <Button Classes="chrome"
                                                                                                         Padding="8"
                                                                                                         Click="OpenInstagramButton_OnClick"
+                                                                                                        AutomationProperties.Name="Follow Kodo on Instagram"
                                                                                                         ToolTip.Tip="Follow Kodo on Instagram">
                                                                                                     <Viewbox Width="14" Height="14">
                                                                                                         <Canvas Width="24" Height="24">
@@ -3177,6 +3241,7 @@
                                                 <Button Classes="chrome"
                                                         Padding="8"
                                                         Click="OpenGitHubButton_OnClick"
+                                                        AutomationProperties.Name="View Kodo IDE on GitHub"
                                                         ToolTip.Tip="View Kodo IDE on GitHub">
                                                     <Viewbox Width="14" Height="14">
                                                         <Canvas Width="20" Height="20">
@@ -3188,6 +3253,7 @@
                                                 <Button Classes="chrome"
                                                         Padding="8"
                                                         Click="OpenWebsiteButton_OnClick"
+                                                        AutomationProperties.Name="Open the Kodo website"
                                                         ToolTip.Tip="Open the Kodo website">
                                                     <Viewbox Width="14" Height="14">
                                                         <Canvas Width="24" Height="24">
@@ -3199,6 +3265,7 @@
                                                 <Button Classes="chrome"
                                                         Padding="8"
                                                         Click="OpenReleasesPageButton_OnClick"
+                                                        AutomationProperties.Name="View releases on GitHub"
                                                         ToolTip.Tip="View releases on GitHub">
                                                     <Viewbox Width="14" Height="14">
                                                         <Canvas Width="24" Height="24">
@@ -3269,18 +3336,21 @@
                                                                 IsVisible="{Binding IsHomeUpdatesTabActive}"
                                                                 IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                                 ToolTip.Tip="Check for newer release information"
+                                                                AutomationProperties.Name="Check for newer release information"
                                                                 Content="↻" />
                                                         <Button Classes="chrome"
                                                                 Click="OpenLatestReleaseButton_OnClick"
                                                                 IsVisible="{Binding IsHomeUpdatesTabActive}"
                                                                 IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                                 ToolTip.Tip="Open this release on GitHub in your browser"
+                                                                AutomationProperties.Name="Open this release on GitHub in your browser"
                                                                 Content="GitHub" />
                                                         <Button Classes="chrome"
                                                                 Click="RefreshNewsButton_OnClick"
                                                                 IsVisible="{Binding IsHomeNewsTabActive}"
                                                                 IsEnabled="{Binding IsNewsRefreshEnabled}"
                                                                 ToolTip.Tip="Refresh news"
+                                                                AutomationProperties.Name="Refresh news"
                                                                 Content="↻" />
                                                     </StackPanel>
                                                 </Grid>
@@ -3582,22 +3652,26 @@
                                             Focusable="False"
                                             Click="NewTerminalButton_OnClick"
                                             ToolTip.Tip="{Binding NewTerminalTooltip}"
+                                            AutomationProperties.Name="{Binding NewTerminalTooltip}"
                                             Content="+" />
                                     <Button Classes="chrome"
                                             Focusable="False"
                                             Click="ClearTerminalButton_OnClick"
                                             IsEnabled="{Binding HasActiveTerminal}"
                                             ToolTip.Tip="Clear terminal"
+                                            AutomationProperties.Name="Clear terminal"
                                             Content="Clear" />
                                     <Button Classes="chrome"
                                             Focusable="False"
                                             Click="RestartTerminalButton_OnClick"
                                             IsEnabled="{Binding HasActiveTerminal}"
                                             ToolTip.Tip="Restart active terminal with the selected shell"
+                                            AutomationProperties.Name="Restart active terminal with the selected shell"
                                             Content="Restart" />
                                     <Button Classes="chrome"
                                             Focusable="False"
                                             Click="ToggleTerminalButton_OnClick"
+                                            AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
                                             ToolTip.Tip="{Binding ToggleTerminalTooltip}">
                                         <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Canvas Width="24" Height="24">
@@ -3759,6 +3833,7 @@
                                         Click="NewTerminalButton_OnClick"
                                         HorizontalAlignment="Center"
                                         ToolTip.Tip="{Binding NewTerminalTooltip}"
+                                        AutomationProperties.Name="{Binding NewTerminalTooltip}"
                                         Content="Create terminal" />
                             </StackPanel>
                         </Border>
@@ -3769,8 +3844,7 @@
                                 BorderBrush="{Binding AccentBrush}"
                                 BorderThickness="0,1,0,0"
                                 CornerRadius="0,0,11,11"
-                                Padding="12,6"
-                                PointerPressed="StatusBar_OnPointerPressed">
+                                Padding="12,6">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Grid.Column="0"
                                            Foreground="{Binding MutedTextBrush}"
@@ -3782,6 +3856,7 @@
                                         Focusable="False"
                                         Click="CloseAllTerminalSessionsButton_OnClick"
                                         IsEnabled="{Binding HasTerminalSessions}"
+                                        AutomationProperties.Name="Close and delete all terminal sessions, then hide the panel"
                                         ToolTip.Tip="Close and delete all terminal sessions, then hide the panel">
                                     <TextBlock FontSize="12"
                                                Text="Close all sessions" />
@@ -3794,8 +3869,7 @@
                 <Border Grid.Row="5"
                         Classes="statusBarRoot"
                         Padding="8,0"
-                        Height="30"
-                        PointerPressed="StatusBar_OnPointerPressed">
+                        Height="30">
                     <Grid ColumnDefinitions="Auto,*,Auto">
                         <StackPanel Grid.Column="0"
                                     Orientation="Horizontal"
@@ -3826,6 +3900,7 @@
                                     Click="StatusBarFilePathButton_OnClick"
                                     ToolTip.Tip="{Binding StatusBarFilePathTooltip}"
                                     VerticalAlignment="Center"
+                                    AutomationProperties.Name="{Binding StatusBarFilePathTooltip}"
                                     MaxWidth="440">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3879,6 +3954,7 @@
                                         Click="StatusBarDiagnosticsButton_OnClick"
                                         ToolTip.Tip="{Binding StatusBarDiagnosticsTooltip}"
                                         IsVisible="{Binding HasDiagnostics}"
+                                        AutomationProperties.Name="{Binding StatusBarDiagnosticsTooltip}"
                                         VerticalAlignment="Center">
                                     <TextBlock FontSize="11"
                                                Foreground="{Binding AccentBrush}"
@@ -3921,6 +3997,7 @@
                             <Button Classes="statusitem"
                                     ToolTip.Tip="File encoding - click to change"
                                     Click="EncodingStatusBarPaletteButton_OnClick"
+                                    AutomationProperties.Name="File encoding - click to change"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3942,6 +4019,7 @@
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Line ending - click to change"
                                     Click="LineEndingStatusBarPaletteButton_OnClick"
+                                    AutomationProperties.Name="Line ending - click to change"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -3963,6 +4041,7 @@
                             <Button Classes="statusitem"
                                     ToolTip.Tip="Indentation - click to change"
                                     Click="IndentationStatusBarPaletteButton_OnClick"
+                                    AutomationProperties.Name="Indentation - click to change"
                                     VerticalAlignment="Center">
                                 <Button.IsVisible>
                                     <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -4018,11 +4097,11 @@
                             </StackPanel>
                             <Border Classes="statusDivider"
                                     IsVisible="{Binding IsDocumentViewVisible}" />
-
                             <Button Classes="statusitem"
                                     IsVisible="{Binding IsTerminalSupported}"
                                     Click="ToggleTerminalButton_OnClick"
                                     ToolTip.Tip="{Binding ToggleTerminalTooltip}"
+                                    AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
                                     VerticalAlignment="Center">
                                 <StackPanel Orientation="Horizontal"
                                             Spacing="5"
@@ -4045,6 +4124,7 @@
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding CanShowFindInFile}"
                                     ToolTip.Tip="{Binding FindInFileTooltip}"
+                                    AutomationProperties.Name="{Binding FindInFileTooltip}"
                                     Click="OpenSearchMenu_OnClick">
                                 <Viewbox Width="13" Height="13" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
@@ -4068,18 +4148,18 @@
 
                     <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,10">
                         <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                        <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="{Binding FindInFileTooltip}">
+                        <Button Classes="searchmode" Classes.selected="{Binding IsFindInFileSearchMode}" Click="SearchModeFindInFileButton_OnClick" ToolTip.Tip="{Binding FindInFileTooltip}" AutomationProperties.Name="{Binding FindInFileTooltip}">
                                 <TextBlock Text="Find" />
                             </Button>
-                            <Button Classes="searchmode" Classes.selected="{Binding IsFileByNameSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeFileByNameButton_OnClick" ToolTip.Tip="Find files by name">
+                            <Button Classes="searchmode" Classes.selected="{Binding IsFileByNameSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeFileByNameButton_OnClick" ToolTip.Tip="Find files by name" AutomationProperties.Name="Find files by name">
                                 <TextBlock Text="Files" />
                             </Button>
-                            <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="{Binding FindInProjectTooltip}">
+                            <Button Classes="searchmode" Classes.selected="{Binding IsProjectSearchMode}" IsVisible="{Binding IsFolderOpen}" Click="SearchModeProjectButton_OnClick" ToolTip.Tip="{Binding FindInProjectTooltip}" AutomationProperties.Name="{Binding FindInProjectTooltip}">
                                 <TextBlock Text="Project" />
                             </Button>
                         </StackPanel>
                         <TextBlock Grid.Column="1" Margin="14,0,0,0" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" Text="{Binding SearchPlaceholderText}" />
-                        <Button Grid.Column="2" Classes="chrome" Padding="6" Click="CloseSearchPanel_OnClick" ToolTip.Tip="Close (Escape)">
+                        <Button Grid.Column="2" Classes="chrome" Padding="6" Click="CloseSearchPanel_OnClick" ToolTip.Tip="Close (Escape)" AutomationProperties.Name="Close (Escape)">
                             <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Canvas Width="24" Height="24">
                                     <Path Fill="{Binding $parent[Button].Foreground}" Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 0 0-1.06-1.06L12 10.939 6.225 4.811Z" />
@@ -4093,26 +4173,26 @@
                             <TextBox x:Name="SearchTextBox" Text="{Binding FindText, Mode=TwoWay}" PlaceholderText="{Binding SearchPlaceholderText}" KeyDown="SearchTextBox_OnKeyDown" Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
                         </Border>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchMatchCaseEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchMatchCaseButton_OnClick" ToolTip.Tip="Match case">
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchMatchCaseEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchMatchCaseButton_OnClick" ToolTip.Tip="Match case" AutomationProperties.Name="Match case">
                                 <TextBlock Text="Aa" FontSize="12" />
                             </Button>
-                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchWholeWordEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchWholeWordButton_OnClick" ToolTip.Tip="Whole word">
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchWholeWordEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchWholeWordButton_OnClick" ToolTip.Tip="Whole word" AutomationProperties.Name="Whole word">
                                 <TextBlock Text="W" FontSize="12" FontWeight="SemiBold" />
                             </Button>
-                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchRegexEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchRegexButton_OnClick" ToolTip.Tip="Regular expression">
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsSearchRegexEnabled}" IsVisible="{Binding IsSearchPanelActive}" Click="SearchRegexButton_OnClick" ToolTip.Tip="Regular expression" AutomationProperties.Name="Regular expression">
                                 <TextBlock Text=".*" FontSize="12" FontWeight="Bold" />
                             </Button>
-                            <Button Classes="chromesmall" Classes.selected="{Binding IsFilterRowVisible}" IsVisible="{Binding IsFilterRowSupported}" Click="SearchFilterButton_OnClick" ToolTip.Tip="Include/Exclude filters">
+                            <Button Classes="chromesmall" Classes.selected="{Binding IsFilterRowVisible}" IsVisible="{Binding IsFilterRowSupported}" Click="SearchFilterButton_OnClick" ToolTip.Tip="Include/Exclude filters" AutomationProperties.Name="Include/Exclude filters">
                                 <TextBlock Text="+" FontSize="12" FontWeight="Bold" />
                             </Button>
-                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindPrevButton_OnClick" ToolTip.Tip="Previous match">
+                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindPrevButton_OnClick" ToolTip.Tip="Previous match" AutomationProperties.Name="Previous match">
                                 <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
                                         <Path Fill="{Binding $parent[Button].Foreground}" Data="M11.47 7.72a.75.75 0 0 1 1.06 0l7.5 7.5a.75.75 0 1 1-1.06 1.06L12 9.31l-6.97 6.97a.75.75 0 0 1-1.06-1.06l7.5-7.5Z" />
                                     </Canvas>
                                 </Viewbox>
                             </Button>
-                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindNextButton_OnClick" ToolTip.Tip="Next match (Enter)">
+                            <Button Classes="chromesmall" IsVisible="{Binding IsFindInFileSearchMode}" Click="FindNextButton_OnClick" ToolTip.Tip="Next match (Enter)" AutomationProperties.Name="Next match (Enter)">
                                 <Viewbox Width="12" Height="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Canvas Width="24" Height="24">
                                         <Path Fill="{Binding $parent[Button].Foreground}" Data="M12.53 16.28a.75.75 0 0 1-1.06 0l-7.5-7.5a.75.75 0 1 1 1.06-1.06L12 14.69l6.97-6.97a.75.75 0 1 1 1.06 1.06l-7.5 7.5Z" />
@@ -4120,7 +4200,7 @@
                                 </Viewbox>
                             </Button>
                         </StackPanel>
-                        <Button Grid.Column="2" Classes="chrome" Margin="8,0,0,0" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceButton_OnClick" ToolTip.Tip="Replace current match">
+                        <Button Grid.Column="2" Classes="chrome" Margin="8,0,0,0" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceButton_OnClick" ToolTip.Tip="Replace current match" AutomationProperties.Name="Replace current match">
                             <TextBlock Text="Replace" FontSize="12" />
                         </Button>
                     </Grid>
@@ -4130,7 +4210,7 @@
                             <TextBox x:Name="ReplaceTextBox" Text="{Binding ReplaceText, Mode=TwoWay}" PlaceholderText="Replace with..." Background="Transparent" Foreground="{Binding PrimaryTextBrush}" BorderThickness="0" Padding="10,7" MinWidth="260" HorizontalAlignment="Stretch" />
                         </Border>
                         <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="{Binding MutedTextBrush}" FontSize="12" Text="{Binding SearchStatusText}" Margin="0,0,12,0" />
-                        <Button Grid.Column="2" Classes="chrome" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceAllButton_OnClick" ToolTip.Tip="Replace all matches">
+                        <Button Grid.Column="2" Classes="chrome" IsVisible="{Binding IsFindInFileSearchMode}" Click="ReplaceAllButton_OnClick" ToolTip.Tip="Replace all matches" AutomationProperties.Name="Replace all matches">
                             <TextBlock Text="Replace All" FontSize="12" />
                         </Button>
                     </Grid>
@@ -4417,6 +4497,7 @@
                                                             Click="ThemeButton_OnClick"
                                                             Tag="Dark"
                                                             Width="170"
+                                                            AutomationProperties.Name="Apply Dark theme"
                                                             ToolTip.Tip="Apply Dark theme">
                                                         <StackPanel Spacing="8">
                                                             <Panel>
@@ -4443,6 +4524,7 @@
                                                             Click="ThemeButton_OnClick"
                                                             Tag="Light"
                                                             Width="170"
+                                                            AutomationProperties.Name="Apply Light theme"
                                                             ToolTip.Tip="Apply Light theme">
                                                         <StackPanel Spacing="8">
                                                             <Panel>
@@ -4469,6 +4551,7 @@
                                                             Click="ThemeButton_OnClick"
                                                             Tag="System"
                                                             Width="170"
+                                                            AutomationProperties.Name="{Binding TooltipSystemTheme}"
                                                             ToolTip.Tip="{Binding TooltipSystemTheme}">
                                                         <StackPanel Spacing="8">
                                                             <Panel>
@@ -4623,6 +4706,7 @@
                                                             Click="AccentThemeButton_OnClick"
                                                             Width="120"
                                                             IsVisible="{Binding HasThemeAccent}"
+                                                            AutomationProperties.Name="{Binding TooltipAccentTheme}"
                                                             ToolTip.Tip="{Binding TooltipAccentTheme}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding ThemeAccentPreviewBrush}" />
@@ -4637,6 +4721,7 @@
                                                     <Button Classes="chrome"
                                                             Click="AccentKodoButton_OnClick"
                                                             Width="120"
+                                                            AutomationProperties.Name="Use Kodo's default purple accent"
                                                             ToolTip.Tip="Use Kodo's default purple accent">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="#8C00FF" />
@@ -4651,6 +4736,7 @@
                                                     <Button Classes="chrome"
                                                             Click="AccentWindowsButton_OnClick"
                                                             Width="120"
+                                                            AutomationProperties.Name="{Binding TooltipAccentWindows}"
                                                             ToolTip.Tip="{Binding TooltipAccentWindows}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
@@ -4670,6 +4756,7 @@
                                                     <Button Classes="chrome"
                                                             Click="AccentColorPickerButton_OnClick"
                                                             Width="120"
+                                                            AutomationProperties.Name="{Binding TooltipAccentCustom}"
                                                             ToolTip.Tip="{Binding TooltipAccentCustom}">
                                                         <StackPanel Spacing="6">
                                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
@@ -4883,6 +4970,7 @@
 
                         </Border>
 
+
                         <StackPanel Grid.Column="1" Spacing="16">
 
                             <Border IsVisible="{Binding IsNotTutorialSetupStep}"
@@ -4981,10 +5069,12 @@
                                         Click="RefreshExtensionsButton_OnClick"
                                         IsEnabled="{Binding !IsRefreshingExtensions}"
                                         ToolTip.Tip="Reload extensions from disk and marketplace"
+                                        AutomationProperties.Name="Reload extensions from disk and marketplace"
                                         Content="{Binding RefreshExtensionsButtonText}" />
                                 <Button Classes="chrome"
                                         Click="OpenExtensionsFolderButton_OnClick"
                                         ToolTip.Tip="Open the local Extensions folder"
+                                        AutomationProperties.Name="Open the local Extensions folder"
                                         Content="Open Folder" />
                             </StackPanel>
                         </Grid>
@@ -5098,6 +5188,7 @@
                                     Click="UpdateAllMarketplaceExtensionsButton_OnClick"
                                     IsEnabled="{Binding CanUpdateAllExtensions}"
                                     ToolTip.Tip="Update all installed extensions to their latest versions"
+                                    AutomationProperties.Name="Update all installed extensions to their latest versions"
                                     Content="{Binding UpdateAllExtensionsButtonText}" />
                         </Grid>
 
@@ -5207,20 +5298,18 @@
                                                                    VerticalAlignment="Center"
                                                                    Text="{Binding Version}" />
                                                     </StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                        <Button Classes="chrome"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                Tag="{Binding}"
-                                                                Click="UpdateInstalledExtensionButton_OnClick"
-                                                                Content="Update"
-                                                                IsVisible="{Binding IsUpdateAvailable}" />
-                                                        <Button Classes="uninstall"
-                                                                Tag="{Binding}"
-                                                                Click="UninstallExtensionButton_OnClick"
-                                                                Content="Uninstall" />
-                                                    </StackPanel>
+                                                    <Button Classes="chrome"
+                                                    Background="{Binding #RootWindow.ButtonBrush}"
+                                                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                    Tag="{Binding}"
+                                                    Click="UpdateInstalledExtensionButton_OnClick"
+                                                    Content="Update"
+                                                    IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <Button Classes="uninstall"
+                                                    Tag="{Binding}"
+                                                    Click="UninstallExtensionButton_OnClick"
+                                                    Content="Uninstall" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -5316,20 +5405,18 @@
                                                                    VerticalAlignment="Center"
                                                                    Text="{Binding Version}" />
                                                     </StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                        <Button Classes="chrome"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                Tag="{Binding}"
-                                                                Click="UpdateInstalledExtensionButton_OnClick"
-                                                                Content="Update"
-                                                                IsVisible="{Binding IsUpdateAvailable}" />
-                                                        <Button Classes="uninstall"
-                                                                Tag="{Binding}"
-                                                                Click="UninstallExtensionButton_OnClick"
-                                                                Content="Uninstall" />
-                                                    </StackPanel>
+                                                    <Button Classes="chrome"
+                                                    Background="{Binding #RootWindow.ButtonBrush}"
+                                                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                    Tag="{Binding}"
+                                                    Click="UpdateInstalledExtensionButton_OnClick"
+                                                    Content="Update"
+                                                    IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <Button Classes="uninstall"
+                                                    Tag="{Binding}"
+                                                    Click="UninstallExtensionButton_OnClick"
+                                                    Content="Uninstall" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -5425,20 +5512,18 @@
                                                                    VerticalAlignment="Center"
                                                                    Text="{Binding Version}" />
                                                     </StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                        <Button Classes="chrome"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                Tag="{Binding}"
-                                                                Click="UpdateInstalledExtensionButton_OnClick"
-                                                                Content="Update"
-                                                                IsVisible="{Binding IsUpdateAvailable}" />
-                                                        <Button Classes="uninstall"
-                                                                Tag="{Binding}"
-                                                                Click="UninstallExtensionButton_OnClick"
-                                                                Content="Uninstall" />
-                                                    </StackPanel>
+                                                    <Button Classes="chrome"
+                                                    Background="{Binding #RootWindow.ButtonBrush}"
+                                                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                    Tag="{Binding}"
+                                                    Click="UpdateInstalledExtensionButton_OnClick"
+                                                    Content="Update"
+                                                    IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <Button Classes="uninstall"
+                                                    Tag="{Binding}"
+                                                    Click="UninstallExtensionButton_OnClick"
+                                                    Content="Uninstall" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -5535,23 +5620,21 @@
                                                                    VerticalAlignment="Center"
                                                                    Text="{Binding Version}" />
                                                     </StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                        <Button Classes="chrome"
-                                                                Background="{Binding #RootWindow.ButtonBrush}"
-                                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                Tag="{Binding}"
-                                                                Click="InstallCompilerExtensionButton_OnClick"
-                                                                IsEnabled="{Binding IsInstallEnabled}"
-                                                                Content="{Binding InstallButtonText}"
-                                                                IsVisible="{Binding IsUpdateAvailable}" />
-                                                        <Button Classes="uninstall"
-                                                                Tag="{Binding}"
-                                                                Click="UninstallCompilerExtensionButton_OnClick"
-                                                                IsEnabled="{Binding !IsInstalling}"
-                                                                Content="Uninstall"
-                                                                IsVisible="{Binding IsInstalled}" />
-                                                    </StackPanel>
+                                                    <Button Classes="chrome"
+                                                    Background="{Binding #RootWindow.ButtonBrush}"
+                                                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                    Tag="{Binding}"
+                                                    Click="InstallCompilerExtensionButton_OnClick"
+                                                    IsEnabled="{Binding IsInstallEnabled}"
+                                                    Content="{Binding InstallButtonText}"
+                                                    IsVisible="{Binding IsUpdateAvailable}" />
+                                                    <Button Classes="uninstall"
+                                                    Tag="{Binding}"
+                                                    Click="UninstallCompilerExtensionButton_OnClick"
+                                                    IsEnabled="{Binding !IsInstalling}"
+                                                    Content="Uninstall"
+                                                    IsVisible="{Binding IsInstalled}" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>
@@ -5691,7 +5774,7 @@
                             <ItemsControl ItemsSource="{Binding FilteredMarketplaceExtensions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="5" />
+                                        <UniformGrid Columns="3" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
@@ -5699,7 +5782,8 @@
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                ToolTip.Tip="{Binding Name}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
 
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
@@ -5729,11 +5813,15 @@
                                                         </Panel>
                                                     </Border>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                                        <TextBlock FontSize="15"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="{Binding Name}"
-                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <Viewbox StretchDirection="DownOnly"
+                                                                 HorizontalAlignment="Left"
+                                                                 MaxHeight="22">
+                                                            <TextBlock FontSize="15"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                       Text="{Binding Name}"
+                                                                       TextWrapping="NoWrap" />
+                                                        </Viewbox>
                                                     </StackPanel>
                                                 </Grid>
 
@@ -5775,7 +5863,6 @@
                                                                    Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                    Text="Installed" />
                                                     </Border>
-
                                                     <Button Classes="chrome"
                                                             HorizontalAlignment="Stretch"
                                                             HorizontalContentAlignment="Center"
@@ -5799,6 +5886,8 @@
                                                             IsEnabled="{Binding IsInstallEnabled}"
                                                             Content="{Binding InstallButtonText}"
                                                             IsVisible="{Binding !IsInstalled}" />
+
+
                                                 </Grid>
                                             </Grid>
                                         </Border>
@@ -5853,7 +5942,7 @@
                             <ItemsControl ItemsSource="{Binding FilteredCompilerExtensions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="5" />
+                                        <UniformGrid Columns="3" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
@@ -5861,7 +5950,8 @@
                                         <Border Classes="extensiontile"
                                                 Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
                                                 Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}">
+                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                ToolTip.Tip="{Binding Name}">
                                             <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
                                                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                                     <Border Grid.Column="0" Width="52" Height="52" CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
@@ -5890,12 +5980,15 @@
                                                         </Panel>
                                                     </Border>
                                                     <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                                        <TextBlock FontSize="15"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="{Binding Name}"
-                                                                   TextTrimming="CharacterEllipsis" />
-
+                                                        <Viewbox StretchDirection="DownOnly"
+                                                                 HorizontalAlignment="Left"
+                                                                 MaxHeight="22">
+                                                            <TextBlock FontSize="15"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                       Text="{Binding Name}"
+                                                                       TextWrapping="NoWrap" />
+                                                        </Viewbox>
                                                     </StackPanel>
                                                 </Grid>
 
@@ -6119,6 +6212,7 @@
                                             Click="ThemeButton_OnClick"
                                             Tag="Dark"
                                             Width="170"
+                                            AutomationProperties.Name="Apply Dark theme"
                                             ToolTip.Tip="Apply Dark theme">
                                         <StackPanel Spacing="8">
                                             <Panel>
@@ -6147,6 +6241,7 @@
                                             Click="ThemeButton_OnClick"
                                             Tag="Light"
                                             Width="170"
+                                            AutomationProperties.Name="Apply Light theme"
                                             ToolTip.Tip="Apply Light theme">
                                         <StackPanel Spacing="8">
                                             <Panel>
@@ -6175,6 +6270,7 @@
                                             Click="ThemeButton_OnClick"
                                             Tag="System"
                                             Width="170"
+                                            AutomationProperties.Name="{Binding TooltipSystemTheme}"
                                             ToolTip.Tip="{Binding TooltipSystemTheme}">
                                         <StackPanel Spacing="8">
                                             <Panel>
@@ -6338,6 +6434,7 @@
                                             Click="AccentThemeButton_OnClick"
                                             Width="120"
                                             IsVisible="{Binding HasThemeAccent}"
+                                            AutomationProperties.Name="{Binding TooltipAccentTheme}"
                                             ToolTip.Tip="{Binding TooltipAccentTheme}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding ThemeAccentPreviewBrush}" />
@@ -6353,6 +6450,7 @@
                                     <Button Classes="chrome"
                                             Click="AccentKodoButton_OnClick"
                                             Width="120"
+                                            AutomationProperties.Name="Use Kodo's default purple accent"
                                             ToolTip.Tip="Use Kodo's default purple accent">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="#8C00FF" />
@@ -6368,6 +6466,7 @@
                                     <Button Classes="chrome"
                                             Click="AccentWindowsButton_OnClick"
                                             Width="120"
+                                            AutomationProperties.Name="{Binding TooltipAccentWindows}"
                                             ToolTip.Tip="{Binding TooltipAccentWindows}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding AccentBrush}"
@@ -6386,6 +6485,7 @@
                                     <Button Classes="chrome"
                                             Click="AccentColorPickerButton_OnClick"
                                             Width="120"
+                                            AutomationProperties.Name="{Binding TooltipAccentCustom}"
                                             ToolTip.Tip="{Binding TooltipAccentCustom}">
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding AccentBrush}"
@@ -6473,6 +6573,7 @@
                                             FontSize="16"
                                             Click="DecreaseFontSizeButton_OnClick"
                                             Content="−"
+                                            AutomationProperties.Name="Decrease font size"
                                             ToolTip.Tip="Decrease font size" />
                                     <TextBox VerticalAlignment="Center"
                                              Foreground="{Binding PrimaryTextBrush}"
@@ -6491,6 +6592,7 @@
                                             FontSize="16"
                                             Click="IncreaseFontSizeButton_OnClick"
                                             Content="+"
+                                            AutomationProperties.Name="Increase font size"
 ToolTip.Tip="Increase font size" />
                                   </StackPanel>
                                   <TextBlock Foreground="{Binding MutedTextBrush}"
@@ -6513,6 +6615,7 @@ ToolTip.Tip="Increase font size" />
                                         HorizontalAlignment="Left"
                                         Click="ViewShortcutsButton_OnClick"
                                         ToolTip.Tip="View and rebind keyboard shortcuts"
+                                        AutomationProperties.Name="View and rebind keyboard shortcuts"
                                         Content="Edit Keyboard Shortcuts" />
                             </StackPanel>
                         </Border>
@@ -6693,6 +6796,7 @@ ToolTip.Tip="Increase font size" />
                                             Click="RecheckLanguageServersButton_OnClick"
                                             IsEnabled="{Binding !IsRecheckingLanguageServers}"
                                             ToolTip.Tip="Re-detect language servers and restore install prompts"
+                                            AutomationProperties.Name="Re-detect language servers and restore install prompts"
                                             Content="{Binding RecheckLanguageServersLabel}" />
                                     <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
@@ -6951,7 +7055,7 @@ ToolTip.Tip="Increase font size" />
                                         <TextBlock Foreground="{Binding MutedTextBrush}"
                                                    FontSize="11"
                                                    TextWrapping="Wrap"
-                                                   Text="Downloads and installs in the background - Kodo restarts briefly to finish, with no prompt beforehand." />
+                                                   Text="Downloads new versions in the background and shows an update prompt when it's ready. You choose when to restart." />
                                     </StackPanel>
                                 </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
@@ -7343,10 +7447,12 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="CopyDiagnosticInfoButton_OnClick"
                                                 ToolTip.Tip="Copy version, OS, runtime, and log paths to the clipboard"
+                                                AutomationProperties.Name="Copy version, OS, runtime, and log paths to the clipboard"
                                                 Content="Copy Diagnostic Info" />
                                         <Button Classes="chrome"
                                                 Click="ClearLogsButton_OnClick"
                                                 ToolTip.Tip="Delete kodo.log and crash.log from disk"
+                                                AutomationProperties.Name="Delete kodo.log and crash.log from disk"
                                                 Content="Clear Logs" />
                                     </StackPanel>
 
@@ -7363,24 +7469,29 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="OpenCrashLogFolderButton_OnClick"
                                                 ToolTip.Tip="{Binding CrashLogFolderPath}"
+                                                AutomationProperties.Name="{Binding CrashLogFolderPath}"
                                                 Content="Open Crash Logs Folder" />
                                         <Button Classes="chrome"
                                                 Click="OpenSettingsFolderButton_OnClick"
                                                 ToolTip.Tip="{Binding SettingsFolderPath}"
+                                                AutomationProperties.Name="{Binding SettingsFolderPath}"
                                                 Content="Open Settings Folder" />
                                         <Button Classes="chrome"
                                                 Click="OpenExtensionsFolderButton_OnClick"
                                                 ToolTip.Tip="Open the local Extensions folder used for .kox files"
+                                                AutomationProperties.Name="Open the local Extensions folder used for .kox files"
                                                 Content="Open Extensions Folder" />
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="OpenPluginCacheFolderButton_OnClick"
                                                 ToolTip.Tip="Open the folder where loaded plugins are unpacked"
+                                                AutomationProperties.Name="Open the folder where loaded plugins are unpacked"
                                                 Content="Open Plugin Cache Folder" />
                                         <Button Classes="chrome"
                                                 Click="OpenDataFolderButton_OnClick"
                                                 ToolTip.Tip="Open Kodo's root data folder (contains settings, caches, and theme data)"
+                                                AutomationProperties.Name="Open Kodo's root data folder (contains settings, caches, and theme data)"
                                                 Content="Open Data Folder" />
                                     </StackPanel>
 
@@ -7394,15 +7505,18 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="BackupSettingsDataButton_OnClick"
                                                 ToolTip.Tip="Regenerate the settings backup file (kodosettings.json.bak) from your current settings"
+                                                AutomationProperties.Name="Regenerate the settings backup file (kodosettings.json.bak) from your current settings"
                                                 Content="Backup Settings Data" />
                                         <Button Classes="chrome red"
                                                 Click="RestoreSettingsBackupButton_OnClick"
                                                 ToolTip.Tip="Overwrite your current settings with the backup file and relaunch Kodo"
                                                 Content="Restore Settings Backup"
+                                                AutomationProperties.Name="Overwrite your current settings with the backup file and relaunch Kodo"
                                                 IsVisible="{Binding HasSettingsBackupFile}" />
                                         <Button Classes="chrome"
                                                 Click="ResetTutorialPromptsButton_OnClick"
                                                 ToolTip.Tip="Make the first-launch tutorial, data tracking prompt, and privacy policy prompt show again"
+                                                AutomationProperties.Name="Make the first-launch tutorial, data tracking prompt, and privacy policy prompt show again"
                                                 Content="Reset Tutorial &amp; Consent Prompts" />
                                     </StackPanel>
 
@@ -7416,15 +7530,18 @@ ToolTip.Tip="Increase font size" />
                                         <Button Classes="chrome"
                                                 Click="ClearCacheButton_OnClick"
                                                 ToolTip.Tip="Clear all cache files from disk"
+                                                AutomationProperties.Name="Clear all cache files from disk"
                                                 Content="Clear Cache" />
                                         <Button Classes="chrome"
                                                 Click="ExportKodoDataButton_OnClick"
                                                 ToolTip.Tip="{Binding PersonalizationExportTooltip}"
+                                                AutomationProperties.Name="{Binding PersonalizationExportTooltip}"
                                                 Content="Export Kodo Data" />
                                         <Button Classes="chrome red"
                                                 Click="ResetKodoButton_OnClick"
                                                 ToolTip.Tip="Reset all Kodo data and relaunch the application"
                                                 Content="Reset Kodo"
+                                                AutomationProperties.Name="Reset all Kodo data and relaunch the application"
                                                 HorizontalAlignment="Right" />
                                     </StackPanel>
 
@@ -7472,9 +7589,11 @@ ToolTip.Tip="Increase font size" />
                                     <Button Classes="chrome"
                                             Click="OpenTutorialButton_OnClick"
                                             ToolTip.Tip="Launch the built-in Kodo tutorial"
+                                            AutomationProperties.Name="Launch the built-in Kodo tutorial"
                                             Content="Open Tutorial" />
                                     <Button Classes="chrome"
                                             Click="OpenDiscordButton_OnClick"
+                                            AutomationProperties.Name="Join the Kodo community on Discord"
                                             ToolTip.Tip="Join the Kodo community on Discord">
                                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                             <TextBlock Text="Join the Discord Server"
@@ -7484,6 +7603,7 @@ ToolTip.Tip="Increase font size" />
                                     <Button Classes="chrome"
                                             Click="OpenWebsiteButton_OnClick"
                                             ToolTip.Tip="Open the Kodo website in your browser"
+                                            AutomationProperties.Name="Open the Kodo website in your browser"
                                             Content="Visit Website" />
                                 </StackPanel>
                             </StackPanel>
@@ -7552,6 +7672,7 @@ ToolTip.Tip="Increase font size" />
                                             IsEnabled="{Binding !IsCheckingForUpdatesManually}"
                                             VerticalAlignment="Center"
                                             ToolTip.Tip="Check GitHub for a newer version of Kodo right now"
+                                            AutomationProperties.Name="Check GitHub for a newer version of Kodo right now"
                                             Content="{Binding CheckForUpdatesButtonText}" />
                                     <TextBlock VerticalAlignment="Center"
                                                FontSize="12"
@@ -7582,6 +7703,7 @@ ToolTip.Tip="Increase font size" />
                                                 Click="DownloadUpdateButton_OnClick"
                                                 VerticalAlignment="Center"
                                                 ToolTip.Tip="Download the latest version of Kodo"
+                                                AutomationProperties.Name="Download the latest version of Kodo"
                                                 Content="Download" />
                                     </Grid>
                                 </Border>
@@ -7624,6 +7746,7 @@ ToolTip.Tip="Increase font size" />
                                             Click="ToggleWhatsNewExpandedButton_OnClick"
                                             MinWidth="164"
                                             ToolTip.Tip="Show or hide release notes"
+                                            AutomationProperties.Name="Show or hide release notes"
                                             HorizontalContentAlignment="Center">
                                         <StackPanel Orientation="Horizontal"
                                                     Spacing="8"
@@ -7671,16 +7794,18 @@ ToolTip.Tip="Increase font size" />
                                                         Click="RefreshLatestReleaseButton_OnClick"
                                                         IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                         ToolTip.Tip="Check for newer release information"
+                                                        AutomationProperties.Name="Check for newer release information"
                                                         Content="{Binding RefreshLatestReleaseButtonText}" />
                                                 <Button Classes="chrome"
                                                         Click="OpenLatestReleaseButton_OnClick"
                                                         IsEnabled="{Binding IsWhatsNewRefreshEnabled}"
                                                         ToolTip.Tip="Open this release on GitHub in your browser"
+                                                        AutomationProperties.Name="Open this release on GitHub in your browser"
                                                         Content="View on GitHub" />
                                             </StackPanel>
                                         </Grid>
 
-<TextBlock FontSize="16"
+                                        <TextBlock FontSize="16"
                                                     FontWeight="SemiBold"
                                                     Foreground="{Binding PrimaryTextBrush}"
                                                     Text="Release Notes"
@@ -7918,6 +8043,7 @@ ToolTip.Tip="Increase font size" />
                                 Click="DismissUpdateSplashButton_OnClick"
                                 HorizontalAlignment="Right"
                                 Content="Got it" />
+
                     </StackPanel>
                 </Border>
             </Grid>

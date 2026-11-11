@@ -38,11 +38,11 @@ public sealed class MarketplaceTileWidthConverter : IValueConverter
 {
     public static readonly MarketplaceTileWidthConverter Instance = new();
 
-    private const int Columns = 5;
+    private const int Columns = 3;
     private const double HorizontalPadding = 48;
     private const double ScrollbarGutter = 20;
-    private const double TileMargin = 12;
-    private const double MinTileWidth = 120;
+    private const double TileMargin = 16;
+    private const double MinTileWidth = 200;
 
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {

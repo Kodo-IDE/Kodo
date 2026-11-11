@@ -125,7 +125,7 @@ internal sealed class LspFileResolver
         }
         if (!string.IsNullOrWhiteSpace(currentFolderPath) && Directory.Exists(currentFolderPath))
             return currentFolderPath;
-        return Environment.CurrentDirectory;
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
     private static string ResolveWorkspaceRootByWalking(
@@ -156,7 +156,7 @@ internal sealed class LspFileResolver
             return fileDirectory;
         if (!string.IsNullOrWhiteSpace(currentFolderPath) && Directory.Exists(currentFolderPath))
             return currentFolderPath;
-        return Environment.CurrentDirectory;
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     }
 
     private static string[] GetWorkspaceRootMarkers(

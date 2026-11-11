@@ -810,6 +810,7 @@ public partial class MainWindow
         }
 
         var mode = _searchMode;
+        var folderPath = _currentFolderPath!;
         _searchCancellation?.Cancel();
         _searchCancellation?.Dispose();
         var cts = new CancellationTokenSource();
@@ -835,8 +836,8 @@ public partial class MainWindow
             {
                 results = await Task.Run(() =>
                 {
-                    var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-                    return SearchEngine.SearchFilesByName(FindText, _currentFolderPath!, matchCase, useRegex, cache.Files, token,
+                    var cache = GetOrBuildSearchCache(folderPath, includeFilter, excludeFilter);
+                    return SearchEngine.SearchFilesByName(FindText, folderPath, matchCase, useRegex, cache.Files, token,
                         progress => loading.Report(progress));
                 }, token);
             }
@@ -844,8 +845,8 @@ public partial class MainWindow
             {
                 var (projectResults, wasTruncated) = await Task.Run(() =>
                 {
-                    var cache = GetOrBuildSearchCache(_currentFolderPath!, includeFilter, excludeFilter);
-                    return SearchProjectForText(FindText, _currentFolderPath!, matchCase, wholeWord, useRegex, cache.Files, token,
+                    var cache = GetOrBuildSearchCache(folderPath, includeFilter, excludeFilter);
+                    return SearchProjectForText(FindText, folderPath, matchCase, wholeWord, useRegex, cache.Files, token,
                         progress => loading.Report(progress));
                 }, token);
                 results = projectResults;

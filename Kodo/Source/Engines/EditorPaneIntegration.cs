@@ -70,8 +70,10 @@ public partial class MainWindow
         (_editorPane.ActiveTab is null || !_corruptedTabs.Contains(_editorPane.ActiveTab));
     public bool IsSecondaryPaneTextEditorVisible => IsDocumentViewVisible && SecondaryPaneImagePreview is null &&
         (_secondaryEditorPane.ActiveTab is null || !_corruptedTabs.Contains(_secondaryEditorPane.ActiveTab));
-    public bool IsPrimaryPaneMinimapVisible => IsMinimapVisible && IsPrimaryPaneTextEditorVisible;
-    public bool IsSecondaryPaneMinimapVisible => IsMinimapVisible && IsSecondaryPaneTextEditorVisible;
+    private bool _isPrimaryPaneMinimapScrollable = true;
+    private bool _isSecondaryPaneMinimapScrollable = true;
+    public bool IsPrimaryPaneMinimapVisible => IsMinimapVisible && IsPrimaryPaneTextEditorVisible && _isPrimaryPaneMinimapScrollable;
+    public bool IsSecondaryPaneMinimapVisible => IsMinimapVisible && IsSecondaryPaneTextEditorVisible && _isSecondaryPaneMinimapScrollable;
     public double PrimaryPaneImageZoomedWidth => PrimaryPaneImagePreview is { } primaryImage
         ? primaryImage.PixelSize.Width * (_editorPane.ActiveTab?.GetViewState(_editorPane.Id).ImageZoomLevel ?? 1.0)
         : 0;
