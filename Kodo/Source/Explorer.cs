@@ -332,7 +332,7 @@ public partial class MainWindow
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, EditorTextBox.Document.TextLength);
         EditorTextBox.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, EditorTextBox.Document.LineCount));
         RestorePaneScrollOffset(activationPane, tab, EditorTextBox, activationVersion);
-        QueueLspPresentationRefresh();
+        QueueLspPresentationRefresh(immediate: true);
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path) && !IsLspDocumentOpenOrOpening(tab.Path))
         {
             contentSnapshot ??= await EditorTextSnapshotStore.GetSnapshot(activeDocument).GetTextAsync();

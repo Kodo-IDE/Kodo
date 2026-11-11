@@ -1098,7 +1098,7 @@ public partial class MainWindow
             if (IsLspDocumentOpenOrOpening(tab.Path))
                 await LspNotifyDidCloseAsync(tab.Path).ConfigureAwait(false);
             await LspNotifyDidOpenAsync(tab.Path, content).ConfigureAwait(false);
-            await Dispatcher.UIThread.InvokeAsync(QueueLspPresentationRefresh);
+            await Dispatcher.UIThread.InvokeAsync(() => QueueLspPresentationRefresh(immediate: true));
         }
         catch (Exception ex)
         {

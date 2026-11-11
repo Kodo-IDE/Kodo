@@ -414,12 +414,24 @@ public partial class MainWindow
     private string? _languageHoverResultKey;
     private string? _languageHoverResult;
 
-    private void QueueLspPresentationRefresh()
+    private void QueueLspPresentationRefresh(bool immediate = false)
     {
         _lspDocumentRefreshPending = true;
         _lspDocumentRefreshFailures = 0;
-        if (IsActive)
-            RestartLspPresentationDebounceTimer();
+        if (!IsActive)
+            return;
+
+        if (immediate)
+        {
+            // Fire the refresh as soon as the dispatcher can, instead of waiting
+            // for the typing-stop debounce - used when a document finishes loading.
+            _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(25);
+            _lspRefreshDebounceTimer.Stop();
+            _lspRefreshDebounceTimer.Start();
+            return;
+        }
+
+        RestartLspPresentationDebounceTimer();
     }
 
     private void QueueOtherPaneLspPresentationRefresh()
@@ -442,8 +454,8 @@ public partial class MainWindow
         }
         var document = EditorTextBox?.Document;
         var delay = document is { } doc && (doc.LineCount >= 50_000 || doc.TextLength >= 1_000_000)
-            ? 1_000
-            : document is { TextLength: >= 500_000 } ? 600 : 350;
+            ? 1_500
+            : document is { TextLength: >= 500_000 } ? 1_000 : 750;
         _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(delay);
         _lspRefreshDebounceTimer.Stop();
         _lspRefreshDebounceTimer.Start();

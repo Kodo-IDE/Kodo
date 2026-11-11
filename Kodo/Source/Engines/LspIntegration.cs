@@ -952,7 +952,7 @@ public partial class MainWindow
                     continue;
 
                 await LspNotifyDidOpenAsync(filePath, content).ConfigureAwait(false);
-                await Dispatcher.UIThread.InvokeAsync(QueueLspPresentationRefresh);
+                await Dispatcher.UIThread.InvokeAsync(() => QueueLspPresentationRefresh(immediate: true));
             }
             catch (Exception ex)
             {

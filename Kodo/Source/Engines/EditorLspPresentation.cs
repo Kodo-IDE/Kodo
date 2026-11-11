@@ -540,14 +540,6 @@ public partial class MainWindow
         if (manager is null || string.IsNullOrWhiteSpace(ctx.FilePath) || editor.Document is null) return true;
         if (LspMethodUnavailable(ctx, "textDocument/foldingRange")) return true;
         if (ReferenceEquals(paneState.FoldedVersion, ctx.DocumentVersion) && FileSystemPaths.Equals(paneState.FoldedPath, ctx.FilePath)) return true;
-        var diagnosticsSeen = ReferenceEquals(ctx.Pane, _activeEditorPane)
-            ? _lspDiagnosticsSeenForFile
-            : HasStoredLspDiagnosticsForFile(ctx.FilePath);
-        if (!diagnosticsSeen)
-        {
-            paneState.FoldingDeferred = true;
-            return false;
-        }
         var result = await GetLspFoldingRangesAsync(ctx.FilePath, ctx.CancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array) return false;
         var ranges = new List<(int StartLine, int EndLine)>();
