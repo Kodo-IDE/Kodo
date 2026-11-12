@@ -3591,7 +3591,7 @@ ToolTip.Tip="{Binding Path}" />
                         MaxHeight="420"
                         ClipToBounds="True"
                         Height="{Binding TerminalPanelHeight}">
-                    <Grid ColumnDefinitions="220,*">
+                    <Grid ColumnDefinitions="220,*,44">
                         <Border Grid.Column="0"
                                 Background="{Binding SidebarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
@@ -3686,25 +3686,6 @@ ToolTip.Tip="{Binding Path}" />
                                                 <Canvas Width="24" Height="24">
                                                     <Path Fill="{Binding $parent[Button].Foreground}"
                                                           Data="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h4.992a.75.75 0 0 0 .75-.75V4.356a.75.75 0 0 0-1.5 0v3.18l-1.9-1.9A9 9 0 0 0 3.306 9.67a.75.75 0 1 0 1.45.388Zm15.408 3.352a.75.75 0 0 0-.919.53 7.5 7.5 0 0 1-12.548 3.364l-1.902-1.903h3.183a.75.75 0 0 0 0-1.5H2.984a.75.75 0 0 0-.75.75v4.992a.75.75 0 0 0 1.5 0v-3.18l1.9 1.9a9 9 0 0 0 15.059-4.035.75.75 0 0 0-.53-.918Z" />
-                                                </Canvas>
-                                            </Viewbox>
-                                        </Button>
-                                        <Button Grid.Column="5"
-                                                Classes="activity"
-                                                Width="28"
-                                                Height="28"
-                                                Margin="0"
-                                                Focusable="False"
-                                                Click="ToggleTerminalButton_OnClick"
-                                                AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
-                                                ToolTip.Tip="{Binding ToggleTerminalTooltip}">
-                                            <Viewbox Width="11"
-                                                     Height="11"
-                                                     HorizontalAlignment="Center"
-                                                     VerticalAlignment="Center">
-                                                <Canvas Width="24" Height="24">
-                                                    <Path Fill="{Binding $parent[Button].Foreground}"
-                                                          Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
                                                 </Canvas>
                                             </Viewbox>
                                         </Button>
@@ -3859,14 +3840,14 @@ ToolTip.Tip="{Binding Path}" />
                                 IsVisible="{Binding HasActiveTerminal}"
                                 Background="{Binding EditorBackgroundBrush}"
                                 ClipToBounds="True"
-                                CornerRadius="0,12,12,0">
+                                CornerRadius="0">
                             <kodo:ConsoleTerminal x:Name="TerminalHostControl" Margin="0,6,0,0" />
                         </Border>
 
                         <Border Grid.Column="1"
                                 IsVisible="{Binding !HasActiveTerminal}"
                                 Background="{Binding EditorBackgroundBrush}"
-                                CornerRadius="0,12,12,0">
+                                CornerRadius="0">
                             <StackPanel HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
                                         Spacing="14"
@@ -3891,6 +3872,27 @@ ToolTip.Tip="{Binding Path}" />
                                         ToolTip.Tip="{Binding NewTerminalTooltip}"
                                         AutomationProperties.Name="{Binding NewTerminalTooltip}"
                                         Content="Create terminal" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="2"
+                                Background="{Binding TopBarBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="1,0,0,0"
+                                CornerRadius="0,12,12,0">
+                            <StackPanel Margin="0,10,0,0" Spacing="0" HorizontalAlignment="Stretch">
+                                <Button Classes="activity"
+                                        Click="ToggleTerminalButton_OnClick"
+                                        AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
+                                        ToolTip.Tip="{Binding ToggleTerminalTooltip}"
+                                        ToolTip.Placement="LeftEdgeAlignedTop">
+                                    <Viewbox Width="18" Height="18" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Canvas Width="24" Height="24">
+                                            <Path Fill="{Binding $parent[Button].Foreground}"
+                                                  Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </Button>
                             </StackPanel>
                         </Border>
                     </Grid>
