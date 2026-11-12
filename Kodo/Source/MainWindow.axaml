@@ -1238,7 +1238,7 @@
                                         <Grid ColumnDefinitions="3,Auto,*,Auto">
                                             <Border Grid.Column="0"
                                                     Width="3"
-                                                    CornerRadius="1.5"
+                                                    CornerRadius="2"
                                                     Margin="0,3,6,3"
                                                     IsVisible="{Binding IsSelected}"
                                                     Background="{Binding #RootWindow.AccentBrush}" />
@@ -1276,7 +1276,7 @@
                                                             Background="{Binding #RootWindow.ButtonBrush}"
                                                             BorderBrush="{Binding #RootWindow.DangerBrush}"
                                                             BorderThickness="1"
-                                                            CornerRadius="4"
+                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                             Padding="4,0"
                                                             Margin="4,0"
                                                             IsVisible="{Binding HasErrorDiagnostics}"
@@ -1517,7 +1517,7 @@
                                             <Border Background="{Binding #RootWindow.ButtonBrush}"
                                                     BorderBrush="{Binding #RootWindow.DangerBrush}"
                                                     BorderThickness="1"
-                                                    CornerRadius="4"
+                                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                     Padding="4,0"
                                                     Margin="6,0,0,0"
                                                     VerticalAlignment="Center"
@@ -1970,7 +1970,7 @@
                                                     <Border Background="{Binding #RootWindow.ButtonBrush}"
                                                             BorderBrush="{Binding #RootWindow.DangerBrush}"
                                                             BorderThickness="1"
-                                                            CornerRadius="4"
+                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                             Padding="4,0"
                                                             IsVisible="{Binding HasErrorDiagnostics}"
                                                             ToolTip.Tip="{Binding DiagnosticsTooltip}">
@@ -2121,7 +2121,7 @@
                                                     <Border Background="{Binding #RootWindow.ButtonBrush}"
                                                             BorderBrush="{Binding #RootWindow.DangerBrush}"
                                                             BorderThickness="1"
-                                                            CornerRadius="4"
+                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                             Padding="4,0"
                                                             IsVisible="{Binding HasErrorDiagnostics}"
                                                             ToolTip.Tip="{Binding DiagnosticsTooltip}">
@@ -2515,7 +2515,7 @@
                                                     <Border Background="{Binding #RootWindow.ButtonBrush}"
                                                             BorderBrush="{Binding #RootWindow.DangerBrush}"
                                                             BorderThickness="1"
-                                                            CornerRadius="4"
+                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                             Padding="4,0"
                                                             IsVisible="{Binding HasErrorDiagnostics}"
                                                             ToolTip.Tip="{Binding DiagnosticsTooltip}">
@@ -3586,57 +3586,151 @@ ToolTip.Tip="{Binding Path}" />
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="1"
                         CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
-                        Margin="8"
+                        Margin="8,4,8,8"
                         MinHeight="120"
                         MaxHeight="420"
+                        ClipToBounds="True"
                         Height="{Binding TerminalPanelHeight}">
-                    <Grid RowDefinitions="Auto,Auto,*,Auto">
-                        <Border Grid.Row="0"
-                                Background="{Binding TopBarBrush}"
+                    <Grid ColumnDefinitions="220,*">
+                        <Border Grid.Column="0"
+                                Background="{Binding SidebarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="0,0,0,1"
-                                CornerRadius="11,11,0,0"
-                                Padding="16,12">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center">
-                                    <Border Width="3" Height="16" CornerRadius="2" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
-                                    <TextBlock FontSize="13"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="TERMINAL" />
-                                    <TextBlock FontSize="12"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="{Binding ActiveTerminalShellDisplayName}" />
-                                    <TextBlock FontSize="12"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Opacity="0.5"
-                                               Text="•" />
-                                    <TextBlock FontSize="12"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               VerticalAlignment="Center"
-                                               Text="{Binding ActiveTerminalStatusText}" />
-                                </StackPanel>
+                                BorderThickness="0,0,1,0"
+                                CornerRadius="12,0,0,12">
+                            <Border.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Close All Sessions"
+                                              IsEnabled="{Binding HasTerminalSessions}"
+                                              Click="CloseAllTerminalSessionsButton_OnClick" />
+                                </ContextMenu>
+                            </Border.ContextMenu>
+                            <Grid RowDefinitions="Auto,Auto,*">
+                                <Border Grid.Row="0"
+                                        Background="{Binding TopBarBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="0,0,0,1"
+                                        CornerRadius="12,0,0,0"
+                                        Padding="12,8">
+                                    <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto"
+                                          ColumnSpacing="6"
+                                          VerticalAlignment="Center">
+                                        <StackPanel Grid.Column="0"
+                                                    Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    VerticalAlignment="Center"
+                                                    MinWidth="0">
+                                            <Border Width="3"
+                                                    Height="16"
+                                                    CornerRadius="2"
+                                                    Background="{Binding AccentBrush}"
+                                                    VerticalAlignment="Center" />
+                                            <TextBlock FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding MutedTextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Text="TERMINAL" />
+                                        </StackPanel>
+                                        <Button Grid.Column="2"
+                                                Classes="activity"
+                                                Width="28"
+                                                Height="28"
+                                                Margin="0"
+                                                Focusable="False"
+                                                Click="NewTerminalButton_OnClick"
+                                                AutomationProperties.Name="{Binding NewTerminalTooltip}"
+                                                ToolTip.Tip="{Binding NewTerminalTooltip}">
+                                            <Viewbox Width="14"
+                                                     Height="14"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                                          Data="M12 3.75a.75.75 0 0 1 .75.75v6.75h6.75a.75.75 0 0 1 0 1.5h-6.75v6.75a.75.75 0 0 1-1.5 0v-6.75H4.5a.75.75 0 0 1 0-1.5h6.75V4.5a.75.75 0 0 1 .75-.75Z" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <Button Grid.Column="3"
+                                                Classes="activity"
+                                                Width="28"
+                                                Height="28"
+                                                Margin="0"
+                                                Focusable="False"
+                                                Click="ClearTerminalButton_OnClick"
+                                                AutomationProperties.Name="Clear terminal"
+                                                ToolTip.Tip="Clear terminal"
+                                                Opacity="{Binding HasActiveTerminal, Converter={x:Static kodoModels:BoolToOpacityConverter.Instance}}">
+                                            <Viewbox Width="14"
+                                                     Height="14"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                                          Data="M16.5 4.478v.227a48.816 48.816 0 0 1 3.878.512.75.75 0 1 1-.256 1.478l-.209-.035-1.005 13.07a3 3 0 0 1-2.991 2.77H8.084a3 3 0 0 1-2.991-2.77L4.087 6.66l-.209.035a.75.75 0 0 1-.256-1.478A48.567 48.567 0 0 1 7.5 4.705v-.227c0-1.564 1.213-2.9 2.816-2.951a52.662 52.662 0 0 1 3.369 0c1.603.051 2.815 1.387 2.815 2.951Zm-6.136-1.452a51.196 51.196 0 0 1 3.273 0C14.39 3.05 15 3.684 15 4.478v.113a49.488 49.488 0 0 0-6 0v-.113c0-.794.609-1.428 1.364-1.452Zm-.355 5.945a.75.75 0 1 0-1.5.058l.347 9a.75.75 0 1 0 1.499-.058l-.346-9Zm5.48.058a.75.75 0 1 0-1.498-.058l-.347 9a.75.75 0 0 0 1.5.058l.345-9Z" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <Button Grid.Column="4"
+                                                Classes="activity"
+                                                Width="28"
+                                                Height="28"
+                                                Margin="0"
+                                                Focusable="False"
+                                                Click="RestartTerminalButton_OnClick"
+                                                AutomationProperties.Name="Restart active terminal with the selected shell"
+                                                ToolTip.Tip="Restart active terminal with the selected shell"
+                                                Opacity="{Binding HasActiveTerminal, Converter={x:Static kodoModels:BoolToOpacityConverter.Instance}}">
+                                            <Viewbox Width="14"
+                                                     Height="14"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                                          Data="M4.755 10.059a7.5 7.5 0 0 1 12.548-3.364l1.903 1.903h-3.183a.75.75 0 1 0 0 1.5h4.992a.75.75 0 0 0 .75-.75V4.356a.75.75 0 0 0-1.5 0v3.18l-1.9-1.9A9 9 0 0 0 3.306 9.67a.75.75 0 1 0 1.45.388Zm15.408 3.352a.75.75 0 0 0-.919.53 7.5 7.5 0 0 1-12.548 3.364l-1.902-1.903h3.183a.75.75 0 0 0 0-1.5H2.984a.75.75 0 0 0-.75.75v4.992a.75.75 0 0 0 1.5 0v-3.18l1.9 1.9a9 9 0 0 0 15.059-4.035.75.75 0 0 0-.53-.918Z" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <Button Grid.Column="5"
+                                                Classes="activity"
+                                                Width="28"
+                                                Height="28"
+                                                Margin="0"
+                                                Focusable="False"
+                                                Click="ToggleTerminalButton_OnClick"
+                                                AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
+                                                ToolTip.Tip="{Binding ToggleTerminalTooltip}">
+                                            <Viewbox Width="11"
+                                                     Height="11"
+                                                     HorizontalAlignment="Center"
+                                                     VerticalAlignment="Center">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Fill="{Binding $parent[Button].Foreground}"
+                                                          Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                    </Grid>
+                                </Border>
 
-                                <StackPanel Grid.Column="1"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center">
-                                    <ComboBox MinWidth="120"
-                                              MaxWidth="240"
+                                <Border Grid.Row="1"
+                                        Background="{Binding TopBarBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="0,0,0,1"
+                                        Padding="8,6">
+                                    <ComboBox MinHeight="30"
+                                              MaxHeight="30"
                                               ItemsSource="{Binding AvailableTerminalShells}"
                                               SelectedItem="{Binding SelectedTerminalShell, Mode=TwoWay}"
                                               Background="{Binding ButtonBrush}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               BorderBrush="{Binding SurfaceBorderBrush}"
                                               CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                              Padding="12,8"
+                                              Padding="10,0"
+                                              HorizontalAlignment="Stretch"
+                                              HorizontalContentAlignment="Left"
+                                              VerticalAlignment="Center"
                                               VerticalContentAlignment="Center"
-                                              ToolTip.Tip="Choose the default shell for new terminals">
+                                              ToolTip.Tip="Choose the default shell for new terminals"
+                                              FontSize="12">
                                         <ComboBox.Styles>
                                             <Style Selector="ComboBox /template/ Border#PART_Border">
                                                 <Setter Property="MinHeight" Value="0" />
@@ -3644,224 +3738,160 @@ ToolTip.Tip="{Binding Path}" />
                                         </ComboBox.Styles>
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate x:DataType="kodoModels:TerminalShellOption" x:CompileBindings="True">
-                                                <TextBlock Text="{Binding DisplayName}" />
+                                                <TextBlock VerticalAlignment="Center"
+                                                           Text="{Binding DisplayName}" />
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
-                                    <Button Classes="chrome"
-                                            Focusable="False"
-                                            Click="NewTerminalButton_OnClick"
-                                            ToolTip.Tip="{Binding NewTerminalTooltip}"
-                                            AutomationProperties.Name="{Binding NewTerminalTooltip}"
-                                            Content="+" />
-                                    <Button Classes="chrome"
-                                            Focusable="False"
-                                            Click="ClearTerminalButton_OnClick"
-                                            IsEnabled="{Binding HasActiveTerminal}"
-                                            ToolTip.Tip="Clear terminal"
-                                            AutomationProperties.Name="Clear terminal"
-                                            Content="Clear" />
-                                    <Button Classes="chrome"
-                                            Focusable="False"
-                                            Click="RestartTerminalButton_OnClick"
-                                            IsEnabled="{Binding HasActiveTerminal}"
-                                            ToolTip.Tip="Restart active terminal with the selected shell"
-                                            AutomationProperties.Name="Restart active terminal with the selected shell"
-                                            Content="Restart" />
-                                    <Button Classes="chrome"
-                                            Focusable="False"
-                                            Click="ToggleTerminalButton_OnClick"
-                                            AutomationProperties.Name="{Binding ToggleTerminalTooltip}"
-                                            ToolTip.Tip="{Binding ToggleTerminalTooltip}">
-                                        <Viewbox Width="14" Height="14" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                            <Canvas Width="24" Height="24">
-                                                <Path Fill="{Binding $parent[Button].Foreground}"
-                                                      Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
-                                            </Canvas>
-                                        </Viewbox>
-                                    </Button>
-                                </StackPanel>
+                                </Border>
+
+                                <ScrollViewer Grid.Row="2"
+                                              AllowAutoHide="True"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding TerminalSessions}"
+                                                  Margin="8">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="kodoModels:TerminalSession" x:CompileBindings="True">
+                                                <Border Classes="openeditorrow"
+                                                        Classes.active="{Binding IsSelected}"
+                                                        Margin="0,0,0,2">
+                                                    <Border.ContextMenu>
+                                                        <ContextMenu>
+                                                            <MenuItem Header="Rename" Tag="{Binding}" Click="RenameTerminalSessionMenuItem_OnClick" />
+                                                            <Separator />
+                                                            <MenuItem Header="Restart" Tag="{Binding}" Click="RestartTerminalSessionMenuItem_OnClick" />
+                                                            <MenuItem Header="Duplicate" Tag="{Binding}" Click="DuplicateTerminalSessionMenuItem_OnClick" />
+                                                            <Separator />
+                                                            <MenuItem Header="Copy Working Directory" Tag="{Binding}" Click="CopyTerminalSessionWorkingDirectoryMenuItem_OnClick" />
+                                                            <Separator />
+                                                            <MenuItem Header="Close Others" Tag="{Binding}" Click="CloseOtherTerminalSessionsMenuItem_OnClick" />
+                                                            <MenuItem Header="Close" Tag="{Binding}" Click="CloseTerminalSessionButton_OnClick" />
+                                                        </ContextMenu>
+                                                    </Border.ContextMenu>
+                                                    <Grid ColumnDefinitions="3,*,Auto">
+                                                        <Border Grid.Column="0"
+                                                                Width="3"
+                                                                CornerRadius="2"
+                                                                Margin="0,3,6,3"
+                                                                IsVisible="{Binding IsSelected}"
+                                                                Background="{Binding #RootWindow.AccentBrush}" />
+                                                        <Button Grid.Column="1"
+                                                                Grid.ColumnSpan="2"
+                                                                Classes="openeditor"
+                                                                Classes.active="{Binding IsSelected}"
+                                                                Tag="{Binding}"
+                                                                Click="OpenTerminalSessionButton_OnClick"
+                                                                ToolTip.Tip="{Binding WorkingDirectory}"
+                                                                AutomationProperties.Name="{Binding Title}"
+                                                                Padding="7,5,30,5"
+                                                                HorizontalContentAlignment="Stretch">
+                                                            <Grid ColumnDefinitions="*,Auto,Auto">
+                                                                <TextBlock Grid.Column="0"
+                                                                           FontSize="12"
+                                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                           Text="{Binding Title}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           VerticalAlignment="Center" />
+                                                                <TextBlock Grid.Column="1"
+                                                                           FontSize="11"
+                                                                           Margin="6,0,0,0"
+                                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                           Text="{Binding ShellDisplayName}"
+                                                                           VerticalAlignment="Center" />
+                                                                <Border Grid.Column="2"
+                                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                                        BorderBrush="{Binding #RootWindow.DangerBrush}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                                                        Padding="4,0"
+                                                                        Margin="4,0"
+                                                                        IsVisible="{Binding HasFailed}"
+                                                                        ToolTip.Tip="{Binding StatusText}">
+                                                                    <TextBlock FontSize="10"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                               Text="Failed"
+                                                                               VerticalAlignment="Center" />
+                                                                </Border>
+                                                                <Border Grid.Column="2"
+                                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                                        BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                        BorderThickness="1"
+                                                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                                                        Padding="4,0"
+                                                                        Margin="4,0"
+                                                                        IsVisible="{Binding ShowExitedStatus}">
+                                                                    <TextBlock FontSize="10"
+                                                                               FontWeight="SemiBold"
+                                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                               Text="{Binding StatusText}"
+                                                                               VerticalAlignment="Center" />
+                                                                </Border>
+                                                            </Grid>
+                                                        </Button>
+                                                        <Button Grid.Column="2"
+                                                                Classes="tabclose"
+                                                                Classes.active="{Binding IsSelected}"
+                                                                Tag="{Binding}"
+                                                                Click="CloseTerminalSessionButton_OnClick"
+                                                                Margin="4,0,3,0"
+                                                                AutomationProperties.Name="Close terminal"
+                                                                ToolTip.Tip="Close terminal">
+                                                            <Viewbox Width="11" Height="11" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                          Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
+                                                                </Canvas>
+                                                            </Viewbox>
+                                                        </Button>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </Grid>
                         </Border>
 
-                        <Border Grid.Row="1"
-                                Background="{Binding TopBarBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="0,0,0,1">
-                            <ScrollViewer AllowAutoHide="True"
-                                          HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding TerminalSessions}">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <StackPanel Orientation="Horizontal" />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="kodoModels:TerminalSession" x:CompileBindings="True">
-                                            <Border Classes="tabwrap"
-                                                    Classes.active="{Binding IsSelected}"
-                                                    ToolTip.Tip="{Binding WorkingDirectory}">
-                                                <Border.ContextMenu>
-                                                    <ContextMenu>
-                                                        <MenuItem Header="Rename"
-                                                                  Tag="{Binding}"
-                                                                  Click="RenameTerminalSessionMenuItem_OnClick" />
-                                                        <Separator />
-                                                        <MenuItem Header="Restart"
-                                                                  Tag="{Binding}"
-                                                                  Click="RestartTerminalSessionMenuItem_OnClick" />
-                                                        <MenuItem Header="Duplicate"
-                                                                  Tag="{Binding}"
-                                                                  Click="DuplicateTerminalSessionMenuItem_OnClick" />
-                                                        <Separator />
-                                                        <MenuItem Header="Copy Working Directory"
-                                                                  Tag="{Binding}"
-                                                                  Click="CopyTerminalSessionWorkingDirectoryMenuItem_OnClick" />
-                                                        <Separator />
-                                                        <MenuItem Header="Close Others"
-                                                                  Tag="{Binding}"
-                                                                  Click="CloseOtherTerminalSessionsMenuItem_OnClick" />
-                                                        <MenuItem Header="Close"
-                                                                  Tag="{Binding}"
-                                                                  Click="CloseTerminalSessionButton_OnClick" />
-                                                    </ContextMenu>
-                                                </Border.ContextMenu>
-                                                <Grid RowDefinitions="Auto,2.5"
-                                                      ColumnDefinitions="*,Auto">
-                                                    <Button Grid.Row="0"
-                                                            Grid.Column="0"
-                                                            Grid.ColumnSpan="2"
-                                                            Classes="editortab"
-                                                            Focusable="False"
-                                                            Tag="{Binding}"
-                                                            Click="OpenTerminalSessionButton_OnClick"
-                                                            Background="Transparent"
-                                                            Padding="12,10,38,10">
-                                                        <StackPanel Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-                                                            <Panel Width="7" Height="7" VerticalAlignment="Center">
-                                                                <Border Width="14"
-                                                                        Height="14"
-                                                                        CornerRadius="7"
-                                                                        Opacity="0.22"
-                                                                        HorizontalAlignment="Center"
-                                                                        VerticalAlignment="Center"
-                                                                        Background="{Binding StatusDotColor}" />
-                                                                <Border Width="7"
-                                                                        Height="7"
-                                                                        CornerRadius="4"
-                                                                        HorizontalAlignment="Center"
-                                                                        VerticalAlignment="Center"
-                                                                        Background="{Binding StatusDotColor}"
-                                                                        ToolTip.Tip="{Binding StatusText}" />
-                                                            </Panel>
-                                                            <TextBlock FontSize="13"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                       Text="{Binding Title}" />
-                                                            <TextBlock FontSize="11"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                       Opacity="0.7"
-                                                                       Text="·" />
-                                                            <TextBlock FontSize="11"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                       Text="{Binding ShellDisplayName}" />
-                                                            <TextBlock FontSize="11"
-                                                                       VerticalAlignment="Center"
-                                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                       Opacity="0.6"
-                                                                       Text="{Binding StatusText}" />
-                                                        </StackPanel>
-                                                    </Button>
-                                                    <Button Grid.Row="0"
-                                                            Grid.Column="1"
-                                                            Classes="tabclose"
-                                                            Classes.active="{Binding IsSelected}"
-                                                            Focusable="False"
-                                                            Tag="{Binding}"
-                                                            Click="CloseTerminalSessionButton_OnClick"
-                                                            Margin="0,0,7,0"
-                                                            HorizontalAlignment="Right"
-                                                            VerticalAlignment="Center"
-                                                            ToolTip.Tip="Close terminal">
-                                                        <Viewbox Width="10" Height="10" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                            <Canvas Width="24" Height="24">
-                                                                <Path Fill="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                      Data="M6.225 4.811a.75.75 0 0 0-1.06 1.06L10.939 12l-5.774 6.129a.75.75 0 1 0 1.06 1.06L12 13.061l6.129 5.774a.75.75 0 1 0 1.06-1.06L13.061 12l5.774-6.129a.75.75 0 1 0-1.06-1.06L12 10.939 6.225 4.811Z" />
-                                                            </Canvas>
-                                                        </Viewbox>
-                                                    </Button>
-                                                    <Border Grid.Row="1"
-                                                            Grid.Column="0"
-                                                            Grid.ColumnSpan="2"
-                                                            Classes="tabunderline tabunderlinebase"
-                                                            Height="2.5"
-                                                            CornerRadius="1.5,1.5,0,0"
-                                                            Background="{Binding #RootWindow.AccentBrush}" />
-                                                </Grid>
-                                            </Border>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </ScrollViewer>
+                        <Border Grid.Column="1"
+                                Focusable="False"
+                                IsVisible="{Binding HasActiveTerminal}"
+                                Background="{Binding EditorBackgroundBrush}"
+                                ClipToBounds="True"
+                                CornerRadius="0,12,12,0">
+                            <kodo:ConsoleTerminal x:Name="TerminalHostControl" Margin="0,6,0,0" />
                         </Border>
 
-                        <Grid Grid.Row="2"
-                              Focusable="False"
-                              IsVisible="{Binding HasActiveTerminal}">
-                            <kodo:ConsoleTerminal x:Name="TerminalHostControl" />
-                        </Grid>
-
-                        <Border Grid.Row="2"
+                        <Border Grid.Column="1"
                                 IsVisible="{Binding !HasActiveTerminal}"
-                                Background="{Binding EditorBackgroundBrush}">
+                                Background="{Binding EditorBackgroundBrush}"
+                                CornerRadius="0,12,12,0">
                             <StackPanel HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
-                                        Spacing="10">
-                                <TextBlock FontSize="15"
-                                           FontWeight="SemiBold"
+                                        Spacing="14"
+                                        MaxWidth="320">
+                                <TextBlock FontSize="22"
+                                           FontWeight="Bold"
                                            Foreground="{Binding PrimaryTextBrush}"
                                            HorizontalAlignment="Center"
+                                           TextAlignment="Center"
                                            Text="No active terminal" />
                                 <TextBlock FontSize="13"
                                            Foreground="{Binding MutedTextBrush}"
+                                           LineHeight="20"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Text="Choose a shell and open a terminal session." />
+                                           Text="Choose a shell and open a session. New terminals inherit the workspace folder, or jump in from the shell picker." />
                                 <Button Classes="chrome"
                                         Click="NewTerminalButton_OnClick"
                                         HorizontalAlignment="Center"
+                                        Margin="0,4,0,0"
                                         ToolTip.Tip="{Binding NewTerminalTooltip}"
                                         AutomationProperties.Name="{Binding NewTerminalTooltip}"
                                         Content="Create terminal" />
                             </StackPanel>
-                        </Border>
-
-                        <Border Grid.Row="3"
-                                x:Name="TerminalFooterBar"
-                                Background="{Binding TopBarBrush}"
-                                BorderBrush="{Binding AccentBrush}"
-                                BorderThickness="0,1,0,0"
-                                CornerRadius="0,0,11,11"
-                                Padding="12,6">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Grid.Column="0"
-                                           Foreground="{Binding MutedTextBrush}"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"
-                                           Text="{Binding ActiveTerminalFooterText}" />
-                                <Button Grid.Column="1"
-                                        Classes="statusitem"
-                                        Focusable="False"
-                                        Click="CloseAllTerminalSessionsButton_OnClick"
-                                        IsEnabled="{Binding HasTerminalSessions}"
-                                        AutomationProperties.Name="Close and delete all terminal sessions, then hide the panel"
-                                        ToolTip.Tip="Close and delete all terminal sessions, then hide the panel">
-                                    <TextBlock FontSize="12"
-                                               Text="Close all sessions" />
-                                </Button>
-                            </Grid>
                         </Border>
                     </Grid>
                 </Border>

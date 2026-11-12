@@ -717,6 +717,8 @@ public partial class MainWindow
             if (lastIconException is not null && (rateLimited > 0 || !HasActiveInternetConnection()))
                 try { RefreshMarketplaceConnectivityState("Marketplace icon fetch", lastIconException); } catch { }
         }
+
+        try { RefreshRunBuildState(); } catch { }
     }
 
     private async Task<IconResult> GetCachedIconAsync(string iconUrl)

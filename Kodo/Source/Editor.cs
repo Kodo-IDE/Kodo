@@ -423,8 +423,8 @@ public partial class MainWindow
 
         if (immediate)
         {
-            // Fire the refresh as soon as the dispatcher can, instead of waiting
-            // for the typing-stop debounce - used when a document finishes loading.
+            
+            
             _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(25);
             _lspRefreshDebounceTimer.Stop();
             _lspRefreshDebounceTimer.Start();

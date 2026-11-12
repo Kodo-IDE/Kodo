@@ -134,6 +134,7 @@ internal sealed class CompilerRunWindow : Window
             Background = new SolidColorBrush(_palette.Background),
             BorderBrush = new SolidColorBrush(_palette.Border),
             BorderThickness = new Thickness(0, 0, 0, 1),
+            CornerRadius = new CornerRadius(KodoDesignTokens.CardRadius.TopLeft, KodoDesignTokens.CardRadius.TopRight, 0, 0),
             Padding = new Thickness(12, 8),
             Child = new Grid
             {

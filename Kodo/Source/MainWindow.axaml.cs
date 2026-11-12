@@ -6653,6 +6653,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                     }
                     RaiseMany(nameof(IsHomePageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(HasOpenEditors));
                     RefreshState(fullRefresh: true);
+                    if (ActiveEditorTab is not null)
+                        RefreshRunBuildState();
                 }
             }
 
