@@ -423,8 +423,8 @@ public partial class MainWindow
 
         if (immediate)
         {
-            
-            
+
+
             _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(25);
             _lspRefreshDebounceTimer.Stop();
             _lspRefreshDebounceTimer.Start();
