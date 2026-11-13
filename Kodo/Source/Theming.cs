@@ -152,9 +152,14 @@ public partial class MainWindow
         }
     }
 
-    private static readonly IBrush CachedLinkBrush = Brush.Parse("#5BA3D9");
+    private static readonly IBrush CachedLinkBrush = KodoDesignTokens.LinkBrush;
 
-    private const string KodoAccentHex = "#8C00FF";
+    private const string KodoAccentHex = KodoDesignTokens.DefaultAccentHex;
+
+    private const string TerminalDarkBackground = "#121118";
+    private const string TerminalDarkForeground = "#E2E4EB";
+    private const string TerminalDarkMuted = "#9691A5";
+    private const string IndentGuideFallback = "#808080";
 
     private void ApplyThemeToEditor()
     {
@@ -163,10 +168,10 @@ public partial class MainWindow
         if (TerminalHostControl is not null)
         {
             TerminalHostControl.ApplyKodoTheme(
-                GetTerminalThemeColor(EditorBackgroundBrush, Color.Parse("#121118")),
-                GetTerminalThemeColor(PrimaryTextBrush, Color.Parse("#E2E4EB")),
-                GetTerminalThemeColor(AccentBrush, Color.Parse(KodoAccentHex)),
-                GetTerminalThemeColor(MutedTextBrush, Color.Parse("#9691A5")));
+                GetTerminalThemeColor(EditorBackgroundBrush, Color.Parse(TerminalDarkBackground)),
+                GetTerminalThemeColor(PrimaryTextBrush, Color.Parse(TerminalDarkForeground)),
+                GetTerminalThemeColor(AccentBrush, KodoDesignTokens.AccentColor),
+                GetTerminalThemeColor(MutedTextBrush, Color.Parse(TerminalDarkMuted)));
         }
         if (EditorTextBox is null) return;
         _colorSwatchGenerator.PanelBrush = WindowBackgroundBrush;
@@ -184,20 +189,20 @@ public partial class MainWindow
         ApplyEditorTheme(SecondaryEditorTextBox);
         ApplyFoldingMarginTheme();
         var guideBrush = MutedTextBrush.ToImmutable() is ISolidColorBrush mutedBrush
-            ? new SolidColorBrush(mutedBrush.Color, 0.4)
-            : new SolidColorBrush(Color.Parse("#808080"), 0.4);
+            ? new SolidColorBrush(mutedBrush.Color, KodoDesignTokens.IndentOpacity)
+            : new SolidColorBrush(Color.Parse(IndentGuideFallback), KodoDesignTokens.IndentOpacity);
         _primaryIndentGuideRenderer.GuideBrush = guideBrush;
         _secondaryIndentGuideRenderer.GuideBrush = guideBrush;
         IBrush deadCodeGrey = IsLightThemeActive
-            ? new SolidColorBrush(Color.Parse("#5F6B7A"), 0.30)
-            : new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
+            ? new SolidColorBrush(KodoDesignTokens.NeutralGreyLight, 0.30)
+            : new SolidColorBrush(KodoDesignTokens.NeutralGrey, 0.22);
         _primaryDeadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
         _secondaryDeadCodeHighlightRenderer.HighlightBrush = deadCodeGrey;
         _primaryErrorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
         _secondaryErrorHighlightRenderer.StripeGreyBrush = deadCodeGrey;
         var basePrimary = PrimaryTextBrush.ToImmutable() is ISolidColorBrush primarySolid
             ? primarySolid.Color
-            : Color.Parse(IsLightThemeActive ? "#202124" : "#F4F4F4");
+            : KodoDesignTokens.DarkTextColor;
         var deadCodeTextBrush = new SolidColorBrush(
             PushTowardExtreme(basePrimary, towardWhite: !IsLightThemeActive, amount: 0.3));
         _primaryDeadCodeTextBrightener.TextBrush = deadCodeTextBrush;
@@ -205,7 +210,7 @@ public partial class MainWindow
         foreach (var textDarkener in new[] { _primaryErrorTextDarkener, _secondaryErrorTextDarkener })
         {
             textDarkener.IsLightTheme = IsLightThemeActive;
-            textDarkener.TextBrush = new SolidColorBrush(Color.Parse("#000000"));
+            textDarkener.TextBrush = KodoDesignTokens.DarkTextBrush;
         }
         foreach (var editor in new[] { PrimaryEditorTextBox, SecondaryEditorTextBox })
         {
@@ -224,7 +229,7 @@ public partial class MainWindow
         editor.LineNumbersForeground = MutedTextBrush;
         editor.TextArea.SelectionBrush = AccentBrush.ToImmutable() is ISolidColorBrush solid
             ? new SolidColorBrush(solid.Color, 0.3)
-            : new SolidColorBrush(Color.Parse("#8C00FF"), 0.3);
+            : new SolidColorBrush(Color.Parse(KodoAccentHex), 0.3);
         editor.TextArea.SelectionForeground = PrimaryTextBrush;
         editor.TextArea.TextView.LinkTextForegroundBrush = CachedLinkBrush;
         editor.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
@@ -349,31 +354,31 @@ public partial class MainWindow
 
     private static readonly Dictionary<string, string> LightPalette = new()
     {
-        ["WindowBackground"] = "#F3F3F3",
-        ["TopBar"] = "#FFFFFF",
-        ["Sidebar"] = "#EFF2F7",
-        ["Button"] = "#E3E8F1",
-        ["ButtonHover"] = "#D5DDE9",
-        ["EditorBackground"] = "#FFFFFF",
-        ["Card"] = "#F7F9FC",
-        ["PrimaryText"] = "#202124",
-        ["MutedText"] = "#5F6B7A",
-        ["SurfaceBorder"] = "#D7DCE5",
-        ["Accent"] = "#8C00FF"
+        ["WindowBackground"] = KodoDesignTokens.LightWindowBackground,
+        ["TopBar"] = KodoDesignTokens.LightTopBar,
+        ["Sidebar"] = KodoDesignTokens.LightSidebar,
+        ["Button"] = KodoDesignTokens.LightButton,
+        ["ButtonHover"] = KodoDesignTokens.LightButtonHover,
+        ["EditorBackground"] = KodoDesignTokens.LightEditorBackground,
+        ["Card"] = KodoDesignTokens.LightCard,
+        ["PrimaryText"] = KodoDesignTokens.LightPrimaryText,
+        ["MutedText"] = KodoDesignTokens.LightMutedText,
+        ["SurfaceBorder"] = KodoDesignTokens.LightSurfaceBorder,
+        ["Accent"] = KodoDesignTokens.LightAccent
     };
     private static readonly Dictionary<string, string> DarkPalette = new()
     {
-        ["WindowBackground"] = "#1E1E1E",
-        ["TopBar"] = "#181818",
-        ["Sidebar"] = "#181818",
-        ["Button"] = "#252526",
-        ["ButtonHover"] = "#313437",
-        ["EditorBackground"] = "#1E1E1E",
-        ["Card"] = "#252526",
-        ["PrimaryText"] = "#F4F4F4",
-        ["MutedText"] = "#A0A0A0",
-        ["SurfaceBorder"] = "#2B2B2B",
-        ["Accent"] = "#8C00FF"
+        ["WindowBackground"] = KodoDesignTokens.WindowBackground,
+        ["TopBar"] = KodoDesignTokens.TopBar,
+        ["Sidebar"] = KodoDesignTokens.Sidebar,
+        ["Button"] = KodoDesignTokens.Button,
+        ["ButtonHover"] = KodoDesignTokens.ButtonHover,
+        ["EditorBackground"] = KodoDesignTokens.EditorBackground,
+        ["Card"] = KodoDesignTokens.Card,
+        ["PrimaryText"] = KodoDesignTokens.PrimaryText,
+        ["MutedText"] = KodoDesignTokens.MutedText,
+        ["SurfaceBorder"] = KodoDesignTokens.SurfaceBorder,
+        ["Accent"] = KodoDesignTokens.Accent
     };
 
     private void SetThemeBrushesCore(string themeName)
@@ -499,8 +504,8 @@ public partial class MainWindow
     private void RefreshSystemThemePreview()
     {
         var isLight = GetWindowsAppsUseLightTheme() == true;
-        SystemThemePreviewBackground = GetCachedBrush(isLight ? "#FFFFFF" : "#1E1E1E");
-        SystemThemePreviewBorder = GetCachedBrush(isLight ? "#D7DCE5" : "#2B2B2B");
+        SystemThemePreviewBackground = GetCachedBrush(isLight ? "#FFFFFF" : KodoDesignTokens.WindowBackground);
+        SystemThemePreviewBorder = GetCachedBrush(isLight ? KodoDesignTokens.LightSurfaceBorder : KodoDesignTokens.SurfaceBorder);
         OnPropertyChanged(nameof(SystemThemePreviewBackground));
         OnPropertyChanged(nameof(SystemThemePreviewBorder));
     }
@@ -510,7 +515,7 @@ public partial class MainWindow
         Window? dialog = null;
         var confirmed = false;
 
-        var initialColor = Color.Parse("#8C00FF");
+        var initialColor = Color.Parse(KodoDesignTokens.DefaultAccentHex);
         try { initialColor = Color.Parse(_customAccentHex); } catch { }
 
         RgbToHsv(initialColor.R, initialColor.G, initialColor.B,

@@ -121,7 +121,6 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
         }
     }
 
-    // Status is only surfaced in the session list when something needs attention.
     public bool HasFailed => StatusText.StartsWith("Failed");
 
     public bool ShowExitedStatus => StatusText is "Exited" or "Closed";

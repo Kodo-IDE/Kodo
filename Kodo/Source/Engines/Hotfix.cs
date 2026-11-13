@@ -1244,6 +1244,8 @@ internal static class HotfixRecovery
         var result = new ConfirmResult();
         try
         {
+            if (UpdateService.IsDevelopmentBuild && updateRootOverride is null && targetDirOverride is null && currentBaseOverride is null)
+                return result;
             var updateRoot = updateRootOverride ?? UpdateService.UpdateRoot;
             var targetDir = targetDirOverride ?? AppContext.BaseDirectory;
             var currentBase = currentBaseOverride ?? HotfixVersion.CurrentBaseVersion;

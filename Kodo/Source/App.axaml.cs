@@ -408,7 +408,16 @@ public partial class App : Application
 
             if (Dispatcher.UIThread.CheckAccess())
             {
-                _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
+                var dialogTask = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
+                if (isTerminating)
+                {
+                    var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
+                    while (!dialogTask.IsCompleted && DateTime.UtcNow < deadline)
+                    {
+                        Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+                        Thread.Sleep(25);
+                    }
+                }
                 return;
             }
 
@@ -561,7 +570,7 @@ public partial class App : Application
                 Text = source,
                 FontSize = 12,
                 FontFamily = KodoFonts.MonoFamily,
-                Foreground = new SolidColorBrush(palette.TextMuted),
+                Foreground = new SolidColorBrush(Color.Parse(KodoDesignTokens.DialogTokenBlue)),
             },
         };
 
@@ -579,7 +588,7 @@ public partial class App : Application
             Text = KodoDiagnostics.BuildDiagnosticPayload(source, exception, isTerminating, KodoSeverity.Critical, redactPaths: true),
             FontSize = 12,
             FontFamily = KodoFonts.MonoFamily,
-            Foreground = new SolidColorBrush(accentColor),
+            Foreground = new SolidColorBrush(Color.Parse(KodoDesignTokens.DialogTokenOrange)),
             TextWrapping = TextWrapping.Wrap,
         };
 

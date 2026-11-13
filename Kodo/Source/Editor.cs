@@ -47,8 +47,8 @@ public partial class MainWindow
 
     private static readonly Color[] SemanticTokenPalette =
     {
-        Color.Parse("#569CD6"), Color.Parse("#4EC9B0"), Color.Parse("#DCDCAA"), Color.Parse("#C586C0"),
-        Color.Parse("#CE9178"), Color.Parse("#9CDCFE"), Color.Parse("#B5CEA8"), Color.Parse("#D7BA7D")
+        KodoDesignTokens.TokenBlue, KodoDesignTokens.TokenTeal, KodoDesignTokens.TokenYellow, KodoDesignTokens.TokenPurple,
+        KodoDesignTokens.TokenOrange, KodoDesignTokens.TokenCyan, KodoDesignTokens.TokenGreen, KodoDesignTokens.TokenGold
     };
     private static readonly IBrush[] SemanticTokenBrushes = SemanticTokenPalette
         .Select(color => (IBrush)new SolidColorBrush(color, 0.18))

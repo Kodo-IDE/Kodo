@@ -1849,10 +1849,10 @@ internal sealed class GitSourceControlIntegration
             typeof(VisualLineElement).GetMethod("SetTextRunProperties", BindingFlags.Instance | BindingFlags.NonPublic);
         private static readonly PropertyInfo? NextLineProperty = typeof(DocumentLine).GetProperty("NextLine");
         private static readonly PropertyInfo? PreviousLineProperty = typeof(DocumentLine).GetProperty("PreviousLine");
-        private static readonly IBrush AddedLineBrush = new SolidColorBrush(Color.Parse("#2EA043"), 0.18);
-        private static readonly IBrush RemovedLineBrush = new SolidColorBrush(Color.Parse("#F85149"), 0.18);
-        private static readonly IBrush HunkBrush = new SolidColorBrush(Color.Parse("#58A6FF"));
-        private static readonly IBrush MetaBrush = new SolidColorBrush(Color.Parse("#8B949E"));
+        private static readonly IBrush AddedLineBrush = new SolidColorBrush(KodoDesignTokens.SuccessColor, 0.18);
+        private static readonly IBrush RemovedLineBrush = new SolidColorBrush(KodoDesignTokens.DangerColor, 0.18);
+        private static readonly IBrush HunkBrush = KodoDesignTokens.ChangedHunkBrush;
+        private static readonly IBrush MetaBrush = KodoDesignTokens.ChangedMetaBrush;
 
         protected override void ColorizeLine(DocumentLine line)
         {

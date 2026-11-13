@@ -30,12 +30,12 @@ public sealed class RainbowBracketColorizer : DocumentColorizingTransformer
 
     private static readonly IBrush[] RainbowBrushes =
     [
-        Brush.Parse("#FFD700"),
-        Brush.Parse("#DA70D6"),
-        Brush.Parse("#4FC1FF"),
-        Brush.Parse("#C586C0"),
-        Brush.Parse("#9CDCFE"),
-        Brush.Parse("#D7BA7D")
+        KodoDesignTokens.BracketYellowBrush,
+        KodoDesignTokens.BracketTypeBrush,
+        KodoDesignTokens.BracketControlBrush,
+        KodoDesignTokens.BracketKeywordBrush,
+        KodoDesignTokens.TokenCyanBrush,
+        KodoDesignTokens.TokenGoldBrush
     ];
 
     private readonly AsyncDocumentSnapshot<ParseSnapshot> _snapshot = new();

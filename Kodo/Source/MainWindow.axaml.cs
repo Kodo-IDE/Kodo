@@ -184,7 +184,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _lastSeenWindowsAccentHex = string.Empty;
     private readonly DispatcherTimer _windowsThemePollTimer = new() { Interval = TimeSpan.FromSeconds(30) };
     private string _lastSeenWindowsThemeName = string.Empty;
-    private string _systemAccentHex = "#8C00FF";
+    private string _systemAccentHex = KodoDesignTokens.DefaultAccentHex;
     private bool _hasSystemAccent;
     private bool _lspEnabled = true;
     private bool _lspCompletionEnabled = true;
@@ -318,10 +318,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _editorFontFamily = "";
     private int _terminalScrollbackLines = 5000;
     private string _accentColorMode = "kodo";
-    private string _customAccentHex = "#8C00FF";
-    private string _themeAccentHex = "#8C00FF";
+    private string _customAccentHex = KodoDesignTokens.DefaultAccentHex;
+    private string _themeAccentHex = KodoDesignTokens.DefaultAccentHex;
     private bool _hasThemeAccent = false;
-    private string _windowBackgroundHex = "#1E1E1E";
+    private string _windowBackgroundHex = KodoDesignTokens.WindowBackground;
     private bool _hasWindowBackground = false;
     private string _currentThemeName = "Dark";
     private string _requestedThemeName = "Dark";
@@ -572,7 +572,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private double _explorerPanelDragStartWidth;
     private bool _quickAccessFrameLayoutPending;
     private string? _deferredPreferredShellId;
-    private static readonly IBrush SharedLinkTextBrush = Brush.Parse("#5BA3D9");
+    private static readonly IBrush SharedLinkTextBrush = KodoDesignTokens.LinkBrush;
 
     private readonly Dictionary<LoadedExtension, KodoHighlightingDefinition> _highlightingCache =
         new(ReferenceEqualityComparer.Instance);
@@ -1129,7 +1129,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _accentColorMode = settings.AccentColorMode is "kodo" or "windows" or "custom" or "theme"
             ? settings.AccentColorMode : "kodo";
         _customAccentHex = string.IsNullOrWhiteSpace(settings.CustomAccentHex)
-            ? "#8C00FF" : settings.CustomAccentHex;
+            ? KodoDesignTokens.DefaultAccentHex : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _insertSpaces = settings.InsertSpaces;
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
@@ -5158,8 +5158,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsSystemThemeActive => string.Equals(_requestedThemeName, "System", StringComparison.OrdinalIgnoreCase);
 
-    public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush SystemThemePreviewBorder { get; private set; } = Brush.Parse("#2B2B2B");
+    public IBrush SystemThemePreviewBackground { get; private set; } = Brush.Parse(KodoDesignTokens.WindowBackground);
+    public IBrush SystemThemePreviewBorder { get; private set; } = Brush.Parse(KodoDesignTokens.SurfaceBorder);
 
     private (bool home, bool imagePreview, bool documentOpen, bool untitled, string? filePath)
         _languageDisplayCacheKey;
@@ -5375,17 +5375,17 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasDiagnostics => StatusBarDiagnosticsText != "No problems" && !string.IsNullOrWhiteSpace(StatusBarDiagnosticsText);
 
-    public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush TopBarBrush { get; private set; } = Brush.Parse("#181818");
-    public IBrush SidebarBrush { get; private set; } = Brush.Parse("#181818");
-    public IBrush ButtonBrush { get; private set; } = Brush.Parse("#252526");
-    public IBrush ButtonHoverBrush { get; private set; } = Brush.Parse("#313437");
-    public IBrush EditorBackgroundBrush { get; private set; } = Brush.Parse("#1E1E1E");
-    public IBrush CardBrush { get; private set; } = Brush.Parse("#252526");
-    public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse("#F4F4F4");
-    public IBrush MutedTextBrush { get; private set; } = Brush.Parse("#A0A0A0");
-    public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse("#2B2B2B");
-    public IBrush AccentBrush { get; private set; } = Brush.Parse("#8C00FF");
+    public IBrush WindowBackgroundBrush { get; private set; } = Brush.Parse(KodoDesignTokens.WindowBackground);
+    public IBrush TopBarBrush { get; private set; } = Brush.Parse(KodoDesignTokens.TopBar);
+    public IBrush SidebarBrush { get; private set; } = Brush.Parse(KodoDesignTokens.Sidebar);
+    public IBrush ButtonBrush { get; private set; } = Brush.Parse(KodoDesignTokens.Button);
+    public IBrush ButtonHoverBrush { get; private set; } = Brush.Parse(KodoDesignTokens.ButtonHover);
+    public IBrush EditorBackgroundBrush { get; private set; } = Brush.Parse(KodoDesignTokens.EditorBackground);
+    public IBrush CardBrush { get; private set; } = Brush.Parse(KodoDesignTokens.Card);
+    public IBrush PrimaryTextBrush { get; private set; } = Brush.Parse(KodoDesignTokens.PrimaryText);
+    public IBrush MutedTextBrush { get; private set; } = Brush.Parse(KodoDesignTokens.MutedText);
+    public IBrush SurfaceBorderBrush { get; private set; } = Brush.Parse(KodoDesignTokens.SurfaceBorder);
+    public IBrush AccentBrush { get; private set; } = Brush.Parse(KodoDesignTokens.Accent);
     public IBrush DangerBrush { get; } = new SolidColorBrush(KodoDesignTokens.DangerColor);
     public IBrush DangerForegroundBrush { get; } = Brushes.White;
     public Color DangerColor => KodoDesignTokens.DangerColor;
@@ -5420,7 +5420,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public IBrush WindowsAccentPreviewBrush { get; private set; } =
-        Brush.Parse("#8C00FF");
+        Brush.Parse(KodoDesignTokens.DefaultAccentHex);
 
     public bool HasSystemAccent => _hasSystemAccent;
 
@@ -5440,7 +5440,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsAccentCustom => _accentColorMode == "custom";
     public bool HasThemeAccent => _hasThemeAccent;
     public bool IsAccentTheme => _accentColorMode == "theme";
-    public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse("#8C00FF");
+    public IBrush ThemeAccentPreviewBrush { get; private set; } = Brush.Parse(KodoDesignTokens.Accent);
 
     public string CustomAccentHex
     {
@@ -5629,6 +5629,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RefreshStatusBarDiagnostics()
     {
+        UpdateActiveTabDiagnostics();
+        UpdateFileTreeErrorCountsForOpenTabs();
         var errors = _errorHighlightRenderer.Spans.Count(s => string.Equals(s.Severity, "error", StringComparison.OrdinalIgnoreCase));
         var warnings = _errorHighlightRenderer.Spans.Count(s => string.Equals(s.Severity, "warning", StringComparison.OrdinalIgnoreCase));
         var infos = _errorHighlightRenderer.Spans.Count - errors - warnings;
@@ -5650,7 +5652,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarDiagnosticsText = string.Join(" • ", parts);
             StatusBarDiagnosticsTooltip = string.Join(Environment.NewLine, parts.Select(p => $"• {p}"));
         }
-        UpdateActiveTabDiagnostics();
     }
 
     private void UpdateTabDiagnostics(Kodo.Models.EditorTab? tab, IReadOnlyList<ErrorSpan> errorSpans, IReadOnlyList<DeadCodeSpan> deadSpans)
@@ -9915,7 +9916,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? accentSolid.Color
-            : Color.Parse("#8C00FF");
+            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
         var headerRow = new StackPanel
         {
@@ -10109,7 +10110,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? accentSolid.Color
-            : Color.Parse("#8C00FF");
+            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
         var headerRow = new StackPanel
         {
@@ -10296,7 +10297,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
             ? accentSolid.Color
-            : Color.Parse("#8C00FF");
+            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
         var headerRow = new StackPanel
         {

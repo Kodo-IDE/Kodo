@@ -1220,7 +1220,7 @@ public partial class MainWindow
         PrimaryText = GetThemeColor(theme, "primaryText", "#FFFFFF"),
         MutedText = GetThemeColor(theme, "mutedText", "#BDBDBD"),
         SurfaceBorder = GetThemeColor(theme, "surfaceBorder", "#4A4A4A"),
-        Accent = GetThemeColor(theme, "accent", "#8C00FF"),
+        Accent = GetThemeColor(theme, "accent", KodoDesignTokens.DefaultAccentHex),
         PreviewBackground = GetThemeColor(theme, "previewBackground", GetThemeColor(theme, "editorBackground", "#000000")),
         PreviewBorder = GetThemeColor(theme, "previewBorder", GetThemeColor(theme, "surfaceBorder", "#4A4A4A"))
     };

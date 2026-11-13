@@ -178,3 +178,13 @@ public sealed class PreviewHighlightConverter : IMultiValueConverter
         return inlines;
     }
 }
+public sealed class BrushColorConverter : IValueConverter
+{
+    public static readonly BrushColorConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is ISolidColorBrush brush ? brush.Color : Colors.Transparent;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
