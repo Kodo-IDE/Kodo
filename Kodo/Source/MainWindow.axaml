@@ -1113,7 +1113,8 @@
             </DockPanel>
         </Border>
 
-        <Border Grid.Row="1" Grid.Column="1"
+        <Grid x:Name="SidebarSplitGrid" Grid.Row="1" Grid.Column="1" RowDefinitions="*,0,0">
+        <Border Grid.Row="0"
                 Width="{Binding ExplorerPanelWidth}"
                 MinWidth="{Binding ExplorerPanelMinWidth}"
                 MaxWidth="600"
@@ -1582,6 +1583,23 @@
                 </ScrollViewer>
             </Grid>
         </Border>
+
+        <GridSplitter x:Name="SidebarSplitter"
+                      Grid.Row="1"
+                      ResizeDirection="Rows"
+                      ResizeBehavior="PreviousAndNext"
+                      Height="{x:Static kodo:KodoDesignTokens.SplitterWidth}"
+                      HorizontalAlignment="Stretch"
+                      Background="{Binding SurfaceBorderBrush}"
+                      ToolTip.Tip="Drag to resize the sidebar panes"
+                      IsVisible="False" />
+
+        <ContentControl x:Name="GitSourcePanelHost"
+                        Grid.Row="2"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        IsVisible="False" />
+        </Grid>
 
         <Border Grid.Row="1" Grid.Column="2"
                 x:Name="ExplorerPanelSplitter"

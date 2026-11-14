@@ -33,7 +33,6 @@ namespace GitSourceControl;
 internal sealed class GitSourceControlIntegration
 {
     private MainWindow? _window;
-    private Grid? _rootGrid;
     private Border? _sourcePanel;
     private readonly List<Button> _remoteActionButtons = new();
     private bool _panelOpen;
@@ -175,7 +174,7 @@ internal sealed class GitSourceControlIntegration
         }
         else if (e.PropertyName == "IsFileExplorerVisible" && _panelOpen && _fallbackWindow is null)
         {
-            CloseSourcePanel();
+            _window?.SyncSidebarSplitLayout();
         }
         else if (e.PropertyName == "ExplorerPanelWidth" && _panelOpen)
         {
@@ -275,25 +274,21 @@ internal sealed class GitSourceControlIntegration
             SyncWithHostPage();
         }
         if (!_sidebarViewAvailable) return;
-        if (_window.Content is not Grid root || root.ColumnDefinitions.Count < 3)
+        if (FindNamedControl(_window, "GitSourcePanelHost") is not ContentControl host)
         {
             ShowFallbackWindow();
             return;
         }
 
-        _rootGrid = root;
         _sourcePanel = CreateSourcePanel();
-        Grid.SetColumn(_sourcePanel, 1);
-        Grid.SetRow(_sourcePanel, 0);
-        Grid.SetRowSpan(_sourcePanel, Math.Max(1, root.RowDefinitions.Count));
-        _sourcePanel.ZIndex = 100;
-        root.Children.Add(_sourcePanel);
+        host.Content = _sourcePanel;
         UpdateSidebarWidth();
         _panelOpen = true;
         SetActivitySelected(true);
         SetOperationBusy(_operationRunning);
         _lastSignature = string.Empty;
         RefreshPanelContent();
+        _window.SyncSidebarSplitLayout();
         _ = RefreshRepositoryAsync();
     }
 
@@ -306,16 +301,16 @@ internal sealed class GitSourceControlIntegration
         }
         if (_sourcePanel is not null)
         {
-            try { _rootGrid?.Children.Remove(_sourcePanel); } catch { }
+            try { if (_window is not null && FindNamedControl(_window, "GitSourcePanelHost") is ContentControl host) host.Content = null; } catch { }
         }
         _sourcePanel = null;
-        _rootGrid = null;
         ForgetPanelControls();
         RestoreEditorAfterDiff();
         _panelOpen = false;
         SetActivitySelected(false);
         DisposeThemeSyncs(_dynamicThemeSyncs);
         DisposeThemeSyncs(_fixedThemeSyncs);
+        _window?.SyncSidebarSplitLayout();
     }
 
     private void ForgetPanelControls()

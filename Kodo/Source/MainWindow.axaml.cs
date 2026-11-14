@@ -2467,6 +2467,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isFileExplorerVisible = value;
             OnPropertyChanged();
             CenterQuickAccessSearchFrame();
+            SyncSidebarSplitLayout();
         }
     }
 
@@ -2479,6 +2480,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         frame.Width = width;
         frame.IsVisible = width >= 140;
         frame.RenderTransform = new TranslateTransform(delta, 0);
+    }
+
+    internal void SyncSidebarSplitLayout()
+    {
+        if (this.FindControl<Grid>("SidebarSplitGrid") is not { } split)
+            return;
+        var explorerOn = IsFileExplorerVisible;
+        var gitOn = IsGitSourceControlPanelOpen;
+        if (split.RowDefinitions is not { Count: >= 3 } rows)
+            return;
+        var star = new GridLength(1, GridUnitType.Star);
+        var zero = new GridLength(0);
+        var splitOn = explorerOn && gitOn;
+        rows[0].Height = explorerOn ? star : zero;
+        rows[1].Height = splitOn ? GridLength.Auto : zero;
+        rows[2].Height = gitOn ? star : zero;
+        if (split.FindControl<GridSplitter>("SidebarSplitter") is { } splitter)
+            splitter.IsVisible = splitOn;
+        if (split.FindControl<ContentControl>("GitSourcePanelHost") is { } host)
+            host.IsVisible = gitOn;
     }
 
     private void QueueCenterQuickAccessSearchFrame()
