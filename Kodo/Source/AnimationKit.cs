@@ -63,9 +63,38 @@ internal static class AnimationKit
         }, DispatcherPriority.Render);
     }
 
+    public static void EnableHoverLift(Avalonia.Controls.Primitives.TemplatedControl target,
+        double distance = 1, double durationMs = 140)
+    {
+        if (target is null || ReduceMotion) return;
+        var duration = TimeSpan.FromMilliseconds(durationMs);
+        var collection = target.Transitions ?? new Transitions();
+        if (!collection.OfType<TransformOperationsTransition>().Any(t => t.Property == Visual.RenderTransformProperty))
+            collection.Add(new TransformOperationsTransition
+            {
+                Property = Visual.RenderTransformProperty,
+                Duration = duration,
+                Easing = new CubicEaseOut(),
+            });
+        if (!collection.OfType<BrushTransition>().Any(t => t.Property == Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty))
+            collection.Add(new BrushTransition
+            {
+                Property = Avalonia.Controls.Primitives.TemplatedControl.BackgroundProperty,
+                Duration = duration,
+            });
+        if (!collection.OfType<BrushTransition>().Any(t => t.Property == Avalonia.Controls.Primitives.TemplatedControl.ForegroundProperty))
+            collection.Add(new BrushTransition
+            {
+                Property = Avalonia.Controls.Primitives.TemplatedControl.ForegroundProperty,
+                Duration = duration,
+            });
+        target.Transitions = collection;
+        target.PointerEntered += (_, _) => target.RenderTransform = Translation(0, -distance);
+        target.PointerExited += (_, _) => target.RenderTransform = Translation(0, 0);
+    }
+
     public static void Pulse(Visual target, double dip = 0.5, int durationMs = 240)
         => PulseCore(target, dip, durationMs);
-
     public static void PulseAccent(Visual target, int durationMs = 260)
         => PulseCore(target, 0.4, durationMs);
 

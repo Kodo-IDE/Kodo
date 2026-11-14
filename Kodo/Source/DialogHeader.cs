@@ -12,16 +12,6 @@ internal static class DialogHeader
     public static StackPanel Create(IBrush badge, IBrush title, IBrush icon, string svg, string titleText,
         double tile = 36, double glyph = 20, double titleFontSize = 17)
     {
-        var iconColor = (icon as ISolidColorBrush)?.Color ?? Color.Parse("#FFFFFF");
-        var headerBadge = new Border
-        {
-            Width = tile,
-            Height = tile,
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Background = badge,
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = BuildImage(svg, iconColor, glyph),
-        };
         var headerTitle = new TextBlock
         {
             Text = titleText,
@@ -35,7 +25,21 @@ internal static class DialogHeader
         {
             Orientation = Orientation.Horizontal,
             Spacing = 12,
-            Children = { headerBadge, headerTitle },
+            Children = { CreateBadge(badge, icon, svg, tile, glyph), headerTitle },
+        };
+    }
+
+    public static Border CreateBadge(IBrush badge, IBrush icon, string svg, double tile = 36, double glyph = 20)
+    {
+        var iconColor = (icon as ISolidColorBrush)?.Color ?? Color.Parse("#FFFFFF");
+        return new Border
+        {
+            Width = tile,
+            Height = tile,
+            CornerRadius = KodoDesignTokens.ControlRadius,
+            Background = badge,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = BuildImage(svg, iconColor, glyph),
         };
     }
 

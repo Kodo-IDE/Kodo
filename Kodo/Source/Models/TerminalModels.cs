@@ -273,6 +273,7 @@ public sealed class TerminalProcessHandle
     public IntPtr HThread = IntPtr.Zero;
     public bool IsUnixPty;
     public bool Exited;
+    public int? ExitCode;
     public CancellationTokenSource? WatcherCts;
 }
 

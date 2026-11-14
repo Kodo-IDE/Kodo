@@ -3090,7 +3090,8 @@ public partial class MainWindow
         }
 
         var window = new CompilerRunWindow(
-            isBuild ? $"Kodo - Build ({toolLabel})" : $"Kodo - Run ({toolLabel})",
+            isBuild ? "Build" : "Run",
+            toolLabel,
             commandLine,
             exe,
             args,
