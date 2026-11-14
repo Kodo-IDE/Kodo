@@ -28,7 +28,7 @@ public partial class MainWindow
     private TextDocument? _lastHandledEditorTextDocument;
     private readonly HashSet<(TextDocument Document, ITextSourceVersion Version)> _handledPaneTextChanges = [];
 
-    private TextEditor EditorTextBox => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
+    internal TextEditor EditorTextBox => ReferenceEquals(_activeEditorPane, _secondaryEditorPane)
         ? SecondaryEditorTextBox
         : PrimaryEditorTextBox;
 

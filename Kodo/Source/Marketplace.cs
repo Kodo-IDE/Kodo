@@ -1,4 +1,5 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;

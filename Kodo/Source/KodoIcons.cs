@@ -50,6 +50,27 @@ internal static class KodoIcons
     public static string ChevronUp { get; } = Load("chevron-up");
     public static string ChevronDown { get; } = Load("chevron-down");
     public static string Archive { get; } = Load("archive");
+    public static string Keyboard { get; } = Load("keyboard");
+    public static string ArrowUp { get; } = Load("arrow-up");
+    public static string DocumentText { get; } = Load("document-text");
+    public static string ArrowUturnDown { get; } = Load("arrow-uturn-down");
+    public static string Indent { get; } = Load("indent");
+    public static string Droplet { get; } = Load("droplet");
+    public static string CommandLine { get; } = Load("command-line");
+    public static string Branch { get; } = Load("branch");
+    public static string ArchiveBox { get; } = Load("archive-box");
+    public static string ArrowDownLine { get; } = Load("arrow-down-line");
+    public static string ArrowTopRightOnSquare { get; } = Load("arrow-top-right-on-square");
+    public static string ArrowUturnLeft { get; } = Load("arrow-uturn-left");
+    public static string ArrowUpTray { get; } = Load("arrow-up-tray");
+    public static string Check { get; } = Load("check");
+    public static string CheckSquare { get; } = Load("check-square");
+    public static string Cloud { get; } = Load("cloud");
+    public static string CloudArrowDown { get; } = Load("cloud-arrow-down");
+    public static string CloudArrowUp { get; } = Load("cloud-arrow-up");
+    public static string EllipsisHorizontal { get; } = Load("ellipsis-horizontal");
+    public static string Square { get; } = Load("square");
+    public static string ChevronRight { get; } = Load("chevron-right");
 
     public static string SymbolVariable { get; } = Load("symbol-variable");
     public static string SymbolFunction { get; } = Load("symbol-function");

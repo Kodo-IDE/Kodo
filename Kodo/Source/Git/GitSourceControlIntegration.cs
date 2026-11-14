@@ -95,7 +95,6 @@ internal sealed class GitSourceControlIntegration
     private TextBlock? _statusLabel;
     private TextBox? _commitMessage;
     private Button? _commitButton;
-    private Window? _branchWindow;
     private Window? _fallbackWindow;
     private TextEditor? _editorText;
     private GitDiffLineColorizer? _editorDiffColorizer;
@@ -138,6 +137,46 @@ internal sealed class GitSourceControlIntegration
         DisposeThemeSyncs(_fixedThemeSyncs);
         RestoreEditorAfterDiff();
         _window = null;
+    }
+
+    private Image BuildGlyphImage(string svg, Color color, double size)
+    {
+        var tinted = svg.Replace("currentColor", $"#{color.R:X2}{color.G:X2}{color.B:X2}", StringComparison.Ordinal);
+        return new Image
+        {
+            Source = new Avalonia.Svg.Skia.SvgImage
+            {
+                Source = Avalonia.Svg.Skia.SvgSource.LoadFromSvg(tinted)!,
+            },
+            Width = size,
+            Height = size,
+            Stretch = Stretch.Uniform,
+        };
+    }
+
+    private Image BuildGlyphImage(string svg, string brushName, double size)
+    {
+        var brush = GetWindowBrush(brushName) as ISolidColorBrush;
+        return BuildGlyphImage(svg, brush?.Color ?? Colors.White, size);
+    }
+
+    private StackPanel BuildGlyphText(string svg, string text, double textFontSize = 12, FontWeight? weight = null)
+    {
+        var image = BuildGlyphImage(svg, "PrimaryTextBrush", 16);
+        var label = new TextBlock
+        {
+            Text = text,
+            FontSize = textFontSize,
+            FontWeight = weight ?? FontWeight.Normal,
+            Foreground = GetWindowBrush("PrimaryTextBrush"),
+        };
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 7,
+            VerticalAlignment = VerticalAlignment.Center,
+            Children = { image, label },
+        };
     }
 
     private static void CleanupStalePreviewFiles()
@@ -399,13 +438,13 @@ internal sealed class GitSourceControlIntegration
         Grid.SetColumn(title, 1);
         TrackTheme(title, TextBlock.ForegroundProperty, "MutedTextBrush", _fixedThemeSyncs);
         headerGrid.Children.Add(title);
-        var more = CreateSmallButton("⋯", "More actions: stash, undo last commit, discard all", ToggleActionsAsync, _fixedThemeSyncs);
+        var more = CreateSmallButton(KodoIcons.EllipsisHorizontal, "More actions: stash, undo last commit, discard all", ToggleActionsAsync, _fixedThemeSyncs);
         more.Width = 28;
         more.Height = 28;
         more.Classes.Add("activity");
         Grid.SetColumn(more, 2);
         headerGrid.Children.Add(more);
-        var refresh = CreateSmallButton("↻", "Refresh Git status", async () =>
+        var refresh = CreateSmallButton(KodoIcons.ArrowPath, "Refresh Git status", async () =>
         {
             _forceFullRefresh = true;
             await RefreshRepositoryAsync();
@@ -445,7 +484,7 @@ internal sealed class GitSourceControlIntegration
         var branchRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*") };
         var branch = new Button
         {
-            Content = "⑂  Select branch",
+            Content = BuildGlyphText(KodoIcons.Branch, "Select branch"),
             HorizontalContentAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(9, 7),
             CornerRadius = KodoDesignTokens.ControlRadius,
@@ -463,19 +502,19 @@ internal sealed class GitSourceControlIntegration
             ColumnDefinitions = new ColumnDefinitions("*,*,*"),
             ColumnSpacing = 5
         };
-        var fetch = CreateTextButton("↓  Fetch", "Fetch remote refs", async () => await RunGitOperationAsync(["fetch", "--prune"], "Fetched from remote."), _fixedThemeSyncs);
+        var fetch = CreateTextButton(KodoIcons.CloudArrowDown, "Fetch", "Fetch remote refs", async () => await RunGitOperationAsync(["fetch", "--prune"], "Fetched from remote."), _fixedThemeSyncs);
         _remoteActionButtons.Add(fetch);
         fetch.Padding = new Thickness(5, 6);
         fetch.FontSize = 11;
         Grid.SetColumn(fetch, 0);
         remoteActions.Children.Add(fetch);
-        var pull = CreateTextButton("⇣  Pull", "Pull with fast-forward only", async () => await RunGitOperationAsync(["pull", "--ff-only"], "Pulled changes."), _fixedThemeSyncs);
+        var pull = CreateTextButton(KodoIcons.ArrowDownLine, "Pull", "Pull with fast-forward only", async () => await RunGitOperationAsync(["pull", "--ff-only"], "Pulled changes."), _fixedThemeSyncs);
         _pullButton = pull;
         pull.Padding = new Thickness(5, 6);
         pull.FontSize = 11;
         Grid.SetColumn(pull, 1);
         remoteActions.Children.Add(pull);
-        var push = CreateTextButton("⇡  Push", "Push to remote", PushAsync, _fixedThemeSyncs);
+        var push = CreateTextButton(KodoIcons.CloudArrowUp, "Push", "Push to remote", PushAsync, _fixedThemeSyncs);
         _pushButton = push;
         _remoteActionButtons.Add(push);
         push.Padding = new Thickness(5, 6);
@@ -520,10 +559,10 @@ internal sealed class GitSourceControlIntegration
         }
         var actionsRowOne = NewActionRow();
         var actionsRowTwo = NewActionRow();
-        _stashButton = CreateTextButton("⤓  Stash", "Stash all changes, including untracked files", StashAsync, _fixedThemeSyncs);
-        _popStashButton = CreateTextButton("⤒  Pop Stash", "Apply and remove the most recent stash", PopStashAsync, _fixedThemeSyncs);
-        _undoCommitButton = CreateTextButton("↶  Undo Last Commit", "Undo the last commit but keep its changes staged", UndoLastCommitAsync, _fixedThemeSyncs);
-        _discardAllButton = CreateTextButton("✕  Discard All…", "Discard all unstaged changes and delete untracked files", DiscardAllAsync, _fixedThemeSyncs, "DangerBrush", "DangerForegroundBrush");
+        _stashButton = CreateTextButton(KodoIcons.ArchiveBox, "Stash", "Stash all changes, including untracked files", StashAsync, _fixedThemeSyncs);
+        _popStashButton = CreateTextButton(KodoIcons.ArrowUpTray, "Pop Stash", "Apply and remove the most recent stash", PopStashAsync, _fixedThemeSyncs);
+        _undoCommitButton = CreateTextButton(KodoIcons.ArrowUturnLeft, "Undo Last Commit", "Undo the last commit but keep its changes staged", UndoLastCommitAsync, _fixedThemeSyncs);
+        _discardAllButton = CreateTextButton(KodoIcons.Trash, "Discard All…", "Discard all unstaged changes and delete untracked files", DiscardAllAsync, _fixedThemeSyncs, "DangerBrush", "DangerForegroundBrush");
         void PlaceAction(Grid row, Button button, int column)
         {
             button.Padding = new Thickness(5, 6);
@@ -571,7 +610,7 @@ internal sealed class GitSourceControlIntegration
         commitPanel.Children.Add(_commitMessage);
         _amendButton = new Button
         {
-            Content = "☐  Amend last commit",
+            Content = BuildGlyphText(KodoIcons.Square, "Amend last commit", 11),
             HorizontalAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(6, 3),
             FontSize = 11,
@@ -584,7 +623,7 @@ internal sealed class GitSourceControlIntegration
         commitPanel.Children.Add(_amendButton);
         _commitButton = new Button
         {
-            Content = "✓  Commit Changes",
+            Content = BuildGlyphText(KodoIcons.Check, "Commit Changes"),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Padding = new Thickness(9, 8),
@@ -621,7 +660,7 @@ internal sealed class GitSourceControlIntegration
         TrackTheme(_statusLabel, TextBlock.ForegroundProperty, "MutedTextBrush", _fixedThemeSyncs);
         var statusGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 6 };
         statusGrid.Children.Add(_statusLabel);
-        _cancelButton = CreateTextButton("Cancel", "Cancel the running Git operation", CancelOperationAsync, _fixedThemeSyncs);
+        _cancelButton = CreateTextButton(null, "Cancel", "Cancel the running Git operation", CancelOperationAsync, _fixedThemeSyncs);
         _cancelButton.Padding = new Thickness(8, 2);
         _cancelButton.FontSize = 11;
         _cancelButton.IsVisible = false;
@@ -716,18 +755,18 @@ internal sealed class GitSourceControlIntegration
         }
         if (_pushButton is not null)
         {
-            _pushButton.Content = canPublish ? "⇡  Publish" : "⇡  Push";
+            _pushButton.Content = BuildGlyphText(KodoIcons.CloudArrowUp, canPublish ? "Publish" : "Push");
             ToolTip.SetTip(_pushButton, canPublish ? "Publish this branch to the remote and set its upstream" : "Push to remote");
         }
         if (_commitMessage is not null) _commitMessage.IsEnabled = _repositoryRoot is not null && !(_operationRunning && !_operationIsNetwork);
         if (_amendButton is not null)
         {
-            _amendButton.Content = _amend ? "☑  Amend last commit" : "☐  Amend last commit";
+            _amendButton.Content = BuildGlyphText(_amend ? KodoIcons.CheckSquare : KodoIcons.Square, "Amend last commit", 11);
             _amendButton.IsEnabled = repositoryAvailable && _hasHead;
         }
         if (_commitButton is not null)
         {
-            _commitButton.Content = _amend ? "✓  Amend Commit" : "✓  Commit Changes";
+            _commitButton.Content = BuildGlyphText(KodoIcons.Check, _amend ? "Amend Commit" : "Commit Changes");
             _commitButton.IsEnabled = repositoryAvailable && !hasConflicts && (hasStaged || (_amend && _hasHead));
             ToolTip.SetTip(_commitButton, hasConflicts ? "Resolve merge conflicts and stage the resolved files before committing" : null);
         }
@@ -736,7 +775,7 @@ internal sealed class GitSourceControlIntegration
         if (_popStashButton is not null)
         {
             _popStashButton.IsEnabled = repositoryAvailable && _stashCount > 0;
-            _popStashButton.Content = _stashCount > 0 ? $"⤒  Pop Stash ({_stashCount})" : "⤒  Pop Stash";
+            _popStashButton.Content = BuildGlyphText(KodoIcons.ArrowUpTray, _stashCount > 0 ? $"Pop Stash ({_stashCount})" : "Pop Stash");
         }
         if (_undoCommitButton is not null) _undoCommitButton.IsEnabled = repositoryAvailable && _hasHead;
         if (_discardAllButton is not null) _discardAllButton.IsEnabled = repositoryAvailable && _changes.Any(c => c.IsUnstaged);
@@ -758,14 +797,7 @@ internal sealed class GitSourceControlIntegration
         if (_branchButton is not null)
         {
             var text = _snapshot?.BranchDisplay ?? "Select branch";
-            _branchButton.Content = new TextBlock
-            {
-                Text = $"⑂  {text}",
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                Foreground = GetWindowBrush("PrimaryTextBrush"),
-                FontSize = 12
-            };
-            TrackTheme(_branchButton.Content as AvaloniaObject, TextBlock.ForegroundProperty, "PrimaryTextBrush", _dynamicThemeSyncs);
+            _branchButton.Content = BuildGlyphText(KodoIcons.Branch, text);
         }
         if (_syncLabel is not null)
         {
@@ -821,15 +853,9 @@ internal sealed class GitSourceControlIntegration
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        var icon = new TextBlock
-        {
-            Text = showInitialize ? "⑂" : "✓",
-            FontSize = 26,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = GetWindowBrush("AccentBrush"),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-        TrackTheme(icon, TextBlock.ForegroundProperty, "AccentBrush", _dynamicThemeSyncs);
+        var iconKey = showInitialize ? KodoIcons.Branch : KodoIcons.Check;
+        var icon = BuildGlyphImage(iconKey, "AccentBrush", 32);
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
         content.Children.Add(icon);
         var label = new TextBlock
         {
@@ -844,7 +870,7 @@ internal sealed class GitSourceControlIntegration
         content.Children.Add(label);
         if (showInitialize)
         {
-            var initialize = CreateTextButton("Initialize Repository", "Create a Git repository in the current folder", async () => await InitializeRepositoryAsync(), _dynamicThemeSyncs, "AccentBrush", "AccentForegroundBrush");
+            var initialize = CreateTextButton(null, "Initialize Repository", "Create a Git repository in the current folder", async () => await InitializeRepositoryAsync(), _dynamicThemeSyncs, "AccentBrush", "AccentForegroundBrush");
             initialize.HorizontalAlignment = HorizontalAlignment.Center;
             content.Children.Add(initialize);
         }
@@ -870,7 +896,7 @@ internal sealed class GitSourceControlIntegration
         var collapsed = _collapsedGroups.Contains(key);
         var toggle = new Button
         {
-            Content = $"{(collapsed ? "▸" : "▾")}  {title.ToUpperInvariant()}",
+            Content = BuildGlyphText(collapsed ? KodoIcons.ChevronRight : KodoIcons.ChevronDown, title.ToUpperInvariant(), 10, FontWeight.SemiBold),
             FontSize = 10,
             FontWeight = FontWeight.SemiBold,
             Padding = new Thickness(6, 3),
@@ -918,17 +944,17 @@ internal sealed class GitSourceControlIntegration
 
         if (kind == ChangeGroupKind.Staged)
         {
-            var unstageAll = CreateSmallButton("−", "Unstage all changes", async () =>
+            var unstageAll = CreateSmallButton(KodoIcons.Minus, "Unstage all changes", async () =>
                 await RunGitOperationAsync(GitCommands.UnstageAll(_hasHead), "All changes unstaged."));
             Grid.SetColumn(unstageAll, 3);
             heading.Children.Add(unstageAll);
         }
         else if (kind == ChangeGroupKind.Unstaged)
         {
-            var discardAll = CreateSmallButton("↶", "Discard all changes…", DiscardAllAsync);
+            var discardAll = CreateSmallButton(KodoIcons.ArrowUturnLeft, "Discard all changes…", DiscardAllAsync);
             Grid.SetColumn(discardAll, 2);
             heading.Children.Add(discardAll);
-            var stageAll = CreateSmallButton("+", "Stage all changes", async () =>
+            var stageAll = CreateSmallButton(KodoIcons.Plus, "Stage all changes", async () =>
                 await RunGitOperationAsync(GitCommands.StageAll(), "All changes staged."));
             Grid.SetColumn(stageAll, 3);
             heading.Children.Add(stageAll);
@@ -996,7 +1022,7 @@ internal sealed class GitSourceControlIntegration
 
         if (kind != ChangeGroupKind.Conflicts && !change.IsDeletedInWorktree)
         {
-            var openFile = CreateSmallButton("↗", "Open file", async () => await OpenWorkingFileAsync(change));
+            var openFile = CreateSmallButton(KodoIcons.ArrowTopRightOnSquare, "Open file", async () => await OpenWorkingFileAsync(change));
             Grid.SetColumn(openFile, 1);
             row.Children.Add(openFile);
         }
@@ -1004,13 +1030,13 @@ internal sealed class GitSourceControlIntegration
         Button primary;
         if (staged)
         {
-            primary = CreateSmallButton("−", "Unstage", async () =>
+            primary = CreateSmallButton(KodoIcons.Minus, "Unstage", async () =>
                 await RunGitOperationAsync(GitCommands.Unstage(change, _hasHead), "Change unstaged."));
         }
         else
         {
             var tip = kind == ChangeGroupKind.Conflicts ? "Mark as resolved (stage)" : "Stage";
-            primary = CreateSmallButton("+", tip, async () =>
+            primary = CreateSmallButton(KodoIcons.Plus, tip, async () =>
                 await RunGitOperationAsync(GitCommands.Stage(change), kind == ChangeGroupKind.Conflicts ? "Marked as resolved." : "Change staged."));
         }
         Grid.SetColumn(primary, 2);
@@ -1019,8 +1045,8 @@ internal sealed class GitSourceControlIntegration
         if (kind == ChangeGroupKind.Unstaged)
         {
             var discard = change.IsUntracked
-                ? CreateSmallButton("✕", "Delete untracked file…", async () => await DeleteUntrackedAsync(change))
-                : CreateSmallButton("↶", "Discard changes…", async () => await DiscardChangeAsync(change));
+                ? CreateSmallButton(KodoIcons.Trash, "Delete untracked file…", async () => await DeleteUntrackedAsync(change))
+                : CreateSmallButton(KodoIcons.ArrowUturnLeft, "Discard changes…", async () => await DiscardChangeAsync(change));
             Grid.SetColumn(discard, 3);
             row.Children.Add(discard);
         }
@@ -1299,6 +1325,21 @@ internal sealed class GitSourceControlIntegration
     private static bool IsNetworkCommand(IReadOnlyList<string> arguments)
         => arguments.Count > 0 && arguments[0] is "fetch" or "pull" or "push" or "clone";
 
+    internal async Task<IReadOnlyList<GitBranch>> LoadBranchesForPaletteAsync()
+    {
+        var candidate = GetWorkspaceCandidate();
+        if (candidate is null) return [];
+        var rootResult = await GitProcess.RunAsync(candidate, ["rev-parse", "--show-toplevel"], TimeSpan.FromSeconds(10), CancellationToken.None).ConfigureAwait(false);
+        if (!rootResult.Success) return [];
+        var root = rootResult.Output.Trim().TrimEnd('\n').Trim();
+        if (root.Length == 0) root = candidate;
+        var result = await GitProcess.RunAsync(root, GitCommands.BranchList, TimeSpan.FromSeconds(15), CancellationToken.None).ConfigureAwait(false);
+        return result.Success ? GitCommands.ParseBranches(result.Output) : [];
+    }
+
+    internal Task SwitchGitBranchAsync(GitBranch branch)
+        => RunGitOperationAsync(GitCommands.SwitchTo(branch), $"Checked out {branch.Name}.");
+
     private Task RunGitOperationAsync(IReadOnlyList<string> arguments, string successMessage, string? workingDirectory = null)
         => RunGitSequenceAsync([arguments], successMessage, workingDirectory);
 
@@ -1344,6 +1385,8 @@ internal sealed class GitSourceControlIntegration
             {
                 _lastOperationSucceeded = true;
                 operationStatus = successMessage;
+                if (_statusLabel is { } pulseTarget)
+                    AnimationKit.PulseAccent(pulseTarget, 520);
             }
         }
         catch (OperationCanceledException)
@@ -1518,16 +1561,14 @@ internal sealed class GitSourceControlIntegration
         var dialog = CreateDialogWindow(title, 420, 210);
         TrackTheme(dialog, Window.BackgroundProperty, "CardBrush", syncs);
         var content = new DockPanel();
-        var header = new StackPanel { Spacing = 3, Margin = new Thickness(20, 18, 20, 12) };
-        var titleLabel = new TextBlock
-        {
-            Text = title,
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = GetWindowBrush("PrimaryTextBrush")
-        };
-        TrackTheme(titleLabel, TextBlock.ForegroundProperty, "PrimaryTextBrush", syncs);
-        header.Children.Add(titleLabel);
+        var header = new StackPanel { Spacing = 4, Margin = new Thickness(20, 16, 20, 12) };
+        header.Children.Add(DialogHeader.Create(
+            GetWindowBrush("DangerBrush") ?? new SolidColorBrush(Color.Parse("#B91C1C")),
+            GetWindowBrush("PrimaryTextBrush") ?? Brushes.White,
+            GetWindowBrush("DangerForegroundBrush") ?? Brushes.White,
+            KodoIcons.Trash,
+            title));
+        header.Children.Add(DialogHeader.CreateDivider(GetWindowBrush("SurfaceBorderBrush") ?? Brushes.Transparent));
         DockPanel.SetDock(header, Dock.Top);
         content.Children.Add(header);
         var footer = new Border
@@ -1538,8 +1579,8 @@ internal sealed class GitSourceControlIntegration
         };
         TrackTheme(footer, Border.BorderBrushProperty, "SurfaceBorderBrush", syncs);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = CreateTextButton("Cancel", "Close without changing anything", async () => { dialog.Close(false); await Task.CompletedTask; }, syncs);
-        var confirm = CreateTextButton(confirmText, confirmText, async () => { dialog.Close(true); await Task.CompletedTask; }, syncs, "DangerBrush", "DangerForegroundBrush");
+        var cancel = CreateTextButton(null, "Cancel", "Close without changing anything", async () => { dialog.Close(false); await Task.CompletedTask; }, syncs);
+        var confirm = CreateTextButton(null, confirmText, confirmText, async () => { dialog.Close(true); await Task.CompletedTask; }, syncs, "DangerBrush", "DangerForegroundBrush");
         buttons.Children.Add(cancel);
         buttons.Children.Add(confirm);
         footer.Child = buttons;
@@ -1576,254 +1617,7 @@ internal sealed class GitSourceControlIntegration
 
     private void CommitButton_OnClick(object? sender, RoutedEventArgs e) => _ = CommitAsync();
 
-    private void BranchButton_OnClick(object? sender, RoutedEventArgs e) => _ = ShowBranchPickerAsync();
-
-    private async Task ShowBranchPickerAsync()
-    {
-        if (_window is null || _repositoryRoot is null || _operationRunning) return;
-        if (_branchWindow is not null)
-        {
-            _branchWindow.Activate();
-            return;
-        }
-
-        var syncs = new List<IDisposable>();
-        var repository = _repositoryRoot;
-        var picker = CreateDialogWindow("Branches", 440, 560);
-        TrackTheme(picker, Window.BackgroundProperty, "CardBrush", syncs);
-        _branchWindow = picker;
-        picker.Closed += (_, _) =>
-        {
-            DisposeThemeSyncs(syncs);
-            if (ReferenceEquals(_branchWindow, picker)) _branchWindow = null;
-        };
-        picker.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Escape)
-            {
-                picker.Close();
-                e.Handled = true;
-            }
-        };
-
-        var branches = new List<GitBranch>();
-        var filterText = string.Empty;
-        var list = new StackPanel { Spacing = 2 };
-        var createError = new TextBlock
-        {
-            FontSize = 11,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = GetWindowBrush("DangerBrush"),
-            IsVisible = false,
-            Margin = new Thickness(2, 0, 0, 0)
-        };
-        TrackTheme(createError, TextBlock.ForegroundProperty, "DangerBrush", syncs);
-
-        Control Heading(string text)
-        {
-            var heading = new TextBlock
-            {
-                Text = text,
-                FontSize = 10,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = GetWindowBrush("MutedTextBrush"),
-                Margin = new Thickness(6, 10, 6, 3)
-            };
-            TrackTheme(heading, TextBlock.ForegroundProperty, "MutedTextBrush", syncs);
-            return heading;
-        }
-
-        void Populate()
-        {
-            list.Children.Clear();
-            var needle = filterText.Trim();
-            bool Matches(GitBranch b) => needle.Length == 0 || b.Name.Contains(needle, StringComparison.OrdinalIgnoreCase);
-            var locals = branches.Where(b => !b.IsRemote && Matches(b))
-                .OrderByDescending(b => b.IsCurrent).ThenBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
-            var localNames = new HashSet<string>(branches.Where(b => !b.IsRemote).Select(b => b.Name), StringComparer.Ordinal);
-            var remotes = branches.Where(b => b.IsRemote && Matches(b))
-                .Where(b => !localNames.Contains(b.Name.IndexOf('/') >= 0 ? b.Name[(b.Name.IndexOf('/') + 1)..] : b.Name))
-                .OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase).ToList();
-
-            if (locals.Count > 0) list.Children.Add(Heading("LOCAL BRANCHES"));
-            foreach (var branch in locals)
-            {
-                var captured = branch;
-                var row = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), ColumnSpacing = 2 };
-                var label = new TextBlock
-                {
-                    FontSize = 13,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    VerticalAlignment = VerticalAlignment.Center
-                };
-                label.Inlines!.Add(new Run((branch.IsCurrent ? "✓  " : "⑂  ") + branch.Name) { Foreground = GetWindowBrush(branch.IsCurrent ? "AccentBrush" : "PrimaryTextBrush") });
-                if (branch.Upstream is not null)
-                    label.Inlines.Add(new Run($"   {branch.Upstream}") { Foreground = GetWindowBrush("MutedTextBrush"), FontSize = 11 });
-                var button = new Button
-                {
-                    Content = label,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Padding = new Thickness(10, 8),
-                    CornerRadius = KodoDesignTokens.CompactRadius,
-                    Cursor = new Cursor(StandardCursorType.Hand),
-                    IsEnabled = !branch.IsCurrent
-                };
-                ToolTip.SetTip(button, branch.IsCurrent ? "Current branch" : $"Switch to {branch.Name}");
-                button.Click += async (_, _) =>
-                {
-                    picker.Close();
-                    await RunGitOperationAsync(GitCommands.SwitchTo(captured), $"Switched to {captured.Name}.");
-                };
-                TrackQuietButton(button, syncs, "PrimaryTextBrush");
-                row.Children.Add(button);
-                if (!branch.IsCurrent)
-                {
-                    var delete = CreateSmallButton("✕", $"Delete branch {branch.Name}…", async () =>
-                    {
-                        await DeleteBranchAsync(captured.Name);
-                        await LoadAsync();
-                    }, syncs);
-                    Grid.SetColumn(delete, 1);
-                    row.Children.Add(delete);
-                }
-                list.Children.Add(row);
-            }
-
-            if (remotes.Count > 0) list.Children.Add(Heading("REMOTE BRANCHES"));
-            foreach (var branch in remotes)
-            {
-                var captured = branch;
-                var button = new Button
-                {
-                    Content = new TextBlock
-                    {
-                        Text = $"☁  {branch.Name}",
-                        FontSize = 13,
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        Foreground = GetWindowBrush("PrimaryTextBrush")
-                    },
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    HorizontalContentAlignment = HorizontalAlignment.Left,
-                    Padding = new Thickness(10, 8),
-                    CornerRadius = KodoDesignTokens.CompactRadius,
-                    Cursor = new Cursor(StandardCursorType.Hand)
-                };
-                ToolTip.SetTip(button, $"Check out {branch.Name} as a new local tracking branch");
-                button.Click += async (_, _) =>
-                {
-                    picker.Close();
-                    await RunGitOperationAsync(GitCommands.SwitchTo(captured), $"Checked out {captured.Name}.");
-                };
-                TrackQuietButton(button, syncs, "PrimaryTextBrush");
-                list.Children.Add(button);
-            }
-
-            if (locals.Count == 0 && remotes.Count == 0)
-            {
-                var empty = new TextBlock
-                {
-                    Text = branches.Count == 0 ? "Loading branches…" : "No matching branches.",
-                    FontSize = 12,
-                    Foreground = GetWindowBrush("MutedTextBrush"),
-                    Margin = new Thickness(10, 14)
-                };
-                TrackTheme(empty, TextBlock.ForegroundProperty, "MutedTextBrush", syncs);
-                list.Children.Add(empty);
-            }
-        }
-
-        async Task LoadAsync()
-        {
-            var result = await GitProcess.RunAsync(repository, GitCommands.BranchList, TimeSpan.FromSeconds(15), _lifetime?.Token ?? CancellationToken.None);
-            if (_branchWindow is null) return;
-            if (result.Success) branches = GitCommands.ParseBranches(result.Output);
-            else SetStatus(FormatGitError(result));
-            Populate();
-        }
-
-        async Task CreateAsync(TextBox box)
-        {
-            var name = box.Text?.Trim() ?? string.Empty;
-            var problem = GitCommands.ValidateBranchName(name);
-            if (problem is null && branches.Any(b => !b.IsRemote && string.Equals(b.Name, name, StringComparison.Ordinal)))
-                problem = $"A branch named '{name}' already exists.";
-            if (problem is not null)
-            {
-                createError.Text = problem;
-                createError.IsVisible = true;
-                return;
-            }
-            createError.IsVisible = false;
-            picker.Close();
-            await RunGitOperationAsync(["switch", "-c", name], $"Created and switched to {name}.");
-        }
-
-        var content = new DockPanel();
-        var header = new StackPanel { Spacing = 8, Margin = new Thickness(18, 16, 18, 8) };
-        var title = new TextBlock
-        {
-            Text = "Branches",
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = GetWindowBrush("PrimaryTextBrush")
-        };
-        TrackTheme(title, TextBlock.ForegroundProperty, "PrimaryTextBrush", syncs);
-        header.Children.Add(title);
-        var search = new TextBox { PlaceholderText = "Filter branches", Padding = new Thickness(9), CornerRadius = KodoDesignTokens.ControlRadius, FontSize = 12 };
-        TrackTheme(search, TextBox.BackgroundProperty, "EditorBackgroundBrush", syncs);
-        TrackTheme(search, TextBox.ForegroundProperty, "PrimaryTextBrush", syncs);
-        TrackTheme(search, TextBox.BorderBrushProperty, "SurfaceBorderBrush", syncs);
-        search.TextChanged += (_, _) =>
-        {
-            filterText = search.Text ?? string.Empty;
-            Populate();
-        };
-        header.Children.Add(search);
-        DockPanel.SetDock(header, Dock.Top);
-        content.Children.Add(header);
-
-        var create = new StackPanel { Spacing = 6, Margin = new Thickness(18, 10, 18, 14) };
-        var newName = new TextBox { PlaceholderText = "New branch name (Enter to create)", Padding = new Thickness(9), CornerRadius = KodoDesignTokens.ControlRadius, FontSize = 12 };
-        TrackTheme(newName, TextBox.BackgroundProperty, "EditorBackgroundBrush", syncs);
-        TrackTheme(newName, TextBox.ForegroundProperty, "PrimaryTextBrush", syncs);
-        TrackTheme(newName, TextBox.BorderBrushProperty, "SurfaceBorderBrush", syncs);
-        newName.TextChanged += (_, _) => createError.IsVisible = false;
-        newName.KeyDown += async (_, e) =>
-        {
-            if (e.Key != Key.Enter) return;
-            e.Handled = true;
-            await CreateAsync(newName);
-        };
-        var createButton = CreateTextButton("⑂  Create and Switch", "Create a branch from the current commit and switch to it", async () => await CreateAsync(newName), syncs, "AccentBrush", "AccentForegroundBrush");
-        createButton.HorizontalAlignment = HorizontalAlignment.Stretch;
-        create.Children.Add(newName);
-        create.Children.Add(createError);
-        create.Children.Add(createButton);
-        var footer = new Border
-        {
-            BorderBrush = GetWindowBrush("SurfaceBorderBrush"),
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Child = create
-        };
-        TrackTheme(footer, Border.BorderBrushProperty, "SurfaceBorderBrush", syncs);
-        DockPanel.SetDock(footer, Dock.Bottom);
-        content.Children.Add(footer);
-
-        content.Children.Add(new ScrollViewer
-        {
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            Padding = new Thickness(12, 0),
-            Content = list
-        });
-
-        picker.Content = CreateDialogSurface(content, syncs);
-        Populate();
-        picker.Show(_window);
-        search.Focus();
-        await LoadAsync();
-    }
+    private void BranchButton_OnClick(object? sender, RoutedEventArgs e) => _window?.OpenBranchPalette();
 
     private async Task DeleteBranchAsync(string name)
     {
@@ -1971,8 +1765,7 @@ internal sealed class GitSourceControlIntegration
         }
         try
         {
-            var open = typeof(MainWindow).GetMethod("OpenFileFromPathAsync", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (open?.Invoke(_window, [path]) is Task openTask) await openTask;
+            await _window.OpenFileFromPathAsync(path);
             _window.ShowEditorPage();
         }
         catch (Exception ex)
@@ -2014,23 +1807,19 @@ internal sealed class GitSourceControlIntegration
             existingTab.Content = await File.ReadAllTextAsync(path);
             if (ReferenceEquals(_window.ActiveEditorTab, existingTab))
             {
-                typeof(MainWindow).GetMethod("SetEditorContent", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?.Invoke(_window, [existingTab.Content]);
-                typeof(MainWindow).GetMethod("UpdateCurrentDocumentPresentation", BindingFlags.Instance | BindingFlags.NonPublic)
-                    ?.Invoke(_window, null);
+                _window.SetEditorContent(existingTab.Content);
+                _window.UpdateCurrentDocumentPresentation();
             }
             else
             {
-                var activate = typeof(MainWindow).GetMethod("ActivateTab", BindingFlags.Instance | BindingFlags.NonPublic);
-                activate?.Invoke(_window, [existingTab, true, true]);
+                _window.ActivateTab(existingTab);
             }
         }
         else
         {
-            var open = typeof(MainWindow).GetMethod("OpenFileFromPathAsync", BindingFlags.Instance | BindingFlags.NonPublic);
-            if (open?.Invoke(_window, [path]) is Task openTask) await openTask;
+            await _window.OpenFileFromPathAsync(path);
         }
-        _editorText ??= FindNamedControl(_window, "EditorTextBox") as TextEditor;
+        _editorText ??= _window.EditorTextBox;
         if (_editorText is null) return;
         _editorTextBeforeDiffReadOnly ??= _editorText.IsReadOnly;
         _editorText.IsReadOnly = true;
@@ -2044,7 +1833,7 @@ internal sealed class GitSourceControlIntegration
     private void UpdateDiffEditorState()
     {
         if (_window is null) return;
-        _editorText ??= FindNamedControl(_window, "EditorTextBox") as TextEditor;
+        _editorText ??= _window.EditorTextBox;
         if (_editorText is null) return;
         var activePath = _window.ActiveEditorTab?.Path;
         var isDiff = activePath is not null && _diffPreviewPaths.Values.Contains(activePath, StringComparer.OrdinalIgnoreCase);
@@ -2091,15 +1880,36 @@ internal sealed class GitSourceControlIntegration
         }
     }
 
-    private Button CreateIconButton(string text, string tip, Func<Task> action)
+    private Button CreateSmallButton(string glyph, string tip, Func<Task> action, List<IDisposable>? themeSyncs = null, string foregroundBrush = "MutedTextBrush")
     {
         var button = new Button
         {
-            Content = text,
+            Content = BuildGlyphImage(glyph, foregroundBrush, 15),
+            Width = 24,
+            Height = 24,
+            Padding = new Thickness(0),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            CornerRadius = KodoDesignTokens.CompactRadius,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        ToolTip.SetTip(button, tip);
+        button.Click += (_, _) => AnimationKit.PulseAccent(button, 320);
+        button.Click += async (_, _) => await action();
+        TrackQuietButton(button, themeSyncs ?? _dynamicThemeSyncs, foregroundBrush);
+        return button;
+    }
+
+    private Button CreateIconButton(string glyph, string tip, Func<Task> action)
+    {
+        var button = new Button
+        {
+            Content = BuildGlyphImage(glyph, "PrimaryTextBrush", 17),
             Width = 28,
             Height = 28,
             Padding = new Thickness(0),
-            FontSize = 14,
             Cursor = new Cursor(StandardCursorType.Hand),
             CornerRadius = KodoDesignTokens.CompactRadius,
             VerticalAlignment = VerticalAlignment.Center
@@ -2110,29 +1920,8 @@ internal sealed class GitSourceControlIntegration
         return button;
     }
 
-    private Button CreateSmallButton(string text, string tip, Func<Task> action, List<IDisposable>? themeSyncs = null)
-    {
-        var button = new Button
-        {
-            Content = text,
-            Width = 24,
-            Height = 24,
-            Padding = new Thickness(0),
-            FontSize = 14,
-            Cursor = new Cursor(StandardCursorType.Hand),
-            CornerRadius = KodoDesignTokens.CompactRadius,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        ToolTip.SetTip(button, tip);
-        button.Click += async (_, _) => await action();
-        TrackQuietButton(button, themeSyncs ?? _dynamicThemeSyncs, "MutedTextBrush");
-        return button;
-    }
-
     private Button CreateTextButton(
+        string? glyph,
         string text,
         string tip,
         Func<Task> action,
@@ -2142,7 +1931,9 @@ internal sealed class GitSourceControlIntegration
     {
         var button = new Button
         {
-            Content = text,
+            Content = glyph is null
+                ? text
+                : BuildGlyphText(glyph, text),
             Padding = new Thickness(10, 6),
             FontSize = 12,
             Cursor = new Cursor(StandardCursorType.Hand),
@@ -2151,6 +1942,7 @@ internal sealed class GitSourceControlIntegration
             VerticalContentAlignment = VerticalAlignment.Center
         };
         ToolTip.SetTip(button, tip);
+        button.Click += (_, _) => AnimationKit.PulseAccent(button, 320);
         button.Click += async (_, _) => await action();
         TrackButton(button, themeSyncs ?? _dynamicThemeSyncs, backgroundBrush, foregroundBrush);
         return button;
@@ -2275,8 +2067,10 @@ internal sealed class GitSourceControlIntegration
             BorderBrush = GetWindowBrush("SurfaceBorderBrush"),
             BorderThickness = new Thickness(1),
             ClipToBounds = true,
+            Opacity = AnimationKit.ReduceMotion ? 1d : 0d,
             Child = content
         };
+        surface.AttachedToVisualTree += (_, _) => AnimationKit.FadeIn(surface, 170, 14);
         TrackTheme(surface, Border.BackgroundProperty, "CardBrush", themeSyncs);
         TrackTheme(surface, Border.BorderBrushProperty, "SurfaceBorderBrush", themeSyncs);
         return surface;
@@ -2312,9 +2106,7 @@ internal sealed class GitSourceControlIntegration
 
     private void CloseAuxiliaryWindows()
     {
-        try { _branchWindow?.Close(); } catch { }
         try { _fallbackWindow?.Close(); } catch { }
-        _branchWindow = null;
         _fallbackWindow = null;
     }
 }

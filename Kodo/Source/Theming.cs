@@ -32,11 +32,20 @@ public partial class MainWindow
     private void SettingsSectionButton_OnClick(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string section }) return;
+        ActivateSettingsSection(section);
+    }
+
+    private void ActivateSettingsSection(string section)
+    {
+        if (string.Equals(section, "keyboard", StringComparison.OrdinalIgnoreCase))
+            IsKeyboardShortcutsExpanded = true;
+
         SetActiveSettingsNavigation(section);
         var targetName = section.ToLowerInvariant() switch
         {
             "appearance" => "SectionHeaderAppearance",
             "editor" => "SectionHeaderEditor",
+            "keyboard" => "SectionHeaderKeyboard",
             "lsp" => "SectionHeaderLsp",
             "general" => "SectionHeaderGeneral",
             "terminal" => "SectionHeaderTerminal",
@@ -92,6 +101,7 @@ public partial class MainWindow
         {
             ("appearance", "SectionHeaderAppearance"),
             ("editor", "SectionHeaderEditor"),
+            ("keyboard", "SectionHeaderKeyboard"),
             ("lsp", "SectionHeaderLsp"),
             ("general", "SectionHeaderGeneral"),
             ("terminal", "SectionHeaderTerminal"),
@@ -700,38 +710,10 @@ public partial class MainWindow
             if (ke.Key == Key.Escape) { dialog!.Close(); }
         };
 
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = $"Custom Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}",
-                    FontSize = 15,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
+        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.Droplet,
+            $"Custom Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}");
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var footerDivider = new Border
         {

@@ -3498,39 +3498,9 @@ public partial class MainWindow
             if (e.Key == Key.Escape) { dialog!.Close(); }
         };
 
-        var headerRow2 = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = title,
-                    FontSize = 15,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextWrapping = TextWrapping.Wrap
-                }
-            }
-        };
+        var headerRow2 = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.CommandLine, title);
 
-        var divider2 = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var divider2 = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var inner2 = new StackPanel
         {

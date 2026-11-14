@@ -169,7 +169,7 @@ public partial class MainWindow
         };
     }
 
-    private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true, bool scheduleContentLoad = true, bool preserveOtherPaneMembership = false)
+    internal void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true, bool scheduleContentLoad = true, bool preserveOtherPaneMembership = false)
     {
         CancelInactiveTabDiagnosticScan(tab);
         if (IsSplitScreenVisible && !CanDisplayInEditorPane(tab))
@@ -648,7 +648,7 @@ public partial class MainWindow
 
     private const long MaxFileSizeForFullLoad = 5_000_000;
 
-    private async Task OpenFileFromPathAsync(string path, EditorPaneState? requestedPane = null, bool preserveExistingPaneMembership = false)
+    internal async Task OpenFileFromPathAsync(string path, EditorPaneState? requestedPane = null, bool preserveExistingPaneMembership = false)
     {
         var destinationPane = ResolveEditorPaneForOpen(requestedPane ?? _activeEditorPane);
         EnsureCurrentDocumentHasTab();
@@ -1710,122 +1710,6 @@ public partial class MainWindow
     {
         foreach (var tab in tabs.ToList())
             CloseTab(tab);
-    }
-
-    private async Task<string?> ShowRenameDialogAsync(
-        string currentName,
-        string title = "Rename",
-        string action = "Rename",
-        string prompt = "Enter a new name:")
-    {
-        string? result = null;
-        Window? dialog = null;
-
-        var inputBox = new TextBox
-        {
-            Text = currentName,
-            Background = ButtonBrush,
-            Foreground = PrimaryTextBrush,
-            BorderBrush = SurfaceBorderBrush,
-            Padding = new Thickness(8, 6),
-            FontSize = 14,
-            CaretBrush = PrimaryTextBrush,
-        };
-
-        var confirmButton = CreateDialogButton(action, AccentBrush, AccentBrush, AccentForegroundBrush, () =>
-        {
-            result = inputBox.Text?.Trim();
-            dialog!.Close();
-        });
-
-        inputBox.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter) { result = inputBox.Text?.Trim(); dialog!.Close(); }
-            if (e.Key == Key.Escape) { dialog!.Close(); }
-        };
-
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = title,
-                    FontSize = 15,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
-
-        var divider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
-
-        var inner = new StackPanel
-        {
-            Spacing = 12,
-            Children =
-            {
-                headerRow,
-                new TextBlock { Text = prompt, FontSize = 13, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap },
-                inputBox,
-                divider,
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 10,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Children =
-                    {
-                        CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                            () => dialog!.Close()),
-                        confirmButton
-                    }
-                }
-            }
-        };
-
-        dialog = new Window
-        {
-            Width = 400,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 360,
-            MaxHeight = 340,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title = title,
-            Background = WindowBackgroundBrush,
-            Content = CreateDialogSurface(inner)
-        };
-
-        dialog.Opened += (_, _) =>
-        {
-            inputBox.Focus();
-            inputBox.SelectAll();
-        };
-
-        using (PerformanceBudget.TrackModal())
-        {
-            await dialog.ShowDialog(this);
-        }
-        return string.IsNullOrWhiteSpace(result) ? null : result;
     }
 
     private async void CloseTabsToTheRightMenuItem_OnClick(object? sender, RoutedEventArgs e)

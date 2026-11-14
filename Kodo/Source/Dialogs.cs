@@ -140,32 +140,9 @@ public partial class MainWindow
         Action discardAction,
         Action cancelAction)
     {
-        var headerRow = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = "Save changes before closing?",
-                    FontSize = 16,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    TextWrapping = TextWrapping.Wrap,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(8, 0, 0, 0)
-                }
-            }
-        };
-        Grid.SetColumn(headerRow.Children[1], 1);
+        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.Pencil,
+            "Save changes before closing?");
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var divider = new Border
         {
@@ -194,6 +171,7 @@ public partial class MainWindow
             Children =
             {
                 headerRow,
+                headerDivider,
                 new TextBlock
                 {
                     Text = $"{tab.DisplayName} has unsaved changes.",
@@ -237,32 +215,9 @@ public partial class MainWindow
         {
             var kind = isFolder ? "Folder" : "File";
 
-            var headerRow = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                Children =
-                {
-                    new Border
-                    {
-                        Width = 3,
-                        Height = 16,
-                        Background = AccentBrush,
-                        CornerRadius = new CornerRadius(2),
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    new TextBlock
-                    {
-                        Text = $"{kind} Not Found",
-                        FontSize = 16,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = PrimaryTextBrush,
-                        TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 0, 0)
-                    }
-                }
-            };
-            Grid.SetColumn(headerRow.Children[1], 1);
+            var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.Magnifier,
+                $"{kind} Not Found");
+            var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var bodyText = new TextBlock
             {
@@ -329,7 +284,7 @@ public partial class MainWindow
             var content = new StackPanel
             {
                 Spacing = 12,
-                Children = { headerRow, bodyText, pathBorder, divider, buttonRow },
+                Children = { headerRow, headerDivider, bodyText, pathBorder, divider, buttonRow },
             };
 
             var outer = CreateDialogSurface(content);
@@ -384,32 +339,13 @@ public partial class MainWindow
                 () => TryShowConfirmationDialogAsync(title, body, confirmLabel, cancelLabel, isDestructive));
         try
         {
-            var headerRow = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                Children =
-                {
-                    new Border
-                    {
-                        Width = 3,
-                        Height = 16,
-                        Background = isDestructive ? DangerBrush : AccentBrush,
-                        CornerRadius = new CornerRadius(2),
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    new TextBlock
-                    {
-                        Text = title,
-                        FontSize = 16,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = PrimaryTextBrush,
-                        TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 0, 0)
-                    }
-                }
-            };
-            Grid.SetColumn(headerRow.Children[1], 1);
+            var headerRow = DialogHeader.Create(
+                isDestructive ? DangerBrush : AccentBrush,
+                PrimaryTextBrush,
+                isDestructive ? DangerForegroundBrush : AccentForegroundBrush,
+                isDestructive ? KodoIcons.ExclamationTriangle : KodoIcons.InformationCircle,
+                title);
+            var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var bodyText = new TextBlock
             {
@@ -474,7 +410,7 @@ public partial class MainWindow
             {
                 Spacing = 12,
                 MaxWidth = 520,
-                Children = { headerRow, bodyText, divider, buttonRow },
+                Children = { headerRow, headerDivider, bodyText, divider, buttonRow },
             };
 
             var outer = CreateDialogSurface(content);

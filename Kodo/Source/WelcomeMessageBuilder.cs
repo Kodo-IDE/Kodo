@@ -334,7 +334,7 @@ internal static class WelcomeMessageBuilder
 
         if (dow == DayOfWeek.Friday && now.Day == 13)
         {
-            Add("Friday the 13th... may your builds stay bug-free! 🖤", 8);
+            Add("Friday the 13th... may your builds stay bug-free!", 8);
             messages.Add("Unlucky for some, lucky for your commit history?");
         }
 
@@ -342,9 +342,9 @@ internal static class WelcomeMessageBuilder
             Add("Leap Day! Enjoy the extra day - it only comes around every 4 years.", 8);
 
         if (now.DayOfYear == 256)
-            Add("Happy Programmer's Day! 🖥️ Day 256 of the year - fitting, isn't it?", 8);
+            Add("Happy Programmer's Day! Day 256 of the year - fitting, isn't it?", 8);
         if (now.Month == 3 && now.Day == 14)
-            Add("Happy Pi Day! 🥧 3.14159265...", 8);
+            Add("Happy Pi Day! 3.14159265...", 8);
 
         if (now.Month == 12 && now.Day == 31 && now.Hour == 23)
         {

@@ -23,6 +23,21 @@
         WindowState="Maximized"
         KeyDown="MainWindow_OnKeyDown">
     <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.12" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.12" />
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.12" />
+                    <DoubleTransition Property="Opacity" Duration="0:0:0.12" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" />
+                </Transitions>
+            </Setter>
+        </Style>
+
+        <Style Selector="Button:pointerover">
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
+        </Style>
         <Style Selector="Button.chrome">
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
@@ -30,10 +45,18 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.14" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.14" />
+                </Transitions>
+            </Setter>
         </Style>
 
         <Style Selector="Button.chrome:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
 
         <Style Selector="Border#TerminalPanelSplitter:pointerover">
@@ -266,11 +289,19 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
             <Setter Property="Padding" Value="14,8" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.18" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.18" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" />
+                </Transitions>
+            </Setter>
         </Style>
 
         <Style Selector="Button.tab:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-2px)" />
         </Style>
 
         <Style Selector="Button.tab.tabactive">
@@ -289,10 +320,18 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
             <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.16" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Button.settingsnav:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(3px,0px)" />
         </Style>
         <Style Selector="Button.settingsnav.active">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
@@ -317,6 +356,7 @@
 
         <Style Selector="Button.recent:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
 
         <Style Selector="Button.recentpin">
@@ -417,9 +457,16 @@
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="14,13" />
             <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.14" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.extensionrow:pointerover">
             <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
 
         <Style Selector="Border.extensiontile">
@@ -428,9 +475,17 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Margin" Value="6" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.16" />
+                    <BrushTransition Property="Background" Duration="0:0:0.16" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
         </Style>
         <Style Selector="Border.extensiontile:pointerover">
             <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-3px)" />
         </Style>
 
         <Style Selector="Button.activity">
@@ -478,6 +533,7 @@
 
         <Style Selector="Button.activity:pointerover">
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
 
         <Style Selector="Button.activity.active /template/ Border#PART_Border">
@@ -497,6 +553,15 @@
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
         </Style>
 
+        <Style Selector="Button.activity">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.16" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
+        </Style>
         <Style Selector="Button.activity TextBlock">
             <Setter Property="FontFamily" Value="Noto Sans Symbols,Noto Color Emoji,Segoe UI Symbol,Segoe UI Emoji,Apple Symbols,sans-serif" />
         </Style>
@@ -507,6 +572,13 @@
         </Style>
 
         <Style Selector="Button.statusitem">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.14" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.14" />
+                </Transitions>
+            </Setter>
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="Transparent" />
@@ -547,6 +619,7 @@
         </Style>
         <Style Selector="Button.statusitem:pointerover">
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
         <Style Selector="Button.statusitem:focus">
             <Setter Property="BorderThickness" Value="1" />
@@ -605,6 +678,13 @@
         </Style>
 
         <Style Selector="Button.searchmode">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.16" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.16" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.16" />
+                </Transitions>
+            </Setter>
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
@@ -619,6 +699,7 @@
         <Style Selector="Button.searchmode:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
         <Style Selector="Button.searchmode.selected">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
@@ -633,6 +714,13 @@
         </Style>
 
         <Style Selector="Button.chromesmall">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.14" />
+                    <BrushTransition Property="Foreground" Duration="0:0:0.14" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.14" />
+                </Transitions>
+            </Setter>
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
@@ -660,9 +748,9 @@
             <Setter Property="Height" Value="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}" />
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
         </Style>
-        <Style Selector="Border.accentleading">
-            <Setter Property="Width" Value="{x:Static kodo:KodoDesignTokens.AccentBarWidth}" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.AccentLineRadius}" />
+        <Style Selector="Border.accentpill">
+            <Setter Property="Width" Value="{x:Static kodo:KodoDesignTokens.AccentPillWidth}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.AccentPillRadius}" />
         </Style>
         <Style Selector="Border.homeunderline">
             <Setter Property="Height" Value="2" />
@@ -784,20 +872,10 @@
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
         </Style>
 
-        <Style Selector="Window.reducedmotion Button">
-            <Setter Property="Transitions">
-                <Transitions />
-            </Setter>
-        </Style>
-        <Style Selector="Window.reducedmotion Border">
-            <Setter Property="Transitions">
-                <Transitions />
-            </Setter>
-        </Style>
-
         <Style Selector="Button.editortab:pointerover">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-2px)" />
         </Style>
         <Style Selector="Button.editortab:focus">
             <Setter Property="BorderThickness" Value="1" />
@@ -835,6 +913,7 @@
         <Style Selector="Button.openeditor:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
         <Style Selector="Button.openeditor:focus">
             <Setter Property="BorderThickness" Value="1" />
@@ -864,12 +943,15 @@
             <Setter Property="Transitions">
                 <Transitions>
                     <DoubleTransition Property="Opacity" Duration="0:0:0.1" />
+                    <BrushTransition Property="Background" Duration="0:0:0.12" />
+                    <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.12" />
                 </Transitions>
             </Setter>
         </Style>
         <Style Selector="Button.tabclose:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
         <Style Selector="Border.tabwrap:pointerover Button.tabclose">
             <Setter Property="Opacity" Value="1" />
@@ -920,6 +1002,7 @@
 
         <Style Selector="Button.fileitem:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
         <Style Selector="Button.fileitem:focus">
             <Setter Property="BorderThickness" Value="1" />
@@ -982,6 +1065,22 @@
         <Style Selector="Menu ScrollViewer, ContextMenu ScrollViewer, ComboBox ScrollViewer">
             <Setter Property="MaxHeight" Value="420" />
             <Setter Property="AllowAutoHide" Value="True" />
+        </Style>
+        <Style Selector="Window.reducedmotion Button">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Window.reducedmotion Border">
+            <Setter Property="Transitions">
+                <Transitions />
+            </Setter>
+        </Style>
+        <Style Selector="Window.reducedmotion Button:pointerover">
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
+        </Style>
+        <Style Selector="Window.reducedmotion Border:pointerover">
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
         </Style>
     </Window.Styles>
 
@@ -1135,7 +1234,7 @@
                               ColumnSpacing="6"
                               VerticalAlignment="Center"
                               MinWidth="0">
-                            <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" />
+                            <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
                             <TextBlock Grid.Column="1"
                                        FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                        FontWeight="SemiBold"
@@ -1220,7 +1319,7 @@
                         Padding="12,10,12,8">
                     <StackPanel Spacing="6" HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" />
+                            <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
                             <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                        FontWeight="SemiBold"
                                        Foreground="{Binding MutedTextBrush}"
@@ -1283,7 +1382,7 @@
                                         </Border.ContextMenu>
                                         <Grid ColumnDefinitions="3,Auto,*,Auto">
                                             <Border Grid.Column="0"
-                                                    Classes="accentleading"
+                                                    Classes="accentpill"
                                                     Margin="0,3,6,3"
                                                     IsVisible="{Binding IsSelected}"
                                                     Background="{Binding #RootWindow.AccentBrush}" />
@@ -2347,7 +2446,7 @@
                                     MaxWidth="460"
                                     MaxHeight="260">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-                                <Border Classes="accentleading" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <SelectableTextBlock x:Name="DiagnosticPopupText"
                                             Grid.Column="1"
                                             Foreground="{Binding PrimaryTextBrush}"
@@ -2806,7 +2905,7 @@
                             <Panel>
 
                                 <Border Background="{Binding AccentBrush}"
-                                        Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}"
+                                        Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}"
                                         CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                                         IsHitTestVisible="False" />
 
@@ -2815,7 +2914,7 @@
                                       VerticalAlignment="Center">
                                     <StackPanel Grid.Column="0" Spacing="10" VerticalAlignment="Center">
                                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <Border Classes="accentleading" Height="14"
+                                            <Border Classes="accentpill" Height="14"
                                                     Background="{Binding AccentBrush}"
                                                     VerticalAlignment="Center" />
                                             <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
@@ -2884,7 +2983,7 @@
                                     IsVisible="{Binding HasMostRecentFileItem}">
                                 <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
                                     <Border Grid.Column="0"
-                                            Classes="accentleading"
+                                            Classes="accentpill"
                                             Height="30"
                                             Background="{Binding AccentBrush}"
                                             VerticalAlignment="Center" />
@@ -2947,7 +3046,7 @@ ToolTip.Tip="{Binding Path}" />
                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}">
                                         <StackPanel Spacing="14">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                                <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
@@ -3058,7 +3157,7 @@ ToolTip.Tip="{Binding Path}" />
                                             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
                                                 <StackPanel Grid.Column="0"
                                                             Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding PrimaryTextBrush}"
@@ -3232,7 +3331,7 @@ ToolTip.Tip="{Binding Path}" />
                                         <StackPanel Spacing="12">
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                                                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border Classes="accentleading" Height="20" Background="{Binding AccentBrush}" />
+                                                    <Border Classes="accentpill" Height="20" Background="{Binding AccentBrush}" />
                                                     <StackPanel Spacing="2" VerticalAlignment="Center">
                                                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                                                             <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
@@ -3263,7 +3362,7 @@ ToolTip.Tip="{Binding Path}" />
                                                         Content="Browse" />
                                             </Grid>
 
-                                            <Border BorderBrush="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" BorderThickness="{x:Static kodo:KodoDesignTokens.BorderTopHairline}" />
+                                            <Border BorderBrush="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" BorderThickness="{x:Static kodo:KodoDesignTokens.BorderTopHairline}" />
 
                                             <StackPanel Orientation="Horizontal" Spacing="10">
                                                 <Button Classes="chrome"
@@ -3300,7 +3399,7 @@ ToolTip.Tip="{Binding Path}" />
                                                         AutomationProperties.Name="View Kodo IDE on GitHub"
                                                         ToolTip.Tip="View Kodo IDE on GitHub">
                                                     <Viewbox Width="14" Height="14">
-                                                        <Canvas Width="20" Height="20">
+                                                        <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
                                                             <svg:Svg Width="24" Height="24" CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
                                                                   Source="{x:Static kodo:KodoIcons.GitHub}" />
                                                         </Canvas>
@@ -3665,7 +3764,7 @@ ToolTip.Tip="{Binding Path}" />
                                                     Spacing="6"
                                                     VerticalAlignment="Center"
                                                     MinWidth="0">
-                                            <Border Classes="accentleading"
+                                            <Border Classes="accentpill"
                                                     Height="16"
                                                     Background="{Binding AccentBrush}"
                                                     VerticalAlignment="Center" />
@@ -3797,7 +3896,7 @@ ToolTip.Tip="{Binding Path}" />
                                                     </Border.ContextMenu>
                                                     <Grid ColumnDefinitions="3,*,Auto">
                                                         <Border Grid.Column="0"
-                                                                Classes="accentleading"
+                                                                Classes="accentpill"
                                                                 Margin="0,3,6,3"
                                                                 IsVisible="{Binding IsSelected}"
                                                                 Background="{Binding #RootWindow.AccentBrush}" />
@@ -3817,7 +3916,22 @@ ToolTip.Tip="{Binding Path}" />
                                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                                            Text="{Binding Title}"
                                                                            TextTrimming="CharacterEllipsis"
+                                                                           IsVisible="{Binding !IsRenaming}"
                                                                            VerticalAlignment="Center" />
+                                                                <TextBox Grid.Column="0"
+                                                                         IsVisible="{Binding IsRenaming}"
+                                                                         Text="{Binding RenameText, Mode=TwoWay}"
+                                                                         KeyDown="TerminalRenameTextBox_OnKeyDown"
+                                                                         LostFocus="TerminalRenameTextBox_OnLostFocus"
+                                                                         Background="{Binding #RootWindow.ButtonBrush}"
+                                                                         Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                         BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                                         BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                                                         Padding="4,1"
+                                                                         MinWidth="0"
+                                                                         MaxWidth="300"
+                                                                         FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                                         VerticalContentAlignment="Center" />
                                                                 <TextBlock Grid.Column="1"
                                                                            FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                                            Margin="6,0,0,0"
@@ -4359,7 +4473,8 @@ ToolTip.Tip="{Binding Path}" />
                 </Grid>
             </Border>
 
-            <Grid IsVisible="{Binding IsTutorialPageVisible}"
+            <Grid x:Name="TutorialPageGrid"
+                  IsVisible="{Binding IsTutorialPageVisible}"
                   IsHitTestVisible="{Binding IsTutorialPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
                   RowDefinitions="Auto,*">
@@ -4372,7 +4487,7 @@ ToolTip.Tip="{Binding Path}" />
                     <Grid ColumnDefinitions="*">
                         <StackPanel Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="32" Background="{Binding AccentBrush}" />
+                                <Border Classes="accentpill" Height="32" Background="{Binding AccentBrush}" />
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeroLargeFontSize}"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
@@ -4557,7 +4672,7 @@ ToolTip.Tip="{Binding Path}" />
 
                                             <StackPanel Spacing="12">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                    <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
+                                                    <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
                                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding PrimaryTextBrush}"
@@ -4767,7 +4882,7 @@ ToolTip.Tip="{Binding Path}" />
 
                                             <StackPanel Spacing="12">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                    <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
+                                                    <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
                                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding PrimaryTextBrush}"
@@ -4868,7 +4983,7 @@ ToolTip.Tip="{Binding Path}" />
 
                                         <StackPanel Grid.Column="2" Spacing="16" Margin="32,0,0,0">
                                             <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
+                                                <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" VerticalAlignment="Center" />
                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
@@ -4953,7 +5068,7 @@ ToolTip.Tip="{Binding Path}" />
                                             Padding="20">
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                <Border Classes="accentleading" Height="18" Background="{Binding AccentBrush}" />
+                                                <Border Classes="accentpill" Height="18" Background="{Binding AccentBrush}" />
                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
@@ -5012,7 +5127,7 @@ ToolTip.Tip="{Binding Path}" />
                                             Padding="20">
                                         <StackPanel Spacing="12">
                                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                <Border Classes="accentleading" Height="18" Background="{Binding AccentBrush}" />
+                                                <Border Classes="accentpill" Height="18" Background="{Binding AccentBrush}" />
                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding PrimaryTextBrush}"
@@ -5112,7 +5227,8 @@ ToolTip.Tip="{Binding Path}" />
                 </Grid>
             </Grid>
 
-            <Grid IsVisible="{Binding IsExtensionsPageVisible}"
+            <Grid x:Name="ExtensionsPageGrid"
+                  IsVisible="{Binding IsExtensionsPageVisible}"
                   IsHitTestVisible="{Binding IsExtensionsPageVisible}"
                   Background="{Binding EditorBackgroundBrush}"
                   RowDefinitions="Auto,*">
@@ -5125,7 +5241,7 @@ ToolTip.Tip="{Binding Path}" />
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="32" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="32" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeroLargeFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -5285,7 +5401,7 @@ ToolTip.Tip="{Binding Path}" />
                             <StackPanel Spacing="0">
 
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" Margin="14,12,14,6" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Languages" FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledLanguageExtensions}" ItemsSource="{Binding FilteredInstalledLanguageExtensions}">
@@ -5309,7 +5425,7 @@ ToolTip.Tip="{Binding Path}" />
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
                                                 <Border Grid.Column="0"
-                                                        Classes="accentleading"
+                                                        Classes="accentpill"
                                                         VerticalAlignment="Stretch"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
                                                 <Border Grid.Column="1" Classes="iconwell"
@@ -5391,7 +5507,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Border IsVisible="{Binding IsInstalledLanguageDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"/>
 
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledPluginExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Plugins" FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledPluginExtensions}" ItemsSource="{Binding FilteredInstalledPluginExtensions}">
@@ -5415,7 +5531,7 @@ ToolTip.Tip="{Binding Path}" />
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
                                                 <Border Grid.Column="0"
-                                                        Classes="accentleading"
+                                                        Classes="accentpill"
                                                         VerticalAlignment="Stretch"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
                                                 <Border Grid.Column="1" Classes="iconwell"
@@ -5497,7 +5613,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Border IsVisible="{Binding IsInstalledPluginDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"/>
 
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledThemeExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Themes" FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledThemeExtensions}" ItemsSource="{Binding FilteredInstalledThemeExtensions}">
@@ -5521,7 +5637,7 @@ ToolTip.Tip="{Binding Path}" />
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
                                                 <Border Grid.Column="0"
-                                                        Classes="accentleading"
+                                                        Classes="accentpill"
                                                         VerticalAlignment="Stretch"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
                                                 <Border Grid.Column="1" Classes="iconwell"
@@ -5603,7 +5719,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Border IsVisible="{Binding IsInstalledThemeDividerVisible}" Height="1" Margin="12,8" Background="{Binding SurfaceBorderBrush}" Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"/>
 
                             <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding HasVisibleInstalledCompilerExtensions}" Margin="14,10,14,6" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
+                                <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Text="Compilers" FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}" FontWeight="SemiBold" Foreground="{Binding PrimaryTextBrush}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <ItemsControl IsVisible="{Binding HasVisibleInstalledCompilerExtensions}"
@@ -5628,7 +5744,7 @@ ToolTip.Tip="{Binding Path}" />
                                             </ToolTip.Tip>
                                             <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
                                                 <Border Grid.Column="0"
-                                                        Classes="accentleading"
+                                                        Classes="accentpill"
                                                         VerticalAlignment="Stretch"
                                                         Background="{Binding #RootWindow.AccentBrush}" />
                                                 <Border Grid.Column="1" Classes="iconwell"
@@ -5829,7 +5945,7 @@ ToolTip.Tip="{Binding Path}" />
                                     IsVisible="{Binding IsMarketplacePartialErrorVisible}">
                                 <StackPanel Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                        <Border Classes="accentleading" Height="16" Background="{Binding AccentBrush}" />
+                                        <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
                                         <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                    FontWeight="SemiBold"
                                                    Foreground="{Binding PrimaryTextBrush}"
@@ -6169,7 +6285,7 @@ ToolTip.Tip="{Binding Path}" />
                     <Grid RowDefinitions="Auto,*">
                         <StackPanel Spacing="5" Margin="4,0,4,20">
                             <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
-                                <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SubheaderFontSize}"
                                            FontWeight="SemiBold"
                                            Foreground="{Binding PrimaryTextBrush}"
@@ -6183,6 +6299,7 @@ ToolTip.Tip="{Binding Path}" />
                             <StackPanel Spacing="4">
                                 <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
                                 <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
+                                <Button Classes="settingsnav" Tag="keyboard" Click="SettingsSectionButton_OnClick" Content="Keyboard Shortcuts" />
                                 <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
                                 <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
                                 <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
@@ -6248,7 +6365,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6259,7 +6376,7 @@ ToolTip.Tip="{Binding Path}" />
                                 x:Name="ThemeSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6483,7 +6600,7 @@ ToolTip.Tip="{Binding Path}" />
                                 x:Name="AccentColourSettingsCard" Tag="appearance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6587,7 +6704,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6598,7 +6715,7 @@ ToolTip.Tip="{Binding Path}" />
                                 x:Name="EditorSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6676,9 +6793,9 @@ ToolTip.Tip="Increase font size" />
                                 <Button Classes="chrome"
                                         HorizontalAlignment="Left"
                                         Click="ViewShortcutsButton_OnClick"
-                                        ToolTip.Tip="View and rebind keyboard shortcuts"
-                                        AutomationProperties.Name="View and rebind keyboard shortcuts"
-                                        Content="Edit Keyboard Shortcuts" />
+                                        ToolTip.Tip="Open the keyboard shortcuts page"
+                                        AutomationProperties.Name="Open the keyboard shortcuts page"
+                                        Content="Open Keyboard Shortcuts" />
                             </StackPanel>
                         </Border>
 
@@ -6690,7 +6807,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="EditorInsightSettingsCard" Tag="editor">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6773,6 +6890,95 @@ ToolTip.Tip="Increase font size" />
                             </StackPanel>
                         </Border>
 
+                        <Grid x:Name="SectionHeaderKeyboard" Tag="keyboard" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="KEYBOARD SHORTCUTS" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
+                        </Grid>
+
+                        <Border x:Name="KeyboardShortcutsSettingsCard"
+                                Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                Tag="keyboard">
+                            <StackPanel Spacing="14">
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="16">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text="Keyboard Shortcuts" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Classes="chrome"
+                                            Click="ToggleKeyboardShortcutsExpandedButton_OnClick"
+                                            VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding KeyboardShortcutsToggleTooltip}"
+                                            AutomationProperties.Name="{Binding KeyboardShortcutsToggleTooltip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="{Binding KeyboardShortcutsToggleText}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding IsKeyboardShortcutsExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronUp}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding !IsKeyboardShortcutsExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronDown}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <StackPanel IsVisible="{Binding IsKeyboardShortcutsExpanded}" Spacing="14">
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Click Edit, then press a new key combination. Some shortcuts are fixed and listed under Other. Changes save automatically." />
+                                <Grid x:Name="KeyboardShortcutsColumnHeader" ColumnDefinitions="164,*,72,72,88" ColumnSpacing="0" Margin="0,4,0,-2">
+                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="ACTION" />
+                                    <TextBlock Grid.Column="2" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="EDIT" />
+                                    <TextBlock Grid.Column="3" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="RESET" />
+                                    <TextBlock Grid.Column="4" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="STATE" />
+                                </Grid>
+                                <StackPanel x:Name="KeyboardShortcutsEditableHost" Spacing="2" />
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.85" Margin="0,6" />
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <Border Grid.Column="0" Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" VerticalAlignment="Center" Text="OTHER" />
+                                </Grid>
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,0,0,0" />
+                                <Grid x:Name="KeyboardShortcutsOtherColumnHeader" ColumnDefinitions="164,*" ColumnSpacing="0" Margin="0,0,0,2">
+                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Margin="8,0,0,0" Text="ACTION" />
+                                </Grid>
+                                <StackPanel x:Name="KeyboardShortcutsOtherHost" Spacing="2" />
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,4,0,0" />
+                                <Border x:Name="KeyboardShortcutsStatusBorder"
+                                        IsVisible="False"
+                                        Background="{Binding DangerBrush}"
+                                        Opacity="0.12"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                        Padding="10,7">
+                                    <TextBlock x:Name="KeyboardShortcutsStatusText"
+                                               Foreground="{Binding DangerBrush}"
+                                               TextWrapping="Wrap" />
+                                </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
                         <Grid x:Name="SectionHeaderLsp" Tag="lsp" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
                             <TextBlock Grid.Column="0"
                                        FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
@@ -6784,7 +6990,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border x:Name="LspSettingsCard"
@@ -6796,7 +7002,7 @@ ToolTip.Tip="Increase font size" />
                                 Tag="lsp">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6879,7 +7085,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6890,7 +7096,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="DisplaySettingsCard" Tag="general">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -6939,7 +7145,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -6951,7 +7157,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="TerminalSettingsCard" Tag="terminal">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7022,7 +7228,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7033,7 +7239,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="DiscordRichPresenceSettingsCard" Tag="integrations">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7057,7 +7263,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="GitSourceControlSettingsCard" Tag="integrations">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7084,7 +7290,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7095,7 +7301,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="UpdatesSettingsCard" Tag="updates">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7158,7 +7364,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7169,7 +7375,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="PerformanceSettingsCard" Tag="performance">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7242,7 +7448,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7253,7 +7459,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="AccessibilitySettingsCard" Tag="accessibility">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7295,7 +7501,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7306,7 +7512,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="PrivacySettingsCard" Tag="privacy">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7338,7 +7544,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7349,7 +7555,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="PersonalizationSettingsCard" Tag="personalization">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7437,7 +7643,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7448,7 +7654,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="DeveloperOptionsSettingsCard" Tag="devoptions">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7628,7 +7834,7 @@ ToolTip.Tip="Increase font size" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentEdgeOpacity}" />
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
                         </Grid>
 
                         <Border Background="{Binding CardBrush}"
@@ -7639,7 +7845,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="HelpSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                         <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                             FontWeight="SemiBold"
                                             Foreground="{Binding PrimaryTextBrush}"
@@ -7679,7 +7885,7 @@ ToolTip.Tip="Increase font size" />
                                 x:Name="AboutSettingsCard" Tag="helpabout">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                    <Border Classes="accentleading" Height="22" Background="{Binding AccentBrush}" />
+                                    <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
                                                FontWeight="SemiBold"
                                                Foreground="{Binding PrimaryTextBrush}"
@@ -7692,7 +7898,7 @@ ToolTip.Tip="Increase font size" />
                                                 Orientation="Horizontal"
                                                 Spacing="14"
                                                 VerticalAlignment="Center">
-                                        <Border Classes="accentleading"
+                                        <Border Classes="accentpill"
                                                 Height="48"
                                                 Background="{Binding AccentBrush}" />
                                         <Border Width="48"
@@ -7833,7 +8039,7 @@ ToolTip.Tip="Increase font size" />
                                               ColumnSpacing="16">
                                             <StackPanel Spacing="4">
                                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                                    <Border Classes="accentleading" Height="26" Background="{Binding AccentBrush}" />
+                                                    <Border Classes="accentpill" Height="26" Background="{Binding AccentBrush}" />
                                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeroFontSize}"
                                                                FontWeight="SemiBold"
                                                                Foreground="{Binding PrimaryTextBrush}"

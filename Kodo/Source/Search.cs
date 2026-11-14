@@ -492,7 +492,14 @@ public partial class MainWindow
 
         _searchMode = mode;
         NotifySearchModeChanged();
+        if (this.FindControl<Border>("SearchPanelBorder") is { } searchPreset)
+            AnimationKit.PresetFade(searchPreset, 12);
         IsSearchPanelVisible = true;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (this.FindControl<Border>("SearchPanelBorder") is { } searchPanel)
+                AnimationKit.FadeIn(searchPanel, 160, 12);
+        }, DispatcherPriority.Loaded);
         _searchResults.Clear();
         _searchDisplayItems.Clear();
         SearchResultsListBox!.SelectedIndex = -1;

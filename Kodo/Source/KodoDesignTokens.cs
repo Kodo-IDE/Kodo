@@ -11,7 +11,7 @@ public static class KodoDesignTokens
     public static CornerRadius CardRadius { get; } = new(12);
     public static CornerRadius HeroRadius { get; } = new(16);
     public static CornerRadius PillRadius { get; } = new(999);
-    public static CornerRadius AccentLineRadius { get; } = new(2);
+    public static CornerRadius AccentPillRadius { get; } = new(2);
     public static CornerRadius HoverRowRadius { get; } = new(3);
     public static CornerRadius HairlineBorderRadius { get; } = new(5);
     public static CornerRadius SmallRadius { get; } = new(1);
@@ -27,7 +27,6 @@ public static class KodoDesignTokens
     public static Thickness BorderTopHairline { get; } = new(0, 1, 0, 0);
     public static Thickness BorderLeftHairline { get; } = new(1, 0, 0, 0);
     public const double SplitterWidth = 4.0;
-    public static Thickness AccentBarVert { get; } = new(3, 0, 0, 0);
     public static Thickness HorizontalPadding { get; } = new(12, 0);
     public static Thickness LeanPadding { get; } = new(8, 0);
     public static Thickness MediumPadding { get; } = new(10, 6);
@@ -42,8 +41,7 @@ public static class KodoDesignTokens
     public const double BorderStrokeThin = 1.0;
     public const double BorderStrokeHairline = 0.75;
     public const double BorderStrokeThick = 1.5;
-    public const double AccentBarWidth = 3.0;
-    public const double AccentBarHeight = 16.0;
+    public const double AccentPillWidth = 3.0;
     public const double DividerHeight = 1.0;
 
     public const double DefaultControlHeight = 30.0;
@@ -74,7 +72,7 @@ public static class KodoDesignTokens
     public const double MutedForegroundOpacity = 0.60;
     public const double SelectedOpacity = 0.55;
     public const double FaintOpacity = 0.35;
-    public const double AccentEdgeOpacity = 0.18;
+    public const double AccentPillOpacity = 0.18;
     public const double ActivityButtonHeight = 44.0;
     public const double ActivityBarWidth = 60.0;
     public const double RightRailWidth = 44.0;

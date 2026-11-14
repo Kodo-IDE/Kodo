@@ -50,24 +50,8 @@ internal sealed class UpdateDialog : Window
         Background = new SolidColorBrush(_palette.Background);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
-        var iconBadge = new Border
-        {
-            Background = new SolidColorBrush(_accentColor),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Width = 40,
-            Height = 40,
-            Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-        };
-        var titleText = new TextBlock
-        {
-            Text = $"Kodo {update.Version} is available",
-            FontSize = 16,
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(_palette.Text),
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { iconBadge, titleText } };
+        var headerRow = DialogHeader.Create(new SolidColorBrush(_accentColor), new SolidColorBrush(_palette.Text), new SolidColorBrush(_accentForeground),
+            KodoIcons.ArrowUp, $"Kodo {update.Version} is available");
 
         _statusText = new TextBlock
         {
@@ -160,24 +144,8 @@ internal sealed class UpdateDialog : Window
         Background = new SolidColorBrush(_palette.Background);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
 
-        var iconBadge = new Border
-        {
-            Background = new SolidColorBrush(_accentColor),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Width = 40,
-            Height = 40,
-            Child = new TextBlock { Text = "↑", FontSize = 20, Foreground = new SolidColorBrush(_accentForeground), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-        };
-        var titleText = new TextBlock
-        {
-            Text = $"Critical Kodo {display} hotfix is available",
-            FontSize = 16,
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = new SolidColorBrush(_palette.Text),
-            TextWrapping = TextWrapping.Wrap,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        var headerRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Children = { iconBadge, titleText } };
+        var headerRow = DialogHeader.Create(new SolidColorBrush(_accentColor), new SolidColorBrush(_palette.Text), new SolidColorBrush(_accentForeground),
+            KodoIcons.ArrowUp, $"Critical Kodo {display} hotfix is available");
 
         _statusText = new TextBlock
         {

@@ -341,6 +341,12 @@ public partial class App : Application
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = false)]
     private static extern void SHChangeNotify(uint eventId, uint flags, nint item1, nint item2);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int MessageBoxW(nint hWnd, string text, string caption, uint type);
+
+    private const uint MessageBoxIconError = 0x10;
+    private const uint MessageBoxOk = 0x0;
+
     private const uint ShcneAssocChanged = 0x08000000;
     private const uint ShcnfIdList = 0x00001000;
 
@@ -397,6 +403,41 @@ public partial class App : Application
         e.Handled = true;
     }
 
+    private static bool CanUseAvaloniaCrashDialog()
+    {
+        try
+        {
+            if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop &&
+                desktop.MainWindow is { IsLoaded: true, IsVisible: true })
+                return true;
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ShowNativeCrashMessageBox(string source, Exception exception, string logPath, bool isTerminating)
+    {
+        try
+        {
+            var header = isTerminating
+                ? "Kodo crashed and will now close."
+                : "Kodo ran into a problem, but may still be running.";
+            var text = $"{header}\n\n{exception.GetType().Name}: {exception.Message}\n\nDetails were saved to:\n{logPath}";
+            if (OperatingSystem.IsWindows())
+            {
+                MessageBoxW(0, text, "Kodo crashed", MessageBoxIconError | MessageBoxOk);
+                return;
+            }
+            KodoDiagnostics.LogDebug($"Crash dialog unavailable; details remain in {logPath}", exception);
+        }
+        catch
+        {
+        }
+    }
+
     private static void ShowCrashDialog(string source, Exception exception, bool isTerminating)
     {
         if (Interlocked.CompareExchange(ref _isCrashDialogOpen, 1, 0) != 0)
@@ -406,43 +447,50 @@ public partial class App : Application
         {
             var logPath = KodoDiagnostics.MainLogFilePath;
 
-            if (Dispatcher.UIThread.CheckAccess())
+            if (CanUseAvaloniaCrashDialog())
             {
-                var dialogTask = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
+                if (Dispatcher.UIThread.CheckAccess())
+                {
+                    var dialogTask = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
+                    if (isTerminating)
+                    {
+                        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
+                        while (!dialogTask.IsCompleted && DateTime.UtcNow < deadline)
+                        {
+                            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
+                            Thread.Sleep(25);
+                        }
+                    }
+                    return;
+                }
+
                 if (isTerminating)
                 {
-                    var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
-                    while (!dialogTask.IsCompleted && DateTime.UtcNow < deadline)
+                    Dispatcher.UIThread.Post(
+                        () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
+                        DispatcherPriority.MaxValue);
+
+                    var waited = 0;
+                    while (_isCrashDialogOpen == 1 && waited < 300)
                     {
-                        Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
-                        Thread.Sleep(25);
+                        Thread.Sleep(100);
+                        waited++;
                     }
+                }
+                else
+                {
+                    Dispatcher.UIThread.Post(
+                        () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
+                        DispatcherPriority.MaxValue);
                 }
                 return;
             }
 
-            if (isTerminating)
-            {
-                Dispatcher.UIThread.Post(
-                    () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
-                    DispatcherPriority.MaxValue);
-
-                var waited = 0;
-                while (_isCrashDialogOpen == 1 && waited < 300)
-                {
-                    Thread.Sleep(100);
-                    waited++;
-                }
-            }
-            else
-            {
-                Dispatcher.UIThread.Post(
-                    () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
-                    DispatcherPriority.MaxValue);
-            }
+            ShowNativeCrashMessageBox(source, exception, logPath, isTerminating);
         }
         catch
         {
+            try { ShowNativeCrashMessageBox(source, exception, KodoDiagnostics.MainLogFilePath, isTerminating); } catch { }
         }
     }
 
@@ -493,33 +541,13 @@ public partial class App : Application
         Window? owner)
     {
         var palette = ThemeResolver.GetCurrentPalette();
-        var (accentColor, accentForeground) = AccentResolver.GetCurrentAccent();
 
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = new SolidColorBrush(accentColor),
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = "Kodo crashed",
-                    FontSize = 16,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = new SolidColorBrush(palette.Text),
-                    TextWrapping = TextWrapping.Wrap,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
+        var headerRow = DialogHeader.Create(
+            new SolidColorBrush(KodoDesignTokens.DangerColor),
+            new SolidColorBrush(palette.Text),
+            Brushes.White,
+            KodoIcons.ExclamationTriangle,
+            "Kodo crashed");
 
         var subtitleText = new TextBlock
         {
@@ -648,8 +676,8 @@ public partial class App : Application
             Content = isTerminating ? "Close" : "Dismiss",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(20, 8),
-            Background = new SolidColorBrush(accentColor),
-            Foreground = new SolidColorBrush(accentForeground),
+            Background = new SolidColorBrush(KodoDesignTokens.DangerColor),
+            Foreground = Brushes.White,
             BorderThickness = new Thickness(0),
             CornerRadius = KodoDesignTokens.ControlRadius,
         };

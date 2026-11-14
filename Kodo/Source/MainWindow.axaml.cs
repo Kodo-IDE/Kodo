@@ -278,6 +278,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
+    private bool _isKeyboardShortcutsExpanded;
     private bool _isUpdateSplashVisible;
     private bool _openingSplashShowsReleaseNotes;
     private string _lastSeenVersion = string.Empty;
@@ -1063,6 +1064,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
         InitializeKeybinds(settings);
+        InitializeKeyboardShortcuts();
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
@@ -2095,7 +2097,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ApplySyntaxHighlighting(langExt);
     }
 
-    private void UpdateCurrentDocumentPresentation()
+    internal void UpdateCurrentDocumentPresentation()
     {
         var presentationWatch = System.Diagnostics.Stopwatch.StartNew();
         var previewWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -2248,7 +2250,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
         nameof(IsPrimaryPaneMinimapVisible), nameof(IsSecondaryPaneMinimapVisible),
         nameof(IsProjectFileContext),
-        nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled)
+        nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled),
     ];
 
     public bool IsSettingsPageVisible
@@ -2332,6 +2334,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged(nameof(WhatsNewToggleGlyph));
         }
     }
+
+    public bool IsKeyboardShortcutsExpanded
+    {
+        get => _isKeyboardShortcutsExpanded;
+        set
+        {
+            if (_isKeyboardShortcutsExpanded == value) return;
+            _isKeyboardShortcutsExpanded = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(KeyboardShortcutsToggleText));
+            OnPropertyChanged(nameof(KeyboardShortcutsToggleTooltip));
+        }
+    }
+
+    public string KeyboardShortcutsToggleText => _isKeyboardShortcutsExpanded ? "Hide shortcuts" : "Show shortcuts";
+
+    public string KeyboardShortcutsToggleTooltip => _isKeyboardShortcutsExpanded ? "Collapse the keyboard shortcuts section" : "Expand the keyboard shortcuts section";
 
     public bool IsUpdateSplashVisible
     {
@@ -3261,6 +3280,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyReduceMotion()
     {
+        AnimationKit.ReduceMotion = _isReduceMotionEnabled;
         if (_isReduceMotionEnabled)
             RootWindow.Classes.Add("reducedmotion");
         else
@@ -4908,8 +4928,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ? (IsStatusBarFilePathVisible ? _currentFilePath! : GetDocumentDisplayName())
         : HasDocumentOpen ? "Unsaved file"
         : IsFolderOpen ? (IsStatusBarFilePathVisible
-            ? $"📂 {_currentFolderPath}"
-            : $"📂 {Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar))}")
+            ? $"{_currentFolderPath}"
+            : $"{Path.GetFileName(_currentFolderPath!.TrimEnd(Path.DirectorySeparatorChar))}")
         : "No file open";
 
     public string ExplorerHeaderText => IsFolderOpen
@@ -7390,7 +7410,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return $"Kodo{birthday}";
     }
 
-    private void SetEditorContent(string content)
+    internal void SetEditorContent(string content)
     {
         SetEditorContentCore(null, content, content.Length);
     }
@@ -7791,8 +7811,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
+        var shownPage = newSettings ? "SettingsPageGrid" : newExtensions ? "ExtensionsPageGrid" : newTutorial ? "TutorialPageGrid" : null;
+        if (shownPage is not null && this.FindControl<Control>(shownPage) is { } pagePreset)
+            AnimationKit.PresetFade(pagePreset, 10);
+
         RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
+
+        if (shownPage is not null)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (this.FindControl<Control>(shownPage) is { } page)
+                    AnimationKit.FadeIn(page, 190, 10);
+            }, DispatcherPriority.Loaded);
+        }
     }
 
     private void EditorButton_OnClick(object? sender, RoutedEventArgs e)
@@ -7822,11 +7855,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void SaveButton_OnClick(object? sender, RoutedEventArgs e) =>
         await SaveAsync();
 
-    private async void ToolbarSaveButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private async void ToolbarSaveButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Visual toolbarSave) AnimationKit.Pulse(toolbarSave, 0.45, 380);
         await SaveAsync();
+    }
 
     private async void ToolbarSaveAsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (sender is Visual toolbarSaveAs) AnimationKit.Pulse(toolbarSaveAs, 0.45, 380);
         await SaveAsAsync();
         await RefreshExplorerTreeAsync();
     }
@@ -8006,12 +8043,77 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    private async void RenameTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+    private void RenameTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         if (TryGetTaggedData<TerminalSession>(sender) is not { } session) return;
-        var newName = await ShowRenameDialogAsync(session.Title);
-        if (newName is null || string.Equals(newName, session.Title, StringComparison.Ordinal)) return;
-        session.Title = newName;
+        BeginTerminalRename(session);
+    }
+
+    private TerminalSession? _terminalRenameFocusPending;
+
+    private void BeginTerminalRename(TerminalSession session)
+    {
+        if (_terminalRenameFocusPending is { } pending && !ReferenceEquals(pending, session))
+            pending.IsRenaming = false;
+
+        session.RenameText = session.Title;
+        session.IsRenaming = true;
+        _terminalRenameFocusPending = session;
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!ReferenceEquals(_terminalRenameFocusPending, session)) return;
+
+            var textBox = FindInlineTerminalRenameTextBox(session);
+            if (textBox is null) return;
+
+            textBox.Focus();
+            textBox.SelectAll();
+            _terminalRenameFocusPending = null;
+        });
+    }
+
+    private TextBox? FindInlineTerminalRenameTextBox(TerminalSession session) =>
+        this.GetVisualDescendants()
+            .OfType<TextBox>()
+            .FirstOrDefault(control => ReferenceEquals(control.DataContext, session));
+
+    private void TerminalRenameTextBox_OnKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox textBox || textBox.DataContext is not TerminalSession session) return;
+
+        switch (e.Key)
+        {
+            case Key.Escape:
+                session.IsRenaming = false;
+                session.RenameText = session.Title;
+                _terminalRenameFocusPending = null;
+                FocusActiveTerminal();
+                e.Handled = true;
+                break;
+
+            case Key.Enter:
+                e.Handled = true;
+                CompleteTerminalRename(session);
+                break;
+        }
+    }
+
+    private void TerminalRenameTextBox_OnLostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox && textBox.DataContext is TerminalSession session && session.IsRenaming)
+            CompleteTerminalRename(session);
+    }
+
+    private void CompleteTerminalRename(TerminalSession session)
+    {
+        if (!session.IsRenaming) return;
+        session.IsRenaming = false;
+        _terminalRenameFocusPending = null;
+
+        var newName = session.RenameText.Trim();
+        if (newName.Length > 0 && !string.Equals(newName, session.Title, StringComparison.Ordinal))
+            session.Title = newName;
     }
 
     private void DuplicateTerminalSessionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -8143,6 +8245,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshLatestReleaseAsync(forceNetwork: true);
     }
 
+    private void ToggleKeyboardShortcutsExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
+        IsKeyboardShortcutsExpanded = !IsKeyboardShortcutsExpanded;
+
     private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsWhatsNewExpanded = !IsWhatsNewExpanded;
 
@@ -8258,6 +8363,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ViewShortcutsButton_OnClick(object? sender, RoutedEventArgs e)
     {
+        if (IsFirstRunTutorialActive) return;
+        NavigateTo(AppPage.Settings);
+        Dispatcher.UIThread.Post(() => ActivateSettingsSection("keyboard"), DispatcherPriority.Loaded);
+    }
+
+    private void InitializeKeyboardShortcuts()
+    {
+        if (this.FindControl<StackPanel>("KeyboardShortcutsEditableHost") is not { } editableHost ||
+            this.FindControl<StackPanel>("KeyboardShortcutsOtherHost") is not { } otherHost ||
+            this.FindControl<TextBlock>("KeyboardShortcutsStatusText") is not { } statusText ||
+            this.FindControl<Border>("KeyboardShortcutsStatusBorder") is not { } statusBorder ||
+            this.FindControl<Border>("KeyboardShortcutsSettingsCard") is not { } card)
+            return;
+
         var fixedShortcuts = new (string Gesture, string Description)[]
         {
             ("Enter / F3",         "Next search match (in terminal)"),
@@ -8267,186 +8386,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ("Enter / Esc",        "Apply the selected quick fix / dismiss quick fixes"),
             ("Enter / ↑ / ↓ / Esc", "Open search results, move through them, or close search"),
             ("Ctrl+Numpad + / - / 0", "Zoom in, out, or reset in the image viewer (numpad keys)"),
-        };
-
-        var iconBadge = new Border
-        {
-            Background = AccentBrush,
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Width = 36,
-            Height = 36,
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock
-            {
-                Text = "⌨",
-                FontSize = 16,
-                Foreground = AccentForegroundBrush,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, -1, 0, 0),
-            },
-        };
-
-        var titleText = new TextBlock
-        {
-            Text = "Keyboard Shortcuts",
-            FontSize = 17,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = PrimaryTextBrush,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 12,
-            VerticalAlignment = VerticalAlignment.Center,
-            Children = { iconBadge, titleText },
-        };
-
-        var hintText = new TextBlock
-        {
-            Text = "Click a shortcut below, then press a new key combination. Press Escape to cancel (so Escape itself can only be reassigned via Reset, not capture).",
-            FontSize = 12,
-            Foreground = MutedTextBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Opacity = 0.92,
-        };
-
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 2),
-        };
-
-        var editableHeader = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Margin = new Thickness(0, 0, 0, 2),
-            Children =
-            {
-                new Border
-                {
-                    Width             = 3,
-                    Height            = 14,
-                    Background        = AccentBrush,
-                    CornerRadius      = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-                new TextBlock
-                {
-                    Text              = "Editable",
-                    FontSize          = 11,
-                    FontWeight        = FontWeight.SemiBold,
-                    Foreground        = MutedTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    LetterSpacing     = 0.3,
-                },
-            },
-        };
-
-        var otherHeader = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Margin = new Thickness(0, 8, 0, 2),
-            Children =
-            {
-                new Border
-                {
-                    Width             = 3,
-                    Height            = 14,
-                    Background        = AccentBrush,
-                    CornerRadius      = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Opacity           = 0.55,
-                },
-                new TextBlock
-                {
-                    Text              = "Other",
-                    FontSize          = 11,
-                    FontWeight        = FontWeight.SemiBold,
-                    Foreground        = MutedTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    LetterSpacing     = 0.3,
-                },
-            },
-        };
-
-        const string shortcutColumns = "164,*,72,72,88";
-        var editableGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions(shortcutColumns),
-            RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", KeybindDefinitions.Length))),
-        };
-
-        var fixedGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,24,*"),
-            RowDefinitions = new RowDefinitions(string.Join(",", Enumerable.Repeat("Auto", fixedShortcuts.Length))),
-        };
-
-        for (var i = 0; i < fixedShortcuts.Length; i++)
-        {
-            var (gesture, description) = fixedShortcuts[i];
-
-            var gestureBorder = new Border
-            {
-                Background = ButtonBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = KodoDesignTokens.ControlRadius,
-                Padding = new Thickness(9, 5),
-                Margin = new Thickness(0, 0, 8, 4),
-                VerticalAlignment = VerticalAlignment.Center,
-                Child = new TextBlock
-                {
-                    Text = gesture,
-                    FontSize = 12,
-                    FontFamily = KodoFonts.MonoFamily,
-                    Foreground = PrimaryTextBrush,
-                },
-            };
-
-            var descText = new TextBlock
-            {
-                Text = description,
-                FontSize = 13,
-                Foreground = MutedTextBrush,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 4),
-            };
-
-            Grid.SetRow(gestureBorder, i);
-            Grid.SetColumn(gestureBorder, 0);
-            Grid.SetRow(descText, i);
-            Grid.SetColumn(descText, 2);
-            fixedGrid.Children.Add(gestureBorder);
-            fixedGrid.Children.Add(descText);
-        }
-
-        var statusText = new TextBlock
-        {
-            Text = string.Empty,
-            FontSize = 12,
-            Foreground = DangerBrush,
-            TextWrapping = TextWrapping.Wrap,
-            IsVisible = false,
-        };
-
-        var statusBorder = new Border
-        {
-            Background = new SolidColorBrush(DangerColor, 0.08),
-            BorderBrush = new SolidColorBrush(DangerColor, 0.22),
-            BorderThickness = new Thickness(1),
-            CornerRadius = KodoDesignTokens.CompactRadius,
-            Padding = new Thickness(10, 7),
-            IsVisible = false,
-            Child = statusText,
         };
 
         string? capturingId = null;
@@ -8462,7 +8401,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Content = content,
                 FontSize = 11,
                 Padding = new Thickness(8, 3),
-                Margin = new Thickness(3, 0, 3, 4),
                 Background = ButtonBrush,
                 Foreground = PrimaryTextBrush,
                 BorderThickness = new Thickness(0),
@@ -8500,13 +8438,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (string.IsNullOrEmpty(message))
             {
                 statusText.Text = string.Empty;
-                statusText.IsVisible = false;
                 statusBorder.IsVisible = false;
             }
             else
             {
                 statusText.Text = message;
-                statusText.IsVisible = true;
                 statusBorder.IsVisible = true;
             }
         }
@@ -8520,9 +8456,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             UpdateStatus(null);
         }
 
+        const string shortcutColumns = "164,*,72,72,88";
+
         for (var i = 0; i < KeybindDefinitions.Length; i++)
         {
             var def = KeybindDefinitions[i];
+            var row = new Grid
+            {
+                ColumnDefinitions = new ColumnDefinitions(shortcutColumns),
+                MinHeight = 36,
+            };
 
             var gestureBorder = new Border
             {
@@ -8540,6 +8483,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 FontSize = 12,
                 FontFamily = KodoFonts.MonoFamily,
                 Foreground = PrimaryTextBrush,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center,
             };
             gestureBorder.Child = gestureText;
             gestureTextBlocks[def.Id] = gestureText;
@@ -8548,7 +8493,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 Text = def.Description,
                 FontSize = 13,
-                Foreground = MutedTextBrush,
+                Foreground = PrimaryTextBrush,
                 VerticalAlignment = VerticalAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(8, 0, 8, 4),
@@ -8581,7 +8526,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 CancelCapture();
                 capturingId = def.Id;
-                editButton.Content = "Press keys…";
+                editButton.Content = "Press keys.";
                 UpdateStatus(null);
             };
 
@@ -8595,126 +8540,62 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             };
 
             var id = def.Id;
-            Grid.SetRow(gestureBorder, i);
             Grid.SetColumn(gestureBorder, 0);
-            Grid.SetRow(descText, i);
             Grid.SetColumn(descText, 1);
-            Grid.SetRow(editButton, i);
             Grid.SetColumn(editButton, 2);
-            Grid.SetRow(resetButton, i);
             Grid.SetColumn(resetButton, 3);
-            Grid.SetRow(toggleButton, i);
             Grid.SetColumn(toggleButton, 4);
-            editableGrid.Children.Add(gestureBorder);
-            editableGrid.Children.Add(descText);
-            editableGrid.Children.Add(editButton);
-            editableGrid.Children.Add(resetButton);
-            editableGrid.Children.Add(toggleButton);
+            row.Children.Add(gestureBorder);
+            row.Children.Add(descText);
+            row.Children.Add(editButton);
+            row.Children.Add(resetButton);
+            row.Children.Add(toggleButton);
+            editableHost.Children.Add(row);
         }
 
-        var sectionDivider = new Border
+        for (var i = 0; i < fixedShortcuts.Length; i++)
         {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.85,
-            Margin = new Thickness(0, 4),
-        };
+            var (gesture, description) = fixedShortcuts[i];
 
-        var columnHeader = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions(shortcutColumns),
-            Margin = new Thickness(0, 2, 0, 5),
-        };
-        var columnHeaderLabels = new[] { "Shortcut", "Action", "Edit", "Reset", "State" };
-        for (var column = 0; column < columnHeaderLabels.Length; column++)
-        {
-            var header = new TextBlock
+            var gestureBorder = new Border
             {
-                Text = columnHeaderLabels[column],
-                FontSize = 10,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = MutedTextBrush,
-                LetterSpacing = 0.3,
-                Opacity = 0.8,
-                Margin = new Thickness(column == 1 ? 8 : 0, 0, 0, 0),
+                Background = ButtonBrush,
+                BorderBrush = SurfaceBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = KodoDesignTokens.ControlRadius,
+                Padding = new Thickness(9, 5),
+                Margin = new Thickness(0, 0, 8, 4),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = gesture,
+                    FontSize = 12,
+                    FontFamily = KodoFonts.MonoFamily,
+                    Foreground = PrimaryTextBrush,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
             };
-            if (column >= 2) header.HorizontalAlignment = HorizontalAlignment.Center;
-            Grid.SetColumn(header, column);
-            columnHeader.Children.Add(header);
+
+            var descText = new TextBlock
+            {
+                Text = description,
+                FontSize = 13,
+                Foreground = MutedTextBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(8, 0, 8, 4),
+            };
+
+            var row = new Grid { ColumnDefinitions = new ColumnDefinitions("164,*"), MinHeight = 36 };
+            Grid.SetColumn(gestureBorder, 0);
+            Grid.SetColumn(descText, 1);
+            row.Children.Add(gestureBorder);
+            row.Children.Add(descText);
+            otherHost.Children.Add(row);
         }
 
-        var innerStack = new StackPanel
-        {
-            Spacing = 2,
-            Children = { editableHeader, columnHeader, editableGrid, sectionDivider, otherHeader, fixedGrid },
-        };
-
-        var scroll = new ScrollViewer
-        {
-            Content = innerStack,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            MaxHeight = 380,
-        };
-
-        var scrollBorder = CreateDialogSurface(scroll, new Thickness(14, 12), new Thickness(0));
-
-        var dismissButton = new Button
-        {
-            Content = "Close",
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Padding = new Thickness(20, 8),
-            Background = AccentBrush,
-            Foreground = AccentForegroundBrush,
-            BorderThickness = new Thickness(0),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-        };
-
-        var footerHint = new TextBlock
-        {
-            Text = "Changes save automatically",
-            FontSize = 11,
-            Foreground = MutedTextBrush,
-            VerticalAlignment = VerticalAlignment.Center,
-            Opacity = 0.75,
-        };
-
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4, 0, 0),
-        };
-
-        var footerRow = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            Children = { footerHint, dismissButton },
-        };
-        Grid.SetColumn(dismissButton, 1);
-
-        var content = new StackPanel
-        {
-            Spacing = 12,
-            Children = { headerRow, hintText, headerDivider, scrollBorder, statusBorder, footerDivider, footerRow },
-        };
-
-        Window? dialog = null;
-        dialog = new Window
-        {
-            Title = "Kodo - Keyboard Shortcuts",
-            Width = 800,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 720,
-            MaxHeight = 720,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = WindowBackgroundBrush,
-            Content = CreateDialogSurface(content),
-        };
-
-        dialog.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
+        card.AddHandler(InputElement.KeyDownEvent, (_, keyArgs) =>
         {
             if (capturingId is null) return;
 
@@ -8749,7 +8630,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             if (conflict is not null)
             {
-                UpdateStatus($"{FormatGesture(newGesture)} is already used by \"{conflict.Description}\".");
+                UpdateStatus($"{FormatGesture(newGesture)} is already used by '{conflict.Description}'.");
                 return;
             }
 
@@ -8768,9 +8649,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             capturingId = null;
             UpdateStatus(null);
         }, RoutingStrategies.Tunnel, handledEventsToo: true);
-
-        dismissButton.Click += (_, _) => dialog!.Close();
-        _ = dialog.ShowDialog(this);
     }
 
     private async Task ShowKeyboardShortcutsAsync()
@@ -9939,38 +9817,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? accentSolid.Color
             : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = "Save file with encoding:",
-                    FontSize = 13,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
+        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.DocumentText,
+            "Change File Encoding");
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
+        headerDivider.Margin = new Thickness(0, 6);
 
         var footerDivider = new Border
         {
@@ -10133,38 +9984,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? accentSolid.Color
             : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = "Save file with line ending:",
-                    FontSize = 13,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
+        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.ArrowUturnDown,
+            "Change Line Ending");
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
+        headerDivider.Margin = new Thickness(0, 6);
 
         var footerDivider = new Border
         {
@@ -10320,38 +10144,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? accentSolid.Color
             : Color.Parse(KodoDesignTokens.DefaultAccentHex);
 
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = "Change indentation:",
-                    FontSize = 13,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
+        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.Indent,
+            "Change Indentation");
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
+        headerDivider.Margin = new Thickness(0, 6);
 
         var footerDivider = new Border
         {
@@ -11809,7 +11606,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private Border CreateDialogSurface(Control content, Thickness? padding = null, Thickness? margin = null)
     {
-        return new Border
+        var surface = new Border
         {
             Background = CardBrush,
             BorderBrush = SurfaceBorderBrush,
@@ -11819,6 +11616,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             Margin = margin ?? new Thickness(16),
             Child = content,
         };
+        AnimationKit.PresetFade(surface, 14);
+        surface.AttachedToVisualTree += (_, _) => AnimationKit.FadeIn(surface, 170, 14);
+        return surface;
     }
 
     private Button CreateDialogButton(
@@ -11841,6 +11641,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             HorizontalContentAlignment = HorizontalAlignment.Center
         };
 
+        button.Click += (_, _) => AnimationKit.Pulse(button, 0.42, 360);
         button.Click += (_, _) => clickAction();
         return button;
     }
