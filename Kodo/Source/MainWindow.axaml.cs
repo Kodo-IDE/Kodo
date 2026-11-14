@@ -460,6 +460,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
     private void NotifyExtensionFiltersChangedCore()
     {
+        ReconcileSelectedMarketplaceExtension();
         RaiseMany(nameof(FilteredInstalledExtensions), nameof(FilteredInstalledLanguageExtensions), nameof(FilteredInstalledPluginExtensions), nameof(FilteredInstalledThemeExtensions), nameof(HasVisibleInstalledLanguageExtensions), nameof(HasVisibleInstalledPluginExtensions), nameof(HasVisibleInstalledThemeExtensions), nameof(IsInstalledLanguageDividerVisible), nameof(IsInstalledPluginDividerVisible), nameof(IsInstalledThemeDividerVisible), nameof(FilteredMarketplaceExtensions), nameof(FilteredCompilerExtensions), nameof(FilteredInstalledCompilerExtensions), nameof(IsNoExtensionsVisible), nameof(IsInstalledSearchEmptyVisible), nameof(IsMarketplaceSearchEmptyVisible), nameof(IsMarketplaceEmptyVisible), nameof(InstalledExtensionsCount), nameof(InstalledCompilersCount), nameof(MarketplaceEmptyStateText), nameof(HasVisibleInstalledExtensions), nameof(HasVisibleMarketplaceExtensions), nameof(HasVisibleCompilerExtensions), nameof(HasVisibleInstalledCompilerExtensions), nameof(HasVisibleInstalledExtensionsOrCompilers), nameof(HasVisibleInstalledExtensionsAndCompilers), nameof(IsInstalledCompilersEmptyStateVisible));
     }
     private void DeferExtensionUiAction(Action action)
@@ -6038,9 +6039,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             UpdateDiscordPresence();
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[Discord] Failed to initialise Rich Presence: {ex.Message}");
             ResetDiscordPresenceForReconnect();
             _discordReconnectTimer.Start();
         }
@@ -6080,9 +6080,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _lastDiscordPresenceKey = currentKey;
             _hasDiscordPresenceKey = true;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[Discord] Failed to update Rich Presence: {ex.Message}");
             ResetDiscordPresenceForReconnect();
             _discordReconnectTimer.Start();
         }
@@ -7076,17 +7075,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(savingPath) && ResolveLspExtensionForFile(savingPath) is not null)
-                _ = FlushLspDocumentAsync(savingPath, string.Empty);
-            if (shouldPromptForPath && savingTab is not null && !string.IsNullOrWhiteSpace(savingPath))
-            {
-                if (!string.IsNullOrWhiteSpace(originalFilePath) &&
-                    !FileSystemPaths.Equals(originalFilePath, savingPath) &&
-                    IsLspDocumentOpenOrOpening(originalFilePath))
-                    _ = RetargetLspDocumentAsync(originalFilePath, savingPath, savingTab);
-                else
-                    _ = LspNotifyActiveDocumentDidOpenAsync(savingPath);
-            }
+            if (!string.IsNullOrWhiteSpace(savingPath))
+                _ = RefreshLspWorkspaceDiagnosticsAfterSaveAsync(savingPath, originalFilePath, savingTab, shouldPromptForPath);
 
             RefreshState(fullRefresh: true);
             return true;
@@ -11269,6 +11259,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             else if (IsTutorialPageVisible)
             {
                 TryFinishTutorial();
+                e.Handled = true;
+            }
+            else if (IsExtensionsPageVisible && IsExtensionDetailOpen)
+            {
+                SelectedMarketplaceExtension = null;
                 e.Handled = true;
             }
             else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)

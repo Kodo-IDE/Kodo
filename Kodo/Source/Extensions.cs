@@ -1946,6 +1946,7 @@ public partial class MainWindow
     {
         if (string.Equals(_selectedExtensionsTab, tab, StringComparison.Ordinal)) return;
         _selectedExtensionsTab = tab;
+        SelectedMarketplaceExtension = null;
         OnPropertyChanged(nameof(IsInstalledTabSelected));
         OnPropertyChanged(nameof(IsLanguagesTabSelected));
         OnPropertyChanged(nameof(IsThemesTabSelected));

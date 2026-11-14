@@ -57,6 +57,27 @@ public sealed class MarketplaceTileWidthConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+public sealed class MarketplaceTileWidthMultiConverter : IMultiValueConverter
+{
+    public static readonly MarketplaceTileWidthMultiConverter Instance = new();
+
+    private const double HorizontalPadding = 48;
+    private const double ScrollbarGutter = 20;
+    private const double TileMargin = 16;
+    private const double MinTileWidth = 200;
+    private const double DetailPaneReserve = 316;
+
+    public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (values.Count < 2 || values[0] is not double width) return MinTileWidth;
+
+        var detailOpen = values[1] is true;
+        var columns = detailOpen ? 2 : 3;
+        var available = width - HorizontalPadding - ScrollbarGutter - (detailOpen ? DetailPaneReserve : 0);
+        return Math.Max(MinTileWidth, available / columns - TileMargin);
+    }
+}
+
 public sealed class BoolToOpacityConverter : IValueConverter
 {
     public static readonly BoolToOpacityConverter Instance = new();

@@ -5912,7 +5912,8 @@ ToolTip.Tip="{Binding Path}" />
                             </Grid>
                         </StackPanel>
 
-                        <StackPanel IsVisible="{Binding IsMarketplaceSectionTabSelected}">
+                        <Grid ColumnDefinitions="*,Auto">
+<StackPanel IsVisible="{Binding IsMarketplaceSectionTabSelected}">
 
                             <Border Background="{Binding CardBrush}"
                                     BorderBrush="{Binding SurfaceBorderBrush}"
@@ -5959,124 +5960,126 @@ ToolTip.Tip="{Binding Path}" />
                             <ItemsControl ItemsSource="{Binding FilteredMarketplaceExtensions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="3" />
+                                        <UniformGrid Columns="{Binding MarketplaceGridColumns}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
-                                        <Border Classes="extensiontile"
-                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
-                                                Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                ToolTip.Tip="{Binding Name}">
-                                            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-
-                                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                                    <Border Grid.Column="0" Classes="iconwelllarge"
-                                                            Background="{Binding #RootWindow.AccentBrush}"
-                                                            IsVisible="{Binding !HasIcon}">
-                                                        <TextBlock HorizontalAlignment="Center"
-                                                                   VerticalAlignment="Center"
-                                                                   FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
-                                                                   Text="{Binding NameAbbreviation}" />
-                                                    </Border>
-                                                    <Border Grid.Column="0" Classes="iconwelllarge"
-                                                            IsVisible="{Binding HasIcon}"
-                                                            ClipToBounds="True">
-                                                        <Panel>
-                                                            <Image Source="{Binding IconImage}"
-                                                                   Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                   Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                   Stretch="Uniform"
-                                                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                            <svg:Svg Source="{Binding SvgData}"
-                                                                     Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                     Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                        </Panel>
-                                                    </Border>
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                                        <Viewbox StretchDirection="DownOnly"
-                                                                 HorizontalAlignment="Left"
-                                                                 MaxHeight="22">
-                                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                       Text="{Binding Name}"
-                                                                       TextWrapping="NoWrap" />
-                                                        </Viewbox>
-                                                    </StackPanel>
-                                                </Grid>
-
-                                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
-                                                    <TextBlock Grid.Column="0"
-                                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Author}"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                                        <Border Width="6" Height="6" CornerRadius="{x:Static kodo:KodoDesignTokens.HoverRowRadius}"
-                                                                Background="{Binding #RootWindow.AccentBrush}"
-                                                                VerticalAlignment="Center"
-                                                                IsVisible="{Binding IsUpdateAvailable}"
-                                                                ToolTip.Tip="Update available" />
-                                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                   Text="{Binding Version}" />
-                                                    </StackPanel>
-                                                </Grid>
-
-                                                <TextBlock Grid.Row="2"
-                                                           FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                           Text="{Binding Description}"
-                                                           TextWrapping="Wrap"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           MaxLines="3" />
-
-                                                <Grid Grid.Row="3">
-
-                                                    <Border Classes="installedtag"
-                                                            HorizontalAlignment="Stretch"
-                                                            Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            IsVisible="{Binding ShowInstalledBadge}">
-                                                        <TextBlock HorizontalAlignment="Center"
-                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="Installed" />
-                                                    </Border>
-                                                    <Button Classes="chrome"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                            Tag="{Binding}"
-                                                            Click="InstallMarketplaceExtensionButton_OnClick"
-                                                            IsEnabled="{Binding IsInstallEnabled}"
-                                                            Content="{Binding InstallButtonText}"
-                                                            IsVisible="{Binding IsUpdateAvailable}" />
-
-                                                    <Button Classes="marketinstall"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                            Tag="{Binding}"
-                                                            Click="InstallMarketplaceExtensionButton_OnClick"
-                                                            IsEnabled="{Binding IsInstallEnabled}"
-                                                            Content="{Binding InstallButtonText}"
-                                                            IsVisible="{Binding !IsInstalled}" />
-
-
-                                                </Grid>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
+    <Border Classes="extensiontile"
+            Tag="{Binding}"
+            Cursor="Hand"
+            Tapped="MarketplaceTile_OnTapped"
+            Background="{Binding #RootWindow.CardBrush}"
+            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+            ToolTip.Tip="{Binding Name}">
+        <Border.Width>
+            <MultiBinding Converter="{x:Static kodoModels:MarketplaceTileWidthMultiConverter.Instance}">
+                <Binding ElementName="ExtensionsScrollViewer" Path="Bounds.Width" />
+                <Binding ElementName="RootWindow" Path="IsExtensionDetailOpen" />
+            </MultiBinding>
+        </Border.Width>
+        <Panel>
+            <Border Classes="accentpill"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Stretch"
+                    Margin="-12,6,0,6"
+                    Background="{Binding #RootWindow.AccentBrush}"
+                    IsVisible="{Binding IsSelected}" />
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <Border Grid.Column="0" Classes="iconwelllarge"
+                            Background="{Binding #RootWindow.AccentBrush}"
+                            IsVisible="{Binding !HasIcon}">
+                        <TextBlock HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                   Text="{Binding NameAbbreviation}" />
+                    </Border>
+                    <Border Grid.Column="0" Classes="iconwelllarge"
+                            IsVisible="{Binding HasIcon}"
+                            ClipToBounds="True">
+                        <Panel>
+                            <Image Source="{Binding IconImage}"
+                                   Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                   Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                   Stretch="Uniform"
+                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <svg:Svg Source="{Binding SvgData}"
+                                     Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                     Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   Text="{Binding Name}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                       Text="{Binding Author}"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="120" />
+                            <Border Width="6" Height="6" CornerRadius="{x:Static kodo:KodoDesignTokens.HoverRowRadius}"
+                                    Background="{Binding #RootWindow.AccentBrush}"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsUpdateAvailable}"
+                                    ToolTip.Tip="Update available" />
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                       Text="{Binding Version}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                        <Border Classes="installedtag"
+                                HorizontalAlignment="Right"
+                                Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                IsVisible="{Binding ShowInstalledBadge}">
+                            <TextBlock HorizontalAlignment="Center"
+                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                       Text="Installed" />
+                        </Border>
+                        <Button Classes="chrome"
+                                HorizontalAlignment="Right"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="InstallMarketplaceExtensionButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding IsUpdateAvailable}" />
+                        <Button Classes="marketinstall"
+                                HorizontalAlignment="Right"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="InstallMarketplaceExtensionButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding !IsInstalled}" />
+                    </Grid>
+                </Grid>
+                <TextBlock Grid.Row="1"
+                           FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                           Text="{Binding Description}"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="2" />
+            </Grid>
+        </Panel>
+    </Border>
+</DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
@@ -6127,119 +6130,126 @@ ToolTip.Tip="{Binding Path}" />
                             <ItemsControl ItemsSource="{Binding FilteredCompilerExtensions}">
                                 <ItemsControl.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <UniformGrid Columns="3" />
+                                        <UniformGrid Columns="{Binding MarketplaceGridColumns}" />
                                     </ItemsPanelTemplate>
                                 </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
-                                        <Border Classes="extensiontile"
-                                                Width="{Binding #ExtensionsScrollViewer.Bounds.Width, Converter={x:Static kodoModels:MarketplaceTileWidthConverter.Instance}}"
-                                                Background="{Binding #RootWindow.CardBrush}"
-                                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                ToolTip.Tip="{Binding Name}">
-                                            <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10">
-                                                <Grid Grid.Row="0" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                                                    <Border Grid.Column="0" Classes="iconwelllarge"
-                                                            Background="{Binding #RootWindow.AccentBrush}"
-                                                            IsVisible="{Binding !HasIcon}">
-                                                        <TextBlock HorizontalAlignment="Center"
-                                                                   VerticalAlignment="Center"
-                                                                   FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
-                                                                   Text="{Binding NameAbbreviation}" />
-                                                    </Border>
-                                                    <Border Grid.Column="0" Classes="iconwelllarge"
-                                                            IsVisible="{Binding HasIcon}"
-                                                            ClipToBounds="True">
-                                                        <Panel>
-                                                            <Image Source="{Binding IconImage}"
-                                                                   Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                   Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                   Stretch="Uniform"
-                                                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                            <svg:Svg Source="{Binding SvgData}"
-                                                                     Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                     Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
-                                                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
-                                                        </Panel>
-                                                    </Border>
-                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
-                                                        <Viewbox StretchDirection="DownOnly"
-                                                                 HorizontalAlignment="Left"
-                                                                 MaxHeight="22">
-                                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                       Text="{Binding Name}"
-                                                                       TextWrapping="NoWrap" />
-                                                        </Viewbox>
-                                                    </StackPanel>
-                                                </Grid>
-
-                                                <Grid Grid.Row="1" ColumnDefinitions="*,Auto">
-                                                    <TextBlock Grid.Column="0"
-                                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                                               Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                               Text="{Binding Author}"
-                                                               TextTrimming="CharacterEllipsis" />
-                                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
-                                                        <Border Width="6" Height="6" CornerRadius="{x:Static kodo:KodoDesignTokens.HoverRowRadius}"
-                                                                Background="{Binding #RootWindow.AccentBrush}"
-                                                                VerticalAlignment="Center"
-                                                                IsVisible="{Binding IsUpdateAvailable}"
-                                                                ToolTip.Tip="Update available" />
-                                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                                   Text="{Binding Version}" />
-                                                    </StackPanel>
-                                                </Grid>
-
-                                                <TextBlock Grid.Row="2"
-                                                           FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                                           Text="{Binding Description}"
-                                                           TextWrapping="Wrap"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           MaxLines="3" />
-
-                                                <Grid Grid.Row="3">
-                                                    <Border Classes="installedtag"
-                                                            HorizontalAlignment="Stretch"
-                                                            Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            IsVisible="{Binding ShowInstalledBadge}">
-                                                        <TextBlock HorizontalAlignment="Center"
-                                                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                                   Text="Installed" />
-                                                    </Border>
-                                                    <Button Classes="chrome"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                            Tag="{Binding}"
-                                                            Click="InstallCompilerExtensionButton_OnClick"
-                                                            IsEnabled="{Binding IsInstallEnabled}"
-                                                            Content="{Binding InstallButtonText}"
-                                                            IsVisible="{Binding IsUpdateAvailable}" />
-                                                    <Button Classes="marketinstall"
-                                                            HorizontalAlignment="Stretch"
-                                                            HorizontalContentAlignment="Center"
-                                                            Background="{Binding #RootWindow.ButtonBrush}"
-                                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
-                                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
-                                                            Tag="{Binding}"
-                                                            Click="InstallCompilerExtensionButton_OnClick"
-                                                            IsEnabled="{Binding IsInstallEnabled}"
-                                                            Content="{Binding InstallButtonText}"
-                                                            IsVisible="{Binding !IsInstalled}" />
-                                                </Grid>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
+    <Border Classes="extensiontile"
+            Tag="{Binding}"
+            Cursor="Hand"
+            Tapped="MarketplaceTile_OnTapped"
+            Background="{Binding #RootWindow.CardBrush}"
+            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+            ToolTip.Tip="{Binding Name}">
+        <Border.Width>
+            <MultiBinding Converter="{x:Static kodoModels:MarketplaceTileWidthMultiConverter.Instance}">
+                <Binding ElementName="ExtensionsScrollViewer" Path="Bounds.Width" />
+                <Binding ElementName="RootWindow" Path="IsExtensionDetailOpen" />
+            </MultiBinding>
+        </Border.Width>
+        <Panel>
+            <Border Classes="accentpill"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Stretch"
+                    Margin="-12,6,0,6"
+                    Background="{Binding #RootWindow.AccentBrush}"
+                    IsVisible="{Binding IsSelected}" />
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                    <Border Grid.Column="0" Classes="iconwelllarge"
+                            Background="{Binding #RootWindow.AccentBrush}"
+                            IsVisible="{Binding !HasIcon}">
+                        <TextBlock HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                   Text="{Binding NameAbbreviation}" />
+                    </Border>
+                    <Border Grid.Column="0" Classes="iconwelllarge"
+                            IsVisible="{Binding HasIcon}"
+                            ClipToBounds="True">
+                        <Panel>
+                            <Image Source="{Binding IconImage}"
+                                   Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                   Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                   Stretch="Uniform"
+                                   IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            <svg:Svg Source="{Binding SvgData}"
+                                     Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                     Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                     IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   Text="{Binding Name}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                       Text="{Binding Author}"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="120" />
+                            <Border Width="6" Height="6" CornerRadius="{x:Static kodo:KodoDesignTokens.HoverRowRadius}"
+                                    Background="{Binding #RootWindow.AccentBrush}"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding IsUpdateAvailable}"
+                                    ToolTip.Tip="Update available" />
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                       Text="{Binding Version}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                        <Border Classes="installedtag"
+                                HorizontalAlignment="Right"
+                                Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                IsVisible="{Binding ShowInstalledBadge}">
+                            <TextBlock HorizontalAlignment="Center"
+                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                       Text="Installed" />
+                        </Border>
+                        <Button Classes="chrome"
+                                HorizontalAlignment="Right"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="InstallCompilerExtensionButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding IsUpdateAvailable}" />
+                        <Button Classes="marketinstall"
+                                HorizontalAlignment="Right"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="InstallCompilerExtensionButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding !IsInstalled}" />
+                    </Grid>
+                </Grid>
+                <TextBlock Grid.Row="1"
+                           FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                           Text="{Binding Description}"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           MaxLines="2" />
+            </Grid>
+        </Panel>
+    </Border>
+</DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
@@ -6265,6 +6275,149 @@ ToolTip.Tip="{Binding Path}" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
+
+<ContentControl Grid.Column="1"
+                Width="300"
+                Margin="16,6,0,0"
+                VerticalAlignment="Top"
+                IsVisible="{Binding IsExtensionDetailOpen}"
+                Content="{Binding SelectedMarketplaceExtension}">
+    <ContentControl.ContentTemplate>
+        <DataTemplate x:DataType="kodoModels:MarketplaceExtension" x:CompileBindings="True">
+            <Border Background="{Binding #RootWindow.CardBrush}"
+                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                    BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
+                    Padding="18">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                        <Border Grid.Column="0" Classes="iconwelllarge"
+                                Background="{Binding #RootWindow.AccentBrush}"
+                                IsVisible="{Binding !HasIcon}">
+                            <TextBlock HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                       Text="{Binding NameAbbreviation}" />
+                        </Border>
+                        <Border Grid.Column="0" Classes="iconwelllarge"
+                                IsVisible="{Binding HasIcon}"
+                                ClipToBounds="True">
+                            <Panel>
+                                <Image Source="{Binding IconImage}"
+                                       Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                       Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                       Stretch="Uniform"
+                                       IsVisible="{Binding IconImage, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                <svg:Svg Source="{Binding SvgData}"
+                                         Width="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                         Height="{x:Static kodo:KodoDesignTokens.IconWellLargeSize}"
+                                         IsVisible="{Binding SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                            </Panel>
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.TitleFontSize}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                       Text="{Binding Name}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                       TextTrimming="CharacterEllipsis">
+                                <Run Text="{Binding Author}" /><Run Text=" · " /><Run Text="{Binding Version}" />
+                            </TextBlock>
+                        </StackPanel>
+                        <Button Grid.Column="2"
+                                Classes="chrome"
+                                VerticalAlignment="Top"
+                                Click="CloseExtensionDetailButton_OnClick"
+                                ToolTip.Tip="Close details"
+                                AutomationProperties.Name="Close details"
+                                Content="Close" />
+                    </Grid>
+
+                    <Grid>
+                        <Border Classes="installedtag"
+                                HorizontalAlignment="Stretch"
+                                Opacity="{x:Static kodo:KodoDesignTokens.DividerOpacity}"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                IsVisible="{Binding ShowInstalledBadge}">
+                            <TextBlock HorizontalAlignment="Center"
+                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                       Text="Installed" />
+                        </Border>
+                        <Button Classes="chrome"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="ExtensionDetailInstallButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding IsUpdateAvailable}" />
+                        <Button Classes="marketinstall"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Center"
+                                Background="{Binding #RootWindow.ButtonBrush}"
+                                BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                Tag="{Binding}"
+                                Click="ExtensionDetailInstallButton_OnClick"
+                                IsEnabled="{Binding IsInstallEnabled}"
+                                Content="{Binding InstallButtonText}"
+                                IsVisible="{Binding !IsInstalled}" />
+                    </Grid>
+
+                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                               Foreground="{Binding #RootWindow.MutedTextBrush}"
+                               Text="{Binding Description}"
+                               TextWrapping="Wrap" />
+
+                    <StackPanel Spacing="2" IsVisible="{Binding IsInstalled}">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                   Text="Installed version" />
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   Text="{Binding InstalledVersion}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2" IsVisible="{Binding HasFileExtensions}">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                   Text="File types" />
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding FileExtensionsText}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2" IsVisible="{Binding HasPlatform}">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                   Text="Platforms" />
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding PlatformText}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2" IsVisible="{Binding HasDependencies}">
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                   Text="Requires" />
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                   Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding DependenciesText}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </ContentControl.ContentTemplate>
+</ContentControl>
+</Grid>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

@@ -919,6 +919,66 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP active document open failed for {filePath}", ex); }
     }
 
+    private async Task RefreshLspWorkspaceDiagnosticsAfterSaveAsync(string filePath, string? originalFilePath, EditorTab? tab, bool pathWasChosen)
+    {
+        if (!LspEnabled || string.IsNullOrWhiteSpace(filePath) || ResolveLspExtensionForFile(filePath) is null)
+            return;
+
+        try
+        {
+            if (pathWasChosen && tab is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(originalFilePath) &&
+                    !FileSystemPaths.Equals(originalFilePath, filePath) &&
+                    IsLspDocumentOpenOrOpening(originalFilePath))
+                    await RetargetLspDocumentAsync(originalFilePath, filePath, tab).ConfigureAwait(false);
+                else
+                    await LspNotifyActiveDocumentDidOpenAsync(filePath).ConfigureAwait(false);
+            }
+
+            await FlushLspDocumentAsync(filePath, string.Empty).ConfigureAwait(false);
+
+            var normalizedPath = NormalizeFilePath(filePath);
+            LspClient? client;
+            lock (_lspOpenLock)
+            {
+                if (!_lspOpenDocuments.Contains(normalizedPath) || !_lspDocumentClients.TryGetValue(normalizedPath, out client))
+                    return;
+            }
+
+            if (client.Supports("textDocument/didSave"))
+            {
+                await client.SendNotificationAsync("textDocument/didSave", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["uri"] = FilePathToUri(normalizedPath),
+                    },
+                }).ConfigureAwait(false);
+            }
+
+            if (!LspDiagnosticsEnabled || !client.Supports("textDocument/diagnostic"))
+                return;
+
+            List<(string Path, int Version)> documents;
+            lock (_lspOpenLock)
+            {
+                documents = _lspDocumentClients
+                    .Where(pair => ReferenceEquals(pair.Value, client) && _lspOpenDocuments.Contains(pair.Key) &&
+                        _lspDocumentVersions.ContainsKey(pair.Key))
+                    .Select(pair => (pair.Key, _lspDocumentVersions[pair.Key]))
+                    .ToList();
+            }
+
+            foreach (var document in documents)
+                ScheduleLspPullDiagnostics(document.Path, client, FilePathToUri(document.Path), document.Version);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP diagnostics refresh after save failed for {filePath}", ex);
+        }
+    }
+
     private async Task EnsureVisiblePaneLspDocumentsOpenAsync()
     {
         var filePaths = await Dispatcher.UIThread.InvokeAsync(() =>

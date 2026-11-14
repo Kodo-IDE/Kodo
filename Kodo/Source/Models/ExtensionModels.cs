@@ -2,6 +2,7 @@
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -376,6 +377,22 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool HasIcon => IconImage is not null || SvgData is not null;
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected == value) return; _isSelected = value; OnPropertyChanged(); }
+    }
+
+    public string FileExtensionsText => string.Join("  ", FileExtensions);
+    public bool HasFileExtensions => FileExtensions.Length > 0;
+
+    public string PlatformText => string.Join(" · ", new[] { string.Join(", ", Os), string.Join(", ", Arch) }.Where(s => s.Length > 0));
+    public bool HasPlatform => Os.Length > 0 || Arch.Length > 0;
+
+    public string DependenciesText => string.Join(", ", Dependencies);
+    public bool HasDependencies => Dependencies.Length > 0;
 
     public bool IsInstalling
     {
