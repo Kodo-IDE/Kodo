@@ -106,7 +106,8 @@ public partial class MainWindow
             if (total > widest) widest = total;
         }
 
-        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead);
+        const double filenameFitSafetyMargin = 32;
+        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead + filenameFitSafetyMargin);
     }
 
     private void FileTreeItems_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
