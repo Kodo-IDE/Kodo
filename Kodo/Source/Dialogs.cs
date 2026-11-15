@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Kodo.Models;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -221,8 +222,8 @@ public partial class MainWindow
 
             var bodyText = new TextBlock
             {
-                Text = ($"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
-                               $"It may be on a drive that isn't connected, or it may have been moved or deleted.\n\n{path}").Replace("\\", "\\\u200B").Replace("/", "/\u200B"),
+                Text = $"This {kind.ToLowerInvariant()} couldn't be opened because it isn't currently accessible. " +
+                       "It may be on a drive that isn't connected, or it may have been moved or deleted.",
                 FontSize = 13,
                 Foreground = MutedTextBrush,
                 TextWrapping = TextWrapping.Wrap,
@@ -454,6 +455,124 @@ public partial class MainWindow
         }
     }
 
+    private async Task ShowRefreshOpenEditorsSummaryDialogAsync(
+        IReadOnlyList<string> skipped,
+        IReadOnlyList<string> failures)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+                await ShowRefreshOpenEditorsSummaryDialogAsync(skipped, failures));
+            return;
+        }
+
+        var headerRow = DialogHeader.Create(
+            failures.Count > 0 ? DangerBrush : AccentBrush,
+            PrimaryTextBrush,
+            failures.Count > 0 ? DangerForegroundBrush : AccentForegroundBrush,
+            failures.Count > 0 ? KodoIcons.ExclamationTriangle : KodoIcons.InformationCircle,
+            "Refresh Open Editors");
+        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
+        var body = new StackPanel { Spacing = 10 };
+
+        if (skipped.Count > 0)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "These files were skipped because they have unsaved changes or changed while the refresh was running. Save them, then refresh again.",
+                FontSize = 13,
+                Foreground = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            body.Children.Add(new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, skipped.Select(name => $"• {name}")),
+                FontSize = 13,
+                Foreground = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        if (failures.Count > 0)
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = "Kodo could not refresh these files:",
+                FontSize = 13,
+                Foreground = MutedTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            });
+            body.Children.Add(new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, failures.Select(message => $"• {message}")),
+                FontSize = 13,
+                Foreground = PrimaryTextBrush,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = SurfaceBorderBrush,
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+        var closeButtonBrush = failures.Count > 0 ? DangerBrush : AccentBrush;
+        var closeButtonForeground = failures.Count > 0 ? DangerForegroundBrush : AccentForegroundBrush;
+        var closeButton = new Button
+        {
+            Content = new TextBlock { Text = "Close", TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center },
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Padding = new Thickness(20, 8),
+            Background = closeButtonBrush,
+            Foreground = closeButtonForeground,
+            BorderThickness = new Thickness(0),
+            CornerRadius = KodoDesignTokens.ControlRadius,
+            MaxWidth = 320,
+            MinWidth = 100,
+        };
+        var buttonRow = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Children = { new Border(), new Border { Width = 10 }, closeButton }
+        };
+        Grid.SetColumn(buttonRow.Children[1], 1);
+        Grid.SetColumn(closeButton, 2);
+
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            MaxWidth = 520,
+            Children = { headerRow, headerDivider, body, footerDivider, buttonRow },
+        };
+        var outer = CreateDialogSurface(content);
+        var scrollContent = new ScrollViewer
+        {
+            Content = outer,
+            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
+            MaxHeight = 600,
+        };
+
+        var dialog = new Window
+        {
+            Title = "Kodo",
+            Width = 520,
+            SizeToContent = SizeToContent.Height,
+            MinWidth = 420,
+            MaxWidth = 560,
+            MaxHeight = 640,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = WindowBackgroundBrush,
+            Content = scrollContent,
+        };
+        closeButton.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
+    }
+
     private async Task ShowWarningDialogAsync(string context, Exception exception, bool isCritical = false)
     {
         if (!Dispatcher.UIThread.CheckAccess())
@@ -497,32 +616,12 @@ public partial class MainWindow
             var windowTitle = isCritical ? "Kodo - Warning" : "Kodo - Notice";
             var logPath = KodoDiagnostics.MainLogFilePath;
 
-            var headerRow = new Grid
-            {
-                ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-                Children =
-                {
-                    new Border
-                    {
-                        Width = 3,
-                        Height = 16,
-                        Background = isCritical ? WarningBrush : AccentBrush,
-                        CornerRadius = new CornerRadius(2),
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    new TextBlock
-                    {
-                        Text = titleLabel,
-                        FontSize = 16,
-                        FontWeight = FontWeight.SemiBold,
-                        Foreground = PrimaryTextBrush,
-                        TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Margin = new Thickness(8, 0, 0, 0)
-                    }
-                }
-            };
-            Grid.SetColumn(headerRow.Children[1], 1);
+            var headerRow = DialogHeader.Create(
+                isCritical ? DangerBrush : AccentBrush,
+                PrimaryTextBrush,
+                isCritical ? DangerForegroundBrush : AccentForegroundBrush,
+                isCritical ? KodoIcons.ExclamationTriangle : KodoIcons.InformationCircle,
+                titleLabel);
 
             var subtitleText = new TextBlock
             {
@@ -648,8 +747,8 @@ public partial class MainWindow
                 Content = "Dismiss",
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Padding = new Thickness(20, 8),
-                Background = AccentBrush,
-                Foreground = AccentForegroundBrush,
+                Background = isCritical ? DangerBrush : AccentBrush,
+                Foreground = isCritical ? DangerForegroundBrush : AccentForegroundBrush,
                 BorderThickness = new Thickness(0),
                 CornerRadius = KodoDesignTokens.ControlRadius,
             };

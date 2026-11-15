@@ -9,6 +9,7 @@ namespace Kodo.Models;
 internal sealed class AppSettings
 {
     public const double DefaultTerminalPanelHeight = 300;
+    public const double DefaultTerminalSidebarWidth = 220;
     public const double DefaultExplorerPanelWidth = 260;
     public const double DefaultCommandPaletteWidth = 520;
 
@@ -53,6 +54,7 @@ internal sealed class AppSettings
     public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
+    public double TerminalSidebarWidth { get; set; } = DefaultTerminalSidebarWidth;
     public int TerminalScrollbackLines { get; set; } = 5000;
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public double CommandPaletteWidth { get; set; } = DefaultCommandPaletteWidth;

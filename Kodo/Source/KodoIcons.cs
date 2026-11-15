@@ -1,7 +1,7 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia.Platform;
 using System;
 using System.IO;
-using Avalonia.Platform;
 
 namespace Kodo;
 

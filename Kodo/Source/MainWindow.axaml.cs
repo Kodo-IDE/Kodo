@@ -568,6 +568,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isResizingTerminalPanel;
     private double _terminalPanelDragStartPointerY;
     private double _terminalPanelDragStartHeight;
+    private double _terminalSidebarWidth = AppSettings.DefaultTerminalSidebarWidth;
+    private bool _isResizingTerminalSidebar;
+    private double _terminalSidebarDragStartPointerX;
+    private double _terminalSidebarDragStartWidth;
 
     private double _explorerPanelWidth = AppSettings.DefaultExplorerPanelWidth;
     private bool _isResizingExplorerPanel;
@@ -1142,6 +1146,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _terminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 200, 200000);
         TerminalHostControl.MaxScrollbackLines = _terminalScrollbackLines;
         _terminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
+        _terminalSidebarWidth = TerminalShellSupport.NormalizeTerminalSidebarWidth(settings.TerminalSidebarWidth);
         _explorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
         _commandPaletteWidth = NormalizeCommandPaletteWidth(settings.CommandPaletteWidth);
         _userCountry = string.IsNullOrWhiteSpace(settings.UserCountry)
@@ -4698,6 +4703,90 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public double TerminalSidebarWidth
+    {
+        get => _terminalSidebarWidth;
+        set
+        {
+            var normalized = TerminalShellSupport.NormalizeTerminalSidebarWidth(value);
+            if (_terminalSidebarWidth == normalized) return;
+            _terminalSidebarWidth = normalized;
+            OnPropertyChanged();
+            SaveSettings();
+        }
+    }
+
+    private void TerminalSidebarSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not InputElement element) return;
+        if (!e.GetCurrentPoint(element).Properties.IsLeftButtonPressed) return;
+
+        _isResizingTerminalSidebar = true;
+        _terminalSidebarDragStartPointerX = e.GetPosition(this).X;
+        _terminalSidebarDragStartWidth = TerminalSidebarWidth;
+        e.Pointer.Capture(element);
+        e.Handled = true;
+    }
+
+    private void TerminalSidebarSplitter_OnPointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizingTerminalSidebar) return;
+
+        var deltaX = e.GetPosition(this).X - _terminalSidebarDragStartPointerX;
+        TerminalSidebarWidth = _terminalSidebarDragStartWidth + deltaX;
+        e.Handled = true;
+    }
+
+    private void TerminalSidebarSplitter_OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isResizingTerminalSidebar) return;
+
+        _isResizingTerminalSidebar = false;
+        e.Pointer.Capture(null);
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    private void TerminalSidebarSplitter_OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        if (!_isResizingTerminalSidebar) return;
+
+        _isResizingTerminalSidebar = false;
+        SaveSettings(immediate: true);
+    }
+
+    private void TerminalSidebarSplitter_OnDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        TerminalSidebarWidth = ComputeAutoFitTerminalSidebarWidth();
+        SaveSettings(immediate: true);
+        e.Handled = true;
+    }
+
+    private double ComputeAutoFitTerminalSidebarWidth()
+    {
+        if (TerminalSessions.Count == 0) return AppSettings.DefaultTerminalSidebarWidth;
+
+        var typeface = new Typeface("Segoe UI,Inter,sans-serif");
+        var widest = 0.0;
+        foreach (var session in TerminalSessions)
+        {
+            var titleWidth = MeasureTerminalSidebarText(session.Title, typeface, KodoDesignTokens.BodyFontSize);
+            var shellWidth = MeasureTerminalSidebarText(session.ShellDisplayName, typeface, KodoDesignTokens.SmallFontSize);
+            var statusWidth = session.HasFailed
+                ? MeasureTerminalSidebarText("Failed", typeface, KodoDesignTokens.CaptionFontSize) + 18
+                : session.ShowExitedStatus
+                    ? MeasureTerminalSidebarText(session.StatusText, typeface, KodoDesignTokens.CaptionFontSize) + 18
+                    : 0;
+            widest = Math.Max(widest, titleWidth + shellWidth + statusWidth);
+        }
+
+        var width = Math.Max(AppSettings.DefaultTerminalSidebarWidth, widest + 112);
+        return TerminalShellSupport.NormalizeTerminalSidebarWidth(width);
+    }
+
+    private static double MeasureTerminalSidebarText(string text, Typeface typeface, double fontSize) =>
+        new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, typeface, fontSize, Brushes.Black).Width;
+
     private void TerminalPanelSplitter_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not InputElement element) return;
@@ -6346,6 +6435,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             .ToList() ?? [];
         settings.TabSize = NormalizeTabSize(settings.TabSize);
         settings.TerminalPanelHeight = TerminalShellSupport.NormalizeTerminalPanelHeight(settings.TerminalPanelHeight);
+        settings.TerminalSidebarWidth = TerminalShellSupport.NormalizeTerminalSidebarWidth(settings.TerminalSidebarWidth);
         settings.ExplorerPanelWidth = NormalizeExplorerPanelWidth(settings.ExplorerPanelWidth);
         settings.CommandPaletteWidth = NormalizeCommandPaletteWidth(settings.CommandPaletteWidth);
         return settings;
@@ -6421,6 +6511,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             PSReadLinePredictionEnabled = IsPSReadLinePredictionEnabled,
             TerminalVisible = IsTerminalVisible,
             TerminalPanelHeight = TerminalPanelHeight,
+            TerminalSidebarWidth = TerminalSidebarWidth,
             ExplorerPanelWidth = ExplorerPanelWidth,
             CommandPaletteWidth = CommandPaletteWidth,
             HasCompletedTutorial = _hasCompletedTutorial,
@@ -9671,6 +9762,21 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
     };
 
+    private static readonly HashSet<char> InvalidFileNameCharacters = new(Path.GetInvalidFileNameChars());
+
+    private void FileNameTextBox_OnTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (sender is not TextBox textBox || string.IsNullOrEmpty(textBox.Text)) return;
+
+        var original = textBox.Text;
+        if (!original.Any(InvalidFileNameCharacters.Contains)) return;
+
+        var caretIndex = Math.Clamp(textBox.CaretIndex, 0, original.Length);
+        var filteredPrefixLength = original.Take(caretIndex).Count(character => !InvalidFileNameCharacters.Contains(character));
+        textBox.Text = new string(original.Where(character => !InvalidFileNameCharacters.Contains(character)).ToArray());
+        textBox.CaretIndex = Math.Clamp(filteredPrefixLength, 0, textBox.Text?.Length ?? 0);
+    }
+
     private static string? ValidateFileName(string newName)
     {
         if (newName.IndexOfAny(Path.GetInvalidFileNameChars()) != -1 || newName.EndsWith(".") || newName.EndsWith(" "))
@@ -9796,480 +9902,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ExtensionsStatusText = $"Rename failed: {ex.Message}";
             await ShowWarningDialogAsync("Rename file", ex);
         }
-    }
-
-    private async void EncodingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (!HasFileOpen || !IsTextEditorVisible) return;
-        var requestPane = _activeEditorPane;
-        var requestEditor = EditorTextBox;
-        var requestTab = requestPane.ActiveTab;
-        var requestDocument = requestEditor.Document;
-        var requestPath = _currentFilePath;
-        var requestLineEnding = _currentLineEnding;
-        var requestEncoding = _currentFileEncoding;
-
-        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-
-        var candidateEncodings = new (string Label, Func<System.Text.Encoding> Factory)[]
-        {
-            ("UTF-8",          () => new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)),
-            ("UTF-8 with BOM", () => new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true)),
-            ("UTF-16 LE",      () => System.Text.Encoding.Unicode),
-            ("UTF-16 BE",      () => System.Text.Encoding.BigEndianUnicode),
-            ("UTF-32",         () => System.Text.Encoding.UTF32),
-            ("Windows-1252",   () => System.Text.Encoding.GetEncoding(1252)),
-            ("ASCII",          () => System.Text.Encoding.ASCII),
-        };
-
-        var encodings = candidateEncodings
-            .Select(c =>
-            {
-                try { return ((string Label, System.Text.Encoding Enc)?)(c.Label, c.Factory()); }
-                catch { return null; }
-            })
-            .Where(x => x is not null)
-            .Select(x => x!.Value)
-            .ToArray();
-
-        System.Text.Encoding? chosen = null;
-        Window? dialog = null;
-
-        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
-            ? accentSolid.Color
-            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
-
-        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.DocumentText,
-            "Change File Encoding");
-
-        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
-        headerDivider.Margin = new Thickness(0, 6);
-
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
-
-        var listPanel = new StackPanel { Spacing = 6 };
-
-        foreach (var (label, enc) in encodings)
-        {
-            var isCurrent = enc.CodePage == requestEncoding.CodePage &&
-                            enc.GetPreamble().Length == requestEncoding.GetPreamble().Length;
-            var btn = new Button
-            {
-                Content = isCurrent ? $"{label}  ✓" : label,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = isCurrent
-                    ? new SolidColorBrush(accentColor, 0.18)
-                    : ButtonBrush,
-                Foreground = isCurrent
-                    ? new SolidColorBrush(accentColor)
-                    : PrimaryTextBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = KodoDesignTokens.CompactRadius,
-                Padding = new Thickness(12, 7),
-            };
-            var capturedEnc = enc;
-            btn.Click += (_, _) =>
-            {
-                chosen = capturedEnc;
-                dialog?.Close();
-            };
-            listPanel.Children.Add(btn);
-        }
-
-        var listBorder = new Border
-        {
-            Background = WindowBackgroundBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Padding = new Thickness(10),
-            Child = listPanel
-        };
-
-        var panel = new StackPanel
-        {
-            Spacing = 10,
-            Children =
-            {
-                headerRow,
-                new TextBlock { Text = "Choose an encoding for this file:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
-                headerDivider,
-                listBorder,
-                new TextBlock
-                {
-                    Text = "The file will be re-saved immediately with the chosen encoding.",
-                    FontSize = 11,
-                    Foreground = MutedTextBrush,
-                    TextWrapping = TextWrapping.Wrap,
-                    Opacity = 0.85
-                },
-                footerDivider
-            }
-        };
-
-        var outer = CreateDialogSurface(panel, new Thickness(16));
-
-        dialog = new Window
-        {
-            Title = "Change File Encoding",
-            Width = 320,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 300,
-            MaxHeight = 560,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = WindowBackgroundBrush,
-            Content = outer,
-        };
-
-        using (PerformanceBudget.TrackModal())
-        {
-            await dialog.ShowDialog(this);
-        }
-
-        if (chosen is null) return;
-        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
-            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, requestDocument) ||
-            !FileSystemPaths.Equals(_currentFilePath, requestPath) || string.IsNullOrWhiteSpace(requestPath))
-            return;
-
-        if (chosen.CodePage == requestEncoding.CodePage &&
-            chosen.GetPreamble().Length == requestEncoding.GetPreamble().Length)
-            return;
-
-        try
-        {
-            if (requestTab is not null && IsTabDiskStateChanged(requestTab))
-                throw new IOException($"\"{Path.GetFileName(requestPath)}\" changed on disk and was left untouched.");
-            var documentVersion = requestDocument.Version;
-            var snapshot = EditorTextSnapshotStore.GetSnapshot(requestDocument);
-            var expectedWriteTimeUtc = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownWriteTimeUtc : (DateTime?)null;
-            var expectedLength = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownLength : (long?)null;
-            await Task.Run(() => WriteTextFileAtomicallyAsync(
-                requestPath, snapshot, requestLineEnding, chosen, expectedWriteTimeUtc, expectedLength,
-                async () => await Dispatcher.UIThread.InvokeAsync(() => requestTab is not null && FileSystemPaths.Equals(requestTab.Path, requestPath))));
-
-            if (requestTab is not null && OpenTabs.Contains(requestTab) && FileSystemPaths.Equals(requestTab.Path, requestPath))
-            {
-                var documentUnchanged = ReferenceEquals(requestDocument.Version, documentVersion);
-                requestTab.Content = string.Empty;
-                requestTab.Encoding = chosen;
-                requestTab.IsDirty = !documentUnchanged;
-                requestTab.IsModifiedExternally = false;
-                CaptureTabDiskState(requestTab);
-                if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(requestPane.ActiveTab, requestTab))
-                {
-                    _currentFileEncoding = chosen;
-                    _isDirty = !documentUnchanged;
-                    OnPropertyChanged(nameof(EncodingDisplayText));
-                    OnPropertyChanged(nameof(IsDocumentDirty));
-                }
-            }
-            RefreshState(fullRefresh: true);
-        }
-        catch (Exception ex)
-        {
-            await ShowWarningDialogAsync("Change encoding", ex);
-        }
-    }
-
-    private async void LineEndingStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (!HasFileOpen || !IsTextEditorVisible) return;
-        var requestPane = _activeEditorPane;
-        var requestEditor = EditorTextBox;
-        var requestTab = requestPane.ActiveTab;
-        var requestDocument = requestEditor.Document;
-        var requestPath = _currentFilePath;
-        var requestLineEnding = _currentLineEnding;
-        var requestEncoding = _currentFileEncoding;
-
-        var lineEndings = new (string Label, Kodo.Models.LineEnding Ending)[]
-        {
-            ("LF (\\n) - Unix / macOS", Kodo.Models.LineEnding.LF),
-            ("CRLF (\\r\\n) - Windows", Kodo.Models.LineEnding.CRLF),
-            ("CR (\\r) - Classic Mac OS", Kodo.Models.LineEnding.CR),
-        };
-
-        Kodo.Models.LineEnding? chosen = null;
-        Window? dialog = null;
-
-        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
-            ? accentSolid.Color
-            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
-
-        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.ArrowUturnDown,
-            "Change Line Ending");
-
-        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
-        headerDivider.Margin = new Thickness(0, 6);
-
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
-
-        var listPanel = new StackPanel { Spacing = 6 };
-
-        foreach (var (label, ending) in lineEndings)
-        {
-            var isCurrent = ending == requestLineEnding;
-            var btn = new Button
-            {
-                Content = isCurrent ? $"{label}  ✓" : label,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = isCurrent
-                    ? new SolidColorBrush(accentColor, 0.18)
-                    : ButtonBrush,
-                Foreground = isCurrent
-                    ? new SolidColorBrush(accentColor)
-                    : PrimaryTextBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = KodoDesignTokens.CompactRadius,
-                Padding = new Thickness(12, 7),
-            };
-            var captured = ending;
-            btn.Click += (_, _) =>
-            {
-                chosen = captured;
-                dialog?.Close();
-            };
-            listPanel.Children.Add(btn);
-        }
-
-        var listBorder = new Border
-        {
-            Background = WindowBackgroundBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Padding = new Thickness(10),
-            Child = listPanel
-        };
-
-        var panel = new StackPanel
-        {
-            Spacing = 10,
-            Children =
-            {
-                headerRow,
-                new TextBlock { Text = "Choose line ending for this file:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
-                headerDivider,
-                listBorder,
-                new TextBlock
-                {
-                    Text = "The file will be re-saved immediately with the chosen line ending.",
-                    FontSize = 11,
-                    Foreground = MutedTextBrush,
-                    TextWrapping = TextWrapping.Wrap,
-                    Opacity = 0.85
-                },
-                footerDivider
-            }
-        };
-
-        var outer = CreateDialogSurface(panel, new Thickness(16));
-
-        dialog = new Window
-        {
-            Title = "Change Line Ending",
-            Width = 360,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 300,
-            MaxHeight = 560,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = WindowBackgroundBrush,
-            Content = outer,
-        };
-
-        using (PerformanceBudget.TrackModal())
-        {
-            await dialog.ShowDialog(this);
-        }
-
-        if (chosen is null) return;
-        if (!ReferenceEquals(_activeEditorPane, requestPane) || !ReferenceEquals(EditorTextBox, requestEditor) ||
-            !ReferenceEquals(requestPane.ActiveTab, requestTab) || !ReferenceEquals(requestEditor.Document, requestDocument) ||
-            !FileSystemPaths.Equals(_currentFilePath, requestPath) || string.IsNullOrWhiteSpace(requestPath))
-            return;
-        if (chosen.Value == requestLineEnding) return;
-
-        try
-        {
-            if (requestTab is not null && IsTabDiskStateChanged(requestTab))
-                throw new IOException($"\"{Path.GetFileName(requestPath)}\" changed on disk and was left untouched.");
-            var documentVersion = requestDocument.Version;
-            var snapshot = EditorTextSnapshotStore.GetSnapshot(requestDocument);
-            var expectedWriteTimeUtc = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownWriteTimeUtc : (DateTime?)null;
-            var expectedLength = requestTab is { LastKnownLength: >= 0 } ? requestTab.LastKnownLength : (long?)null;
-            await Task.Run(() => WriteTextFileAtomicallyAsync(
-                requestPath, snapshot, chosen.Value, requestEncoding, expectedWriteTimeUtc, expectedLength,
-                async () => await Dispatcher.UIThread.InvokeAsync(() => requestTab is not null && FileSystemPaths.Equals(requestTab.Path, requestPath))));
-
-            if (requestTab is not null && OpenTabs.Contains(requestTab) && FileSystemPaths.Equals(requestTab.Path, requestPath))
-            {
-                var documentUnchanged = ReferenceEquals(requestDocument.Version, documentVersion);
-                requestTab.LineEnding = chosen.Value;
-                requestTab.Content = string.Empty;
-                requestTab.IsDirty = !documentUnchanged;
-                requestTab.IsModifiedExternally = false;
-                CaptureTabDiskState(requestTab);
-                if (ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(requestPane.ActiveTab, requestTab))
-                {
-                    _currentLineEnding = chosen.Value;
-                    _isDirty = !documentUnchanged;
-                    OnPropertyChanged(nameof(LineEndingDisplayText));
-                    OnPropertyChanged(nameof(IsLineEndingVisible));
-                    OnPropertyChanged(nameof(IsDocumentDirty));
-                }
-            }
-            RefreshState(fullRefresh: true);
-        }
-        catch (Exception ex)
-        {
-            await ShowWarningDialogAsync("Change line ending", ex);
-        }
-    }
-
-    private async void IndentationStatusBarButton_OnClick(object? sender, RoutedEventArgs e)
-    {
-        if (!HasFileOpen || !IsTextEditorVisible) return;
-
-        var options = new (string Label, bool UseSpaces, int Size)[]
-        {
-            ("Spaces: 2", true, 2),
-            ("Spaces: 4", true, 4),
-            ("Spaces: 8", true, 8),
-            ("Tab Size: 2", false, 2),
-            ("Tab Size: 4", false, 4),
-            ("Tab Size: 8", false, 8),
-        };
-
-        (bool UseSpaces, int Size)? chosen = null;
-        Window? dialog = null;
-
-        var accentColor = AccentBrush.ToImmutable() is ISolidColorBrush accentSolid
-            ? accentSolid.Color
-            : Color.Parse(KodoDesignTokens.DefaultAccentHex);
-
-        var headerRow = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.Indent,
-            "Change Indentation");
-
-        var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
-        headerDivider.Margin = new Thickness(0, 6);
-
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
-
-        var listPanel = new StackPanel { Spacing = 6 };
-
-        foreach (var (label, useSpaces, size) in options)
-        {
-            var isCurrent = useSpaces == InsertSpaces && size == TabSize;
-            var btn = new Button
-            {
-                Content = isCurrent ? $"{label}  \u2713" : label,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = isCurrent
-                    ? new SolidColorBrush(accentColor, 0.18)
-                    : ButtonBrush,
-                Foreground = isCurrent
-                    ? new SolidColorBrush(accentColor)
-                    : PrimaryTextBrush,
-                BorderBrush = SurfaceBorderBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = KodoDesignTokens.CompactRadius,
-                Padding = new Thickness(12, 7),
-            };
-            var capturedSpaces = useSpaces;
-            var capturedSize = size;
-            btn.Click += (_, _) =>
-            {
-                chosen = (capturedSpaces, capturedSize);
-                dialog?.Close();
-            };
-            listPanel.Children.Add(btn);
-        }
-
-        var listBorder = new Border
-        {
-            Background = WindowBackgroundBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = KodoDesignTokens.ControlRadius,
-            Padding = new Thickness(10),
-            Child = listPanel
-        };
-
-        var panel = new StackPanel
-        {
-            Spacing = 10,
-            Children =
-            {
-                headerRow,
-                new TextBlock { Text = "Choose indentation for the editor:", FontSize = 12, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap, Opacity = 0.92 },
-                headerDivider,
-                listBorder,
-                new TextBlock
-                {
-                    Text = "Changes apply to new indentations and editor guides.",
-                    FontSize = 11,
-                    Foreground = MutedTextBrush,
-                    TextWrapping = TextWrapping.Wrap,
-                    Opacity = 0.85
-                },
-                footerDivider
-            }
-        };
-
-        var outer = CreateDialogSurface(panel, new Thickness(16));
-
-        dialog = new Window
-        {
-            Title = "Change Indentation",
-            Width = 360,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 300,
-            MaxHeight = 560,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = WindowBackgroundBrush,
-            Content = outer,
-        };
-
-        using (PerformanceBudget.TrackModal())
-        {
-            await dialog.ShowDialog(this);
-        }
-
-        if (chosen is null) return;
-        var (chosenUseSpaces, chosenSize) = chosen.Value;
-        if (chosenUseSpaces == InsertSpaces && chosenSize == TabSize) return;
-
-        InsertSpaces = chosenUseSpaces;
-        TabSize = chosenSize;
-        OnPropertyChanged(nameof(IndentationDisplayText));
-        OnPropertyChanged(nameof(IsIndentationVisible));
     }
 
     private void EditorContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)

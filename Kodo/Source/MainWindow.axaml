@@ -54,12 +54,81 @@
             </Setter>
         </Style>
 
+        <Style Selector="Border.savegroup">
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+
+        <Style Selector="Button.saveprimary">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1,1,0,1" />
+            <Setter Property="CornerRadius" Value="8,0,0,8" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style Selector="Button.saveprimary:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
+        <Style Selector="Button.saveprimary:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.savearrow">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,1,1,1" />
+            <Setter Property="CornerRadius" Value="0,8,8,0" />
+            <Setter Property="Padding" Value="8,8" />
+        </Style>
+
+        <Style Selector="Button.savearrow:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
+        <Style Selector="Button.savearrow:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.toolbarprimary">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+
+        <Style Selector="Button.toolbarprimary:pointerover">
+            <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+        </Style>
+
+        <Style Selector="Button.toolbarprimary:disabled">
+            <Setter Property="Background" Value="{Binding ButtonBrush}" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
         <Style Selector="Button.chrome:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
 
         <Style Selector="Border#TerminalPanelSplitter:pointerover">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Opacity" Value="{x:Static kodo:KodoDesignTokens.MutedForegroundOpacity}" />
+        </Style>
+
+        <Style Selector="Border#TerminalSidebarSplitter:pointerover">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Opacity" Value="{x:Static kodo:KodoDesignTokens.MutedForegroundOpacity}" />
         </Style>
@@ -1639,6 +1708,7 @@
                                             <TextBox FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                      IsVisible="{Binding IsRenaming}"
                                                      Text="{Binding RenameText, Mode=TwoWay}"
+                                                     TextChanged="FileNameTextBox_OnTextChanged"
                                                      KeyDown="InlineRenameTextBox_OnKeyDown"
                                                      LostFocus="InlineRenameTextBox_OnLostFocus"
                                                      MinWidth="0"
@@ -1939,27 +2009,44 @@
                                     VerticalAlignment="Center"
                                     IsVisible="{Binding IsEditorTabsVisible}">
 
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveTooltip}"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveButton_OnClick"
-                                    AutomationProperties.Name="{Binding SaveTooltip}"
-                                    Content="Save" />
+                            <Border Classes="savegroup">
+                                <Grid ColumnDefinitions="Auto,Auto">
+                                    <Button Classes="saveprimary"
+                                            ToolTip.Tip="{Binding SaveTooltip}"
+                                            IsEnabled="{Binding HasOpenEditors}"
+                                            Click="ToolbarSaveButton_OnClick"
+                                            AutomationProperties.Name="Save"
+                                            Content="Save" />
+                                    <Button Grid.Column="1"
+                                            Classes="savearrow"
+                                            ToolTip.Tip="More save options"
+                                            IsEnabled="{Binding HasOpenEditors}"
+                                            AutomationProperties.Name="More save options">
+                                        <TextBlock Text="&#x25BE;" LineHeight="16" />
+                                        <Button.Flyout>
+                                            <MenuFlyout Placement="Bottom">
+                                                <MenuItem Header="Save As..."
+                                                          ToolTip.Tip="{Binding SaveAsTooltip}"
+                                                          Click="ToolbarSaveAsButton_OnClick"
+                                                          AutomationProperties.Name="Save As" />
+                                                <MenuItem Header="Save All"
+                                                          ToolTip.Tip="Save All"
+                                                          IsEnabled="{Binding HasMultipleOpenEditors}"
+                                                          Click="ToolbarSaveAllButton_OnClick"
+                                                          AutomationProperties.Name="Save All" />
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                            </Border>
 
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="{Binding SaveAsTooltip}"
+                            <Button Classes="toolbarprimary"
+                                    ToolTip.Tip="Reload clean editor tabs from their files"
                                     IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarSaveAsButton_OnClick"
-                                    AutomationProperties.Name="{Binding SaveAsTooltip}"
-                                    Content="Save As" />
-
-                            <Button Classes="chrome"
-                                    ToolTip.Tip="Save All"
-                                    IsEnabled="{Binding HasMultipleOpenEditors}"
-                                    Click="ToolbarSaveAllButton_OnClick"
-                                    AutomationProperties.Name="Save All"
-                                    Content="Save All" />
-                            <Button Classes="chrome"
+                                    Click="ToolbarRefreshOpenEditorsButton_OnClick"
+                                    AutomationProperties.Name="Refresh Open Editors"
+                                    Content="Refresh Open Editors" />
+                            <Button Classes="toolbarprimary"
                                     ToolTip.Tip="Show or close the side-by-side editor pane"
                                     IsEnabled="{Binding CanToggleSplitEditor}"
                                     Click="ToggleSplitEditorButton_OnClick"
@@ -2178,6 +2265,7 @@
                                                      FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                      IsVisible="{Binding IsRenaming}"
                                                      Text="{Binding RenameText, Mode=TwoWay}"
+                                                     TextChanged="FileNameTextBox_OnTextChanged"
                                                      KeyDown="InlineTabRenameTextBox_OnKeyDown"
                                                      LostFocus="InlineTabRenameTextBox_OnLostFocus"
                                                      MinWidth="150"
@@ -2327,6 +2415,7 @@
                                                      FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                      IsVisible="{Binding IsRenamingInPrimaryPane}"
                                                      Text="{Binding RenameText, Mode=TwoWay}"
+                                                     TextChanged="FileNameTextBox_OnTextChanged"
                                                      KeyDown="InlineTabRenameTextBox_OnKeyDown"
                                                      LostFocus="InlineTabRenameTextBox_OnLostFocus"
                                                      MinWidth="150"
@@ -2719,6 +2808,7 @@
                                                      FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                      IsVisible="{Binding IsRenamingInSecondaryPane}"
                                                      Text="{Binding RenameText, Mode=TwoWay}"
+                                                     TextChanged="FileNameTextBox_OnTextChanged"
                                                      KeyDown="InlineTabRenameTextBox_OnKeyDown"
                                                      LostFocus="InlineTabRenameTextBox_OnLostFocus"
                                                      MinWidth="150"
@@ -3742,8 +3832,9 @@ ToolTip.Tip="{Binding Path}" />
                         MaxHeight="420"
                         ClipToBounds="True"
                         Height="{Binding TerminalPanelHeight}">
-                    <Grid ColumnDefinitions="220,*,44">
+                    <Grid ColumnDefinitions="Auto,4,*,44">
                         <Border Grid.Column="0"
+                                Width="{Binding TerminalSidebarWidth}"
                                 Background="{Binding SidebarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderRightHairline}"
@@ -4000,6 +4091,17 @@ ToolTip.Tip="{Binding Path}" />
                         </Border>
 
                         <Border Grid.Column="1"
+                                x:Name="TerminalSidebarSplitter"
+                                Background="Transparent"
+                                Cursor="SizeWestEast"
+                                ToolTip.Tip="Drag to resize the terminal sidebar; double-click to fit session names"
+                                PointerPressed="TerminalSidebarSplitter_OnPointerPressed"
+                                PointerMoved="TerminalSidebarSplitter_OnPointerMoved"
+                                PointerReleased="TerminalSidebarSplitter_OnPointerReleased"
+                                PointerCaptureLost="TerminalSidebarSplitter_OnPointerCaptureLost"
+                                DoubleTapped="TerminalSidebarSplitter_OnDoubleTapped" />
+
+                        <Border Grid.Column="2"
                                 Focusable="False"
                                 IsVisible="{Binding HasActiveTerminal}"
                                 Background="{Binding EditorBackgroundBrush}"
@@ -4007,7 +4109,7 @@ ToolTip.Tip="{Binding Path}" />
                             <kodo:ConsoleTerminal x:Name="TerminalHostControl" Margin="0,6,0,0" />
                         </Border>
 
-                        <Border Grid.Column="1"
+                        <Border Grid.Column="2"
                                 IsVisible="{Binding !HasActiveTerminal}"
                                 Background="{Binding EditorBackgroundBrush}">
                             <StackPanel HorizontalAlignment="Center"
@@ -4037,7 +4139,7 @@ ToolTip.Tip="{Binding Path}" />
                             </StackPanel>
                         </Border>
 
-                        <Border Grid.Column="2"
+                        <Border Grid.Column="3"
                                 Background="{Binding TopBarBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderLeftHairline}"

@@ -1387,13 +1387,31 @@ public sealed class ConsoleTerminal : Control
         var ft = TerminalGlyphCache.Get(label, _terminalForeground, false, FontSize);
 
         const int pad = 6;
-        var w = ft.Width + pad * 2;
+        var maxWidth = Math.Max(0, Bounds.Width - 12);
+        if (ft.Width + pad * 2 > maxWidth)
+        {
+            var maxElements = Math.Max(1, (int)((maxWidth - pad * 2) / CellW));
+            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(label);
+            var builder = new StringBuilder();
+            var elementCount = 0;
+            while (elementCount < maxElements - 1 && elements.MoveNext())
+            {
+                builder.Append(elements.GetTextElement());
+                elementCount++;
+            }
+            builder.Append('…');
+            label = builder.ToString();
+            ft = TerminalGlyphCache.Get(label, _terminalForeground, false, FontSize);
+        }
+
+        var w = Math.Min(ft.Width + pad * 2, maxWidth);
         var h = ft.Height + pad * 2;
-        var rect = new Rect(Bounds.Width - w - 10, 6, w, h);
+        var rect = new Rect(Math.Max(6, Bounds.Width - w - 6), 6, w, h);
 
         ctx.FillRectangle(BrushCache.Get(Color.FromArgb(245, _terminalBackground.R, _terminalBackground.G, _terminalBackground.B)), rect);
         ctx.DrawRectangle(PenCache.Get(_cursorColor), rect);
-        ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
+        using (ctx.PushClip(rect))
+            ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
     private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)

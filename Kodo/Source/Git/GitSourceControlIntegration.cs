@@ -1558,34 +1558,20 @@ internal sealed class GitSourceControlIntegration
     {
         if (_window is null) return false;
         var syncs = new List<IDisposable>();
-        var dialog = CreateDialogWindow(title, 420, 210);
+        var dialog = CreateDialogWindow(title, 520, 240);
+        dialog.SizeToContent = SizeToContent.Height;
+        dialog.MaxWidth = 560;
+        dialog.MaxHeight = 640;
+        dialog.CanResize = false;
         TrackTheme(dialog, Window.BackgroundProperty, "CardBrush", syncs);
-        var content = new DockPanel();
-        var header = new StackPanel { Spacing = 4, Margin = new Thickness(20, 16, 20, 12) };
-        header.Children.Add(DialogHeader.Create(
+        var header = DialogHeader.Create(
             GetWindowBrush("DangerBrush") ?? new SolidColorBrush(Color.Parse("#B91C1C")),
             GetWindowBrush("PrimaryTextBrush") ?? Brushes.White,
             GetWindowBrush("DangerForegroundBrush") ?? Brushes.White,
             KodoIcons.Trash,
-            title));
-        header.Children.Add(DialogHeader.CreateDivider(GetWindowBrush("SurfaceBorderBrush") ?? Brushes.Transparent));
-        DockPanel.SetDock(header, Dock.Top);
-        content.Children.Add(header);
-        var footer = new Border
-        {
-            Padding = new Thickness(20, 12),
-            BorderBrush = GetWindowBrush("SurfaceBorderBrush"),
-            BorderThickness = new Thickness(0, 1, 0, 0)
-        };
-        TrackTheme(footer, Border.BorderBrushProperty, "SurfaceBorderBrush", syncs);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
-        var cancel = CreateTextButton(null, "Cancel", "Close without changing anything", async () => { dialog.Close(false); await Task.CompletedTask; }, syncs);
-        var confirm = CreateTextButton(null, confirmText, confirmText, async () => { dialog.Close(true); await Task.CompletedTask; }, syncs, "DangerBrush", "DangerForegroundBrush");
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(confirm);
-        footer.Child = buttons;
-        DockPanel.SetDock(footer, Dock.Bottom);
-        content.Children.Add(footer);
+            title);
+        var headerDivider = DialogHeader.CreateDivider(GetWindowBrush("SurfaceBorderBrush") ?? Brushes.Transparent);
+        TrackTheme(headerDivider, Border.BackgroundProperty, "SurfaceBorderBrush", syncs);
         var messageLabel = new TextBlock
         {
             Text = message,
@@ -1594,7 +1580,34 @@ internal sealed class GitSourceControlIntegration
             TextWrapping = TextWrapping.Wrap
         };
         TrackTheme(messageLabel, TextBlock.ForegroundProperty, "PrimaryTextBrush", syncs);
-        content.Children.Add(new Border { Padding = new Thickness(20, 0, 20, 18), Child = messageLabel });
+
+        var footerDivider = new Border
+        {
+            Height = 1,
+            Background = GetWindowBrush("SurfaceBorderBrush"),
+            Opacity = 0.9,
+            Margin = new Thickness(0, 4)
+        };
+        TrackTheme(footerDivider, Border.BackgroundProperty, "SurfaceBorderBrush", syncs);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
+        var cancel = CreateTextButton(null, "Cancel", "Close without changing anything", async () => { dialog.Close(false); await Task.CompletedTask; }, syncs);
+        var confirm = CreateTextButton(null, confirmText, confirmText, async () => { dialog.Close(true); await Task.CompletedTask; }, syncs, "DangerBrush", "DangerForegroundBrush");
+        cancel.Padding = new Thickness(16, 8);
+        cancel.CornerRadius = KodoDesignTokens.ControlRadius;
+        cancel.MinWidth = 80;
+        confirm.Padding = new Thickness(20, 8);
+        confirm.CornerRadius = KodoDesignTokens.ControlRadius;
+        confirm.MinWidth = 100;
+        confirm.BorderThickness = new Thickness(0);
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(confirm);
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            MaxWidth = 520,
+            Margin = new Thickness(20),
+            Children = { header, headerDivider, messageLabel, footerDivider, buttons }
+        };
         dialog.Content = CreateDialogSurface(content, syncs);
         try
         {

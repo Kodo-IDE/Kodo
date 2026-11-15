@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit.Document;
 using Kodo.Editor;
 using Kodo.Models;
 using System;
@@ -84,6 +85,141 @@ public partial class MainWindow
         ExplorerPanelWidth = ComputeAutoFitExplorerPanelWidth();
         SaveSettings(immediate: true);
         e.Handled = true;
+    }
+
+    private async void ToolbarRefreshOpenEditorsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        await RefreshOpenEditorsAsync();
+    }
+
+    private async Task RefreshOpenEditorsAsync()
+    {
+        if (OpenTabs.Count == 0) return;
+
+        SaveCurrentEditorStateIntoTab();
+        var skipped = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var tab in OpenTabs.ToList())
+        {
+            var captured = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (tab.IsDirty)
+                    return (CanRefresh: false, IsDirty: true, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+                if (tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path))
+                    return (CanRefresh: false, IsDirty: false, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+                return (CanRefresh: true, IsDirty: false, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+            });
+
+            if (!captured.CanRefresh)
+            {
+                skipped.Add($"{tab.DisplayName}{(captured.IsDirty ? " (unsaved changes)" : " (no file on disk)")}");
+                continue;
+            }
+
+            try
+            {
+                var path = tab.Path;
+                if (!File.Exists(path))
+                    throw new FileNotFoundException("The file no longer exists.", path);
+
+                var isImage = IsImagePreviewFile(path);
+                var content = string.Empty;
+                var encoding = tab.Encoding ?? EditorTab.DefaultEncoding;
+                var isCorrupted = false;
+                var lineEnding = tab.LineEnding;
+
+                if (!isImage)
+                {
+                    var fileInfo = new FileInfo(path);
+                    var detection = await Task.Run(() =>
+                    {
+                        var detectedEncoding = SearchEngine.DetectFileEncoding(path);
+                        return (Encoding: detectedEncoding, IsBinary: IsBinaryContent(path));
+                    });
+                    encoding = detection.Encoding;
+                    isCorrupted = detection.IsBinary;
+                    if (!isCorrupted)
+                        content = fileInfo.Length > MaxFileSizeForFullLoad
+                            ? await ReadLargeFileAsync(path, encoding)
+                            : await File.ReadAllTextAsync(path, encoding);
+
+                    if (content.Length > 0)
+                        lineEnding = DetectLineEnding(content);
+                }
+
+                var applied = await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!OpenTabs.Contains(tab) || tab.IsDirty ||
+                        !ReferenceEquals(tab.Document, captured.Document) ||
+                        (captured.Document is not null && !ReferenceEquals(captured.Document.Version, captured.Version)) ||
+                        !string.Equals(tab.Content ?? string.Empty, captured.Content, StringComparison.Ordinal))
+                    {
+                        skipped.Add($"{tab.DisplayName} (changed while refreshing)");
+                        return false;
+                    }
+
+                    var nextDocument = isImage || isCorrupted ? null : new TextDocument(content);
+                    tab.Document = nextDocument;
+                    tab.Content = string.Empty;
+                    tab.Encoding = encoding;
+                    tab.LineEnding = lineEnding;
+                    tab.DetectedIndentation = null;
+                    tab.IndentationDetectionVersion = null;
+                    tab.IsModifiedExternally = false;
+                    tab.IsDirty = false;
+                    if (isCorrupted)
+                        _corruptedTabs.Add(tab);
+                    else
+                        _corruptedTabs.Remove(tab);
+
+                    foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+                    {
+                        if (!ReferenceEquals(pane.ActiveTab, tab)) continue;
+                        var editor = GetEditorForPane(pane);
+                        SavePaneViewState(pane, editor);
+                        AssignPaneDocumentWithoutDirtyTracking(editor, nextDocument ?? new TextDocument(string.Empty));
+                        if (nextDocument is not null)
+                        {
+                            var viewState = tab.GetViewState(pane.Id);
+                            editor.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, nextDocument.TextLength);
+                            editor.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, nextDocument.LineCount));
+                        }
+                        if (isImage)
+                        {
+                            pane.ImagePreview?.Dispose();
+                            pane.ImagePreview = null;
+                            pane.ImagePreviewPath = null;
+                            RefreshPanePreviewState(pane);
+                        }
+                    }
+
+                    CaptureTabDiskState(tab);
+                    return true;
+                });
+
+                if (!applied) continue;
+                if (!isImage && !isCorrupted)
+                {
+                    await LspNotifyDidCloseAsync(path);
+                    await LspNotifyDidOpenAsync(path, content);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{tab.DisplayName}: {ex.Message}");
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            SetFileCorrupted(ActiveEditorTab is not null && _corruptedTabs.Contains(ActiveEditorTab));
+            RefreshState(fullRefresh: true);
+            QueueLspPresentationRefresh(immediate: true);
+        });
+
+        if (skipped.Count > 0 || failures.Count > 0)
+            await ShowRefreshOpenEditorsSummaryDialogAsync(skipped, failures);
     }
 
     private double ComputeAutoFitExplorerPanelWidth()

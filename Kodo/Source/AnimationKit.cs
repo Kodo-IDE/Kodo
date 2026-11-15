@@ -1,6 +1,4 @@
 // Licensed under the GNU GPL-v3.0
-using System;
-using System.Linq;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
@@ -8,6 +6,8 @@ using Avalonia.Media;
 using Avalonia.Media.Transformation;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using System;
+using System.Linq;
 
 namespace Kodo;
 
