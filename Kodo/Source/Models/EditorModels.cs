@@ -484,6 +484,7 @@ public class FileTreeItem : INotifyPropertyChanged
     public string FullPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
+    public string? IconText { get; set; }
     internal int ExpansionRequestVersion { get; set; }
 
     public bool IsRenaming
@@ -502,6 +503,7 @@ public class FileTreeItem : INotifyPropertyChanged
     {
         Name = name;
         RenameText = name;
+        IconText = null;
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Icon));
     }
@@ -525,7 +527,9 @@ public class FileTreeItem : INotifyPropertyChanged
         }
     }
 
-    public string Icon => IsDirectory ? (_isExpanded ? "\U0001F4C2" : "\U0001F4C1") : GetFileIcon(Name);
+    public string Icon => !string.IsNullOrWhiteSpace(IconText)
+        ? IconText
+        : IsDirectory ? (_isExpanded ? "\U0001F4C2" : "\U0001F4C1") : GetFileIcon(Name);
 
     public int ErrorCount => _errorCount;
     public bool HasErrorDiagnostics => _errorCount > 0;
@@ -551,21 +555,56 @@ public class FileTreeItem : INotifyPropertyChanged
 
     internal static string GetFileIcon(string fileName)
     {
-        if (ResolveFileNameIcon(fileName) is { Length: > 0 } named) return named;
+        if (GetNamedFileIcon(fileName) is { Length: > 0 } named) return named;
         var ext = Path.GetExtension(fileName).ToLowerInvariant();
         return _iconCache.GetOrAdd(ext, _ => ResolveFileIcon(ext));
     }
 
-    private static string ResolveFileNameIcon(string fileName) => fileName?.ToLowerInvariant() switch
+    internal static string GetNamedFileIcon(string fileName) => ResolveFileNameIcon(fileName);
+
+    private static string ResolveFileNameIcon(string fileName) => fileName.ToLowerInvariant() switch
     {
         "makefile" or "gnumakefile" => "MK",
         "dockerfile" or "docker-compose.yml" or "docker-compose.yaml" => "DOCK",
-        "license" or "licence" or "copying" => "LIC",
-        "readme" => "MD",
+        "license" or "licence" or "copying" or "license.md" or "licence.md" or "copying.md" or "license.txt" or "licence.txt" or "copying.txt" or "notice" or "notice.md" or "notice.txt" or "copyright" or "copyright.txt" => "LIC",
+        var name when name.StartsWith("license-", StringComparison.Ordinal) || name.StartsWith("licence-", StringComparison.Ordinal) => "LIC",
+        "readme" => "RMD",
+        var name when HasDocumentSuffix(name, "readme") => "RMD",
+        "changelog" or "changes" or "history" => "LOG",
+        var name when HasDocumentSuffix(name, "changelog") || HasDocumentSuffix(name, "changes") || HasDocumentSuffix(name, "history") => "LOG",
+        "contributing" => "CONTR",
+        var name when HasDocumentSuffix(name, "contributing") => "CONTR",
+        "security" => "SEC",
+        var name when HasDocumentSuffix(name, "security") => "SEC",
+        "code_of_conduct" => "COC",
+        var name when HasDocumentSuffix(name, "code_of_conduct") => "COC",
+        "authors" or "contributors" => "AUTH",
+        var name when HasDocumentSuffix(name, "authors") || HasDocumentSuffix(name, "contributors") => "AUTH",
+        "support" or "faq" or "install" or "installation" or "developing" or "maintainers" or "roadmap" => "DOC",
+        var name when HasDocumentSuffix(name, "support") || HasDocumentSuffix(name, "faq") || HasDocumentSuffix(name, "install") || HasDocumentSuffix(name, "installation") || HasDocumentSuffix(name, "developing") || HasDocumentSuffix(name, "maintainers") || HasDocumentSuffix(name, "roadmap") => "DOC",
+        "codeowners" or "codeowners.md" => "OWN",
+        "funding.yml" => "FUND",
         "cmakelists.txt" => "CMAKE",
         "gemfile" or "rakefile" => "RB",
+        ".gitignore" or ".gitattributes" or ".gitmodules" or ".gitkeep" or ".gitconfig" or ".git-blame-ignore-revs" or ".mailmap" => "GIT",
+        ".editorconfig" => "CFG",
+        ".npmrc" or ".nvmrc" or ".yarnrc" or ".yarnrc.yml" or ".pnpmfile.cjs" => "NODE",
+        ".dockerignore" => "DOCK",
+        ".env" or ".env.example" or ".env.template" => "ENV",
+        "package-lock.json" or "npm-shrinkwrap.json" => "NPM",
+        "yarn.lock" => "YARN",
+        "pnpm-lock.yaml" => "PNPM",
+        "cargo.lock" => "CARGO",
+        "poetry.lock" or "pdm.lock" or "uv.lock" => "PY",
+        "go.sum" => "GO",
+        "docker-compose" => "DOCK",
         _ => string.Empty,
     };
+
+    private static bool HasDocumentSuffix(string fileName, string stem) =>
+        fileName.StartsWith($"{stem}.", StringComparison.Ordinal) ||
+        fileName.StartsWith($"{stem}-", StringComparison.Ordinal) ||
+        fileName.StartsWith($"{stem}_", StringComparison.Ordinal);
 
     private static string ResolveFileIcon(string ext)
     {

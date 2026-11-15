@@ -65,7 +65,7 @@ public sealed class MarketplaceTileWidthMultiConverter : IMultiValueConverter
     private const double ScrollbarGutter = 20;
     private const double TileMargin = 16;
     private const double MinTileWidth = 200;
-    private const double DetailPaneReserve = 316;
+    private const double DetailPaneReserve = 356;
 
     public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
     {

@@ -81,6 +81,8 @@ public static class KodoExtensionIds
 public sealed class LanguageSyntaxProfile
 {
     public string[] Extensions { get; init; } = [];
+    public string? FileIcon { get; init; }
+    public Dictionary<string, string> FileIcons { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string[] Keywords { get; init; } = [];
     public string[] Types { get; init; } = [];
     public string[] Functions { get; init; } = [];
@@ -198,6 +200,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string Description { get; init; } = string.Empty;
     public string[] Extensions { get; init; } = [];
     public string[] Dependencies { get; init; } = [];
+    public Dictionary<string, string> LangRulesOptions { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string[] Keywords { get; set; } = [];
     public string[] Types { get; set; } = [];
     public string[] Functions { get; set; } = [];

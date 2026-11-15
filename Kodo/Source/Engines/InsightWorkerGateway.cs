@@ -109,23 +109,38 @@ internal sealed class InsightWorkerGateway
         LoadedExtension? languageExtension,
         CancellationToken cancellationToken) =>
         MeasureAnalysisAsync(InsightRefreshKind.Errors, "errors", documentText.Length,
-            () => FindErrorsCoreAsync(engine, documentText, languageExtension, cancellationToken));
+            () => FindErrorsCoreAsync(engine, documentText, languageExtension, null, null, cancellationToken));
+
+    public Task<List<ErrorSpan>> FindErrorsAsync(
+        InsightEngine engine,
+        LangRulesDocumentContext document,
+        LangRulesWorkspaceContext? workspace,
+        LoadedExtension? languageExtension,
+        CancellationToken cancellationToken) =>
+        MeasureAnalysisAsync(InsightRefreshKind.Errors, "errors", document.Text.Length,
+            () => FindErrorsCoreAsync(engine, document.Text, languageExtension, document, workspace, cancellationToken));
 
     private async Task<List<ErrorSpan>> FindErrorsCoreAsync(
         InsightEngine engine,
         string documentText,
         LoadedExtension? languageExtension,
+        LangRulesDocumentContext? documentContext,
+        LangRulesWorkspaceContext? workspaceContext,
         CancellationToken cancellationToken)
     {
         if (Volatile.Read(ref _strikes) >= MaxStrikes)
-            return InProcessErrors(engine, documentText, languageExtension, cancellationToken);
+        {
+            if (languageExtension?.LangRules is not null)
+                return [CreateLangRulesWorkerFailure(documentText, "Insight worker is unavailable.")];
+            return await InProcessErrors(engine, documentText, languageExtension, cancellationToken, documentContext, workspaceContext).ConfigureAwait(false);
+        }
         try
         {
-            var response = await RequestAsync("errs", null, languageExtension, documentText, null, cancellationToken).ConfigureAwait(false);
+            var response = await RequestAsync("errs", documentContext?.FilePath, languageExtension, documentText, documentContext?.WorkspaceRoot, cancellationToken, documentContext, workspaceContext).ConfigureAwait(false);
             if (!response.Ok || response.Errors is null) throw new InvalidOperationException(response.Message ?? "worker diagnostics request failed");
             var spans = new List<ErrorSpan>(response.Errors.Count);
             foreach (var s in response.Errors)
-                spans.Add(new ErrorSpan(s.Start, s.Length, s.Message, s.Severity, s.Code, s.Source));
+                spans.Add(new ErrorSpan(s.Start, s.Length, s.Message, s.Severity, s.Code, s.Source, s.Details));
             return spans;
         }
         catch (OperationCanceledException)
@@ -134,11 +149,22 @@ internal sealed class InsightWorkerGateway
         }
         catch (Exception ex)
         {
-            KodoDiagnostics.LogDebug("Insight worker diagnostics request failed; falling back in-process.", ex);
+            KodoDiagnostics.LogDebug("Insight worker diagnostics request failed.", ex);
             RequestTrace?.Invoke("EXC errs " + ex.GetType().Name + ": " + ex.Message);
-            return InProcessErrors(engine, documentText, languageExtension, cancellationToken);
+            if (languageExtension?.LangRules is not null)
+                return [CreateLangRulesWorkerFailure(documentText, ex.Message)];
+            return await InProcessErrors(engine, documentText, languageExtension, cancellationToken, documentContext, workspaceContext).ConfigureAwait(false);
         }
     }
+
+    private static ErrorSpan CreateLangRulesWorkerFailure(string documentText, string detail) => new(
+        0,
+        documentText.Length == 0 ? 0 : 1,
+        "Language extension analysis could not complete.",
+        "warning",
+        "KODO-LANGRULES-WORKER",
+        "Kodo",
+        string.IsNullOrWhiteSpace(detail) ? "The isolated Insight worker is unavailable." : detail);
 
     public async Task<bool> ScanRoundAsync(
         InsightEngine engine,
@@ -183,8 +209,9 @@ internal sealed class InsightWorkerGateway
     private static List<DeadCodeSpan> InProcessDead(InsightEngine engine, string documentText, LoadedExtension? ext, string? folderPath, string? filePath, CancellationToken ct)
         => engine.FindDeadCode(documentText, ext, folderPath, filePath, ct, filePath);
 
-    private static List<ErrorSpan> InProcessErrors(InsightEngine engine, string documentText, LoadedExtension? ext, CancellationToken ct)
-        => engine.FindErrors(documentText, ext, null, ct);
+    private static Task<List<ErrorSpan>> InProcessErrors(InsightEngine engine, string documentText, LoadedExtension? ext, CancellationToken ct,
+        LangRulesDocumentContext? documentContext = null, LangRulesWorkspaceContext? workspaceContext = null)
+        => Task.Run(() => engine.FindErrors(documentText, ext, null, ct, documentContext, workspaceContext), ct);
 
     private static async Task<T> MeasureAnalysisAsync<T>(InsightRefreshKind kind, string name, int textLength, Func<Task<T>> operation)
     {
@@ -208,23 +235,27 @@ internal sealed class InsightWorkerGateway
         LoadedExtension? extension,
         string? text,
         string? folderPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LangRulesDocumentContext? documentContext = null,
+        LangRulesWorkspaceContext? workspaceContext = null)
     {
         var process = await EnsureStartedAsync(cancellationToken).ConfigureAwait(false);
         if (process is null || _process is null || _process.HasExited)
             throw new InvalidOperationException("insight worker is not running");
 
         await _ioLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var id = Interlocked.Increment(ref _nextId);
         try
         {
-            var id = Interlocked.Increment(ref _nextId);
             var request = new WorkerRequest
             {
                 Id = id,
                 Op = op,
                 Key = key,
                 Extension = extension is null ? null : WorkerExtensionSnapshot.From(extension),
-                FolderPath = folderPath
+                FolderPath = folderPath,
+                DocumentContext = documentContext,
+                WorkspaceContext = workspaceContext
             };
             var textBytes = text is null ? 0 : Encoding.UTF8.GetByteCount(text);
             if (text is not null)
@@ -248,12 +279,13 @@ internal sealed class InsightWorkerGateway
             RequestTrace?.Invoke("REQ " + (payload.Length > 300 ? payload[..300] + "…(len " + payload.Length + ")" : payload));
 
             var stdin = _process.StandardInput.BaseStream;
-            await stdin.WriteAsync(Encoding.UTF8.GetBytes(payload + "\n"), cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await stdin.WriteAsync(Encoding.UTF8.GetBytes(payload + "\n"), CancellationToken.None).ConfigureAwait(false);
             if (text is not null && textBytes > 0)
             {
                 if (textBytes <= 1024)
                 {
-                    await stdin.WriteAsync(Encoding.UTF8.GetBytes(text), cancellationToken).ConfigureAwait(false);
+                    await stdin.WriteAsync(Encoding.UTF8.GetBytes(text), CancellationToken.None).ConfigureAwait(false);
                 }
                 else
                 {
@@ -261,7 +293,7 @@ internal sealed class InsightWorkerGateway
                     try
                     {
                         var written = Encoding.UTF8.GetBytes(text, pooled.AsSpan(0, textBytes));
-                        await stdin.WriteAsync(pooled.AsMemory(0, written), cancellationToken).ConfigureAwait(false);
+                        await stdin.WriteAsync(pooled.AsMemory(0, written), CancellationToken.None).ConfigureAwait(false);
                     }
                     finally
                     {
@@ -269,7 +301,12 @@ internal sealed class InsightWorkerGateway
                     }
                 }
             }
-            await stdin.FlushAsync(cancellationToken).ConfigureAwait(false);
+            await stdin.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            using var cancellationRegistration = cancellationToken.Register(static state =>
+            {
+                var requestState = ((InsightWorkerGateway Gateway, int Id))state!;
+                requestState.Gateway.SendCancellation(requestState.Id);
+            }, (this, id));
 
             while (true)
             {
@@ -287,13 +324,41 @@ internal sealed class InsightWorkerGateway
                 {
                     removed = _pending.Remove(id);
                 }
-                if (removed) ThrowCanceled(cancellationToken);
+                if (removed)
+                {
+                    if (!cancellationToken.IsCancellationRequested)
+                        TryKillWorker();
+                    ThrowCanceled(cancellationToken);
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            lock (_pending)
+                _pending.Remove(id);
+            throw;
         }
         finally
         {
             _ioLock.Release();
         }
+    }
+
+    private void SendCancellation(int requestId)
+    {
+        var process = _process;
+        if (process is null || process.HasExited) return;
+        var payload = JsonSerializer.Serialize(new WorkerRequest { Op = "cancel", CancelRequestId = requestId }, WorkerExtensionSnapshot.Options) + "\n";
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var stdin = process.StandardInput.BaseStream;
+                await stdin.WriteAsync(Encoding.UTF8.GetBytes(payload), CancellationToken.None).ConfigureAwait(false);
+                await stdin.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch { }
+        });
     }
 
     private static void ThrowCanceled(CancellationToken cancellationToken)

@@ -2,10 +2,12 @@
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -19,109 +21,138 @@ internal static class InsightWorker
         try
         {
             var engine = new InsightEngine();
-            List<LoadedExtension>? registry = [];
+            var registry = new List<LoadedExtension>();
             using var stdin = Console.OpenStandardInput();
             using var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
+            using var requests = new BlockingCollection<WorkerRequest>();
+            var activeRequests = new ConcurrentDictionary<int, CancellationTokenSource>();
+            var outputLock = new object();
+            var processor = Task.Run(() => ProcessRequests(engine, registry, requests, activeRequests, stdout, outputLock));
 
             var buffer = new byte[8192];
             int bufPos = 0, bufLen = 0;
             var headerBuilder = new StringBuilder();
 
-            while (ReadHeaderLine(stdin, buffer, ref bufPos, ref bufLen, headerBuilder) is { } line)
+            try
             {
-                if (line.Length == 0) continue;
-                WorkerRequest? request = null;
-                try
+                while (ReadHeaderLine(stdin, buffer, ref bufPos, ref bufLen, headerBuilder) is { } line)
                 {
-                    request = JsonSerializer.Deserialize<WorkerRequest>(line, WorkerExtensionSnapshot.Options);
-                }
-                catch (Exception ex)
-                {
-                    Write(stdout, new WorkerResponse { Id = 0, Ok = false, Message = $"bad request payload: {ex.Message}" });
-                    continue;
-                }
-                if (request is null) continue;
-                if (request.TextByteLength > 0)
-                    request.Text = ReadUtf8Text(stdin, buffer, ref bufPos, ref bufLen, request.TextByteLength);
-
-                var response = new WorkerResponse { Id = request.Id, Ok = true };
-                try
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
-                    var ct = cts.Token;
-                    if (request.Registry is not null) registry ??= [];
-                    if (request.Registry is not null)
+                    if (line.Length == 0) continue;
+                    WorkerRequest? request = null;
+                    try
                     {
-                        registry!.Clear();
-                        foreach (var snapshot in request.Registry)
-                            registry.Add(snapshot.ToLoadedExtension());
+                        request = JsonSerializer.Deserialize<WorkerRequest>(line, WorkerExtensionSnapshot.Options);
                     }
-                    switch (request.Op)
+                    catch (Exception ex)
                     {
-                        case "ping":
-                        case "sync":
-                            break;
-
-                        case "scan":
-                            {
-                                var ext = request.Extension?.ToLoadedExtension();
-                                var key = RequireKey(request);
-                                engine.ScanDocument(key, request.Text ?? string.Empty, ext, ct);
-                                response.Variables = [.. engine.GetVariables(key)];
-                                break;
-                            }
-
-                        case "dead":
-                            {
-                                var ext = request.Extension?.ToLoadedExtension();
-                                var key = RequireKey(request);
-                                var spans = engine.FindDeadCode(request.Text ?? string.Empty, ext, request.FolderPath, key, ct, key);
-                                response.Dead = new List<WorkerSpan>(spans.Count);
-                                foreach (var s in spans)
-                                    response.Dead.Add(new WorkerSpan { Start = s.StartOffset, Length = s.Length, Reason = s.Reason });
-                                break;
-                            }
-
-                        case "errs":
-                            {
-                                var ext = request.Extension?.ToLoadedExtension();
-                                var spans = engine.FindErrors(request.Text ?? string.Empty, ext, fence => ResolveFence(registry, fence), ct);
-                                response.Errors = new List<WorkerErrorSpan>(spans.Count);
-                                foreach (var s in spans)
-                                    response.Errors.Add(new WorkerErrorSpan
-                                    {
-                                        Start = s.StartOffset,
-                                        Length = s.Length,
-                                        Severity = s.Severity,
-                                        Code = s.Code,
-                                        Message = s.Message,
-                                        Source = s.Source
-                                    });
-                                break;
-                            }
-
-                        case "forget":
-                            if (!string.IsNullOrEmpty(request.Key)) engine.ForgetFile(request.Key!);
-                            break;
-
-                        default:
-                            response.Ok = false;
-                            response.Message = $"unknown op '{request.Op}'";
-                            break;
+                        lock (outputLock) Write(stdout, new WorkerResponse { Id = 0, Ok = false, Message = $"bad request payload: {ex.Message}" });
+                        continue;
                     }
+                    if (request is null) continue;
+                    if (request.TextByteLength > 0)
+                        request.Text = ReadUtf8Text(stdin, buffer, ref bufPos, ref bufLen, request.TextByteLength);
+
+                    if (request.Op.Equals("cancel", StringComparison.Ordinal))
+                    {
+                        if (activeRequests.TryGetValue(request.CancelRequestId, out var cancellation))
+                        {
+                            try { cancellation.Cancel(); } catch (ObjectDisposedException) { }
+                        }
+                        continue;
+                    }
+
+                    requests.Add(request);
                 }
-                catch (Exception ex)
-                {
-                    response.Ok = false;
-                    response.Message = $"{ex.GetType().Name}: {ex.Message}";
-                }
-                Write(stdout, response);
             }
+            finally { requests.CompleteAdding(); }
+            processor.GetAwaiter().GetResult();
             return 0;
         }
         catch
         {
             return 1;
+        }
+    }
+
+    private static void ProcessRequests(
+        InsightEngine engine,
+        List<LoadedExtension> registry,
+        BlockingCollection<WorkerRequest> requests,
+        ConcurrentDictionary<int, CancellationTokenSource> activeRequests,
+        StreamWriter stdout,
+        object outputLock)
+    {
+        foreach (var request in requests.GetConsumingEnumerable())
+        {
+            var response = new WorkerResponse { Id = request.Id, Ok = true };
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+            activeRequests[request.Id] = cts;
+            try
+            {
+                var ct = cts.Token;
+                if (request.Registry is not null)
+                {
+                    registry.Clear();
+                    foreach (var snapshot in request.Registry)
+                        registry.Add(snapshot.ToLoadedExtension());
+                }
+                switch (request.Op)
+                {
+                    case "ping":
+                    case "sync":
+                        break;
+                    case "scan":
+                        {
+                            var ext = request.Extension?.ToLoadedExtension();
+                            var key = RequireKey(request);
+                            engine.ScanDocument(key, request.Text ?? string.Empty, ext, ct);
+                            response.Variables = [.. engine.GetVariables(key)];
+                            break;
+                        }
+                    case "dead":
+                        {
+                            var ext = request.Extension?.ToLoadedExtension();
+                            var key = RequireKey(request);
+                            var spans = engine.FindDeadCode(request.Text ?? string.Empty, ext, request.FolderPath, key, ct, key);
+                            response.Dead = new List<WorkerSpan>(spans.Count);
+                            foreach (var span in spans)
+                                response.Dead.Add(new WorkerSpan { Start = span.StartOffset, Length = span.Length, Reason = span.Reason });
+                            break;
+                        }
+                    case "errs":
+                        {
+                            var ext = request.Extension?.ToLoadedExtension();
+                            var spans = engine.FindErrors(request.Text ?? string.Empty, ext, fence => ResolveFence(registry, fence), ct, request.DocumentContext, request.WorkspaceContext);
+                            response.Errors = new List<WorkerErrorSpan>(spans.Count);
+                            foreach (var span in spans)
+                                response.Errors.Add(new WorkerErrorSpan
+                                {
+                                    Start = span.StartOffset,
+                                    Length = span.Length,
+                                    Severity = span.Severity,
+                                    Code = span.Code,
+                                    Message = span.Message,
+                                    Source = span.Source,
+                                    Details = span.Details
+                                });
+                            break;
+                        }
+                    case "forget":
+                        if (!string.IsNullOrEmpty(request.Key)) engine.ForgetFile(request.Key!);
+                        break;
+                    default:
+                        response.Ok = false;
+                        response.Message = $"unknown op '{request.Op}'";
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                response.Ok = false;
+                response.Message = $"{ex.GetType().Name}: {ex.Message}";
+            }
+            finally { activeRequests.TryRemove(request.Id, out _); }
+            lock (outputLock) Write(stdout, response);
         }
     }
 

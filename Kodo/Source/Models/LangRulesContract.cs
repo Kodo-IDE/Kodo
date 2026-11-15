@@ -1,6 +1,8 @@
 // Licensed under the GNU GPL-v3.0
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Kodo;
 
@@ -35,12 +37,32 @@ public interface ILangRulesProvider
     IReadOnlyList<LangRuleSymbol> AnalyzeSymbols(string code) => Array.Empty<LangRuleSymbol>();
     IReadOnlyList<LangRuleDiagnostic> AnalyzeSyntax(string code) => Array.Empty<LangRuleDiagnostic>();
     IReadOnlyList<LangRuleDiagnostic> AnalyzeSemantics(string code) => Array.Empty<LangRuleDiagnostic>();
+    Task<IReadOnlyList<LangRuleDiagnostic>> AnalyzeSyntaxAsync(LangRulesDocumentContext document, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(AnalyzeSyntax(document.Text));
+    }
+    Task<IReadOnlyList<LangRuleDiagnostic>> AnalyzeSemanticsAsync(LangRulesDocumentContext document, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(AnalyzeSemantics(document.Text));
+    }
+    Task<IReadOnlyList<LangRuleWorkspaceDiagnostic>> AnalyzeWorkspaceAsync(LangRulesWorkspaceContext workspace, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<LangRuleWorkspaceDiagnostic>>(Array.Empty<LangRuleWorkspaceDiagnostic>());
+    }
     IReadOnlyList<string> GetCompletions(string code, int offset, string prefix) => Array.Empty<string>();
     LangRuleLocation? FindDefinition(string code, int offset) => null;
     IReadOnlyList<LangRuleLocation> FindReferences(string code, int offset) => Array.Empty<LangRuleLocation>();
     LangRuleHover? GetHover(string code, int offset) => null;
     LangRuleSignatureHelp? GetSignatureHelp(string code, int offset) => null;
     IReadOnlyList<LangRuleCodeAction> GetCodeActions(string code, int offset) => Array.Empty<LangRuleCodeAction>();
+    Task<IReadOnlyList<LangRuleCodeAction>> GetCodeActionsAsync(LangRulesCodeActionContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(GetCodeActions(context.Document.Text, context.Offset));
+    }
     string? FormatDocument(string code) => null;
     IReadOnlyList<LangRuleEmbeddedRegion> GetEmbeddedRegions(string code) => Array.Empty<LangRuleEmbeddedRegion>();
 }

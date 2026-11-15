@@ -823,6 +823,13 @@ public partial class MainWindow
 
     private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
     {
+        if (!string.IsNullOrWhiteSpace(_currentFolderPath))
+        {
+            SmartFileIcons.InvalidatePath(e.FullPath, _currentFolderPath);
+            if (e is RenamedEventArgs changedName)
+                SmartFileIcons.InvalidatePath(changedName.OldFullPath, _currentFolderPath);
+        }
+
         lock (_projectFolderChangeLock)
         {
             QueueProjectFolderChangePath(e.FullPath);
@@ -989,7 +996,7 @@ public partial class MainWindow
         ReplaceFileTreeItems(items);
     }
 
-    private static async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
+    private async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
         string dirPath, int depth, HashSet<string> expandedPaths)
     {
         var result = new List<FileTreeItem>();
@@ -1083,20 +1090,26 @@ public partial class MainWindow
         }
     }
 
-    private static Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth) =>
-        Task.Run(() =>
+    private Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth)
+    {
+        var workspaceRoot = _currentFolderPath ?? dirPath;
+        var extensionIcons = SmartFileIcons.BuildExtensionIcons(LoadedExtensions.ToArray());
+        return Task.Run(() =>
         {
             var items = new List<FileTreeItem>();
             foreach (var entry in GetSortedEntries(dirPath))
             {
                 try
                 {
+                    var name = Path.GetFileName(entry);
+                    var isDirectory = (File.GetAttributes(entry) & FileAttributes.Directory) != 0;
                     items.Add(new FileTreeItem
                     {
-                        Name = Path.GetFileName(entry),
+                        Name = name,
                         FullPath = entry,
-                        IsDirectory = (File.GetAttributes(entry) & FileAttributes.Directory) != 0,
+                        IsDirectory = isDirectory,
                         Depth = depth,
+                        IconText = SmartFileIcons.ResolveIcon(name, entry, isDirectory, workspaceRoot, extensionIcons),
                     });
                 }
                 catch (IOException) { }
@@ -1104,6 +1117,7 @@ public partial class MainWindow
             }
             return items;
         });
+    }
 
     private async Task ToggleDirectoryExpansionAsync(FileTreeItem dirItem)
     {

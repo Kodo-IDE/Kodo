@@ -2,6 +2,7 @@
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -1410,22 +1411,38 @@ public sealed class InsightEngine
         string documentText,
         LoadedExtension? languageExtension = null,
         Func<string, LoadedExtension?>? embeddedLanguageResolver = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        LangRulesDocumentContext? documentContext = null,
+        LangRulesWorkspaceContext? workspaceContext = null)
     {
         var spans = new List<ErrorSpan>();
         if (string.IsNullOrEmpty(documentText))
             return spans;
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (languageExtension?.LangRules is { HasDiagnostics: true } generated)
+        documentContext ??= new LangRulesDocumentContext("untitled:", string.Empty, languageExtension?.Id ?? string.Empty, 0, documentText);
+
+        if (languageExtension?.LangRules is { HasSyntaxDiagnostics: true } generated)
         {
-            var extensionDiagnostics = generated.AnalyzeSyntax(documentText);
-            AddDiagnostics(spans, extensionDiagnostics, documentText.Length, cancellationToken);
+            var extensionDiagnostics = generated.AnalyzeSyntax(documentContext, cancellationToken);
+            AddDiagnostics(spans, extensionDiagnostics, documentText.Length, cancellationToken, workspaceContext);
         }
 
         if (languageExtension?.EnableSemanticDiagnostics == true &&
             languageExtension.LangRules is { HasSemanticAnalyzer: true } semanticRules)
-            AddDiagnostics(spans, semanticRules.AnalyzeSemantics(documentText), documentText.Length, cancellationToken);
+            AddDiagnostics(spans, semanticRules.AnalyzeSemantics(documentContext, cancellationToken), documentText.Length, cancellationToken, workspaceContext);
+
+        if (workspaceContext is not null && languageExtension?.LangRules is { HasWorkspaceDiagnostics: true } workspaceRules)
+        {
+            var workspaceDiagnostics = workspaceRules.AnalyzeWorkspace(workspaceContext, cancellationToken);
+            foreach (var workspaceDiagnostic in workspaceDiagnostics)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!string.Equals(workspaceDiagnostic.Uri, documentContext.Uri, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                AddDiagnostics(spans, [workspaceDiagnostic.Diagnostic], documentText.Length, cancellationToken, workspaceContext);
+            }
+        }
 
         if (embeddedLanguageResolver is not null && languageExtension?.LangRules is { HasEmbeddedRegions: true } embeddedRules)
         {
@@ -1464,23 +1481,70 @@ public sealed class InsightEngine
         ICollection<ErrorSpan> destination,
         IReadOnlyList<LangRuleDiagnostic> diagnostics,
         int documentLength,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        LangRulesWorkspaceContext? workspaceContext = null)
     {
         foreach (var diagnostic in diagnostics)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start >= documentLength)
+            if (string.IsNullOrWhiteSpace(diagnostic.Message) || diagnostic.Start < 0 || diagnostic.Start > documentLength)
                 continue;
 
-            var length = Math.Clamp(diagnostic.Length, 1, documentLength - diagnostic.Start);
+            var length = Math.Clamp(diagnostic.Length, 0, documentLength - diagnostic.Start);
             destination.Add(new ErrorSpan(
                 diagnostic.Start,
                 length,
                 diagnostic.Message.Trim(),
                 diagnostic.Severity,
                 diagnostic.Code,
-                diagnostic.Source));
+                diagnostic.Source,
+                BuildDiagnosticDetails(diagnostic, workspaceContext)));
         }
+    }
+
+    private static string BuildDiagnosticDetails(LangRuleDiagnostic diagnostic, LangRulesWorkspaceContext? workspace)
+    {
+        var details = new List<string>();
+        var metadata = new List<string>();
+        if (!string.IsNullOrWhiteSpace(diagnostic.Source)) metadata.Add($"Source: {diagnostic.Source}");
+        if (!string.IsNullOrWhiteSpace(diagnostic.Code)) metadata.Add($"Code: {diagnostic.Code}");
+        if (!string.IsNullOrWhiteSpace(diagnostic.CodeDescriptionUri)) metadata.Add($"Help: {diagnostic.CodeDescriptionUri}");
+        foreach (var tag in (diagnostic.Tags ?? Array.Empty<LangRuleDiagnosticTag>()).Distinct())
+            metadata.Add(tag switch
+            {
+                LangRuleDiagnosticTag.Unnecessary => "Unnecessary",
+                LangRuleDiagnosticTag.Deprecated => "Deprecated",
+                _ => string.Empty
+            });
+        if (metadata.Count > 0)
+            details.Add(string.Join(" · ", metadata.Where(value => !string.IsNullOrWhiteSpace(value))));
+        if (!string.IsNullOrWhiteSpace(diagnostic.Data))
+            details.Add(diagnostic.Data.Trim());
+        foreach (var related in (diagnostic.RelatedInformation ?? Array.Empty<LangRuleRelatedInformation>()).Take(3))
+        {
+            var relatedDocument = workspace?.Documents.FirstOrDefault(document => string.Equals(document.Uri, related.Uri, StringComparison.OrdinalIgnoreCase));
+            var location = FormatRelatedLocation(related, relatedDocument);
+            var text = string.Join(": ", new[] { location, related.Message.Trim() }.Where(value => !string.IsNullOrWhiteSpace(value)));
+            if (!string.IsNullOrWhiteSpace(text))
+                details.Add($"Related: {text}");
+        }
+        return string.Join(Environment.NewLine, details);
+    }
+
+    private static string FormatRelatedLocation(LangRuleRelatedInformation related, LangRulesDocumentContext? document)
+    {
+        var file = document is null ? related.Uri : Path.GetFileName(document.FilePath);
+        if (document is null || related.Start < 0 || related.Start > document.Text.Length)
+            return string.IsNullOrWhiteSpace(file) ? string.Empty : $"{file} at offset {related.Start}";
+        var line = 1;
+        var lineStart = 0;
+        for (var index = 0; index < related.Start; index++)
+        {
+            if (document.Text[index] != '\n') continue;
+            line++;
+            lineStart = index + 1;
+        }
+        return $"{file}:{line}:{related.Start - lineStart + 1}";
     }
 
     private static bool MatchesAt(string text, int index, string token)

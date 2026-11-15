@@ -315,6 +315,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isVerboseLoggingEnabled;
     private int _tabSize = 4;
     private bool _insertSpaces = true;
+    private bool _autoDetectIndentationEnabled = true;
     private int _editorFontSize = 14;
     private string _editorFontFamily = "";
     private int _terminalScrollbackLines = 5000;
@@ -1135,6 +1136,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? KodoDesignTokens.DefaultAccentHex : settings.CustomAccentHex;
         _tabSize = NormalizeTabSize(settings.TabSize);
         _insertSpaces = settings.InsertSpaces;
+        _autoDetectIndentationEnabled = settings.AutoDetectIndentationEnabled;
         _editorFontSize = settings.EditorFontSize is >= 8 and <= 32 ? settings.EditorFontSize : 14;
         _editorFontFamily = string.IsNullOrWhiteSpace(settings.EditorFontFamily) ? "Default" : settings.EditorFontFamily;
         _terminalScrollbackLines = Math.Clamp(settings.TerminalScrollbackLines, 200, 200000);
@@ -4044,8 +4046,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var normalizedValue = NormalizeTabSize(value);
             if (_tabSize == normalizedValue) return;
+            DisableIndentationAutoDetectionForManualChange();
             _tabSize = normalizedValue;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(TabSizeIndex));
             OnPropertyChanged(nameof(EditorBehaviorStatusText));
             OnPropertyChanged(nameof(IndentationDisplayText));
             ApplyEditorSettings();
@@ -4059,8 +4063,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         set
         {
             if (_insertSpaces == value) return;
+            DisableIndentationAutoDetectionForManualChange();
             _insertSpaces = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(TabSizeIndex));
             OnPropertyChanged(nameof(IndentationDisplayText));
             OnPropertyChanged(nameof(EditorBehaviorStatusText));
             ApplyEditorSettings();
@@ -4069,6 +4075,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     public string IndentationDisplayText => InsertSpaces ? $"Spaces: {TabSize}" : $"Tab Size: {TabSize}";
+
+    public bool AutoDetectIndentationEnabled
+    {
+        get => _autoDetectIndentationEnabled;
+        set
+        {
+            if (_autoDetectIndentationEnabled == value) return;
+            _autoDetectIndentationEnabled = value;
+            OnPropertyChanged();
+            if (value && EditorTextBox?.Document is { } document)
+                ApplyIndentationForContent(DetectIndentation(document.Text));
+            SaveSettings();
+        }
+    }
+
+    private void DisableIndentationAutoDetectionForManualChange()
+    {
+        if (!_autoDetectIndentationEnabled) return;
+        _autoDetectIndentationEnabled = false;
+        OnPropertyChanged(nameof(AutoDetectIndentationEnabled));
+    }
 
     public bool IsIndentationVisible => IsTextEditorVisible;
 
@@ -5887,8 +5914,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             cancellationToken.ThrowIfCancellationRequested();
             if (text.Length > 80_000 || IsLspPrimaryForFile(filePath)) return;
             var ext = GetLanguageExtension(filePath);
+            var langRulesContexts = CreateLangRulesContexts(filePath, text, documentVersion?.GetHashCode() ?? 0, ext);
             var spans = IsInsightErrorDetectionEnabled
-                ? await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, ext, cancellationToken)
+                ? await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, langRulesContexts.Document, langRulesContexts.Workspace, ext, cancellationToken)
                 : new List<ErrorSpan>();
             var deadSpans = IsInsightDeadCodeEnabled
                 ? await InsightWorkerGateway.Default.FindDeadCodeAsync(_InsightEngine, text, ext, folderPath, filePath, cancellationToken)
@@ -6375,6 +6403,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             DismissedDiagnostics = new HashSet<string>(_dismissedDiagnostics, StringComparer.Ordinal),
             TabSize = TabSize,
             InsertSpaces = InsertSpaces,
+            AutoDetectIndentationEnabled = AutoDetectIndentationEnabled,
             EditorFontSize = EditorFontSize,
             EditorFontFamily = EditorFontFamily,
             TerminalScrollbackLines = TerminalScrollbackLines,
@@ -6845,6 +6874,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async Task OpenFolderFromPathAsync(string path, bool deferFileTreePopulation = false)
     {
         using var loading = BeginAppLoading($"Opening {Path.GetFileName(path)}");
+        SmartFileIcons.InvalidateWorkspace(path);
         _currentFolderPath = path;
         _searchFileCache = null;
         InvalidateLspResolutionCaches();
@@ -6866,6 +6896,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _fileTreeLoadGeneration++;
         DisposeProjectFolderWatcher();
+        SmartFileIcons.InvalidateWorkspace(_currentFolderPath);
         _currentFolderPath = null;
         _searchFileCache = null;
         InvalidateLspResolutionCaches();
@@ -7312,6 +7343,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ProjectFolderWatcher_OnError(object sender, ErrorEventArgs e) =>
         Dispatcher.UIThread.Post(() =>
         {
+            SmartFileIcons.InvalidateWorkspace(_currentFolderPath);
             RecheckDirtyTabsForExternalChanges();
             RestartFileTreeRefreshTimer();
         });
@@ -10631,7 +10663,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 }
                 else
                 {
-                    rawSpans = await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, text, languageExtension, scanToken);
+                    var langRulesContexts = CreateLangRulesContexts(_currentFilePath ?? string.Empty, text, scanVersion, languageExtension);
+                    rawSpans = await InsightWorkerGateway.Default.FindErrorsAsync(_InsightEngine, langRulesContexts.Document, langRulesContexts.Workspace, languageExtension, scanToken);
                     KodoDiagnostics.LogDebug($"Insight diagnostics: extension={languageExtension?.Id ?? "<none>"}, hasLangRules={languageExtension?.LangRules?.HasDiagnostics == true}, count={rawSpans.Count} hasConfiguredLsp={hasConfiguredLsp}");
                 }
                 IReadOnlyList<ExternalToolDiagnostic> externalDiagnostics;
@@ -11579,7 +11612,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void ApplyIndentationForContent((bool insertSpaces, int tabSize)? detected, bool saveSettings = false)
     {
-        if (detected is null)
+        if (!_autoDetectIndentationEnabled || detected is null)
             return;
 
         var (useSpaces, size) = detected.Value;

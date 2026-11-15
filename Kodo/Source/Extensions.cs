@@ -676,6 +676,8 @@ public partial class MainWindow
         CurrentLanguageExtension = string.IsNullOrWhiteSpace(_currentFilePath)
             ? null
             : GetLanguageExtension(_currentFilePath);
+        if (IsFolderOpen)
+            Dispatcher.UIThread.Post(() => _ = RefreshFileTreePreservingExpansionAsync(), DispatcherPriority.Background);
         RefreshRunBuildState();
         _ = EnsureVisiblePaneLspDocumentsOpenAsync();
 
@@ -907,6 +909,7 @@ public partial class MainWindow
             Dependencies = manifest.TryGetProperty("dependencies", out var deps)
                 ? deps.EnumerateArray().Select(e => e.GetString() ?? "").Where(s => !string.IsNullOrWhiteSpace(s)).ToArray()
                 : [],
+            LangRulesOptions = ReadStringDictionary(manifest, "langRulesOptions"),
             PluginAssemblyFileName = manifest.TryGetProperty("plugin", out var plugin) ? plugin.GetString() : null,
             LanguagePluginAssemblyFileName = manifest.TryGetProperty("languagePlugin", out var langPlugin) ? langPlugin.GetString() : null
         };
@@ -1176,6 +1179,8 @@ public partial class MainWindow
         }
 
         ApplyLanguageProfile(ext, profile);
+        if (!string.IsNullOrWhiteSpace(profile.FileIcon) || profile.FileIcons.Count > 0)
+            ext.SyntaxProfiles.Add(profile);
     }
 
     private static LanguageSyntaxProfile ParseLanguageProfile(JsonElement lang)
@@ -1183,6 +1188,8 @@ public partial class MainWindow
         var profile = new LanguageSyntaxProfile
         {
             Extensions = ReadStringArray(lang, "extensions"),
+            FileIcon = lang.TryGetProperty("fileIcon", out var fileIcon) ? NormalizeSyntaxToken(fileIcon.GetString()) : null,
+            FileIcons = ReadStringDictionary(lang, "fileIcons"),
             Keywords = ReadStringArray(lang, "keywords"),
             Types = ReadStringArray(lang, "types"),
             Functions = ReadStringArray(lang, "functions"),
@@ -1203,6 +1210,21 @@ public partial class MainWindow
         };
 
         return profile;
+    }
+
+    private static Dictionary<string, string> ReadStringDictionary(JsonElement root, string propertyName)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!root.TryGetProperty(propertyName, out var value) || value.ValueKind != JsonValueKind.Object)
+            return values;
+
+        foreach (var property in value.EnumerateObject())
+        {
+            if (property.Value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(property.Value.GetString()))
+                values[property.Name] = property.Value.GetString()!.Trim();
+        }
+
+        return values;
     }
 
     private static ExtensionThemeDefinition ParseTheme(JsonElement theme, LoadedExtension ext) => new()
@@ -1682,6 +1704,7 @@ public partial class MainWindow
             Author = src.Author,
             Description = src.Description,
             Extensions = src.Extensions,
+            LangRulesOptions = new Dictionary<string, string>(src.LangRulesOptions, StringComparer.OrdinalIgnoreCase),
             Keywords = src.Keywords,
             Types = src.Types,
             Functions = src.Functions,

@@ -40,6 +40,7 @@ internal sealed class AppSettings
     }
     public int TabSize { get; set; } = 4;
     public bool InsertSpaces { get; set; } = true;
+    public bool AutoDetectIndentationEnabled { get; set; } = true;
     public int EditorFontSize { get; set; } = 14;
     public string EditorFontFamily { get; set; } = "";
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;

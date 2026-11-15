@@ -29,15 +29,17 @@ public sealed class ErrorSpan
     public string Severity { get; }
     public string Code { get; }
     public string Source { get; }
+    public string Details { get; }
 
-    public ErrorSpan(int startOffset, int length, string message, string severity = "error", string code = "", string source = "Kodo")
+    public ErrorSpan(int startOffset, int length, string message, string severity = "error", string code = "", string source = "Kodo", string details = "")
     {
         StartOffset = startOffset;
-        Length = Math.Max(1, length);
+        Length = Math.Max(0, length);
         Message = message;
         Severity = NormalizeSeverity(severity);
         Code = code ?? string.Empty;
         Source = string.IsNullOrWhiteSpace(source) ? "Kodo" : source;
+        Details = details ?? string.Empty;
     }
 
     private static string NormalizeSeverity(string? severity) => severity?.Trim().ToLowerInvariant() switch
