@@ -92,11 +92,8 @@ public partial class MainWindow
 
         var typeface = new Typeface("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace");
         var widest = 0.0;
-        var sampled = 0;
-        const int maxSample = 400;
         foreach (var item in FileTreeItems)
         {
-            if (sampled++ >= maxSample) break;
             var formatted = new FormattedText(
                 item.Name,
                 CultureInfo.CurrentCulture,

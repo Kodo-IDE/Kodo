@@ -2476,7 +2476,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private const double MinExplorerPanelWidth = 180;
-    private const double MaxExplorerPanelWidth = 600;
+    private const double MaxExplorerPanelWidth = 1200;
 
     internal const double FileTreeRowFixedOverhead = 16 + 2 + 32 + 6 + 8 + 10 + 36;
 
