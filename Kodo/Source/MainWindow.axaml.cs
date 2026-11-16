@@ -1017,6 +1017,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
             QueueLspViewportRefresh();
+            UpdateStickyScrollForPane(GetStickyScrollPane(PrimaryEditorTextBox));
         }, RoutingStrategies.Bubble);
         OpenTabs.CollectionChanged += OpenTabs_CollectionChanged;
         TerminalSessions.CollectionChanged += TerminalSessions_CollectionChanged;
@@ -1032,6 +1033,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ScheduleEditorMinimapRefresh();
         PrimaryEditorTextBox.TextArea.Caret.PositionChanged += (_, _) => EditorCaretPositionChanged(PrimaryEditorTextBox);
         ConfigureSecondaryEditorView();
+        PrimaryEditorTextBox.DocumentChanged += (_, _) => InvalidateStickyScopes();
+        SecondaryEditorTextBox.DocumentChanged += (_, _) => InvalidateStickyScopes();
+        SetupStickyScrollPanes();
+        InvalidateStickyScopes();
         PrimaryEditorTextBox.GotFocus += (_, _) => ActivateEditorPane(_editorPane, focusEditor: false);
         SecondaryEditorTextBox.GotFocus += (_, _) => ActivateEditorPane(_secondaryEditorPane, focusEditor: false);
         PrimaryEditorTextBox.SizeChanged += EditorPaneSizeChanged;
@@ -1088,6 +1093,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isMinimapVisible = settings.MinimapVisible;
+        _isStickyScrollEnabled = settings.StickyScrollEnabled;
+        _stickyScrollMaxLines = Math.Clamp(settings.StickyScrollMaxLines, 1, 5);
         _isInsightEnabled = settings.InsightEnabled;
         _isInsightCodeSuggestionsEnabled = settings.InsightCodeSuggestionsEnabled;
         _isInsightDeadCodeEnabled = settings.InsightDeadCodeEnabled;
@@ -3503,6 +3510,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsStickyScrollEnabled
+    {
+        get => _isStickyScrollEnabled;
+        set
+        {
+            if (_isStickyScrollEnabled == value) return;
+            _isStickyScrollEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            InvalidateStickyScopes();
+        }
+    }
+
+    public int StickyScrollMaxLinesIndex
+    {
+        get => Math.Clamp(_stickyScrollMaxLines - 1, 0, 4);
+        set
+        {
+            var next = Math.Clamp(value + 1, 1, 5);
+            if (_stickyScrollMaxLines == next) return;
+            _stickyScrollMaxLines = next;
+            OnPropertyChanged();
+            SaveSettings();
+            UpdateStickyScrollForPane(_primaryStickyPane);
+            UpdateStickyScrollForPane(_secondaryStickyPane);
+        }
+    }
+
     private void ScheduleEditorMinimapRefresh()
     {
         _editorMinimapRefreshTimer.Stop();
@@ -3544,6 +3579,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             _editorPaneSizeRefreshPending = false;
             UpdateEditorMinimapViewport();
+            UpdateStickyScrollForPane(_primaryStickyPane);
+            UpdateStickyScrollForPane(_secondaryStickyPane);
             if (IsSplitScreenVisible)
                 QueueLspViewportRefresh();
         }, DispatcherPriority.Background);
@@ -6484,6 +6521,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
             WordWrapEnabled = IsWordWrapEnabled,
             MinimapVisible = IsMinimapVisible,
+            StickyScrollEnabled = IsStickyScrollEnabled,
+            StickyScrollMaxLines = _stickyScrollMaxLines,
             InsightEnabled = IsInsightEnabled,
             InsightCodeSuggestionsEnabled = IsInsightCodeSuggestionsEnabled,
             InsightDeadCodeEnabled = IsInsightDeadCodeEnabled,

@@ -313,6 +313,30 @@ public sealed class LangRulesAdapter : IDisposable
         catch { return []; }
     }
 
+    public IReadOnlyList<LangRuleSymbol> AnalyzeSymbolsUncapped(string code)
+    {
+        if (_typedProvider is not null)
+        {
+            try { return _typedProvider.AnalyzeSymbols(code) ?? Array.Empty<LangRuleSymbol>(); }
+            catch (Exception ex)
+            {
+                ReportProviderFailure("typed provider method", ex);
+                return Array.Empty<LangRuleSymbol>();
+            }
+        }
+        if (_symbols is null) return Array.Empty<LangRuleSymbol>();
+        try
+        {
+            var result = _symbols.Invoke(null, new object[] { code });
+            return result is null ? Array.Empty<LangRuleSymbol>() : ConvertSymbols(result);
+        }
+        catch (Exception ex)
+        {
+            ReportProviderFailure("AnalyzeSymbols", ex);
+            return Array.Empty<LangRuleSymbol>();
+        }
+    }
+
     public IReadOnlyList<LangRuleSymbol> AnalyzeSymbols(string code)
     {
         if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSymbols(code));

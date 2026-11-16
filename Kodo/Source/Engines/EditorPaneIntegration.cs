@@ -262,6 +262,7 @@ public partial class MainWindow
             HideDiagnosticPopup();
             UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
             QueueLspViewportRefresh();
+            UpdateStickyScrollForPane(GetStickyScrollPane(SecondaryEditorTextBox));
         }, RoutingStrategies.Bubble, handledEventsToo: true);
         editor.TextChanged += EditorTextBox_OnPaneTextChanged;
         InitializeTabDragDrop();
@@ -305,6 +306,7 @@ public partial class MainWindow
                 sharedTab.IsDirty = true;
         }
         EditorTextBox_OnTextChanged(editor, e);
+        InvalidateStickyScopes();
     }
 
     private void EditorCaretPositionChanged(TextEditor editor)

@@ -247,6 +247,7 @@ public partial class MainWindow
     {
         InvalidateLspPanePresentation(_activeEditorPane);
         _lspDiagnosticsSeenForFile = HasStoredLspDiagnosticsForFile(_currentFilePath);
+        InvalidateStickyScopes();
     }
 
     private async Task ClearLspFoldingsAsync()

@@ -1302,6 +1302,7 @@ public partial class MainWindow
             new(_isFileTreeExpanded ? "Collapse All Folders" : "Expand All Folders", "View", "", ToggleExplorerExpansionAsync, () => IsFolderOpen, "explorer tree directories"),
             new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console"),
             new(IsMinimapVisible ? "Hide Minimap" : "Show Minimap", "View", "", () => { IsMinimapVisible = !IsMinimapVisible; return Task.CompletedTask; }, Keywords: "toggle overview code map"),
+        new(IsStickyScrollEnabled ? "Hide Sticky Scroll" : "Show Sticky Scroll", "View", "", () => { IsStickyScrollEnabled = !IsStickyScrollEnabled; return Task.CompletedTask; }, Keywords: "toggle sticky scroll scope context header"),
             new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel"),
             new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
             new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image"),

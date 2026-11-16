@@ -7034,6 +7034,25 @@ ToolTip.Tip="{Binding Path}" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Show a code overview beside the editor for quick navigation"
                                           Content="Show minimap" />
+                                <CheckBox IsChecked="{Binding IsStickyScrollEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Keep enclosing scopes visible at the top of the editor while you scroll"
+                                          Content="Show sticky scroll" />
+                                <StackPanel Orientation="Horizontal" Spacing="12"
+                                            VerticalAlignment="Center">
+                                    <TextBlock VerticalAlignment="Center"
+                                               Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Sticky scroll lines" />
+                                    <ComboBox Width="120"
+                                              SelectedIndex="{Binding StickyScrollMaxLinesIndex, Mode=TwoWay}"
+                                              ToolTip.Tip="Maximum number of nested scope lines kept at the top of the editor">
+                                        <ComboBoxItem Content="1 line" />
+                                        <ComboBoxItem Content="2 lines" />
+                                        <ComboBoxItem Content="3 lines" />
+                                        <ComboBoxItem Content="4 lines" />
+                                        <ComboBoxItem Content="5 lines" />
+                                    </ComboBox>
+                                </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
