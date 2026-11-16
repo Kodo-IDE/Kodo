@@ -3586,6 +3586,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
+    private static (int StartLine, int EndLine)? TryGetEditorVisibleLines(TextEditor editor)
+    {
+        try
+        {
+            var textView = editor.TextArea?.TextView;
+            if (textView is null || !textView.VisualLinesValid) return null;
+            var lines = textView.VisualLines;
+            if (lines.Count == 0) return null;
+            return (lines[0].FirstDocumentLine.LineNumber, lines[^1].LastDocumentLine.LineNumber);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private void UpdateEditorMinimapViewport(TextEditor? editor, Kodo.Renderers.EditorMinimapControl? minimap)
     {
         if (ReferenceEquals(editor, SecondaryEditorTextBox) && !IsSplitScreenVisible)
@@ -3596,20 +3612,25 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsMinimapVisible || editor?.Document is not { } document || editor.TextArea?.TextView is not { } textView || minimap is null)
             return;
 
-        if (textView.VisualLinesValid && textView.VisualLines.Count > 0)
+        if (TryGetEditorVisibleLines(editor) is { } range)
         {
-            var top = textView.VisualLines[0].FirstDocumentLine.LineNumber;
-            var bottom = textView.VisualLines[^1].LastDocumentLine.LineNumber;
-            minimap?.SetViewport(top, Math.Max(top, bottom));
-            SetMinimapScrollability(editor, bottom - top + 1 < document.LineCount);
+            minimap?.SetViewport(range.StartLine, Math.Max(range.StartLine, range.EndLine));
+            SetMinimapScrollability(editor, range.EndLine - range.StartLine + 1 < document.LineCount);
             return;
         }
 
-        var topPosition = textView.GetPositionFloor(new Point(textView.ScrollOffset.X, textView.ScrollOffset.Y));
-        var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
-        var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
-        minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
-        SetMinimapScrollability(editor, document.LineCount > visibleLines);
+        try
+        {
+            var topPosition = textView.GetPositionFloor(new Point(textView.ScrollOffset.X, textView.ScrollOffset.Y));
+            var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
+            var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
+            minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
+            SetMinimapScrollability(editor, document.LineCount > visibleLines);
+        }
+        catch
+        {
+            SetMinimapScrollability(editor, document.LineCount > 1);
+        }
     }
 
     private void SetMinimapScrollability(TextEditor? editor, bool scrollable)
