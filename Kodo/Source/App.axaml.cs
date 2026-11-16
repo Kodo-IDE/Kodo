@@ -447,46 +447,20 @@ public partial class App : Application
         {
             var logPath = KodoDiagnostics.MainLogFilePath;
 
-            if (CanUseAvaloniaCrashDialog())
+            if (isTerminating || !CanUseAvaloniaCrashDialog())
             {
-                if (Dispatcher.UIThread.CheckAccess())
-                {
-                    var dialogTask = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating);
-                    if (isTerminating)
-                    {
-                        var deadline = DateTime.UtcNow + TimeSpan.FromMinutes(10);
-                        while (!dialogTask.IsCompleted && DateTime.UtcNow < deadline)
-                        {
-                            Dispatcher.UIThread.RunJobs(DispatcherPriority.Background);
-                            Thread.Sleep(25);
-                        }
-                    }
-                    return;
-                }
-
-                if (isTerminating)
-                {
-                    Dispatcher.UIThread.Post(
-                        () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
-                        DispatcherPriority.MaxValue);
-
-                    var waited = 0;
-                    while (_isCrashDialogOpen == 1 && waited < 300)
-                    {
-                        Thread.Sleep(100);
-                        waited++;
-                    }
-                }
-                else
-                {
-                    Dispatcher.UIThread.Post(
-                        () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating),
-                        DispatcherPriority.MaxValue);
-                }
+                ShowNativeCrashMessageBox(source, exception, logPath, isTerminating);
                 return;
             }
 
-            ShowNativeCrashMessageBox(source, exception, logPath, isTerminating);
+            if (Dispatcher.UIThread.CheckAccess())
+            {
+                _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating: false);
+                return;
+            }
+            Dispatcher.UIThread.Post(
+                () => _ = ShowCrashDialogOnUiThreadAsync(source, exception, logPath, isTerminating: false),
+                DispatcherPriority.MaxValue);
         }
         catch
         {
