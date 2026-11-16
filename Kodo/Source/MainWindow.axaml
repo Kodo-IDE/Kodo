@@ -1496,7 +1496,7 @@
                                                             BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
                                                             CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
                                                             Padding="4,0"
-                                                            Margin="4,0"
+                                                            Margin="4,0,22,0"
                                                             IsVisible="{Binding HasErrorDiagnostics}"
                                                             ToolTip.Tip="{Binding DiagnosticsTooltip}">
                                                         <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}"
