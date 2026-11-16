@@ -1898,21 +1898,31 @@
                               ItemsSource="{Binding ActiveNewsBanners}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="kodoModels:NewsItem" x:CompileBindings="True">
-                            <Border Background="{Binding #RootWindow.AccentBrush}"
-                                    Padding="18,8">
-                                <Grid ColumnDefinitions="*,Auto,Auto">
-                                    <TextBlock Grid.Column="0"
-                                               VerticalAlignment="Center"
-                                               TextWrapping="Wrap">
-                                        <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                             FontWeight="SemiBold"
-                                             Foreground="{Binding #RootWindow.AccentForegroundBrush}"
-                                             Text="{Binding BannerPrefix}" />
-                                        <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                             Foreground="{Binding #RootWindow.AccentForegroundBrush}"
-                                             Text="{Binding Body}" />
-                                    </TextBlock>
-                                    <Button Grid.Column="1"
+                            <Border Background="{Binding #RootWindow.TopBarBrush}"
+                                    BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                    BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
+                                    Padding="0,8">
+                                <Grid ColumnDefinitions="4,*,Auto,Auto">
+                                    <Border Grid.Column="0"
+                                            Background="{Binding #RootWindow.AccentBrush}"
+                                            HorizontalAlignment="Stretch"
+                                            VerticalAlignment="Stretch" />
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="0"
+                                                Margin="18,0,0,0"
+                                                VerticalAlignment="Center">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   TextWrapping="Wrap">
+                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                 FontWeight="SemiBold"
+                                                 Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                 Text="{Binding BannerPrefix}" />
+                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                 Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                 Text="{Binding Body}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                    <Button Grid.Column="2"
                                             Classes="chrome"
                                             IsVisible="{Binding HasButton}"
                                             Click="OpenNewsBannerButton_OnClick"
@@ -1922,10 +1932,10 @@
                                             Focusable="False"
                                             Content="{Binding ButtonText}"
                                             ToolTip.Tip="{Binding ButtonLink}" />
-                                    <Button Grid.Column="2"
+                                    <Button Grid.Column="3"
                                             Background="Transparent"
                                             BorderThickness="0"
-                                            Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                            Foreground="{Binding #RootWindow.MutedTextBrush}"
                                             Padding="6,4"
                                             VerticalAlignment="Center"
                                             IsVisible="{Binding ShowCloseButton}"
@@ -1936,7 +1946,7 @@
                                             AutomationProperties.Name="Dismiss this announcement">
                                         <Viewbox Width="11" Height="11">
                                             <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
-                                                <svg:Svg Width="24" Height="24" CurrentColor="{Binding #RootWindow.AccentForegroundBrush, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                <svg:Svg Width="24" Height="24" CurrentColor="{Binding #RootWindow.MutedTextBrush, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
                                                       Source="{x:Static kodo:KodoIcons.XMark}" />
                                             </Canvas>
                                         </Viewbox>
