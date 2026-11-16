@@ -1902,10 +1902,11 @@
                                     BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
                                     Padding="0,8">
-                                <Grid ColumnDefinitions="4,*,Auto,Auto">
+                                <Grid ColumnDefinitions="3,*,Auto,Auto">
                                     <Border Grid.Column="0"
+                                            Classes="accentpill"
                                             Background="{Binding #RootWindow.AccentBrush}"
-                                            HorizontalAlignment="Stretch"
+                                            HorizontalAlignment="Center"
                                             VerticalAlignment="Stretch" />
                                     <StackPanel Grid.Column="1"
                                                 Spacing="0"
@@ -1924,6 +1925,9 @@
                                     </StackPanel>
                                     <Button Grid.Column="2"
                                             Classes="chrome"
+                                            Background="{Binding #RootWindow.ButtonBrush}"
+                                            BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                            Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                             IsVisible="{Binding HasButton}"
                                             Click="OpenNewsBannerButton_OnClick"
                                             Tag="{Binding}"
