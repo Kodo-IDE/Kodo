@@ -2276,26 +2276,36 @@ public partial class MainWindow
         var hasInternetConnection = HasActiveInternetConnection();
 
         string message = string.Empty;
+        var cause = string.Empty;
 
         if (!hasInternetConnection)
         {
             message = hasWirelessConnection
                 ? "No internet connection. Marketplace installs and updates won't work until you're back online."
                 : "No Wi-Fi or internet detected. Marketplace installs and updates won't work until you're back online.";
+            cause = "offline";
         }
         else if (exception is not null)
         {
-            message = IsGitHubRateLimitException(exception)
-                ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
-                : hasWirelessConnection
+            if (IsGitHubRateLimitException(exception))
+            {
+                message = "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets.";
+                cause = "ratelimit";
+            }
+            else
+            {
+                message = hasWirelessConnection
                     ? "Couldn't reach the marketplace. Your connection may be unstable - try again in a moment."
                     : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
+                cause = "unknown";
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
             message = $"{message} (Last issue: {operation})";
 
         MarketplaceConnectivityMessage = message;
+        MarketplaceConnectivityCause = cause;
         IsMarketplaceConnectivityWarningVisible = !string.IsNullOrWhiteSpace(message);
     }
 

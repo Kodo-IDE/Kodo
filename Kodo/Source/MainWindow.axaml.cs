@@ -348,6 +348,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _extensionsStatusText = "Drop .kox extension files into the Extensions folder to install them.";
     private string _latestReleaseStatusText = "Loading latest release...";
     private string _marketplaceConnectivityMessage = string.Empty;
+    private string _marketplaceConnectivityCause = string.Empty;
     private bool _isMarketplaceConnectivityWarningVisible;
     private ReleaseInfo? _latestRelease;
     private LoadedExtension? _currentLanguageExtension;
@@ -3164,6 +3165,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private string MarketplaceConnectivityCause
+    {
+        get => _marketplaceConnectivityCause;
+        set
+        {
+            if (string.Equals(_marketplaceConnectivityCause, value, StringComparison.Ordinal)) return;
+            _marketplaceConnectivityCause = value;
+            OnPropertyChanged(nameof(MarketplaceUnavailableTitle));
+            OnPropertyChanged(nameof(MarketplaceUnavailableMessage));
+        }
+    }
+
     public string TutorialStepLabel => TutorialStepIndex == 0
         ? "WELCOME"
         : $"STEP {TutorialStepIndex} OF {TutorialSteps.Length - 1}";
@@ -3223,8 +3236,27 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (string.Equals(_marketplaceConnectivityMessage, value, StringComparison.Ordinal)) return;
             _marketplaceConnectivityMessage = value;
             OnPropertyChanged();
+            OnPropertyChanged(nameof(MarketplaceUnavailableTitle));
+            OnPropertyChanged(nameof(MarketplaceUnavailableMessage));
         }
     }
+
+    private static string ResolveMarketplaceUnavailableMessage(string cause) => cause switch
+    {
+        "offline" => "You're offline. Marketplace installs and updates will become available once you're back online.",
+        "ratelimit" => "GitHub's API rate limit was reached. Marketplace installs and updates will become available shortly.",
+        _ => "The Marketplace is currently unavailable. Please wait a few minutes."
+    };
+
+    private static string ResolveMarketplaceUnavailableTitle(string cause) => cause switch
+    {
+        "offline" => "Marketplace offline",
+        "ratelimit" => "Marketplace rate-limited",
+        _ => "Marketplace unavailable"
+    };
+
+    public string MarketplaceUnavailableTitle => ResolveMarketplaceUnavailableTitle(_marketplaceConnectivityCause);
+    public string MarketplaceUnavailableMessage => ResolveMarketplaceUnavailableMessage(_marketplaceConnectivityCause);
 
     public bool IsDiscordRichPresenceEnabled
     {

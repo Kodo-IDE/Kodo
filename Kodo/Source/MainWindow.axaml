@@ -1393,7 +1393,6 @@
                 </Border>
 
                 <Border Grid.Row="1"
-                        IsVisible="{Binding HasOpenEditors}"
                         Background="{Binding SidebarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
@@ -1407,8 +1406,26 @@
                                        VerticalAlignment="Center"
                                        Text="OPEN EDITORS" />
                         </StackPanel>
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
+                                Padding="10,8"
+                                IsVisible="{Binding !HasOpenEditors}">
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           Text="No open editors" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Open a file and it will appear here." />
+                            </StackPanel>
+                        </Border>
                         <ItemsControl ItemsSource="{Binding OpenTabs}"
-                                      HorizontalAlignment="Stretch">
+                                      HorizontalAlignment="Stretch"
+                                      IsVisible="{Binding HasOpenEditors}">
                             <ItemsControl.ItemContainerTheme>
                                 <ControlTheme TargetType="ContentPresenter">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -3443,7 +3460,7 @@ ToolTip.Tip="{Binding Path}" />
                                                                        Text="Marketplace" />
                                                             <Border Width="6" Height="6"
                                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.HoverRowRadius}"
-                                                                    Background="#E05252"
+                                                                    Background="{Binding DangerBrush}"
                                                                     VerticalAlignment="Center"
                                                                     IsVisible="{Binding IsMarketplaceConnectivityWarningVisible}"
                                                                     ToolTip.Tip="{Binding MarketplaceConnectivityMessage}" />
@@ -4833,7 +4850,7 @@ ToolTip.Tip="{Binding Path}" />
                                                             <Panel>
                                                                 <Border Height="72"
                                                                         CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                                                        Background="#FFFFFF"
+                                                                        Background="{x:Static kodo:KodoDesignTokens.LightEditorBackground}"
                                                                         BorderBrush="{x:Static kodo:KodoDesignTokens.LightSurfaceBorder}"
                                                                         BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
                                                                 <Border Height="72"
@@ -6052,13 +6069,13 @@ ToolTip.Tip="{Binding Path}" />
                                                FontSize="{x:Static kodo:KodoDesignTokens.BodyLargeFontSize}"
                                                FontWeight="SemiBold"
                                                HorizontalAlignment="Center"
-                                               Text="Marketplace unavailable" />
+                                               Text="{Binding MarketplaceUnavailableTitle}" />
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
                                                FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                HorizontalAlignment="Center"
                                                TextAlignment="Center"
                                                TextWrapping="Wrap"
-                                               Text="The Marketplace is currently unavailable. Please wait a few minutes." />
+                                               Text="{Binding MarketplaceUnavailableMessage}" />
                                 </StackPanel>
                             </Border>
 
@@ -6740,7 +6757,7 @@ ToolTip.Tip="{Binding Path}" />
                                             <Panel>
                                                 <Border Height="96"
                                                         CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
-                                                        Background="#FFFFFF"
+                                                        Background="{x:Static kodo:KodoDesignTokens.LightEditorBackground}"
                                                         BorderBrush="{x:Static kodo:KodoDesignTokens.LightSurfaceBorder}"
                                                         BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
                                                 <Border Height="96"
@@ -8554,7 +8571,7 @@ ToolTip.Tip="Increase font size" />
             </Grid>
             <Grid IsVisible="{Binding IsUpdateSplashVisible}"
                   IsHitTestVisible="{Binding IsUpdateSplashVisible}"
-                  Background="#B3000000">
+                  Background="{x:Static kodo:KodoDesignTokens.BackdropBrush}">
                 <Border Background="{Binding CardBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
                         BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"

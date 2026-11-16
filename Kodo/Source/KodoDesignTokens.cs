@@ -226,6 +226,8 @@ public static class KodoDesignTokens
     public static IBrush ChangedRemovedBrush { get; } = new SolidColorBrush(Color.Parse("#F85149"), 0.18);
     public static IBrush ChangedHunkBrush { get; } = new SolidColorBrush(Color.Parse("#58A6FF"));
     public static IBrush ChangedMetaBrush { get; } = new SolidColorBrush(Color.Parse("#8B949E"));
+    public static Color BackdropColor { get; } = Color.FromArgb(0xB3, 0x00, 0x00, 0x00);
+    public static IBrush BackdropBrush { get; } = new SolidColorBrush(BackdropColor);
 
     public static Color TokenBlue { get; } = Color.Parse("#569CD6");
     public static Color TokenTeal { get; } = Color.Parse("#4EC9B0");
