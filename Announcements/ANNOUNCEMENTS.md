@@ -108,3 +108,11 @@ This update features a command palette, editor minimap, native Git Source Contro
 > 2026-11-11
 This patch features UI improvements, editor fixes, Marketplace refinements, and various bug fixes for a smoother Kodo experience.
 ---
+
+## Hello!
+> 2026-11-15
+~Type~
+#11240364255074084228#
+[Open Website](https://kodo-ide.github.io/)
+This is a Test Message
+---
