@@ -730,6 +730,13 @@
             <Setter Property="FontSize" Value="11.5" />
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
+        <Style Selector="TextBlock.settingsgroupheader">
+            <Setter Property="FontSize" Value="{x:Static kodo:KodoDesignTokens.BodyFontSize}" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="LetterSpacing" Value="1" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
         <Style Selector="Ellipse.dirtyDot">
             <Setter Property="Width" Value="7" />
             <Setter Property="Height" Value="7" />
@@ -6688,6 +6695,8 @@ ToolTip.Tip="{Binding Path}" />
                                                VerticalAlignment="Center"
                                                Text="Theme" />
                                 </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="BUILT-IN" />
                                 <Grid ColumnDefinitions="Auto,Auto,Auto"
                                       ColumnSpacing="10"
                                       HorizontalAlignment="Left">
@@ -6781,10 +6790,8 @@ ToolTip.Tip="{Binding Path}" />
 
                                 <StackPanel Spacing="10"
                                             IsVisible="{Binding HasGroupedThemeExtensions}">
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyLargeFontSize}"
-                                               FontWeight="SemiBold"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Installed Theme Extensions" />
+                                    <TextBlock Classes="settingsgroupheader"
+                                               Text="INSTALLED THEME EXTENSIONS" />
 
                                     <ItemsControl ItemsSource="{Binding GroupedThemeExtensions}">
                                         <ItemsControl.ItemsPanel>
@@ -7027,6 +7034,8 @@ ToolTip.Tip="{Binding Path}" />
                                                VerticalAlignment="Center"
                                                Text="Editor" />
                                 </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="EDITING" />
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
@@ -7034,6 +7043,8 @@ ToolTip.Tip="{Binding Path}" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Show a code overview beside the editor for quick navigation"
                                           Content="Show minimap" />
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="INDENTATION" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -7051,6 +7062,8 @@ ToolTip.Tip="{Binding Path}" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Use the indentation style detected from each opened file until you choose an indentation setting manually"
                                           Content="Automatically detect indentation" />
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="FONT" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -7127,6 +7140,8 @@ ToolTip.Tip="Increase font size" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Master switch for Insight's code suggestions and dead code highlighting"
                                           Content="Enable Insight" />
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="ANALYSIS" />
                                 <StackPanel Spacing="10"
                                              Margin="24,0,0,0"
                                              IsVisible="{Binding IsInsightEnabled}">
@@ -7168,6 +7183,8 @@ ToolTip.Tip="Increase font size" />
                                          </StackPanel>
                                      </Border>
                                  </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="EXCLUDED FILES" />
                                 <StackPanel Spacing="6">
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
@@ -7326,9 +7343,25 @@ ToolTip.Tip="Increase font size" />
                                            Text="Language servers provide code completion, diagnostics, navigation, and other language-aware editor features." />
 
                                 <StackPanel Spacing="10" Margin="24,0,0,0" IsVisible="{Binding LspEnabled}">
+                                    <TextBlock Classes="settingsgroupheader"
+                                               Text="DIAGNOSTICS &amp; HIGHLIGHTS" />
                                     <CheckBox IsChecked="{Binding LspDiagnosticsEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Show diagnostics and error highlighting" />
+                                    <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Highlight references to the symbol under the caret" />
+                                    <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Semantic highlighting" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="{Binding SyntaxColorsDescriptionText}" />
+
+                                    <TextBlock Classes="settingsgroupheader"
+                                               Margin="0,6,0,0"
+                                               Text="COMPLETION &amp; ASSISTANCE" />
                                     <CheckBox IsChecked="{Binding LspCompletionEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Show completion suggestions" />
@@ -7344,17 +7377,10 @@ ToolTip.Tip="Increase font size" />
                                     <CheckBox IsChecked="{Binding LspFoldingEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Enable code folding" />
-                                    <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Highlight references to the symbol under the caret" />
-                                    <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Semantic highlighting" />
-                                    <TextBlock Margin="24,0,0,0"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="{Binding SyntaxColorsDescriptionText}" />
 
+                                    <TextBlock Classes="settingsgroupheader"
+                                               Margin="0,6,0,0"
+                                               Text="INSTALLATION" />
                                     <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
                                               Content="Automatically install missing servers" />
@@ -7413,6 +7439,8 @@ ToolTip.Tip="Increase font size" />
                                                Text="Workspace" />
                                 </StackPanel>
 
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="AUTOSAVE" />
                                 <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable autosave" />
@@ -7420,6 +7448,9 @@ ToolTip.Tip="Increase font size" />
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoSaveStatusText}" />
 
+                                <TextBlock Classes="settingsgroupheader"
+                                           Margin="0,6,0,0"
+                                           Text="TABS" />
                                 <CheckBox IsChecked="{Binding IsRestoreOpenTabsOnLaunchEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Restore open tabs on launch" />
@@ -7434,6 +7465,9 @@ ToolTip.Tip="Increase font size" />
                                            TextWrapping="Wrap"
                                            Text="{Binding ConfirmBeforeClosingStatusText}" />
 
+                                <TextBlock Classes="settingsgroupheader"
+                                           Margin="0,6,0,0"
+                                           Text="STATUS BAR" />
                                 <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Show full file paths in the status bar" />
@@ -7473,6 +7507,8 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Terminal" />
                                 </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="SHELL" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"
@@ -7503,6 +7539,9 @@ ToolTip.Tip="Increase font size" />
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="Off by default - it can render as glitchy artifacts in the terminal. Applies to new terminal sessions." />
+                                <TextBlock Classes="settingsgroupheader"
+                                           Margin="0,6,0,0"
+                                           Text="HISTORY" />
                                   <StackPanel Orientation="Horizontal" Spacing="12"
                                               VerticalAlignment="Center">
                                           <TextBlock VerticalAlignment="Center"
@@ -7617,6 +7656,8 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Updates" />
                                 </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="APPLICATION" />
                                 <CheckBox IsChecked="{Binding IsAutoUpdateAppEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Automatically check for Kodo updates" />
@@ -7638,6 +7679,9 @@ ToolTip.Tip="Increase font size" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoUpdateAppStatusText}" />
+                                <TextBlock Classes="settingsgroupheader"
+                                           Margin="0,6,0,0"
+                                           Text="EXTENSIONS" />
                                 <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Automatically update extensions" />
@@ -7979,11 +8023,7 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
                                 <StackPanel Spacing="8"
                                             IsVisible="{Binding IsDeveloperOptionsVisible}">
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               FontWeight="Bold"
-                                               LetterSpacing="1"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               Margin="0,2,0,0"
+                                    <TextBlock Classes="settingsgroupheader"
                                                Text="DIAGNOSTICS &amp; LOGGING" />
                                     <StackPanel Orientation="Horizontal" Spacing="12">
                                         <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
@@ -8033,10 +8073,7 @@ ToolTip.Tip="Increase font size" />
                                                 Content="Clear Logs" />
                                     </StackPanel>
 
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               FontWeight="Bold"
-                                               LetterSpacing="1"
-                                               Foreground="{Binding MutedTextBrush}"
+                                    <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
                                                Text="FOLDERS" />
                                     <TextBlock Foreground="{Binding MutedTextBrush}"
@@ -8072,10 +8109,7 @@ ToolTip.Tip="Increase font size" />
                                                 Content="Open Data Folder" />
                                     </StackPanel>
 
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               FontWeight="Bold"
-                                               LetterSpacing="1"
-                                               Foreground="{Binding MutedTextBrush}"
+                                    <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
                                                Text="SETTINGS DATA" />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -8103,10 +8137,7 @@ ToolTip.Tip="Increase font size" />
                                                 Content="Reset Tutorial &amp; Consent Prompts" />
                                     </StackPanel>
 
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               FontWeight="Bold"
-                                               LetterSpacing="1"
-                                               Foreground="{Binding MutedTextBrush}"
+                                    <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
                                                Text="MAINTENANCE" />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
@@ -8627,3 +8658,6 @@ ToolTip.Tip="Increase font size" />
         </Grid>
     </Grid>
 </Window>
+
+
+
