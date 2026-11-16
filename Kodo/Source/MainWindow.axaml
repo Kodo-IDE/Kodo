@@ -1894,6 +1894,54 @@
                     </Grid>
                 </Border>
 
+                <ItemsControl IsVisible="{Binding HasActiveNewsBanners}"
+                              ItemsSource="{Binding ActiveNewsBanners}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="kodoModels:NewsItem" x:CompileBindings="True">
+                            <Border Background="{Binding #RootWindow.AccentBrush}"
+                                    Padding="18,8">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                               VerticalAlignment="Center"
+                                               TextWrapping="Wrap"
+                                               Text="{Binding Body}" />
+                                    <Button Grid.Column="1"
+                                            Classes="chrome"
+                                            IsVisible="{Binding HasButton}"
+                                            Click="OpenNewsBannerButton_OnClick"
+                                            Tag="{Binding}"
+                                            VerticalAlignment="Center"
+                                            Margin="12,0,8,0"
+                                            Focusable="False"
+                                            Content="{Binding ButtonText}"
+                                            ToolTip.Tip="{Binding ButtonLink}" />
+                                    <Button Grid.Column="2"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                            Padding="6,4"
+                                            VerticalAlignment="Center"
+                                            IsVisible="{Binding ShowCloseButton}"
+                                            Click="DismissNewsBanner_OnClick"
+                                            Tag="{Binding}"
+                                            Focusable="False"
+                                            ToolTip.Tip="Dismiss this announcement"
+                                            AutomationProperties.Name="Dismiss this announcement">
+                                        <Viewbox Width="11" Height="11">
+                                            <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                                <svg:Svg Width="24" Height="24" CurrentColor="{Binding #RootWindow.AccentForegroundBrush, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                      Source="{x:Static kodo:KodoIcons.XMark}" />
+                                            </Canvas>
+                                        </Viewbox>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <Border IsVisible="{Binding IsAppLoadingVisible}"
                         Background="{Binding TopBarBrush}"
                         BorderBrush="{Binding SurfaceBorderBrush}"
