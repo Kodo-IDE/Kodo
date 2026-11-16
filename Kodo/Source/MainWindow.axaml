@@ -504,6 +504,12 @@
         <Style Selector="Border.extstatchip.accented">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
+        <Style Selector="Button.chrome.newsactionbtn">
+            <Setter Property="Margin" Value="12,0,8,0" />
+        </Style>
+        <Style Selector="Button.chrome.newsactionbtn.crit">
+            <Setter Property="Margin" Value="12,0,18,0" />
+        </Style>
         <Style Selector="TextBlock.extstatvalue">
             <Setter Property="FontSize" Value="20" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -1902,29 +1908,36 @@
                                     BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
                                     Padding="0,8">
-                                <Grid ColumnDefinitions="3,*,Auto,Auto">
-                                    <Border Grid.Column="0"
-                                            Classes="accentpill"
-                                            Background="{Binding #RootWindow.AccentBrush}"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Stretch" />
-                                    <StackPanel Grid.Column="1"
-                                                Spacing="0"
-                                                Margin="18,0,0,0"
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <StackPanel Grid.Column="0"
+                                                Orientation="Horizontal"
+                                                Spacing="10"
+                                                Margin="16,0,0,0"
                                                 VerticalAlignment="Center">
+                                        <Border Classes="accentpill"
+                                                Background="{Binding #RootWindow.AccentBrush}"
+                                                Height="14"
+                                                IsVisible="{Binding !IsCriticalBanner}"
+                                                VerticalAlignment="Center" />
+                                        <Border Classes="accentpill"
+                                                Background="{Binding #RootWindow.DangerBrush}"
+                                                Height="14"
+                                                IsVisible="{Binding IsCriticalBanner}"
+                                                VerticalAlignment="Center" />
                                         <TextBlock VerticalAlignment="Center"
                                                    TextWrapping="Wrap">
-                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyLargeFontSize}"
                                                  FontWeight="SemiBold"
                                                  Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                  Text="{Binding BannerPrefix}" />
-                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                            <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyLargeFontSize}"
                                                  Foreground="{Binding #RootWindow.PrimaryTextBrush}"
                                                  Text="{Binding Body}" />
                                         </TextBlock>
                                     </StackPanel>
-                                    <Button Grid.Column="2"
-                                            Classes="chrome"
+                                    <Button Grid.Column="1"
+                                            Classes="chrome newsactionbtn"
+                                            Classes.crit="{Binding IsCriticalBanner}"
                                             Background="{Binding #RootWindow.ButtonBrush}"
                                             BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
                                             Foreground="{Binding #RootWindow.PrimaryTextBrush}"
@@ -1932,15 +1945,15 @@
                                             Click="OpenNewsBannerButton_OnClick"
                                             Tag="{Binding}"
                                             VerticalAlignment="Center"
-                                            Margin="12,0,8,0"
                                             Focusable="False"
                                             Content="{Binding ButtonText}"
                                             ToolTip.Tip="{Binding ButtonLink}" />
-                                    <Button Grid.Column="3"
+                                    <Button Grid.Column="2"
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Foreground="{Binding #RootWindow.MutedTextBrush}"
-                                            Padding="6,4"
+                                            Padding="8,6"
+                                            Margin="4,0,10,0"
                                             VerticalAlignment="Center"
                                             IsVisible="{Binding ShowCloseButton}"
                                             Click="DismissNewsBanner_OnClick"
