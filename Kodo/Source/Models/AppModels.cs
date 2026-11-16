@@ -116,6 +116,7 @@ internal sealed class AppSettings
     public Dictionary<string, string> LspExecutableOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, bool> LspDisabledLanguages { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> LspDismissedInstallPrompts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> DismissedAnnouncementBanners { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class RecentFileEntry

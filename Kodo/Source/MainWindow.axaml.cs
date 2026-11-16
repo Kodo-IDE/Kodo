@@ -203,6 +203,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<string, string> _lspExecutableOverrides = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, bool> _lspDisabledLanguages = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _lspDismissedInstallPrompts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _dismissedAnnouncementBannerIds = new(StringComparer.Ordinal);
 
     private readonly RainbowBracketColorizer _primaryRainbowBracketColorizer = new();
     private readonly RainbowBracketColorizer _secondaryRainbowBracketColorizer = new();
@@ -719,6 +720,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public ObservableCollection<string> ExtensionLoadErrors { get; } = new();
     public ObservableCollection<TerminalShellOption> AvailableTerminalShells { get; } = new();
     public ObservableCollection<NewsItem> NewsItems { get; } = new();
+    public ObservableCollection<NewsItem> ActiveNewsBanners { get; } = new();
 
     public bool IsNewsLoading
     {
@@ -736,6 +738,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsNewsContentVisible => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count > 0;
     public bool IsNewsEmpty => !IsNewsDisabled && !IsNewsLoading && !IsNewsError && NewsItems.Count == 0;
     public bool IsNewsRefreshEnabled => !IsNewsDisabled && !IsNewsLoading;
+    public bool HasActiveNewsBanners => ActiveNewsBanners.Count > 0;
 
     public bool IsWhatsNewDisabled => IsPerformanceModeEnabled && _whatsNewDisabled;
     public bool IsWhatsNewRefreshEnabled => !IsWhatsNewDisabled && !IsRefreshingLatestRelease;
@@ -755,7 +758,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (value)
                 {
-                    NewsItems.Clear();
+                    _ = LoadBannersOnlyFromCacheAsync();
                     IsNewsLoading = false;
                     IsNewsError = false;
                 }
@@ -806,7 +809,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             {
                 if (_newsDisabled)
                 {
-                    NewsItems.Clear();
+                    _ = LoadBannersOnlyFromCacheAsync();
                     IsNewsLoading = false;
                     IsNewsError = false;
                 }
@@ -1121,6 +1124,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         foreach (var kv in settings.LspExecutableOverrides ?? new Dictionary<string, string>()) _lspExecutableOverrides[kv.Key] = kv.Value;
         foreach (var kv in settings.LspDisabledLanguages ?? new Dictionary<string, bool>()) _lspDisabledLanguages[kv.Key] = kv.Value;
         foreach (var id in settings.LspDismissedInstallPrompts ?? new HashSet<string>()) _lspDismissedInstallPrompts.Add(id);
+        foreach (var id in settings.DismissedAnnouncementBanners ?? new HashSet<string>()) _dismissedAnnouncementBannerIds.Add(id);
         _isPerformanceModeEnabled = settings.PerformanceModeEnabled;
         if (_isPerformanceModeEnabled)
             _latestReleaseStatusText = "Disabled by Performance mode.";
@@ -1315,7 +1319,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (IsNewsDisabled)
         {
-            NewsItems.Clear();
+            _ = LoadBannersOnlyFromCacheAsync();
             IsNewsLoading = false;
             IsNewsError = false;
             return;
@@ -1328,7 +1332,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (!forceNetwork)
             {
-                NewsItems.Clear();
+                ApplyNewsItems(Enumerable.Empty<NewsItem>());
                 if (await LoadCachedAnnouncementsAsync())
                     return;
             }
@@ -1370,15 +1374,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 var items = ParseAnnouncementsMd(md);
                 if (items.Count > 0)
                 {
-                    NewsItems.Clear();
-                    foreach (var item in items)
-                        NewsItems.Add(item);
+                    ApplyNewsItems(items);
                     SaveNewsCache();
                     return;
                 }
             }
 
-            NewsItems.Clear();
+            ApplyNewsItems(Enumerable.Empty<NewsItem>());
             await LoadCachedAnnouncementsAsync();
         }
         catch (Exception ex)
@@ -1396,6 +1398,71 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private List<NewsItem> _cachedNewsItems = new();
+
+    private async Task LoadBannersOnlyFromCacheAsync()
+    {
+        try
+        {
+            var items = await Task.Run(() =>
+            {
+                try
+                {
+                    if (!File.Exists(NewsCachePath)) return (List<NewsItem>?)null;
+                    var json = File.ReadAllText(NewsCachePath);
+                    return JsonSerializer.Deserialize<List<NewsItem>>(json);
+                }
+                catch { return null; }
+            }).ConfigureAwait(false);
+
+            NewsItems.Clear();
+            ActiveNewsBanners.Clear();
+            if (items is null) return;
+
+            foreach (var item in items)
+            {
+                if (item.IsBanner)
+                {
+                    if (!item.IsCriticalBanner && _dismissedAnnouncementBannerIds.Contains(item.DismissalId))
+                        continue;
+                    ActiveNewsBanners.Add(item);
+                }
+            }
+
+            OnPropertyChanged(nameof(HasActiveNewsBanners));
+            OnPropertyChanged(nameof(IsNewsContentVisible));
+            OnPropertyChanged(nameof(IsNewsEmpty));
+        }
+        catch
+        {
+        }
+    }
+
+    private void ApplyNewsItems(IEnumerable<NewsItem> source)
+    {
+        var items = source?.ToList() ?? new List<NewsItem>();
+        _cachedNewsItems = items;
+        NewsItems.Clear();
+        ActiveNewsBanners.Clear();
+        foreach (var item in items)
+        {
+            if (item.IsBanner)
+            {
+                if (!item.IsCriticalBanner && _dismissedAnnouncementBannerIds.Contains(item.DismissalId))
+                    continue;
+                ActiveNewsBanners.Add(item);
+            }
+            else if (!IsNewsDisabled)
+            {
+                NewsItems.Add(item);
+            }
+        }
+        OnPropertyChanged(nameof(HasActiveNewsBanners));
+        OnPropertyChanged(nameof(IsNewsContentVisible));
+        OnPropertyChanged(nameof(IsNewsEmpty));
+        OnPropertyChanged(nameof(IsNewsRefreshEnabled));
+    }
+
     private bool LoadCachedAnnouncements()
     {
         try
@@ -1408,9 +1475,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (items is null || items.Count == 0)
                 return false;
 
-            foreach (var item in items)
-                NewsItems.Add(item);
-
+            ApplyNewsItems(items);
             return true;
         }
         catch
@@ -1440,8 +1505,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                foreach (var item in items)
-                    NewsItems.Add(item);
+                ApplyNewsItems(items);
             }, DispatcherPriority.Background);
             return true;
         }
@@ -1450,7 +1514,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SaveNewsCache()
     {
-        var snapshot = NewsItems.ToList();
+        var snapshot = _cachedNewsItems.ToList();
         _ = Task.Run(() =>
         {
             try
@@ -1549,6 +1613,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             string? updatedAt = null;
             var bodyLines = new List<string>();
 
+            var sectionType = "News";
+            string? buttonText = null;
+            string? buttonLink = null;
+            string? sectionId = null;
+
             foreach (var line in lines)
             {
                 if (title is null && line.StartsWith("## "))
@@ -1567,6 +1636,36 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                         ? parsed.ToString("MMMM d, yyyy", System.Globalization.CultureInfo.InvariantCulture)
                         : raw;
                 }
+                else if (title is not null && line.Length > 0 && line.StartsWith("~") && line.EndsWith("~") && line.Length > 2)
+                {
+                    var raw = line[1..^1].Trim();
+                    if (raw.Length > 0)
+                    {
+                        var normalized = raw.ToUpperInvariant().Replace("_", "-");
+                        sectionType = normalized switch
+                        {
+                            "BANNER" => "Banner",
+                            "BANNER-CRIT" or "BANNERCRIT" or "CRITICAL" => "Banner-Crit",
+                            "NEWS" => "News",
+                            _ => "News"
+                        };
+                    }
+                }
+                else if (title is not null && sectionId is null && line.StartsWith("#") && line.EndsWith("#") && line.Length > 2)
+                {
+                    var raw = line[1..^1].Trim();
+                    if (raw.Length > 0) sectionId = raw;
+                }
+                else if (title is not null && buttonText is null && line.StartsWith("[") && line.EndsWith(")"))
+                {
+                    var closeBracket = line.IndexOf(']');
+                    var openParen = closeBracket >= 0 ? line.IndexOf('(', closeBracket) : -1;
+                    if (closeBracket > 0 && openParen > closeBracket && openParen < line.Length - 1)
+                    {
+                        buttonText = line[1..closeBracket].Trim();
+                        buttonLink = line[(openParen + 1)..^1].Trim();
+                    }
+                }
                 else if (title is not null && line.Length > 0)
                 {
                     bodyLines.Add(line);
@@ -1580,6 +1679,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 Title = title ?? string.Empty,
                 Body = string.Join("\n", bodyLines).Trim(),
                 UpdatedAt = updatedAt ?? string.Empty,
+                Type = sectionType,
+                ButtonText = buttonText ?? string.Empty,
+                ButtonLink = buttonLink ?? string.Empty,
+                Id = sectionId ?? string.Empty,
             });
         }
 
@@ -6631,7 +6734,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             LspInstallDir = _lspInstallDir,
             LspExecutableOverrides = new Dictionary<string, string>(LspExecutableOverrides, StringComparer.OrdinalIgnoreCase),
             LspDisabledLanguages = new Dictionary<string, bool>(_lspDisabledLanguages, StringComparer.OrdinalIgnoreCase),
-            LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase)
+            LspDismissedInstallPrompts = new HashSet<string>(_lspDismissedInstallPrompts, StringComparer.OrdinalIgnoreCase),
+            DismissedAnnouncementBanners = new HashSet<string>(_dismissedAnnouncementBannerIds, StringComparer.Ordinal)
         };
     }
 
@@ -8421,6 +8525,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         _updateBannerDismissed = true;
         OnPropertyChanged(nameof(IsAppUpdateAvailable));
+    }
+
+    private void DismissNewsBanner_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var item = sender is Button button ? button.Tag as NewsItem : null;
+        if (item is not null)
+        {
+            _dismissedAnnouncementBannerIds.Add(item.DismissalId);
+            var toRemove = ActiveNewsBanners.Where(b => string.Equals(b.DismissalId, item.DismissalId, StringComparison.Ordinal)).ToList();
+            foreach (var active in toRemove)
+                ActiveNewsBanners.Remove(active);
+            SaveSettings();
+            OnPropertyChanged(nameof(HasActiveNewsBanners));
+        }
+    }
+
+    private void OpenNewsBannerButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: NewsItem item } && !string.IsNullOrWhiteSpace(item.ButtonLink))
+            OpenUrl(item.ButtonLink);
     }
 
     private async void CheckForUpdatesButton_OnClick(object? sender, RoutedEventArgs e) =>
@@ -11382,3 +11506,4 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return button;
     }
 }
+

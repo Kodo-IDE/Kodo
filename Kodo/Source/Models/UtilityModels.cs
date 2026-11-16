@@ -60,9 +60,21 @@ public sealed class NewsItem
     public string Title { get; init; } = string.Empty;
     public string Body { get; init; } = string.Empty;
     public string UpdatedAt { get; init; } = string.Empty;
+    public string Type { get; init; } = "News";
+    public string ButtonText { get; init; } = string.Empty;
+    public string ButtonLink { get; init; } = string.Empty;
+    public string Id { get; init; } = string.Empty;
     public bool HasTitle => !string.IsNullOrWhiteSpace(Title);
     public bool HasBody => !string.IsNullOrWhiteSpace(Body);
     public bool HasUpdatedAt => !string.IsNullOrWhiteSpace(UpdatedAt);
+    public bool HasButton => !string.IsNullOrWhiteSpace(ButtonText) && !string.IsNullOrWhiteSpace(ButtonLink);
+    public bool IsBanner => string.Equals(Type, "Banner", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(Type, "Banner-Crit", StringComparison.OrdinalIgnoreCase);
+    public bool IsCriticalBanner => string.Equals(Type, "Banner-Crit", StringComparison.OrdinalIgnoreCase);
+    public bool ShowCloseButton => !IsCriticalBanner;
+    public string DismissalId => string.IsNullOrWhiteSpace(Id)
+        ? $"{Title}|{UpdatedAt}|{(Type ?? string.Empty)}"
+        : Id.Trim();
 }
 
 public class ReleaseInfo
