@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   windows:
-    name: Windows installer
+    name: Windows installer and portable archive
     runs-on: windows-latest
     steps:
       - name: Checkout selected Kodo ref
@@ -44,7 +44,7 @@ jobs:
         shell: pwsh
         run: ./dev/Release-Scripts/Build-WindowsRelease.ps1 -KodoRoot "$env:GITHUB_WORKSPACE/Kodo" -OutputDirectory "$env:RUNNER_TEMP/kodo-release"
 
-      - name: Upload Windows installer and checksum
+      - name: Upload Windows release assets and checksums
         uses: actions/upload-artifact@v7
         with:
           name: Kodo-Windows-release
