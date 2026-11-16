@@ -111,7 +111,7 @@ This patch features UI improvements, editor fixes, Marketplace refinements, and 
 
 ## Hello!
 > 2026-11-15
-~Type~
+~Banner~
 #11240364255074084228#
 [Open Website](https://kodo-ide.github.io/)
 This is a Test Message
