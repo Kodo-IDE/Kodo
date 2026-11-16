@@ -30,6 +30,13 @@ internal static class SettingsStore
 
     public static bool HasBackup => File.Exists(BackupFilePath);
 
+    public static void DeleteBackup()
+    {
+        var backupPath = BackupFilePath;
+        if (File.Exists(backupPath))
+            File.Delete(backupPath);
+    }
+
     public static void CreateBackup()
     {
         var writePath = WritePath;

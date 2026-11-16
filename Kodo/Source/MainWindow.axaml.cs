@@ -8980,6 +8980,29 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    private async void ClearSettingsBackupButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Clear settings backup?",
+            "This permanently deletes kodosettings.json.bak. You will no longer be able to restore settings from this backup.",
+            confirmLabel: "Clear Backup",
+            isDestructive: true);
+
+        if (!confirmed) return;
+
+        try
+        {
+            SettingsStore.DeleteBackup();
+            RefreshSettingsBackupState();
+            DeveloperOptionsStatusText = "Settings backup cleared.";
+        }
+        catch (Exception ex)
+        {
+            DeveloperOptionsStatusText = $"Could not clear settings backup: {ex.Message}";
+            KodoDiagnostics.LogWarning("MainWindow.ClearSettingsBackupButton", ex, "Settings backup deletion failed");
+        }
+    }
+
     private async void RestoreSettingsBackupButton_OnClick(object? sender, RoutedEventArgs e)
     {
         var confirmed = await ShowConfirmationDialogAsync(
