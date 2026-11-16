@@ -72,6 +72,7 @@ public sealed class NewsItem
                             string.Equals(Type, "Banner-Crit", StringComparison.OrdinalIgnoreCase);
     public bool IsCriticalBanner => string.Equals(Type, "Banner-Crit", StringComparison.OrdinalIgnoreCase);
     public bool ShowCloseButton => !IsCriticalBanner;
+    public string BannerPrefix => HasTitle ? $"{Title}: " : string.Empty;
     public string DismissalId => string.IsNullOrWhiteSpace(Id)
         ? $"{Title}|{UpdatedAt}|{(Type ?? string.Empty)}"
         : Id.Trim();
