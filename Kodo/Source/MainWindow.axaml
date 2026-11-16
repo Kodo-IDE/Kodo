@@ -1902,11 +1902,16 @@
                                     Padding="18,8">
                                 <Grid ColumnDefinitions="*,Auto,Auto">
                                     <TextBlock Grid.Column="0"
-                                               FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               Foreground="{Binding #RootWindow.AccentForegroundBrush}"
                                                VerticalAlignment="Center"
-                                               TextWrapping="Wrap"
-                                               Text="{Binding Body}" />
+                                               TextWrapping="Wrap">
+                                        <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                             FontWeight="SemiBold"
+                                             Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                             Text="{Binding BannerPrefix}" />
+                                        <Run FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                             Foreground="{Binding #RootWindow.AccentForegroundBrush}"
+                                             Text="{Binding Body}" />
+                                    </TextBlock>
                                     <Button Grid.Column="1"
                                             Classes="chrome"
                                             IsVisible="{Binding HasButton}"
@@ -8723,4 +8728,3 @@ ToolTip.Tip="Increase font size" />
         </Grid>
     </Grid>
 </Window>
-
