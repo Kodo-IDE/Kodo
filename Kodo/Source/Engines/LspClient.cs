@@ -108,6 +108,8 @@ internal sealed class LspClient : IDisposable
         if (ServerCapabilities is not JsonElement caps || caps.ValueKind != JsonValueKind.Object) return false;
         if (method == "codeAction/resolve")
             return SupportsCodeActionResolve(caps);
+        if (method == "textDocument/didSave")
+            return SupportsDidSaveNotification(caps);
         var property = method switch
         {
             "textDocument/signatureHelp" => "signatureHelpProvider",
@@ -142,6 +144,15 @@ internal sealed class LspClient : IDisposable
         }
         if (!caps.TryGetProperty(property, out var value)) return false;
         return value.ValueKind is JsonValueKind.True or JsonValueKind.Object;
+    }
+
+    private static bool SupportsDidSaveNotification(JsonElement capabilities)
+    {
+        if (!capabilities.TryGetProperty("textDocumentSync", out var sync) || sync.ValueKind != JsonValueKind.Object ||
+            !sync.TryGetProperty("save", out var save))
+            return false;
+
+        return save.ValueKind == JsonValueKind.True || save.ValueKind == JsonValueKind.Object;
     }
 
     internal static bool SupportsCodeActionResolve(JsonElement capabilities)

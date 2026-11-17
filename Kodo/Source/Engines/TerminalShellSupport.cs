@@ -70,6 +70,8 @@ public static class TerminalShellSupport
 {
     private const double MinPanelHeight = 120;
     private const double MaxPanelHeight = 420;
+    private const double MinSidebarWidth = 180;
+    private const double MaxSidebarWidth = 800;
 
     private const string BashCwdHookCommand = """
         export PROMPT_COMMAND='printf "\033]1337;CurrentDir=%s\007" "$(pwd -W)"'; exec bash --login -i
@@ -279,6 +281,11 @@ public static class TerminalShellSupport
         double.IsFinite(value)
             ? Math.Clamp(value, MinPanelHeight, MaxPanelHeight)
             : AppSettings.DefaultTerminalPanelHeight;
+
+    public static double NormalizeTerminalSidebarWidth(double value) =>
+        double.IsFinite(value)
+            ? Math.Clamp(value, MinSidebarWidth, MaxSidebarWidth)
+            : AppSettings.DefaultTerminalSidebarWidth;
 
     public static string ExtractDisplayTitleFromShellTitle(string rawTitle)
     {

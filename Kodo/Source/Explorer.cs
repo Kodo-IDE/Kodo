@@ -9,6 +9,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using AvaloniaEdit.Document;
 using Kodo.Editor;
 using Kodo.Models;
 using System;
@@ -86,17 +87,149 @@ public partial class MainWindow
         e.Handled = true;
     }
 
+    private async void ToolbarRefreshOpenEditorsButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        await RefreshOpenEditorsAsync();
+    }
+
+    private async Task RefreshOpenEditorsAsync()
+    {
+        if (OpenTabs.Count == 0) return;
+
+        SaveCurrentEditorStateIntoTab();
+        var skipped = new List<string>();
+        var failures = new List<string>();
+
+        foreach (var tab in OpenTabs.ToList())
+        {
+            var captured = await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (tab.IsDirty)
+                    return (CanRefresh: false, IsDirty: true, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+                if (tab.IsUntitled || string.IsNullOrWhiteSpace(tab.Path))
+                    return (CanRefresh: false, IsDirty: false, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+                return (CanRefresh: true, IsDirty: false, Document: tab.Document, Version: tab.Document?.Version, Content: tab.Content ?? string.Empty);
+            });
+
+            if (!captured.CanRefresh)
+            {
+                skipped.Add($"{tab.DisplayName}{(captured.IsDirty ? " (unsaved changes)" : " (no file on disk)")}");
+                continue;
+            }
+
+            try
+            {
+                var path = tab.Path;
+                if (!File.Exists(path))
+                    throw new FileNotFoundException("The file no longer exists.", path);
+
+                var isImage = IsImagePreviewFile(path);
+                var content = string.Empty;
+                var encoding = tab.Encoding ?? EditorTab.DefaultEncoding;
+                var isCorrupted = false;
+                var lineEnding = tab.LineEnding;
+
+                if (!isImage)
+                {
+                    var fileInfo = new FileInfo(path);
+                    var detection = await Task.Run(() =>
+                    {
+                        var detectedEncoding = SearchEngine.DetectFileEncoding(path);
+                        return (Encoding: detectedEncoding, IsBinary: IsBinaryContent(path));
+                    });
+                    encoding = detection.Encoding;
+                    isCorrupted = detection.IsBinary;
+                    if (!isCorrupted)
+                        content = fileInfo.Length > MaxFileSizeForFullLoad
+                            ? await ReadLargeFileAsync(path, encoding)
+                            : await File.ReadAllTextAsync(path, encoding);
+
+                    if (content.Length > 0)
+                        lineEnding = DetectLineEnding(content);
+                }
+
+                var applied = await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    if (!OpenTabs.Contains(tab) || tab.IsDirty ||
+                        !ReferenceEquals(tab.Document, captured.Document) ||
+                        (captured.Document is not null && !ReferenceEquals(captured.Document.Version, captured.Version)) ||
+                        !string.Equals(tab.Content ?? string.Empty, captured.Content, StringComparison.Ordinal))
+                    {
+                        skipped.Add($"{tab.DisplayName} (changed while refreshing)");
+                        return false;
+                    }
+
+                    var nextDocument = isImage || isCorrupted ? null : new TextDocument(content);
+                    tab.Document = nextDocument;
+                    tab.Content = string.Empty;
+                    tab.Encoding = encoding;
+                    tab.LineEnding = lineEnding;
+                    tab.DetectedIndentation = null;
+                    tab.IndentationDetectionVersion = null;
+                    tab.IsModifiedExternally = false;
+                    tab.IsDirty = false;
+                    if (isCorrupted)
+                        _corruptedTabs.Add(tab);
+                    else
+                        _corruptedTabs.Remove(tab);
+
+                    foreach (var pane in new[] { _editorPane, _secondaryEditorPane })
+                    {
+                        if (!ReferenceEquals(pane.ActiveTab, tab)) continue;
+                        var editor = GetEditorForPane(pane);
+                        SavePaneViewState(pane, editor);
+                        AssignPaneDocumentWithoutDirtyTracking(editor, nextDocument ?? new TextDocument(string.Empty));
+                        if (nextDocument is not null)
+                        {
+                            var viewState = tab.GetViewState(pane.Id);
+                            editor.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, nextDocument.TextLength);
+                            editor.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, nextDocument.LineCount));
+                        }
+                        if (isImage)
+                        {
+                            pane.ImagePreview?.Dispose();
+                            pane.ImagePreview = null;
+                            pane.ImagePreviewPath = null;
+                            RefreshPanePreviewState(pane);
+                        }
+                    }
+
+                    CaptureTabDiskState(tab);
+                    return true;
+                });
+
+                if (!applied) continue;
+                if (!isImage && !isCorrupted)
+                {
+                    await LspNotifyDidCloseAsync(path);
+                    await LspNotifyDidOpenAsync(path, content);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{tab.DisplayName}: {ex.Message}");
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            SetFileCorrupted(ActiveEditorTab is not null && _corruptedTabs.Contains(ActiveEditorTab));
+            RefreshState(fullRefresh: true);
+            QueueLspPresentationRefresh(immediate: true);
+        });
+
+        if (skipped.Count > 0 || failures.Count > 0)
+            await ShowRefreshOpenEditorsSummaryDialogAsync(skipped, failures);
+    }
+
     private double ComputeAutoFitExplorerPanelWidth()
     {
         if (FileTreeItems.Count == 0) return AppSettings.DefaultExplorerPanelWidth;
 
         var typeface = new Typeface("JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,Noto Color Emoji,Segoe UI Emoji,Apple Color Emoji,Monospace");
         var widest = 0.0;
-        var sampled = 0;
-        const int maxSample = 400;
         foreach (var item in FileTreeItems)
         {
-            if (sampled++ >= maxSample) break;
             var formatted = new FormattedText(
                 item.Name,
                 CultureInfo.CurrentCulture,
@@ -109,7 +242,8 @@ public partial class MainWindow
             if (total > widest) widest = total;
         }
 
-        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead);
+        const double filenameFitSafetyMargin = 32;
+        return NormalizeExplorerPanelWidth(widest + FileTreeRowFixedOverhead + filenameFitSafetyMargin);
     }
 
     private void FileTreeItems_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -169,7 +303,7 @@ public partial class MainWindow
         };
     }
 
-    private void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true, bool scheduleContentLoad = true, bool preserveOtherPaneMembership = false)
+    internal void ActivateTab(EditorTab tab, bool focusEditor = true, bool preserveCurrentState = true, bool scheduleContentLoad = true, bool preserveOtherPaneMembership = false)
     {
         CancelInactiveTabDiagnosticScan(tab);
         if (IsSplitScreenVisible && !CanDisplayInEditorPane(tab))
@@ -648,7 +782,7 @@ public partial class MainWindow
 
     private const long MaxFileSizeForFullLoad = 5_000_000;
 
-    private async Task OpenFileFromPathAsync(string path, EditorPaneState? requestedPane = null, bool preserveExistingPaneMembership = false)
+    internal async Task OpenFileFromPathAsync(string path, EditorPaneState? requestedPane = null, bool preserveExistingPaneMembership = false)
     {
         var destinationPane = ResolveEditorPaneForOpen(requestedPane ?? _activeEditorPane);
         EnsureCurrentDocumentHasTab();
@@ -823,6 +957,13 @@ public partial class MainWindow
 
     private void ProjectFolderWatcher_OnChanged(object sender, FileSystemEventArgs e)
     {
+        if (!string.IsNullOrWhiteSpace(_currentFolderPath))
+        {
+            SmartFileIcons.InvalidatePath(e.FullPath, _currentFolderPath);
+            if (e is RenamedEventArgs changedName)
+                SmartFileIcons.InvalidatePath(changedName.OldFullPath, _currentFolderPath);
+        }
+
         lock (_projectFolderChangeLock)
         {
             QueueProjectFolderChangePath(e.FullPath);
@@ -989,7 +1130,7 @@ public partial class MainWindow
         ReplaceFileTreeItems(items);
     }
 
-    private static async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
+    private async Task<List<FileTreeItem>> BuildFileTreeItemsAsync(
         string dirPath, int depth, HashSet<string> expandedPaths)
     {
         var result = new List<FileTreeItem>();
@@ -1083,20 +1224,26 @@ public partial class MainWindow
         }
     }
 
-    private static Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth) =>
-        Task.Run(() =>
+    private Task<List<FileTreeItem>> CreateFileTreeItemsAsync(string dirPath, int depth)
+    {
+        var workspaceRoot = _currentFolderPath ?? dirPath;
+        var extensionIcons = SmartFileIcons.BuildExtensionIcons(LoadedExtensions.ToArray());
+        return Task.Run(() =>
         {
             var items = new List<FileTreeItem>();
             foreach (var entry in GetSortedEntries(dirPath))
             {
                 try
                 {
+                    var name = Path.GetFileName(entry);
+                    var isDirectory = (File.GetAttributes(entry) & FileAttributes.Directory) != 0;
                     items.Add(new FileTreeItem
                     {
-                        Name = Path.GetFileName(entry),
+                        Name = name,
                         FullPath = entry,
-                        IsDirectory = (File.GetAttributes(entry) & FileAttributes.Directory) != 0,
+                        IsDirectory = isDirectory,
                         Depth = depth,
+                        IconText = SmartFileIcons.ResolveIcon(name, entry, isDirectory, workspaceRoot, extensionIcons),
                     });
                 }
                 catch (IOException) { }
@@ -1104,6 +1251,7 @@ public partial class MainWindow
             }
             return items;
         });
+    }
 
     private async Task ToggleDirectoryExpansionAsync(FileTreeItem dirItem)
     {
@@ -1710,122 +1858,6 @@ public partial class MainWindow
     {
         foreach (var tab in tabs.ToList())
             CloseTab(tab);
-    }
-
-    private async Task<string?> ShowRenameDialogAsync(
-        string currentName,
-        string title = "Rename",
-        string action = "Rename",
-        string prompt = "Enter a new name:")
-    {
-        string? result = null;
-        Window? dialog = null;
-
-        var inputBox = new TextBox
-        {
-            Text = currentName,
-            Background = ButtonBrush,
-            Foreground = PrimaryTextBrush,
-            BorderBrush = SurfaceBorderBrush,
-            Padding = new Thickness(8, 6),
-            FontSize = 14,
-            CaretBrush = PrimaryTextBrush,
-        };
-
-        var confirmButton = CreateDialogButton(action, AccentBrush, AccentBrush, AccentForegroundBrush, () =>
-        {
-            result = inputBox.Text?.Trim();
-            dialog!.Close();
-        });
-
-        inputBox.KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter) { result = inputBox.Text?.Trim(); dialog!.Close(); }
-            if (e.Key == Key.Escape) { dialog!.Close(); }
-        };
-
-        var headerRow = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = title,
-                    FontSize = 15,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center
-                }
-            }
-        };
-
-        var divider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
-
-        var inner = new StackPanel
-        {
-            Spacing = 12,
-            Children =
-            {
-                headerRow,
-                new TextBlock { Text = prompt, FontSize = 13, Foreground = MutedTextBrush, TextWrapping = TextWrapping.Wrap },
-                inputBox,
-                divider,
-                new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    Spacing = 10,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    Children =
-                    {
-                        CreateDialogButton("Cancel", ButtonBrush, SurfaceBorderBrush, PrimaryTextBrush,
-                            () => dialog!.Close()),
-                        confirmButton
-                    }
-                }
-            }
-        };
-
-        dialog = new Window
-        {
-            Width = 400,
-            SizeToContent = SizeToContent.Height,
-            MinWidth = 360,
-            MaxHeight = 340,
-            CanResize = false,
-            ShowInTaskbar = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Title = title,
-            Background = WindowBackgroundBrush,
-            Content = CreateDialogSurface(inner)
-        };
-
-        dialog.Opened += (_, _) =>
-        {
-            inputBox.Focus();
-            inputBox.SelectAll();
-        };
-
-        using (PerformanceBudget.TrackModal())
-        {
-            await dialog.ShowDialog(this);
-        }
-        return string.IsNullOrWhiteSpace(result) ? null : result;
     }
 
     private async void CloseTabsToTheRightMenuItem_OnClick(object? sender, RoutedEventArgs e)

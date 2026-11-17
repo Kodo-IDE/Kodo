@@ -112,7 +112,7 @@ public partial class MainWindow
     private readonly Dictionary<string, Task<string?>> _lspPendingHovers = new();
     private readonly object _lspHoverCacheLock = new();
 
-    private sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source);
+    private sealed record LspRawDiagnostic(int StartLine, int StartChar, int EndLine, int EndChar, string Message, string Severity, string Code, string Source, string Details);
     private sealed record PendingLspIncrementalChange(
         AvaloniaEdit.Document.ITextSource? Snapshot,
         int StartLine,
@@ -919,6 +919,66 @@ public partial class MainWindow
         catch (Exception ex) { KodoDiagnostics.LogDebug($"LSP active document open failed for {filePath}", ex); }
     }
 
+    private async Task RefreshLspWorkspaceDiagnosticsAfterSaveAsync(string filePath, string? originalFilePath, EditorTab? tab, bool pathWasChosen)
+    {
+        if (!LspEnabled || string.IsNullOrWhiteSpace(filePath) || ResolveLspExtensionForFile(filePath) is null)
+            return;
+
+        try
+        {
+            if (pathWasChosen && tab is not null)
+            {
+                if (!string.IsNullOrWhiteSpace(originalFilePath) &&
+                    !FileSystemPaths.Equals(originalFilePath, filePath) &&
+                    IsLspDocumentOpenOrOpening(originalFilePath))
+                    await RetargetLspDocumentAsync(originalFilePath, filePath, tab).ConfigureAwait(false);
+                else
+                    await LspNotifyActiveDocumentDidOpenAsync(filePath).ConfigureAwait(false);
+            }
+
+            await FlushLspDocumentAsync(filePath, string.Empty).ConfigureAwait(false);
+
+            var normalizedPath = NormalizeFilePath(filePath);
+            LspClient? client;
+            lock (_lspOpenLock)
+            {
+                if (!_lspOpenDocuments.Contains(normalizedPath) || !_lspDocumentClients.TryGetValue(normalizedPath, out client))
+                    return;
+            }
+
+            if (client.Supports("textDocument/didSave"))
+            {
+                await client.SendNotificationAsync("textDocument/didSave", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["textDocument"] = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["uri"] = FilePathToUri(normalizedPath),
+                    },
+                }).ConfigureAwait(false);
+            }
+
+            if (!LspDiagnosticsEnabled || !client.Supports("textDocument/diagnostic"))
+                return;
+
+            List<(string Path, int Version)> documents;
+            lock (_lspOpenLock)
+            {
+                documents = _lspDocumentClients
+                    .Where(pair => ReferenceEquals(pair.Value, client) && _lspOpenDocuments.Contains(pair.Key) &&
+                        _lspDocumentVersions.ContainsKey(pair.Key))
+                    .Select(pair => (pair.Key, _lspDocumentVersions[pair.Key]))
+                    .ToList();
+            }
+
+            foreach (var document in documents)
+                ScheduleLspPullDiagnostics(document.Path, client, FilePathToUri(document.Path), document.Version);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug($"LSP diagnostics refresh after save failed for {filePath}", ex);
+        }
+    }
+
     private async Task EnsureVisiblePaneLspDocumentsOpenAsync()
     {
         var filePaths = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -1663,10 +1723,58 @@ public partial class MainWindow
                 if (d.TryGetProperty("code", out var ce2) && ce2.ValueKind == JsonValueKind.Object && ce2.TryGetProperty("value", out var cv)) code = cv.ToString() ?? "";
                 else if (ce2.ValueKind == JsonValueKind.Number && ce2.TryGetInt32(out var cvInt)) code = cvInt.ToString();
                 var source = LspDiagnosticString(d.TryGetProperty("source", out var se2) ? se2 : default, "lsp");
-                diagnostics.Add(new LspRawDiagnostic(sLine, sChar, eLine, eChar, msg, severity, code, source));
+                var details = BuildLspDiagnosticDetails(d, source, code);
+                diagnostics.Add(new LspRawDiagnostic(sLine, sChar, eLine, eChar, msg, severity, code, source, details));
             }
         }
         return (diagnostics, rawDiagnostics);
+    }
+
+    private static string BuildLspDiagnosticDetails(JsonElement diagnostic, string source, string code)
+    {
+        var details = new List<string>();
+        var metadata = new List<string>();
+        if (!string.IsNullOrWhiteSpace(source) && !source.Equals("lsp", StringComparison.OrdinalIgnoreCase))
+            metadata.Add($"Source: {source}");
+        if (!string.IsNullOrWhiteSpace(code))
+            metadata.Add($"Code: {code}");
+        if (diagnostic.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var tag in tags.EnumerateArray())
+            {
+                if (LspDiagnosticInt(tag, 0) == 1)
+                    metadata.Add("Unnecessary");
+                else if (LspDiagnosticInt(tag, 0) == 2)
+                    metadata.Add("Deprecated");
+            }
+        }
+        if (metadata.Count > 0)
+            details.Add(string.Join(" · ", metadata.Distinct(StringComparer.OrdinalIgnoreCase)));
+
+        if (diagnostic.TryGetProperty("relatedInformation", out var relatedInformation) && relatedInformation.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var related in relatedInformation.EnumerateArray().Take(3))
+            {
+                var location = LspDiagnosticChild(related, "location");
+                var uri = LspDiagnosticString(LspDiagnosticChild(location, "uri"), string.Empty);
+                var range = LspDiagnosticChild(location, "range");
+                var start = LspDiagnosticChild(range, "start");
+                var line = LspDiagnosticInt(LspDiagnosticChild(start, "line"), -1);
+                var message = LspDiagnosticString(LspDiagnosticChild(related, "message"), string.Empty).Trim();
+                var path = string.IsNullOrWhiteSpace(uri) ? string.Empty : FileUriToPath(uri);
+                var locationText = string.IsNullOrWhiteSpace(path) ? string.Empty : Path.GetFileName(path);
+                if (line >= 0)
+                    locationText = string.IsNullOrWhiteSpace(locationText) ? $"line {line + 1}" : $"{locationText}:{line + 1}";
+                var text = string.Join(": ", new[] { locationText, message }.Where(value => !string.IsNullOrWhiteSpace(value)));
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    var trimmedText = text.Length > 220 ? text[..220] : text;
+                    details.Add($"Related: {trimmedText}");
+                }
+            }
+        }
+
+        return string.Join(Environment.NewLine, details);
     }
 
     private static JsonElement LspDiagnosticChild(JsonElement parent, string name) =>
@@ -1962,7 +2070,7 @@ public partial class MainWindow
             }
             var len = Math.Max(1, end - start);
             if (start + len > document.TextLength) len = Math.Max(1, document.TextLength - start);
-            spans.Add(new ErrorSpan(start, len, d.Message.Trim(), d.Severity, d.Code ?? "", d.Source ?? "lsp"));
+            spans.Add(new ErrorSpan(start, len, d.Message.Trim(), d.Severity, d.Code ?? "", d.Source ?? "lsp", d.Details));
         }
         if (KodoDiagnostics.VerboseLoggingEnabled && spans.Count > 0)
             KodoDiagnostics.LogDebug($"LSP GetDiagnosticsForFile {filePath} textLen={document.TextLength} raw={raw.Count} spans={spans.Count} first=[{spans[0].StartOffset}:{spans[0].Length}] {spans[0].Message}");

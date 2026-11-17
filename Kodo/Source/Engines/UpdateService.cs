@@ -100,6 +100,11 @@ internal static class UpdateService
         string? appBaseDirOverride = null)
     {
         var currentBase = currentBaseOverride ?? HotfixVersion.CurrentBaseVersion;
+        if (IsDevelopmentBuild && currentBaseOverride is null && statePathOverride is null && appBaseDirOverride is null)
+        {
+            var shipped = HotfixVersion.GetShippedHotfixLevel(appBaseDirOverride, currentBase);
+            return (HotfixVersion.NormalizeBaseVersion(currentBase) ?? currentBase, shipped);
+        }
         var state = HotfixStateStore.LoadOrDefault(statePathOverride, appBaseDirOverride);
         var stateFile = string.IsNullOrWhiteSpace(statePathOverride) ? HotfixStateStore.DefaultPath : statePathOverride;
         string updateRoot;

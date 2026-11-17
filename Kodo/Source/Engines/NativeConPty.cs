@@ -61,6 +61,9 @@ internal static class NativeConPty
     public static extern uint WaitForSingleObject(IntPtr hHandle, uint ms);
 
     [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
 
     [DllImport("kernel32.dll", SetLastError = true)]

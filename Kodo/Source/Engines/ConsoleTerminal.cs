@@ -392,6 +392,7 @@ public sealed class ConsoleTerminal : Control
                 if (!winCts.IsCancellationRequested)
                 {
                     attached.Exited = true;
+                    CaptureExitCode(attached);
                     Dispatcher.UIThread.Post(() =>
                     {
                         SessionExited?.Invoke(this, attached);
@@ -537,6 +538,7 @@ public sealed class ConsoleTerminal : Control
                             $"(exit code {SafeExitCode(shell)}).");
 
                     attached.Exited = true;
+                    CaptureExitCode(attached);
                     Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, attached));
                 }
             }, readerCts);
@@ -566,6 +568,45 @@ public sealed class ConsoleTerminal : Control
     {
         try { return process?.HasExited == true ? process.ExitCode.ToString() : "unknown"; }
         catch { return "unknown"; }
+    }
+
+    private const uint StillActiveExitCode = 259;
+
+    private static void CaptureExitCode(TerminalProcessHandle handle)
+    {
+        if (handle.ExitCode is not null) return;
+        handle.ExitCode = ReadExitCode(handle);
+    }
+
+    private static int? ReadExitCode(TerminalProcessHandle handle)
+    {
+        try
+        {
+            if (handle.PipeProcess is { } pipe && HasProcessExited(pipe) && pipe.HasExited)
+                return pipe.ExitCode;
+        }
+        catch
+        {
+        }
+        try
+        {
+            if (handle.PtyProcess is { } pty && HasProcessExited(pty) && pty.HasExited)
+                return pty.ExitCode;
+        }
+        catch
+        {
+        }
+        try
+        {
+            if (handle.HProcess != IntPtr.Zero &&
+                NativeConPty.GetExitCodeProcess(handle.HProcess, out var nativeExit) &&
+                nativeExit != StillActiveExitCode)
+                return unchecked((int)nativeExit);
+        }
+        catch
+        {
+        }
+        return null;
     }
 
     private void StopUnixPty()
@@ -687,6 +728,7 @@ public sealed class ConsoleTerminal : Control
             if (handle.Exited && !watcherCts.Token.IsCancellationRequested)
             {
                 var exited = handle;
+                CaptureExitCode(exited);
                 Dispatcher.UIThread.Post(() => DetachedSessionExited?.Invoke(this, exited));
             }
         }, watcherCts.Token);
@@ -740,6 +782,7 @@ public sealed class ConsoleTerminal : Control
                 if (exited && !cts.IsCancellationRequested)
                 {
                     handle.Exited = true;
+                    CaptureExitCode(handle);
                     Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
                 }
             }, cts);
@@ -751,6 +794,7 @@ public sealed class ConsoleTerminal : Control
             {
                 if (cts.IsCancellationRequested) return;
                 handle.Exited = true;
+                CaptureExitCode(handle);
                 Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
             };
         }
@@ -772,6 +816,7 @@ public sealed class ConsoleTerminal : Control
                 if (exited && !cts.IsCancellationRequested)
                 {
                     handle.Exited = true;
+                    CaptureExitCode(handle);
                     Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, handle));
                 }
             }, cts);
@@ -910,6 +955,7 @@ public sealed class ConsoleTerminal : Control
             {
                 if (pipeCts.IsCancellationRequested) return;
                 attached.Exited = true;
+                CaptureExitCode(attached);
                 Dispatcher.UIThread.Post(() => SessionExited?.Invoke(this, attached));
             };
         }
@@ -1341,13 +1387,31 @@ public sealed class ConsoleTerminal : Control
         var ft = TerminalGlyphCache.Get(label, _terminalForeground, false, FontSize);
 
         const int pad = 6;
-        var w = ft.Width + pad * 2;
+        var maxWidth = Math.Max(0, Bounds.Width - 12);
+        if (ft.Width + pad * 2 > maxWidth)
+        {
+            var maxElements = Math.Max(1, (int)((maxWidth - pad * 2) / CellW));
+            var elements = System.Globalization.StringInfo.GetTextElementEnumerator(label);
+            var builder = new StringBuilder();
+            var elementCount = 0;
+            while (elementCount < maxElements - 1 && elements.MoveNext())
+            {
+                builder.Append(elements.GetTextElement());
+                elementCount++;
+            }
+            builder.Append('…');
+            label = builder.ToString();
+            ft = TerminalGlyphCache.Get(label, _terminalForeground, false, FontSize);
+        }
+
+        var w = Math.Min(ft.Width + pad * 2, maxWidth);
         var h = ft.Height + pad * 2;
-        var rect = new Rect(Bounds.Width - w - 10, 6, w, h);
+        var rect = new Rect(Math.Max(6, Bounds.Width - w - 6), 6, w, h);
 
         ctx.FillRectangle(BrushCache.Get(Color.FromArgb(245, _terminalBackground.R, _terminalBackground.G, _terminalBackground.B)), rect);
         ctx.DrawRectangle(PenCache.Get(_cursorColor), rect);
-        ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
+        using (ctx.PushClip(rect))
+            ctx.DrawText(ft, new Point(rect.X + pad, rect.Y + pad));
     }
 
     private TermCell GetDisplayCell(int screenRow, int col, int scrollbackStart)

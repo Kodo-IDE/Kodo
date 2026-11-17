@@ -12,6 +12,8 @@ internal sealed class WorkerRequest
 {
     [JsonPropertyName("i")]
     public int Id { get; set; }
+    [JsonPropertyName("ci")]
+    public int CancelRequestId { get; set; }
     [JsonPropertyName("o")]
     public string Op { get; set; } = string.Empty;
     [JsonPropertyName("k")]
@@ -26,6 +28,10 @@ internal sealed class WorkerRequest
     public long TextByteLength { get; set; } = -1;
     [JsonPropertyName("d")]
     public string? FolderPath { get; set; }
+    [JsonPropertyName("dc")]
+    public LangRulesDocumentContext? DocumentContext { get; set; }
+    [JsonPropertyName("wc")]
+    public LangRulesWorkspaceContext? WorkspaceContext { get; set; }
 }
 
 internal sealed class WorkerResponse
@@ -68,6 +74,8 @@ internal sealed class WorkerErrorSpan
     public string Message { get; set; } = string.Empty;
     [JsonPropertyName("f")]
     public string Source { get; set; } = string.Empty;
+    [JsonPropertyName("g")]
+    public string Details { get; set; } = string.Empty;
 }
 
 internal sealed class WorkerExtensionSnapshot
@@ -82,6 +90,8 @@ internal sealed class WorkerExtensionSnapshot
     public string Type { get; set; } = string.Empty;
     [JsonPropertyName("exts")]
     public string[] Extensions { get; set; } = [];
+    [JsonPropertyName("lro")]
+    public Dictionary<string, string> LangRulesOptions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     [JsonPropertyName("kw")]
     public string[] Keywords { get; set; } = [];
     [JsonPropertyName("types")]
@@ -133,6 +143,7 @@ internal sealed class WorkerExtensionSnapshot
             Name = ext.Name,
             Type = ext.Type,
             Extensions = ext.Extensions ?? [],
+            LangRulesOptions = new Dictionary<string, string>(ext.LangRulesOptions, StringComparer.OrdinalIgnoreCase),
             Keywords = ext.Keywords ?? [],
             Types = ext.Types ?? [],
             Functions = ext.Functions ?? [],
@@ -163,6 +174,7 @@ internal sealed class WorkerExtensionSnapshot
             Name = Name,
             Type = Type,
             Extensions = Extensions,
+            LangRulesOptions = LangRulesOptions,
             Keywords = Keywords,
             Types = Types,
             Functions = Functions,

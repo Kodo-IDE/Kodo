@@ -2438,17 +2438,21 @@ public partial class MainWindow
         try
         {
             var current = Path.GetFullPath(startFolder);
+            var workspaceRoot = !string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath)
+                ? Path.GetFullPath(_currentFolderPath)
+                : null;
+            var searchBoundary = workspaceRoot is not null && IsPathInsideDirectory(current, workspaceRoot)
+                ? workspaceRoot
+                : current;
             while (!string.IsNullOrWhiteSpace(current))
             {
                 if (HasProjectFiles(current))
-                {
                     return current;
-                }
+
+                if (FileSystemPaths.Equals(current, searchBoundary))
+                    break;
 
                 var parent = Directory.GetParent(current);
-                if (parent is not null && HasProjectFiles(parent.FullName, current))
-                    return parent.FullName;
-
                 if (parent is null)
                     break;
 
@@ -2462,7 +2466,7 @@ public partial class MainWindow
         return null;
     }
 
-    private bool HasProjectFiles(string folder, string? excludedChild = null)
+    private bool HasProjectFiles(string folder)
     {
         if (HasDotnetProject(folder) ||
             File.Exists(Path.Combine(folder, "Cargo.toml")) ||
@@ -2478,41 +2482,22 @@ public partial class MainWindow
             File.Exists(Path.Combine(folder, "pyproject.toml")) ||
             File.Exists(Path.Combine(folder, "requirements.txt")) ||
             File.Exists(Path.Combine(folder, "setup.py")) ||
-            File.Exists(Path.Combine(folder, "Pipfile")))
+            File.Exists(Path.Combine(folder, "Pipfile")) ||
+            File.Exists(Path.Combine(folder, "Package.swift")) ||
+            File.Exists(Path.Combine(folder, "pubspec.yaml")) ||
+            File.Exists(Path.Combine(folder, "composer.json")) ||
+            File.Exists(Path.Combine(folder, "Gemfile")) ||
+            File.Exists(Path.Combine(folder, "mix.exs")) ||
+            File.Exists(Path.Combine(folder, "deno.json")) ||
+            File.Exists(Path.Combine(folder, "deno.jsonc")) ||
+            File.Exists(Path.Combine(folder, "stack.yaml")))
             return true;
 
         try
         {
-            foreach (var child in Directory.EnumerateDirectories(folder))
-            {
-                if (excludedChild is not null && child.Equals(excludedChild, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                var name = Path.GetFileName(child);
-                if (name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("packages", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (HasDotnetProject(child) ||
-                    File.Exists(Path.Combine(child, "Cargo.toml")) ||
-                    File.Exists(Path.Combine(child, "go.mod")) ||
-                    File.Exists(Path.Combine(child, "package.json")) ||
-                    File.Exists(Path.Combine(child, "pom.xml")) ||
-                    File.Exists(Path.Combine(child, "build.gradle")) ||
-                    File.Exists(Path.Combine(child, "build.gradle.kts")) ||
-                    File.Exists(Path.Combine(child, "CMakeLists.txt")) ||
-                    File.Exists(Path.Combine(child, "Makefile")) ||
-                    File.Exists(Path.Combine(child, "makefile")) ||
-                    File.Exists(Path.Combine(child, "GNUmakefile")) ||
-                    File.Exists(Path.Combine(child, "pyproject.toml")) ||
-                    File.Exists(Path.Combine(child, "requirements.txt")) ||
-                    File.Exists(Path.Combine(child, "setup.py")) ||
-                    File.Exists(Path.Combine(child, "Pipfile")))
-                    return true;
-            }
+            return Directory.EnumerateFiles(folder, "*.vcxproj", SearchOption.TopDirectoryOnly).Any() ||
+                Directory.EnumerateFiles(folder, "*.cabal", SearchOption.TopDirectoryOnly).Any() ||
+                Directory.EnumerateDirectories(folder, "*.xcodeproj", SearchOption.TopDirectoryOnly).Any();
         }
         catch { }
 
@@ -2573,21 +2558,7 @@ public partial class MainWindow
     {
         try
         {
-            if (DirectoryHasProjectFile(folder))
-                return true;
-
-            foreach (var sub in Directory.EnumerateDirectories(folder))
-            {
-                var name = Path.GetFileName(sub);
-                if (name.Equals("obj", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("bin", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("node_modules", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals(".git", StringComparison.OrdinalIgnoreCase) ||
-                    name.Equals("packages", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (DirectoryHasProjectFile(sub))
-                    return true;
-            }
+            return DirectoryHasProjectFile(folder);
         }
         catch { }
         return false;
@@ -2818,7 +2789,7 @@ public partial class MainWindow
         {
             var fileFolder = Path.GetDirectoryName(_currentFilePath);
             if (!string.IsNullOrWhiteSpace(fileFolder) && Directory.Exists(fileFolder))
-                return fileFolder;
+                return FindProjectRoot(fileFolder) ?? fileFolder;
         }
 
         if (!string.IsNullOrWhiteSpace(_currentFolderPath) && Directory.Exists(_currentFolderPath))
@@ -3067,13 +3038,6 @@ public partial class MainWindow
         }
 
         var workingDirectory = ResolveWorkingDirectory();
-        if (compiler?.Id.StartsWith("project:", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            var fileFolder = Path.GetDirectoryName(_currentFilePath ?? string.Empty);
-            workingDirectory = !string.IsNullOrWhiteSpace(fileFolder)
-                ? FindProjectRoot(fileFolder) ?? workingDirectory
-                : workingDirectory;
-        }
 
         if (ext.Equals(".go", StringComparison.OrdinalIgnoreCase) &&
             compiler is not null &&
@@ -3090,7 +3054,8 @@ public partial class MainWindow
         }
 
         var window = new CompilerRunWindow(
-            isBuild ? $"Kodo - Build ({toolLabel})" : $"Kodo - Run ({toolLabel})",
+            isBuild ? "Build" : "Run",
+            toolLabel,
             commandLine,
             exe,
             args,
@@ -3498,39 +3463,9 @@ public partial class MainWindow
             if (e.Key == Key.Escape) { dialog!.Close(); }
         };
 
-        var headerRow2 = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            Children =
-            {
-                new Border
-                {
-                    Width = 3,
-                    Height = 16,
-                    Background = AccentBrush,
-                    CornerRadius = new CornerRadius(2),
-                    VerticalAlignment = VerticalAlignment.Center
-                },
-                new TextBlock
-                {
-                    Text = title,
-                    FontSize = 15,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = PrimaryTextBrush,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    TextWrapping = TextWrapping.Wrap
-                }
-            }
-        };
+        var headerRow2 = DialogHeader.Create(AccentBrush, PrimaryTextBrush, AccentForegroundBrush, KodoIcons.CommandLine, title);
 
-        var divider2 = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var divider2 = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var inner2 = new StackPanel
         {

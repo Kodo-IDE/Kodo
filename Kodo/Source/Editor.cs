@@ -47,8 +47,8 @@ public partial class MainWindow
 
     private static readonly Color[] SemanticTokenPalette =
     {
-        Color.Parse("#569CD6"), Color.Parse("#4EC9B0"), Color.Parse("#DCDCAA"), Color.Parse("#C586C0"),
-        Color.Parse("#CE9178"), Color.Parse("#9CDCFE"), Color.Parse("#B5CEA8"), Color.Parse("#D7BA7D")
+        KodoDesignTokens.TokenBlue, KodoDesignTokens.TokenTeal, KodoDesignTokens.TokenYellow, KodoDesignTokens.TokenPurple,
+        KodoDesignTokens.TokenOrange, KodoDesignTokens.TokenCyan, KodoDesignTokens.TokenGreen, KodoDesignTokens.TokenGold
     };
     private static readonly IBrush[] SemanticTokenBrushes = SemanticTokenPalette
         .Select(color => (IBrush)new SolidColorBrush(color, 0.18))
@@ -423,8 +423,8 @@ public partial class MainWindow
 
         if (immediate)
         {
-            // Fire the refresh as soon as the dispatcher can, instead of waiting
-            // for the typing-stop debounce - used when a document finishes loading.
+
+
             _lspRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(25);
             _lspRefreshDebounceTimer.Stop();
             _lspRefreshDebounceTimer.Start();
@@ -533,6 +533,9 @@ public partial class MainWindow
             : _primaryDeadCodeHighlightRenderer;
         var errorReason = nowOverLink ? null : GetErrorReasonAt(position, textView, editor, filePath, errorRenderer);
         var deadCodeReason = nowOverLink ? null : GetDeadCodeReasonAt(position, textView, editor, filePath, deadCodeRenderer);
+        var diagnosticDetails = errorReason is null
+            ? null
+            : GetDiagnosticDetailsAt(position, textView, editor, errorRenderer);
         string? languageHover;
         if (nowOverLink || errorReason is not null || deadCodeReason is not null)
         {
@@ -556,7 +559,7 @@ public partial class MainWindow
                 lspHoverRequestKey = $"{pane.Id}\u001f{filePath}\u001f{RuntimeHelpers.GetHashCode(documentForHoverKey.Version)}\u001f{resolvedPosition.Line}:{resolvedPosition.Column}";
         }
 
-        string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason);
+        string? diagnosticMessage = BuildDiagnosticMessage(errorReason, deadCodeReason, diagnosticDetails);
         string? primaryReason = errorReason ?? deadCodeReason;
 
         if (nowOverLink == _isPointerOverEditorLink &&
@@ -918,7 +921,7 @@ public partial class MainWindow
         _lspHoverRequestKey = null;
     }
 
-    private static string? BuildDiagnosticMessage(string? errorReason, string? deadCodeReason)
+    private static string? BuildDiagnosticMessage(string? errorReason, string? deadCodeReason, string? diagnosticDetails)
     {
         if (errorReason is null && deadCodeReason is null) return null;
 
@@ -931,14 +934,42 @@ public partial class MainWindow
                 || errorReason.StartsWith("Hint:", StringComparison.OrdinalIgnoreCase);
             parts.Add(alreadyLabeled ? errorReason : $"Error: {errorReason}");
         }
+        if (!string.IsNullOrWhiteSpace(diagnosticDetails)) parts.Add(diagnosticDetails);
         if (deadCodeReason is not null) parts.Add($"Dead Code: {deadCodeReason}");
 
-        return parts.Count switch
+        return parts.Count == 1
+            ? parts[0]
+            : string.Join($"{Environment.NewLine}--------------------{Environment.NewLine}", parts);
+    }
+
+    private string? GetDiagnosticDetailsAt(
+        Point pointerPosition,
+        AvaloniaEdit.Rendering.TextView textView,
+        TextEditor editor,
+        ErrorLineHighlightRenderer renderer)
+    {
+        if (!TryGetHoveredDocumentPosition(pointerPosition, textView, editor, out var line, out _, out var offset))
+            return null;
+
+        var details = renderer.Spans
+            .Where(span => !string.IsNullOrWhiteSpace(span.Details) &&
+                offset >= span.StartOffset && offset < span.StartOffset + span.Length)
+            .Select(span => span.Details)
+            .Distinct(StringComparer.Ordinal)
+            .Take(3)
+            .ToList();
+        if (details.Count == 0 && line is not null && renderer.HasEolSpanOnLine(line.Offset, line.EndOffset))
         {
-            1 => parts[0],
-            2 => $"{parts[0]}{Environment.NewLine}--------------------{Environment.NewLine}{parts[1]}",
-            _ => null
-        };
+            details = renderer.Spans
+                .Where(span => !string.IsNullOrWhiteSpace(span.Details) &&
+                    span.StartOffset <= line.EndOffset && span.StartOffset + span.Length > line.Offset)
+                .Select(span => span.Details)
+                .Distinct(StringComparer.Ordinal)
+                .Take(3)
+                .ToList();
+        }
+
+        return details.Count == 0 ? null : string.Join(Environment.NewLine, details);
     }
 
     private string? GetLineTextAt(Point position, TextEditor editor)
@@ -1736,13 +1767,24 @@ public partial class MainWindow
                 return (Document: (AvaloniaEdit.Document.TextDocument?)null, Snapshot: (EditorTextSnapshot?)null, Revision: 0L, Caret: 0,
                     Rules: (LangRulesAdapter?)null, Pane: (EditorPaneState?)null, Editor: (AvaloniaEdit.TextEditor?)null,
                     Tab: (EditorTab?)null, Version: (AvaloniaEdit.Document.ITextSourceVersion?)null,
-                    FilePath: (string?)null, RevisionToken: CancellationToken.None, IsLargeFile: false);
+                    FilePath: (string?)null, Extension: (LoadedExtension?)null, Diagnostics: (IReadOnlyList<LangRuleDiagnostic>)Array.Empty<LangRuleDiagnostic>(),
+                    WorkspaceRoot: (string?)null, RevisionToken: CancellationToken.None, IsLargeFile: false);
             var editor = EditorTextBox;
+            var caret = editor.TextArea.Caret.Offset;
+            var currentLine = editor.Document.GetLineByOffset(caret).LineNumber;
+            var diagnostics = _errorHighlightRenderer.Spans
+                .Where(span => span.StartOffset <= caret && caret <= span.StartOffset + Math.Max(1, span.Length) ||
+                    editor.Document.GetLineByOffset(Math.Clamp(span.StartOffset, 0, editor.Document.TextLength)).LineNumber == currentLine)
+                .Select(span => new LangRuleDiagnostic(span.StartOffset, span.Length, span.Message, span.Severity, span.Code, span.Source))
+                .ToArray();
             return (Document: editor.Document, Snapshot: EditorTextSnapshotStore.GetSnapshot(editor.Document),
-                Revision: EditorSession.Revision, Caret: editor.TextArea.Caret.Offset, Rules: rules,
+                Revision: EditorSession.Revision, Caret: caret, Rules: rules,
                 Pane: (EditorPaneState?)_activeEditorPane, Editor: (AvaloniaEdit.TextEditor?)editor,
                 Tab: _activeEditorPane.ActiveTab, Version: editor.Document.Version,
                 FilePath: _currentFilePath,
+                Extension: CurrentLanguageExtension,
+                Diagnostics: (IReadOnlyList<LangRuleDiagnostic>)diagnostics,
+                WorkspaceRoot: _currentFolderPath,
                 RevisionToken: EditorSession.RevisionCancellationToken,
                 IsLargeFile: PerformanceBudget.IsLargeFile(editor.Document));
         });
@@ -1772,7 +1814,14 @@ public partial class MainWindow
         try
         {
             textSnapshot = await captured.Snapshot.GetTextAsync(captured.RevisionToken).ConfigureAwait(false);
-            actions = await EditorBackgroundWork.RunAsync(_ => captured.Rules.GetCodeActions(textSnapshot, captured.Caret), captured.RevisionToken).ConfigureAwait(false);
+            var documentContext = CreateLangRulesDocumentContext(
+                captured.FilePath ?? string.Empty,
+                textSnapshot,
+                captured.Revision,
+                captured.WorkspaceRoot,
+                captured.Extension);
+            var actionContext = new LangRulesCodeActionContext(documentContext, captured.Caret, captured.Diagnostics);
+            actions = await EditorBackgroundWork.RunAsync(token => captured.Rules.GetCodeActions(actionContext, token), captured.RevisionToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

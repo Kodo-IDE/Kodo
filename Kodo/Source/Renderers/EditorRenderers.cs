@@ -14,7 +14,7 @@ namespace Kodo.Models;
 
 public sealed class LspInlayHintRenderer : VisualLineElementGenerator
 {
-    private static readonly IBrush HintBrush = new SolidColorBrush(Color.Parse("#8A8A8A"));
+    private static readonly IBrush HintBrush = new SolidColorBrush(KodoDesignTokens.SlateGrey);
     private IReadOnlyList<(int Offset, string Label)> _hints = Array.Empty<(int, string)>();
     private TextDocument? _document;
 
@@ -426,7 +426,7 @@ public sealed class IndentGuideBackgroundRenderer : IBackgroundRenderer
 internal sealed class DeadCodeTextBrightener : DocumentColorizingTransformer
 {
 
-    public IBrush TextBrush { get; set; } = new SolidColorBrush(Color.Parse("#F5F5F5"));
+    public IBrush TextBrush { get; set; } = new SolidColorBrush(KodoDesignTokens.LightTextColor);
 
     private IReadOnlyList<DeadCodeSpan> _spans = Array.Empty<DeadCodeSpan>();
     private SpanOverlapIndex _spanIndex = SpanOverlapIndex.Empty;
@@ -610,7 +610,7 @@ internal sealed class ErrorLineHighlightRenderer : IBackgroundRenderer
     public IBrush StripeGreyBrush { get; set; } = new SolidColorBrush(Color.Parse("#9AA0A6"), 0.22);
     public IBrush WarningHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#CCA700"), 0.18);
     public IBrush InfoHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#3794FF"), 0.14);
-    public IBrush HintHighlightBrush { get; set; } = new SolidColorBrush(Color.Parse("#8A8A8A"), 0.12);
+    public IBrush HintHighlightBrush { get; set; } = new SolidColorBrush(KodoDesignTokens.SlateGrey, 0.12);
 
     private const double StripeWidth = 8.0;
 

@@ -10,6 +10,7 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit.Document;
+using GitSourceControl;
 using Kodo.Editor;
 using Kodo.Models;
 using System;
@@ -190,6 +191,9 @@ public partial class MainWindow
     private List<(string Name, string Kind, int Offset)>? _paletteSymbols;
     private bool _paletteSymbolsLoading;
     private int _paletteSymbolsVersion;
+    private List<GitBranch>? _paletteGitBranches;
+    private bool _paletteGitBranchesLoading;
+    private int _paletteGitBranchesVersion;
 
     private static PaletteMode GetPaletteMode(string? rawText, out string query)
     {
@@ -244,6 +248,9 @@ public partial class MainWindow
         _paletteSymbols = null;
         _paletteSymbolsLoading = false;
         _paletteSymbolsVersion++;
+        _paletteGitBranches = null;
+        _paletteGitBranchesLoading = false;
+        _paletteGitBranchesVersion++;
         RebuildQuickAccessExtras();
         StartQuickAccessFileIndex();
 
@@ -291,6 +298,8 @@ public partial class MainWindow
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 14, Spread = 0, Color = Color.FromArgb(55, 0, 0, 0) }),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
+            Opacity = AnimationKit.ReduceMotion ? 1d : 0d,
+            RenderTransform = AnimationKit.ReduceMotion ? null : AnimationKit.PresetLift(18),
         };
         var cardContent = new Grid();
         cardContent.Children.Add(body);
@@ -367,6 +376,7 @@ public partial class MainWindow
         _commandPaletteStatus = status;
         _commandPaletteSearchBox = paletteSearchBox;
         _commandPaletteUsesOverlaySearchBox = useOverlaySearchBox;
+        Dispatcher.UIThread.Post(() => AnimationKit.FadeIn(card, 170, 18), DispatcherPriority.Loaded);
         if (useOverlaySearchBox)
         {
             paletteSearchBox.TextChanged += CommandPalettePopupSearchBox_OnTextChanged;
@@ -458,6 +468,9 @@ public partial class MainWindow
         _paletteSymbols = null;
         _paletteSymbolsLoading = false;
         _paletteSymbolsVersion++;
+        _paletteGitBranches = null;
+        _paletteGitBranchesLoading = false;
+        _paletteGitBranchesVersion++;
         IsCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
         RemoveHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed);
         if (overlay is not null && Content is Grid root)
@@ -1072,6 +1085,8 @@ public partial class MainWindow
         return true;
     }
 
+    internal void OpenBranchPalette() => ShowCommandPalette(prefix: "> Switch Branch:");
+
     private List<PaletteCommand> BuildCommandPaletteCommands()
     {
         var hasLsp = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
@@ -1376,6 +1391,8 @@ public partial class MainWindow
                 command.KeepPaletteOpen));
         }
 
+        commands.AddRange(BuildGitBranchCommands());
+
         foreach (var recent in RecentFiles.Where(item => !item.IsFolder).Take(MaxRecentFiles))
         {
             var path = recent.Path;
@@ -1587,6 +1604,84 @@ public partial class MainWindow
         var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
         var encoding = hasLsp ? GetLspClientForFile(filePath!)?.PositionEncoding ?? "utf-16" : "utf-16";
         _ = LoadPaletteSymbolsAsync(document, snapshot, revision, revisionToken, filePath, languageRules, hasLsp, encoding, _paletteSymbolsVersion);
+    }
+
+    private void EnsurePaletteGitBranches()
+    {
+        if (_paletteGitBranches is not null || _paletteGitBranchesLoading)
+            return;
+        if (!IsGitSourceControlEnabled || _gitSourceControlIntegration is null)
+        {
+            _paletteGitBranches = [];
+            return;
+        }
+
+        _paletteGitBranchesLoading = true;
+        var version = _paletteGitBranchesVersion;
+        _ = LoadPaletteGitBranchesAsync(version);
+    }
+
+    private async Task LoadPaletteGitBranchesAsync(int version)
+    {
+        try
+        {
+            var branches = await _gitSourceControlIntegration!.LoadBranchesForPaletteAsync().ConfigureAwait(false);
+            await ApplyPaletteGitBranchesAsync(version, branches).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogDebug("Palette branch list load failed.", ex);
+            await ApplyPaletteGitBranchesAsync(version, []).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ApplyPaletteGitBranchesAsync(int version, IReadOnlyList<GitBranch> branches)
+    {
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (version != _paletteGitBranchesVersion || _commandPaletteOverlay is null)
+                return;
+            _paletteGitBranches = branches.OrderBy(branch => branch.IsRemote).ThenBy(branch => branch.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            _paletteGitBranchesLoading = false;
+            RefreshCommandPaletteResults();
+        });
+    }
+
+    private List<PaletteCommand> BuildGitBranchCommands()
+    {
+        EnsurePaletteGitBranches();
+        var commands = new List<PaletteCommand>();
+        commands.Add(new PaletteCommand("Switch Branch.", "Git", "",
+            () => { SetPaletteText("> Switch Branch:"); return Task.CompletedTask; },
+            () => IsGitSourceControlEnabled && _gitSourceControlIntegration is not null,
+            "git branch checkout switch", Section: "Git", KeepOpen: true));
+
+        if (_paletteGitBranches is null)
+            return commands;
+
+        foreach (var branch in _paletteGitBranches.Take(PaletteMaxResults))
+        {
+            var captured = branch;
+            commands.Add(new PaletteCommand($"Switch Branch: {branch.Name}", "Git", "",
+                () => SwitchGitBranchFromPaletteAsync(captured),
+                () => IsGitSourceControlEnabled && _gitSourceControlIntegration is not null,
+                "git branch checkout",
+                branch.IsCurrent ? "current branch" : string.Empty,
+                Section: "Git",
+                Badge: branch.IsCurrent ? "current" : string.Empty));
+        }
+
+        return commands;
+    }
+
+    private async Task SwitchGitBranchFromPaletteAsync(GitBranch branch)
+    {
+        var integration = _gitSourceControlIntegration;
+        if (integration is null) return;
+        _paletteGitBranchesVersion++;
+        _paletteGitBranches = null;
+        _paletteGitBranchesLoading = false;
+        await integration.SwitchGitBranchAsync(branch).ConfigureAwait(false);
     }
 
     private async Task LoadPaletteSymbolsAsync(

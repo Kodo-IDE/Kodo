@@ -19,6 +19,8 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
     private Process? _process;
     private IntPtr _windowHandle;
     private int? _exitCode;
+    private bool _isRenaming;
+    private string _renameText = string.Empty;
 
     public TerminalSession(string shellId, string shellDisplayName, string title, string workingDirectory)
     {
@@ -116,8 +118,14 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
             _statusText = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(StatusDotColor));
+            OnPropertyChanged(nameof(HasFailed));
+            OnPropertyChanged(nameof(ShowExitedStatus));
         }
     }
+
+    public bool HasFailed => StatusText.StartsWith("Failed");
+
+    public bool ShowExitedStatus => StatusText is "Exited" or "Closed";
 
     public string StatusDotColor => StatusText switch
     {
@@ -156,6 +164,32 @@ public sealed class TerminalSession : INotifyPropertyChanged, IDisposable
     }
 
     public bool HasWindowHandle => WindowHandle != IntPtr.Zero;
+
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set
+        {
+            if (_isRenaming == value)
+                return;
+
+            _isRenaming = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string RenameText
+    {
+        get => _renameText;
+        set
+        {
+            if (_renameText == value)
+                return;
+
+            _renameText = value;
+            OnPropertyChanged();
+        }
+    }
 
     public int? ExitCode
     {
@@ -239,6 +273,7 @@ public sealed class TerminalProcessHandle
     public IntPtr HThread = IntPtr.Zero;
     public bool IsUnixPty;
     public bool Exited;
+    public int? ExitCode;
     public CancellationTokenSource? WatcherCts;
 }
 

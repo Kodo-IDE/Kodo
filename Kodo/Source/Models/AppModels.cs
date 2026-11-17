@@ -9,6 +9,7 @@ namespace Kodo.Models;
 internal sealed class AppSettings
 {
     public const double DefaultTerminalPanelHeight = 300;
+    public const double DefaultTerminalSidebarWidth = 220;
     public const double DefaultExplorerPanelWidth = 260;
     public const double DefaultCommandPaletteWidth = 520;
 
@@ -40,6 +41,7 @@ internal sealed class AppSettings
     }
     public int TabSize { get; set; } = 4;
     public bool InsertSpaces { get; set; } = true;
+    public bool AutoDetectIndentationEnabled { get; set; } = true;
     public int EditorFontSize { get; set; } = 14;
     public string EditorFontFamily { get; set; } = "";
     public bool ConfirmBeforeClosingUnsavedTabsEnabled { get; set; } = true;
@@ -52,6 +54,7 @@ internal sealed class AppSettings
     public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
+    public double TerminalSidebarWidth { get; set; } = DefaultTerminalSidebarWidth;
     public int TerminalScrollbackLines { get; set; } = 5000;
     public double ExplorerPanelWidth { get; set; } = DefaultExplorerPanelWidth;
     public double CommandPaletteWidth { get; set; } = DefaultCommandPaletteWidth;
@@ -113,6 +116,7 @@ internal sealed class AppSettings
     public Dictionary<string, string> LspExecutableOverrides { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, bool> LspDisabledLanguages { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> LspDismissedInstallPrompts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public HashSet<string> DismissedAnnouncementBanners { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class RecentFileEntry

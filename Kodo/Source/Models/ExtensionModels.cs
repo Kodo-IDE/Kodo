@@ -5,6 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 
@@ -80,6 +81,8 @@ public static class KodoExtensionIds
 public sealed class LanguageSyntaxProfile
 {
     public string[] Extensions { get; init; } = [];
+    public string? FileIcon { get; init; }
+    public Dictionary<string, string> FileIcons { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string[] Keywords { get; init; } = [];
     public string[] Types { get; init; } = [];
     public string[] Functions { get; init; } = [];
@@ -197,6 +200,7 @@ public record class LoadedExtension : INotifyPropertyChanged
     public string Description { get; init; } = string.Empty;
     public string[] Extensions { get; init; } = [];
     public string[] Dependencies { get; init; } = [];
+    public Dictionary<string, string> LangRulesOptions { get; init; } = new(StringComparer.OrdinalIgnoreCase);
     public string[] Keywords { get; set; } = [];
     public string[] Types { get; set; } = [];
     public string[] Functions { get; set; } = [];
@@ -376,6 +380,22 @@ public class MarketplaceExtension : INotifyPropertyChanged
 
     public bool HasIcon => IconImage is not null || SvgData is not null;
     public string NameAbbreviation => Name.Length >= 2 ? Name[..2] : Name;
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set { if (_isSelected == value) return; _isSelected = value; OnPropertyChanged(); }
+    }
+
+    public string FileExtensionsText => string.Join("  ", FileExtensions);
+    public bool HasFileExtensions => FileExtensions.Length > 0;
+
+    public string PlatformText => string.Join(" · ", new[] { string.Join(", ", Os), string.Join(", ", Arch) }.Where(s => s.Length > 0));
+    public bool HasPlatform => Os.Length > 0 || Arch.Length > 0;
+
+    public string DependenciesText => string.Join(", ", Dependencies);
+    public bool HasDependencies => Dependencies.Length > 0;
 
     public bool IsInstalling
     {

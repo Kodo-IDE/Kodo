@@ -1,11 +1,13 @@
 // Licensed under the GNU GPL-v3.0
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Kodo;
@@ -35,6 +37,7 @@ public sealed class LangRulesAdapter : IDisposable
     private readonly MethodInfo? _positionHover;
     private readonly MethodInfo? _positionCompletions;
     private readonly ILangRulesProvider? _typedProvider;
+    private readonly ConcurrentDictionary<string, byte> _reportedProviderFailures = new(StringComparer.Ordinal);
     private bool _disposed;
 
     internal LangRulesAdapter(Type rules, AssemblyLoadContext loadContext, ILangRulesProvider? typedProvider = null)
@@ -129,13 +132,15 @@ public sealed class LangRulesAdapter : IDisposable
 
     public bool HasTokenizer => _tokenize is not null || TypedProvides(nameof(ILangRulesProvider.Tokenize));
     public bool HasSymbolAnalyzer => _symbols is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSymbols));
-    public bool HasDiagnostics => _diagnostics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSyntax));
-    public bool HasSemanticAnalyzer => _semantics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSemantics));
+    public bool HasSyntaxDiagnostics => _diagnostics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSyntax)) || TypedProvides(nameof(ILangRulesProvider.AnalyzeSyntaxAsync));
+    public bool HasWorkspaceDiagnostics => TypedProvides(nameof(ILangRulesProvider.AnalyzeWorkspaceAsync));
+    public bool HasDiagnostics => HasSyntaxDiagnostics || HasWorkspaceDiagnostics;
+    public bool HasSemanticAnalyzer => _semantics is not null || TypedProvides(nameof(ILangRulesProvider.AnalyzeSemantics)) || TypedProvides(nameof(ILangRulesProvider.AnalyzeSemanticsAsync));
     public bool HasDefinitionProvider => _definition is not null || TypedProvides(nameof(ILangRulesProvider.FindDefinition));
     public bool HasReferenceProvider => _references is not null || TypedProvides(nameof(ILangRulesProvider.FindReferences));
     public bool HasHoverProvider => _hover is not null || TypedProvides(nameof(ILangRulesProvider.GetHover));
     public bool HasSignatureHelpProvider => _signature is not null || TypedProvides(nameof(ILangRulesProvider.GetSignatureHelp));
-    public bool HasCodeActionProvider => _codeActions is not null || TypedProvides(nameof(ILangRulesProvider.GetCodeActions));
+    public bool HasCodeActionProvider => _codeActions is not null || TypedProvides(nameof(ILangRulesProvider.GetCodeActions)) || TypedProvides(nameof(ILangRulesProvider.GetCodeActionsAsync));
     public bool HasFormatter => _formatter is not null || TypedProvides(nameof(ILangRulesProvider.FormatDocument));
     public bool HasEmbeddedRegions => _embeddedRegions is not null || TypedProvides(nameof(ILangRulesProvider.GetEmbeddedRegions));
     public bool HasPositionNavigation => _positionDefinition is not null || _typedProvider is not null;
@@ -217,19 +222,87 @@ public sealed class LangRulesAdapter : IDisposable
     }
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSyntax(string code)
+        => AnalyzeSyntax(new LangRulesDocumentContext("untitled:", string.Empty, string.Empty, 0, code), CancellationToken.None);
+
+    public IReadOnlyList<LangRuleDiagnostic> AnalyzeSyntax(LangRulesDocumentContext document, CancellationToken cancellationToken)
     {
-        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSyntax(code));
+        if (_typedProvider is not null)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return _typedProvider.AnalyzeSyntaxAsync(document, cancellationToken).GetAwaiter().GetResult() ?? Array.Empty<LangRuleDiagnostic>();
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                ReportProviderFailure("AnalyzeSyntax", ex);
+                return [CreateProviderFailureDiagnostic(ex)];
+            }
+        }
         if (_diagnostics is null) return [];
-        var response = Dispatch("textDocument/diagnostics", code, request => _diagnostics.Invoke(null, [request.Document.Text]));
+        var response = Dispatch("textDocument/diagnostics", document.Text, request => _diagnostics.Invoke(null, [request.Document.Text]));
         return response.Result is null ? [] : ConvertDiagnostics(response.Result);
     }
 
     public IReadOnlyList<LangRuleDiagnostic> AnalyzeSemantics(string code)
+        => AnalyzeSemantics(new LangRulesDocumentContext("untitled:", string.Empty, string.Empty, 0, code), CancellationToken.None);
+
+    public IReadOnlyList<LangRuleDiagnostic> AnalyzeSemantics(LangRulesDocumentContext document, CancellationToken cancellationToken)
     {
-        if (_typedProvider is not null) return SafeTyped(() => _typedProvider.AnalyzeSemantics(code));
+        if (_typedProvider is not null)
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return _typedProvider.AnalyzeSemanticsAsync(document, cancellationToken).GetAwaiter().GetResult() ?? Array.Empty<LangRuleDiagnostic>();
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                ReportProviderFailure("AnalyzeSemantics", ex);
+                return [CreateProviderFailureDiagnostic(ex)];
+            }
+        }
         if (_semantics is null) return [];
-        var response = Dispatch("textDocument/semanticDiagnostics", code, request => _semantics.Invoke(null, [request.Document.Text]));
+        var response = Dispatch("textDocument/semanticDiagnostics", document.Text, request => _semantics.Invoke(null, [request.Document.Text]));
         return response.Result is null ? [] : ConvertDiagnostics(response.Result);
+    }
+
+    public IReadOnlyList<LangRuleWorkspaceDiagnostic> AnalyzeWorkspace(LangRulesWorkspaceContext workspace, CancellationToken cancellationToken)
+    {
+        if (_typedProvider is null || !HasWorkspaceDiagnostics) return [];
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _typedProvider.AnalyzeWorkspaceAsync(workspace, cancellationToken).GetAwaiter().GetResult() ?? Array.Empty<LangRuleWorkspaceDiagnostic>();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            ReportProviderFailure("AnalyzeWorkspace", ex);
+            var failed = CreateProviderFailureDiagnostic(ex);
+            return workspace.Documents.Select(document => new LangRuleWorkspaceDiagnostic(document.Uri, failed)).ToArray();
+        }
+    }
+
+    private static LangRuleDiagnostic CreateProviderFailureDiagnostic(Exception exception) => new(
+        0,
+        1,
+        $"Language extension analysis failed: {exception.GetType().Name}: {exception.Message}",
+        "warning",
+        "KODO-LANGRULES-FAILURE",
+        "Kodo")
+    {
+        Data = "Check the extension's LangRules provider implementation and Kodo diagnostic log."
+    };
+
+    private void ReportProviderFailure(string operation, Exception exception)
+    {
+        var providerName = _typedProvider?.GetType().FullName ?? _rules.FullName ?? _rules.Name;
+        var key = $"{operation}|{exception.GetType().FullName}|{exception.Message}";
+        if (_reportedProviderFailures.TryAdd(key, 0))
+            KodoDiagnostics.LogWarning("LangRulesAdapter", exception, operation: $"provider={providerName}; method={operation}");
     }
 
     public IReadOnlyList<LangRuleToken> Tokenize(string code)
@@ -248,10 +321,15 @@ public sealed class LangRulesAdapter : IDisposable
         return response.Result is null ? [] : ConvertSymbols(response.Result);
     }
 
-    private static IReadOnlyList<T> SafeTyped<T>(Func<IReadOnlyList<T>> operation)
+    private IReadOnlyList<T> SafeTyped<T>(Func<IReadOnlyList<T>> operation)
     {
         try { return operation() ?? Array.Empty<T>(); }
-        catch { return Array.Empty<T>(); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            ReportProviderFailure("typed provider method", ex);
+            return Array.Empty<T>();
+        }
     }
 
     private LanguageWorkerResponse Dispatch(string method, string code, Func<LanguageWorkerRequest, object?> handler, int offset = 0)
@@ -367,6 +445,23 @@ public sealed class LangRulesAdapter : IDisposable
         catch { return []; }
     }
 
+    public IReadOnlyList<LangRuleCodeAction> GetCodeActions(LangRulesCodeActionContext context, CancellationToken cancellationToken)
+    {
+        if (_typedProvider is null)
+            return GetCodeActions(context.Document.Text, context.Offset);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return _typedProvider.GetCodeActionsAsync(context, cancellationToken).GetAwaiter().GetResult() ?? Array.Empty<LangRuleCodeAction>();
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            ReportProviderFailure("GetCodeActions", ex);
+            return [];
+        }
+    }
+
     public string? FormatDocument(string code)
     {
         if (_typedProvider is not null) return SafeTypedValue(() => _typedProvider.FormatDocument(code));
@@ -383,9 +478,15 @@ public sealed class LangRulesAdapter : IDisposable
         catch { return []; }
     }
 
-    private static T? SafeTypedValue<T>(Func<T?> operation) where T : class
+    private T? SafeTypedValue<T>(Func<T?> operation) where T : class
     {
-        try { return operation(); } catch { return null; }
+        try { return operation(); }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            ReportProviderFailure("typed provider method", ex);
+            return null;
+        }
     }
 
     public IReadOnlyDictionary<string, Regex> GetRegexes()

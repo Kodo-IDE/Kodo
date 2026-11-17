@@ -1,8 +1,11 @@
 // Licensed under the GNU GPL-v3.0
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
@@ -717,6 +720,8 @@ public partial class MainWindow
             if (lastIconException is not null && (rateLimited > 0 || !HasActiveInternetConnection()))
                 try { RefreshMarketplaceConnectivityState("Marketplace icon fetch", lastIconException); } catch { }
         }
+
+        try { RefreshRunBuildState(); } catch { }
     }
 
     private async Task<IconResult> GetCachedIconAsync(string iconUrl)
@@ -1305,6 +1310,56 @@ public partial class MainWindow
         RaiseMany(nameof(AvailableExtensionUpdatesCount), nameof(IsExtensionUpdateBannerVisible), nameof(ExtensionUpdatesBannerText), nameof(AutoUpdateExtensionsStatusText));
         NotifyExtensionActionStateChanged();
         NotifyExtensionFiltersChanged();
+    }
+
+    private MarketplaceExtension? _selectedMarketplaceExtension;
+
+    public MarketplaceExtension? SelectedMarketplaceExtension
+    {
+        get => _selectedMarketplaceExtension;
+        set
+        {
+            if (ReferenceEquals(_selectedMarketplaceExtension, value)) return;
+            if (_selectedMarketplaceExtension is not null) _selectedMarketplaceExtension.IsSelected = false;
+            _selectedMarketplaceExtension = value;
+            if (value is not null) value.IsSelected = true;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsExtensionDetailOpen));
+            OnPropertyChanged(nameof(MarketplaceGridColumns));
+        }
+    }
+
+    public bool IsExtensionDetailOpen => _selectedMarketplaceExtension is not null;
+
+    public int MarketplaceGridColumns => IsExtensionDetailOpen ? 2 : 3;
+
+    private void ReconcileSelectedMarketplaceExtension()
+    {
+        var selected = _selectedMarketplaceExtension;
+        if (selected is null) return;
+
+        var current = MarketplaceExtensions.FirstOrDefault(e => string.Equals(e.Id, selected.Id, StringComparison.OrdinalIgnoreCase))
+                      ?? CompilerExtensions.FirstOrDefault(e => string.Equals(e.Id, selected.Id, StringComparison.OrdinalIgnoreCase));
+        if (!ReferenceEquals(current, selected)) SelectedMarketplaceExtension = current;
+    }
+
+    private void MarketplaceTile_OnTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Border { Tag: MarketplaceExtension extension } tile) return;
+        if (e.Source is Visual source &&
+            source.GetSelfAndVisualAncestors().TakeWhile(v => !ReferenceEquals(v, tile)).Any(v => v is Button))
+            return;
+
+        SelectedMarketplaceExtension = ReferenceEquals(SelectedMarketplaceExtension, extension) ? null : extension;
+    }
+
+    private void CloseExtensionDetailButton_OnClick(object? sender, RoutedEventArgs e) =>
+        SelectedMarketplaceExtension = null;
+
+    private void ExtensionDetailInstallButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsCompilersTabSelected) InstallCompilerExtensionButton_OnClick(sender, e);
+        else InstallMarketplaceExtensionButton_OnClick(sender, e);
     }
 
     private void NotifyExtensionFiltersChanged()
@@ -2221,26 +2276,36 @@ public partial class MainWindow
         var hasInternetConnection = HasActiveInternetConnection();
 
         string message = string.Empty;
+        var cause = string.Empty;
 
         if (!hasInternetConnection)
         {
             message = hasWirelessConnection
                 ? "No internet connection. Marketplace installs and updates won't work until you're back online."
                 : "No Wi-Fi or internet detected. Marketplace installs and updates won't work until you're back online.";
+            cause = "offline";
         }
         else if (exception is not null)
         {
-            message = IsGitHubRateLimitException(exception)
-                ? "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets."
-                : hasWirelessConnection
+            if (IsGitHubRateLimitException(exception))
+            {
+                message = "GitHub's API rate limit was hit. Marketplace refreshes will resume once it resets.";
+                cause = "ratelimit";
+            }
+            else
+            {
+                message = hasWirelessConnection
                     ? "Couldn't reach the marketplace. Your connection may be unstable - try again in a moment."
                     : "No Wi-Fi detected. If you're expecting a connection, reconnect first. Marketplace downloads may fail while offline.";
+                cause = "unknown";
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(operation) && !string.IsNullOrWhiteSpace(message))
             message = $"{message} (Last issue: {operation})";
 
         MarketplaceConnectivityMessage = message;
+        MarketplaceConnectivityCause = cause;
         IsMarketplaceConnectivityWarningVisible = !string.IsNullOrWhiteSpace(message);
     }
 
