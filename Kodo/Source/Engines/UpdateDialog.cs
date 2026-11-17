@@ -31,13 +31,13 @@ internal sealed class UpdateDialog : Window
     private bool _isDownloading;
     private bool _isReady;
 
-    private readonly bool _linuxManualOnly;
+    private readonly bool _manualOnly;
 
     public UpdateDialog(UpdateInfo update, string? stagedInstallerPath = null)
     {
         _update = update;
         _stagedInstallerPath = stagedInstallerPath;
-        _linuxManualOnly = UpdateService.IsLinuxNotifyOnly ||
+        _manualOnly = UpdateService.IsManualInstallOnly ||
             (OperatingSystem.IsLinux() && !UpdateService.IsLinuxAutoInstallAsset(update.AssetName));
         var isBeta = UpdateService.IsBetaVersionTag(update.Version);
         _palette = ThemeResolver.GetCurrentPalette();
@@ -58,8 +58,8 @@ internal sealed class UpdateDialog : Window
             Text = isBeta
                 ? "This is an unstable beta release. It is entirely optional and will only be downloaded if you choose Download Update."
                 : stagedInstallerPath is not null && File.Exists(stagedInstallerPath)
-                ? (_linuxManualOnly
-                    ? UpdateService.LinuxReadyBlurb(stagedInstallerPath)
+                ? (_manualOnly
+                    ? UpdateService.ManualInstallBlurb(stagedInstallerPath)
                     : "Update downloaded and ready to install. Choose Restart & Update when you're ready.")
                 : "A new version of Kodo has been published. Update now to get the latest fixes and features.",
             FontSize = 13,
@@ -77,7 +77,7 @@ internal sealed class UpdateDialog : Window
         _primaryButton = new Button
         {
             Content = stagedInstallerPath is not null
-                ? (_linuxManualOnly ? "Show in Folder" : "Restart & Update")
+                ? (_manualOnly ? "Show in Folder" : "Restart & Update")
                 : "Download Update",
             HorizontalAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(20, 8),
@@ -205,10 +205,10 @@ internal sealed class UpdateDialog : Window
         }
         if (_isReady && _stagedInstallerPath is not null && File.Exists(_stagedInstallerPath))
         {
-            if (_linuxManualOnly)
+            if (_manualOnly)
             {
                 UpdateService.OpenFolderInFileManager(_stagedInstallerPath);
-                _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
+                _statusText.Text = UpdateService.ManualInstallBlurb(_stagedInstallerPath);
                 return;
             }
             _canClose = false;
@@ -256,9 +256,9 @@ internal sealed class UpdateDialog : Window
             _isDownloading = false;
             _isReady = true;
             _progressBar.Value = 1;
-            if (_linuxManualOnly)
+            if (_manualOnly)
             {
-                _statusText.Text = UpdateService.LinuxReadyBlurb(_stagedInstallerPath);
+                _statusText.Text = UpdateService.ManualInstallBlurb(_stagedInstallerPath);
                 _primaryButton.Content = "Show in Folder";
             }
             else

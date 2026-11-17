@@ -324,6 +324,21 @@ internal static class UpdateService
             KodoDiagnostics.LogDebug(LastIncompatibleReason);
             return null;
         }
+        if (OperatingSystem.IsWindows() && IsWindowsPortableInstall())
+        {
+            var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
+            var archTokens = arch == "arm64"
+                ? new[] { "arm64", "aarch64" }
+                : new[] { "x64", "x86_64", "amd64" };
+            var portable = assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase))
+                && a.Name.StartsWith("Kodo", StringComparison.OrdinalIgnoreCase)
+                && a.Name.Contains("Portable", StringComparison.OrdinalIgnoreCase)
+                && a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+            if (portable is not null) return portable;
+            LastIncompatibleReason = $"No portable build available (arch={arch}, need a Kodo-*Portable.zip asset).";
+            KodoDiagnostics.LogDebug(LastIncompatibleReason);
+            return null;
+        }
         var preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo-", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith("-Installer.exe", StringComparison.OrdinalIgnoreCase));
         if (preferred is not null) return preferred;
         preferred = assets.FirstOrDefault(a => a.Name.StartsWith("Kodo", StringComparison.OrdinalIgnoreCase) && a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
@@ -483,6 +498,24 @@ internal static class UpdateService
 
     internal static bool IsLinuxNotifyOnly => OperatingSystem.IsLinux() && !IsManagedLinuxInstall();
 
+    internal static bool IsManualInstallOnly =>
+        IsLinuxNotifyOnly || IsWindowsPortableInstall();
+
+    internal static bool IsWindowsPortableInstall()
+    {
+        if (!OperatingSystem.IsWindows()) return false;
+        try { return !IsWindowsInstallerRegistered(); }
+        catch { return false; }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static bool IsWindowsInstallerRegistered()
+    {
+        const string uninstallSubkey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\{559E9D51-C72B-442D-A283-D0E6B618A60B}_is1";
+        return Microsoft.Win32.Registry.CurrentUser.OpenSubKey(uninstallSubkey) is not null
+            || Microsoft.Win32.Registry.LocalMachine.OpenSubKey(uninstallSubkey) is not null;
+    }
+
     internal static bool IsManagedLinuxInstall(string? appBaseDirOverride = null)
     {
         if (!OperatingSystem.IsLinux()) return false;
@@ -527,12 +560,14 @@ internal static class UpdateService
         }
     }
 
-    internal static string LinuxReadyBlurb(string stagedPath) =>
+    internal static string ManualInstallBlurb(string stagedPath) =>
         stagedPath.EndsWith(".deb", StringComparison.OrdinalIgnoreCase)
             ? "Download complete. Install it with e.g. sudo dpkg -i <file> (or your software center), then restart Kodo."
             : stagedPath.EndsWith(".AppImage", StringComparison.OrdinalIgnoreCase)
                 ? "Download complete. Make it executable (chmod +x), move it where you keep apps, then restart Kodo from it."
-                : "Download complete. Extract the archive over your install folder (keeping the Kodo binary executable with chmod +x), then restart Kodo.";
+                : stagedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && OperatingSystem.IsWindows()
+                    ? "Download complete. Extract the archive over your install folder (keep Kodo.exe in the same layout), then restart Kodo."
+                    : "Download complete. Extract the archive over your install folder (keeping the Kodo binary executable with chmod +x), then restart Kodo.";
 
     internal static void CleanupStaleArtifacts()
     {
@@ -607,7 +642,10 @@ internal static class UpdateService
             downloadUri.Scheme != Uri.UriSchemeHttps ||
             !string.Equals(downloadUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Update asset URL must be an HTTPS GitHub release URL.");
-        if (OperatingSystem.IsWindows() && !safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) safeName += ".exe";
+        if (OperatingSystem.IsWindows() &&
+            !safeName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+            !safeName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+            safeName += ".exe";
         var finalPath = Path.Combine(versionDir, safeName);
         var partialPath = finalPath + ".partial";
 
