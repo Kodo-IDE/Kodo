@@ -65,7 +65,6 @@ public sealed class MarketplaceTileWidthMultiConverter : IMultiValueConverter
     private const double ScrollbarGutter = 20;
     private const double TileMargin = 16;
     private const double MinTileWidth = 200;
-    private const double DetailPaneReserve = 356;
 
     public object? Convert(IList<object?> values, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -73,7 +72,7 @@ public sealed class MarketplaceTileWidthMultiConverter : IMultiValueConverter
 
         var detailOpen = values[1] is true;
         var columns = detailOpen ? 2 : 3;
-        var available = width - HorizontalPadding - ScrollbarGutter - (detailOpen ? DetailPaneReserve : 0);
+        var available = width - HorizontalPadding - ScrollbarGutter;
         return Math.Max(MinTileWidth, available / columns - TileMargin);
     }
 }
