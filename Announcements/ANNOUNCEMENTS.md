@@ -112,7 +112,7 @@ This patch features UI improvements, editor fixes, Marketplace refinements, and 
 ## v2.3 is here!
 > 2026-11-17
 ~Banner~
-#71257273357192747485
+#71257273357192747485#
 All systems go!
 ---
 
