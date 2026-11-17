@@ -108,3 +108,15 @@ This update features a command palette, editor minimap, native Git Source Contro
 > 2026-11-11
 This patch features UI improvements, editor fixes, Marketplace refinements, and various bug fixes for a smoother Kodo experience.
 ---
+
+## v2.3 is here!
+> 2026-11-17
+~Banner~
+#71257273357192747485#
+All systems go!
+---
+
+## v2.3 is here!
+> 2026-11-17
+This update features a redesigned UI built on a shared token system, a redesigned terminal with a larger, resizable sidebar, project-aware file icons in the Explorer, a major extension-engine upgrade with LangRules now running asynchronously in an isolated Insight worker (workspace diagnostics and diagnostic-aware code actions), announcement banners above the editor, and KodoIcons throughout the app.
+---
