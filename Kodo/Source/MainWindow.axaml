@@ -5493,7 +5493,9 @@ ToolTip.Tip="{Binding Path}" />
                     </StackPanel>
                 </Border>
 
-                <ScrollViewer Grid.Row="1"
+                <Grid Grid.Row="1"
+                      ColumnDefinitions="*,Auto">
+                <ScrollViewer Grid.Column="0"
                               Name="ExtensionsScrollViewer"
                               Padding="24"
                               VerticalScrollBarVisibility="Auto"
@@ -6134,7 +6136,7 @@ ToolTip.Tip="{Binding Path}" />
                             </Grid>
                         </StackPanel>
 
-                        <Grid ColumnDefinitions="*,Auto">
+                        <Grid>
 <StackPanel IsVisible="{Binding IsMarketplaceSectionTabSelected}">
 
                             <Border Background="{Binding CardBrush}"
@@ -6496,10 +6498,14 @@ ToolTip.Tip="{Binding Path}" />
                             </Border>
                         </StackPanel>
 
+
+</Grid>
+                    </StackPanel>
+                </ScrollViewer>
 <ContentControl Grid.Column="1"
                 Width="340"
-                Margin="16,6,0,0"
-                VerticalAlignment="Top"
+                Margin="0,24,24,24"
+                VerticalAlignment="Stretch"
                 IsVisible="{Binding IsExtensionDetailOpen}"
                 Content="{Binding SelectedMarketplaceExtension}">
     <ContentControl.ContentTemplate>
@@ -6509,7 +6515,7 @@ ToolTip.Tip="{Binding Path}" />
                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
                     CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
                     Padding="18">
-                <StackPanel Spacing="12">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Spacing="12">
                     <Grid RowDefinitions="Auto,Auto" RowSpacing="12">
                         <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                             <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
@@ -6655,13 +6661,12 @@ ToolTip.Tip="{Binding Path}" />
                                    Text="{Binding DependenciesText}" />
                     </StackPanel>
                 </StackPanel>
+                    </ScrollViewer>
             </Border>
         </DataTemplate>
     </ContentControl.ContentTemplate>
 </ContentControl>
-</Grid>
-                    </StackPanel>
-                </ScrollViewer>
+                </Grid>
             </Grid>
 
             <Grid x:Name="SettingsPageGrid"
