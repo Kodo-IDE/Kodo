@@ -275,6 +275,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isRefreshingLatestRelease;
     private bool _isSettingsPageVisible;
     private bool _isExtensionsPageVisible;
+    private bool _isAtlasPageVisible;
     private bool _isTutorialPageVisible;
     private bool _tutorialOpenedFromSettings;
     private bool _isWhatsNewPageVisible;
@@ -336,7 +337,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _statusBarDiagnosticsText = "No problems";
     private string _statusBarDiagnosticsTooltip = "No problems detected";
     private bool _pendingFullStateRefresh = true;
-    private (string?, string?, int, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
+    private (string?, string?, int, bool, bool, bool, bool, bool, bool) _lastDiscordPresenceKey;
     private bool _hasDiscordPresenceKey;
     private readonly DateTime _sessionStart = DateTime.UtcNow;
     private bool _isFirstLaunch;
@@ -2396,6 +2397,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
+    public bool IsAtlasPageVisible
+    {
+        get => _isAtlasPageVisible;
+        set
+        {
+            if (_isAtlasPageVisible == value) return;
+            _isAtlasPageVisible = value;
+            OnPropertyChanged();
+            RaiseMany(EditorPageVisibilityDependents);
+        }
+    }
+
     public bool IsTutorialPageVisible
     {
         get => _isTutorialPageVisible;
@@ -2652,7 +2665,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
-    public bool IsEditorPageVisible => !IsHomePageVisible && !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
+    public bool IsEditorPageVisible => !IsHomePageVisible && !IsSettingsPageVisible && !IsExtensionsPageVisible && !IsAtlasPageVisible && !IsTutorialPageVisible && !IsWhatsNewPageVisible;
 
     public bool IsHomeOrEditorPageVisible => IsHomePageVisible || IsEditorPageVisible;
 
@@ -6398,10 +6411,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private (string? filePath, string? folderPath, int tabCount,
-             bool untitled, bool imagePreview, bool settings, bool extensions, bool home) GetDiscordPresenceKey() =>
+             bool untitled, bool imagePreview, bool settings, bool extensions, bool home, bool atlas) GetDiscordPresenceKey() =>
         (_currentFilePath, _currentFolderPath, OpenTabs.Count,
          _hasUntitledDocument, HasImagePreview, _isSettingsPageVisible, _isExtensionsPageVisible,
-         _isHomePageVisible);
+         _isHomePageVisible, _isAtlasPageVisible);
 
     private string GetDiscordPresenceDetails()
     {
@@ -6415,6 +6428,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_isSettingsPageVisible) return "Tweaking settings";
         if (_isExtensionsPageVisible) return "Browsing extensions";
+        if (_isAtlasPageVisible) return "Exploring Atlas";
         if (_isHomePageVisible) return "On the home screen";
         if (_isTutorialPageVisible) return "Following the tutorial";
         if (_isWhatsNewPageVisible) return "Reading what's new";
@@ -7700,6 +7714,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         if (_isSettingsPageVisible) return "Settings";
         if (_isExtensionsPageVisible) return "Extensions";
+        if (_isAtlasPageVisible) return "Atlas";
         if (_isTutorialPageVisible) return "Tutorial";
         if (_isHomePageVisible) return $"Kodo{birthday}";
 
@@ -8097,11 +8112,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var newTutorial = page == AppPage.Tutorial;
         var newWhatsNew = page == AppPage.WhatsNew;
 
+        var newAtlas = page == AppPage.Atlas;
+
         if (_isHomePageVisible == newHome &&
             _isSettingsPageVisible == newSettings &&
             _isExtensionsPageVisible == newExtensions &&
             _isTutorialPageVisible == newTutorial &&
-            _isWhatsNewPageVisible == newWhatsNew)
+            _isWhatsNewPageVisible == newWhatsNew &&
+            _isAtlasPageVisible == newAtlas)
             return;
 
         _isHomePageVisible = newHome;
@@ -8109,6 +8127,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isExtensionsPageVisible = newExtensions;
         _isTutorialPageVisible = newTutorial;
         _isWhatsNewPageVisible = newWhatsNew;
+        _isAtlasPageVisible = newAtlas;
 
         if (newSettings)
             NotifySettingsSearchChanged();
@@ -8120,11 +8139,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
-        var shownPage = newSettings ? "SettingsPageGrid" : newExtensions ? "ExtensionsPageGrid" : newTutorial ? "TutorialPageGrid" : null;
+        var shownPage = newSettings ? "SettingsPageGrid" : newExtensions ? "ExtensionsPageGrid" : newAtlas ? "AtlasPageGrid" : newTutorial ? "TutorialPageGrid" : null;
         if (shownPage is not null && this.FindControl<Control>(shownPage) is { } pagePreset)
             AnimationKit.PresetFade(pagePreset, 10);
 
-        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsAtlasPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
 
         if (shownPage is not null)
@@ -8466,6 +8485,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
+
+    private void AtlasButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
+        NavigateTo(AppPage.Atlas);
+    }
 
     private void SettingsButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -11170,7 +11195,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SelectedMarketplaceExtension = null;
                 e.Handled = true;
             }
-            else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible)
+            else if (IsSettingsPageVisible || IsExtensionsPageVisible || IsWhatsNewPageVisible || IsAtlasPageVisible)
             {
                 NavigateTo(AppPage.Editor);
                 FocusEditor();

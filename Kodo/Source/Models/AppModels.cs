@@ -246,7 +246,8 @@ internal enum AppPage
     Settings,
     Extensions,
     Tutorial,
-    WhatsNew
+    WhatsNew,
+    Atlas
 }
 
 internal sealed record TutorialStep(

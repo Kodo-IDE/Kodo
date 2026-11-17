@@ -207,7 +207,8 @@ internal sealed class GitSourceControlIntegration
         }
         else if (e.PropertyName is nameof(MainWindow.IsHomePageVisible) or nameof(MainWindow.IsEditorPageVisible)
                  or nameof(MainWindow.IsSettingsPageVisible) or nameof(MainWindow.IsExtensionsPageVisible)
-                 or nameof(MainWindow.IsTutorialPageVisible) or nameof(MainWindow.IsWhatsNewPageVisible))
+                 or nameof(MainWindow.IsTutorialPageVisible) or nameof(MainWindow.IsWhatsNewPageVisible)
+                 or nameof(MainWindow.IsAtlasPageVisible))
         {
             SyncWithHostPage();
         }

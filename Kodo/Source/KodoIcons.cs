@@ -71,6 +71,7 @@ internal static class KodoIcons
     public static string EllipsisHorizontal { get; } = Load("ellipsis-horizontal");
     public static string Square { get; } = Load("square");
     public static string ChevronRight { get; } = Load("chevron-right");
+    public static string Atlas { get; } = Load("atlas");
 
     public static string SymbolVariable { get; } = Load("symbol-variable");
     public static string SymbolFunction { get; } = Load("symbol-function");

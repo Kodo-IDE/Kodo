@@ -1214,6 +1214,15 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
+                    <Button Classes="activity" Classes.active="{Binding IsAtlasPageVisible}" Click="AtlasButton_OnClick" AutomationProperties.Name="Atlas (Experimental)"
+                            ToolTip.Tip="Atlas (Experimental)">
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                <svg:Svg Width="24" Height="24" CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                      Source="{x:Static kodo:KodoIcons.Atlas}" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
                     <Button Classes="activity"
                             Classes.active="{Binding IsGitSourceControlPanelOpen}"
                             Click="GitSourceControlActivityButton_OnClick"
@@ -6667,6 +6676,61 @@ ToolTip.Tip="{Binding Path}" />
     </ContentControl.ContentTemplate>
 </ContentControl>
                 </Grid>
+            </Grid>
+            <Grid x:Name="AtlasPageGrid"
+                  IsVisible="{Binding IsAtlasPageVisible}"
+                  IsHitTestVisible="{Binding IsAtlasPageVisible}"
+                  Background="{Binding EditorBackgroundBrush}"
+                  RowDefinitions="Auto,*">
+                <Border Grid.Row="0"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
+                        Padding="24,18">
+                    <Grid ColumnDefinitions="*">
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <Border Classes="accentpill" Height="26" Background="{Binding AccentBrush}" />
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeroLargeFontSize}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="Atlas" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+                <StackPanel Grid.Row="1"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="0">
+                    <Viewbox Width="220" Height="220" HorizontalAlignment="Center">
+                        <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}"
+                                Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                            <svg:Svg Width="24" Height="24"
+                                     CurrentColor="{Binding AccentBrush, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                     Source="{x:Static kodo:KodoIcons.Atlas}" />
+                        </Canvas>
+                    </Viewbox>
+                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.DisplayLargeFontSize}"
+                               FontWeight="SemiBold"
+                               Foreground="{Binding PrimaryTextBrush}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               Margin="0,20,0,0"
+                               Text="Kodo Atlas" />
+                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SectionFontSize}"
+                               Foreground="{Binding PrimaryTextBrush}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               LineHeight="26"
+                               Margin="0,12,0,0"
+                               Text="Understand your codebase." />
+                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                               Foreground="{Binding MutedTextBrush}"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               Margin="0,20,0,0"
+                               Text="Visual code exploration is coming." />
+                </StackPanel>
             </Grid>
 
             <Grid x:Name="SettingsPageGrid"
