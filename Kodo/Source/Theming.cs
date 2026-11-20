@@ -173,6 +173,7 @@ public partial class MainWindow
 
     private void ApplyThemeToEditor()
     {
+        ApplyStickyScrollTheme();
         EditorMinimapView?.SetTheme(EditorBackgroundBrush, MutedTextBrush, AccentBrush, DangerBrush);
         SecondaryEditorMinimapView?.SetTheme(EditorBackgroundBrush, MutedTextBrush, AccentBrush, DangerBrush);
         if (TerminalHostControl is not null)

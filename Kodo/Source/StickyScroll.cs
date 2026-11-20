@@ -123,6 +123,16 @@ public partial class MainWindow
         else _primaryStickyPane = sticky;
     }
 
+    private void ApplyStickyScrollTheme()
+    {
+        foreach (var sticky in new[] { _primaryStickyPane, _secondaryStickyPane })
+        {
+            if (sticky is null) continue;
+            sticky.Root.Background = EditorBackgroundBrush;
+            sticky.Root.BorderBrush = SurfaceBorderBrush;
+        }
+    }
+
     private double StickyScrollLineHeight(TextView textView)
     {
         try
