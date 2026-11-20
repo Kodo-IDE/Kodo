@@ -9,6 +9,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
+using AvaloniaEdit.Editing;
 using AvaloniaEdit.Folding;
 using AvaloniaEdit.Rendering;
 using Kodo.Editor;
@@ -237,6 +238,7 @@ public partial class MainWindow
         editor.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         editor.FontFamily = KodoFonts.MonoFamily;
         editor.TextArea.TextView.Options.AllowScrollBelowDocument = false;
+        EnsureBookmarkMargin(editor);
         AddEditorRenderers(editor.TextArea.TextView, secondaryPane: true);
         editor.TextArea.TextView.LinkTextForegroundBrush = SharedLinkTextBrush;
         editor.TextArea.TextView.LinkTextBackgroundBrush = Brushes.Transparent;
