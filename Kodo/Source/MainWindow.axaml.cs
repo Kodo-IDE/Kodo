@@ -1220,23 +1220,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         LoadOrScanStartupThemes();
         ApplyThemeBrushes(_requestedThemeName);
 
-        var extensionStartupLoading = BeginAppLoading("Loading extensions");
-        _initialExtensionScanTask = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(50);
-                var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    ApplyLoadedExtensionsResult(scan);
-                    RefreshCurrentFileSyntaxHighlighting();
-                }, DispatcherPriority.Background);
-            }
-            catch (Exception ex) { KodoDiagnostics.LogDebug("Deferred LoadExtensions failed", ex); }
-            finally { extensionStartupLoading.Dispose(); }
-        });
-
         Closed += (_, _) =>
         {
             _lspRefreshDebounceTimer.Stop();
@@ -7099,6 +7082,22 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void InitializeDeferredStartupWork()
     {
+        var extensionStartupLoading = BeginAppLoading("Loading extensions");
+        _initialExtensionScanTask = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(750);
+                var scan = await Task.Run(() => ScanInstalledExtensions()).ConfigureAwait(false);
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ApplyLoadedExtensionsResult(scan);
+                    RefreshCurrentFileSyntaxHighlighting();
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("Deferred LoadExtensions failed", ex); }
+            finally { extensionStartupLoading.Dispose(); }
+        });
 
         _ = Task.Run(async () =>
         {
