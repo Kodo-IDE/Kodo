@@ -428,7 +428,7 @@ internal sealed class GitSourceControlIntegration
         headerGrid.Children.Add(accentMark);
         var title = new TextBlock
         {
-            Text = "Source Control",
+            Text = "SOURCE CONTROL",
             FontSize = 11,
             FontWeight = FontWeight.SemiBold,
             Foreground = GetWindowBrush("MutedTextBrush"),

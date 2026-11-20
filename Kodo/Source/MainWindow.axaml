@@ -743,6 +743,14 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="Margin" Value="0,2,0,0" />
         </Style>
+        <Style Selector="TextBlock.sidepanelheading">
+            <Setter Property="FontSize" Value="{x:Static kodo:KodoDesignTokens.SmallFontSize}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+        </Style>
         <Style Selector="Ellipse.dirtyDot">
             <Setter Property="Width" Value="7" />
             <Setter Property="Height" Value="7" />
@@ -1223,6 +1231,15 @@
                             </Canvas>
                         </Viewbox>
                     </Button>
+                    <Button Classes="activity" Classes.active="{Binding IsBookmarksPanelOpen}" Click="BookmarksButton_OnClick" AutomationProperties.Name="Bookmarks (Ctrl+Alt+B)"
+                            ToolTip.Tip="Bookmarks (Ctrl+Alt+B)">
+                        <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                <svg:Svg Width="22" Height="22" Stretch="Uniform" CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                      Source="{x:Static kodo:KodoIcons.Pin}" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
                     <Button Classes="activity"
                             Classes.active="{Binding IsGitSourceControlPanelOpen}"
                             Click="GitSourceControlActivityButton_OnClick"
@@ -1308,7 +1325,7 @@
             </DockPanel>
         </Border>
 
-        <Grid x:Name="SidebarSplitGrid" Grid.Row="1" Grid.Column="1" RowDefinitions="*,0,0">
+        <Grid x:Name="SidebarSplitGrid" Grid.Row="1" Grid.Column="1" RowDefinitions="*,0,0,0,0">
         <Border Grid.Row="0"
                 Width="{Binding ExplorerPanelWidth}"
                 MinWidth="{Binding ExplorerPanelMinWidth}"
@@ -1332,13 +1349,9 @@
                               MinWidth="0">
                             <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
                             <TextBlock Grid.Column="1"
-                                       FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding MutedTextBrush}"
+                                       Classes="sidepanelheading"
                                        Text="{Binding ExplorerHeaderText}"
-                                       ToolTip.Tip="{Binding ExplorerHeaderTooltipText}"
-                                       TextTrimming="CharacterEllipsis"
-                                       TextWrapping="NoWrap" />
+                                       ToolTip.Tip="{Binding ExplorerHeaderTooltipText}" />
                         </Grid>
                         <Button Grid.Column="1"
                                 Classes="activity"
@@ -1415,10 +1428,7 @@
                     <StackPanel Spacing="6" HorizontalAlignment="Stretch">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
-                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                       FontWeight="SemiBold"
-                                       Foreground="{Binding MutedTextBrush}"
-                                       VerticalAlignment="Center"
+                            <TextBlock Classes="sidepanelheading"
                                        Text="OPEN EDITORS" />
                         </StackPanel>
                         <Border Background="{Binding CardBrush}"
@@ -1813,13 +1823,283 @@
                         HorizontalAlignment="Stretch"
                         VerticalAlignment="Stretch"
                         IsVisible="False" />
+
+        <GridSplitter x:Name="BookmarksSplitter"
+                      Grid.Row="3"
+                      ResizeDirection="Rows"
+                      ResizeBehavior="PreviousAndNext"
+                      Height="{x:Static kodo:KodoDesignTokens.SplitterWidth}"
+                      HorizontalAlignment="Stretch"
+                      Background="{Binding SurfaceBorderBrush}"
+                      ToolTip.Tip="Drag to resize the sidebar panes"
+                      IsVisible="False" />
+
+        <Border x:Name="BookmarksPanel"
+                Grid.Row="4"
+                Width="{Binding ExplorerPanelWidth}"
+                MinWidth="{Binding ExplorerPanelMinWidth}"
+                MaxWidth="600"
+                IsVisible="{Binding IsBookmarksPanelOpen}"
+                VerticalAlignment="Stretch"
+                Background="{Binding SidebarBrush}"
+                BorderBrush="{Binding SurfaceBorderBrush}"
+                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderRightHairline}">
+            <Border.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Bookmark Current Line"
+                              Click="AddBookmarkButton_OnClick" />
+                    <MenuItem Header="Next Bookmark"
+                              Click="NextBookmarkMenuItem_OnClick" />
+                    <MenuItem Header="Previous Bookmark"
+                              Click="PreviousBookmarkMenuItem_OnClick" />
+                    <Separator />
+                    <MenuItem Header="Remove All in Current File"
+                              Click="RemoveCurrentFileBookmarksMenuItem_OnClick" />
+                    <MenuItem Header="Remove All Bookmarks"
+                              Click="ClearAllBookmarksMenuItem_OnClick"
+                              IsEnabled="{Binding #RootWindow.HasBookmarks}" />
+                </ContextMenu>
+            </Border.ContextMenu>
+            <Grid RowDefinitions="Auto,*">
+
+                <Border Grid.Row="0"
+                        Background="{Binding TopBarBrush}"
+                        BorderBrush="{Binding SurfaceBorderBrush}"
+                        BorderThickness="{x:Static kodo:KodoDesignTokens.BorderBottomHairline}"
+                        Padding="12,8">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="2">
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" VerticalAlignment="Center" MinWidth="0">
+                            <Border Classes="accentpill" Height="16" Background="{Binding AccentBrush}" />
+                            <TextBlock Grid.Column="1"
+                                       Classes="sidepanelheading"
+                                       Text="BOOKMARKS" />
+                        </Grid>
+                        <TextBlock Grid.Column="1"
+                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   VerticalAlignment="Center"
+                                   Margin="2,0,0,0"
+                                   Text="{Binding BookmarksCountText}" />
+                        <Button Grid.Column="2"
+                                Classes="activity"
+                                Width="28"
+                                Height="28"
+                                Padding="0"
+                                IsEnabled="{Binding IsTextEditorVisible}"
+                                Click="AddBookmarkButton_OnClick"
+                                AutomationProperties.Name="Bookmark current line"
+                                ToolTip.Tip="Bookmark current line (Ctrl+Alt+B)">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                    <svg:Svg Width="24" Height="24"
+                                             CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                             Source="{x:Static kodo:KodoIcons.Plus}" />
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                        <Button Grid.Column="3"
+                                Classes="activity"
+                                Width="28"
+                                Height="28"
+                                Padding="0"
+                                IsEnabled="{Binding HasBookmarks}"
+                                Click="ClearBookmarksButton_OnClick"
+                                AutomationProperties.Name="Clear all bookmarks"
+                                ToolTip.Tip="Clear all bookmarks">
+                            <Viewbox Width="14" Height="14">
+                                <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                    <svg:Svg Width="24" Height="24"
+                                             CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                             Source="{x:Static kodo:KodoIcons.Trash}" />
+                                </Canvas>
+                            </Viewbox>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1">
+                    <ScrollViewer IsVisible="{Binding HasBookmarks}"
+                                  Padding="8,8"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding BookmarkGroups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="kodoModels:BookmarkFileGroup" x:CompileBindings="True">
+                                    <StackPanel Margin="0,0,0,10">
+                                        <Grid ColumnDefinitions="*,Auto" Margin="4,2,4,6">
+                                            <Grid.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Open File"
+                                                              Tag="{Binding}"
+                                                              Click="OpenBookmarkGroupMenuItem_OnClick" />
+                                                    <MenuItem Header="Copy Relative Path"
+                                                              Tag="{Binding}"
+                                                              Click="CopyBookmarkGroupRelativePathMenuItem_OnClick" />
+                                                    <MenuItem Header="Reveal in File Manager"
+                                                              Tag="{Binding}"
+                                                              Click="RevealBookmarkGroupMenuItem_OnClick" />
+                                                    <Separator />
+                                                    <MenuItem Header="Remove All in This File"
+                                                              Tag="{Binding}"
+                                                              Click="RemoveBookmarkGroupMenuItem_OnClick" />
+                                                </ContextMenu>
+                                            </Grid.ContextMenu>
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding FileName}" />
+                                            <TextBlock Grid.Column="1"
+                                                       FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                       Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="6,0,0,0"
+                                                       Text="{Binding CountText}" />
+                                        </Grid>
+                                        <ItemsControl ItemsSource="{Binding Items}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="kodoModels:CodeBookmarkListItem" x:CompileBindings="True">
+                                                    <Border Background="Transparent"
+                                                            CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                            Padding="2"
+                                                            Margin="0,0,0,1"
+                                                            ToolTip.Tip="{Binding LocationText}">
+                                                        <Border.ContextMenu>
+                                                            <ContextMenu>
+                                                                <MenuItem Header="Go to Bookmark"
+                                                                          Tag="{Binding}"
+                                                                          Click="GoToBookmarkButton_OnClick" />
+                                                                <MenuItem Header="Open File"
+                                                                          Tag="{Binding}"
+                                                                          Click="OpenBookmarkFileMenuItem_OnClick" />
+                                                                <Separator />
+                                                                <MenuItem Header="Edit Label..."
+                                                                          Tag="{Binding}"
+                                                                          Click="EditBookmarkLabelMenuItem_OnClick" />
+                                                                <MenuItem Header="Copy Relative Path"
+                                                                          Tag="{Binding}"
+                                                                          Click="CopyBookmarkRelativePathMenuItem_OnClick" />
+                                                                <MenuItem Header="Copy Line Text"
+                                                                          Tag="{Binding}"
+                                                                          Click="CopyBookmarkLineTextMenuItem_OnClick" />
+                                                                <MenuItem Header="Reveal in File Manager"
+                                                                          Tag="{Binding}"
+                                                                          Click="RevealBookmarkMenuItem_OnClick" />
+                                                                <Separator />
+                                                                <MenuItem Header="Remove Bookmark"
+                                                                          Tag="{Binding}"
+                                                                          Click="RemoveBookmarkButton_OnClick" />
+                                                                <MenuItem Header="Remove All in This File"
+                                                                          Tag="{Binding}"
+                                                                          Click="RemoveBookmarkFileMenuItem_OnClick" />
+                                                            </ContextMenu>
+                                                        </Border.ContextMenu>
+                                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                            <Button Grid.Column="0"
+                                                                    Classes="chrome"
+                                                                    MinWidth="42"
+                                                                    Height="24"
+                                                                    Padding="6,0"
+                                                                    Click="GoToBookmarkButton_OnClick"
+                                                                    Tag="{Binding}"
+                                                                    ToolTip.Tip="Go to bookmark"
+                                                                    VerticalAlignment="Center">
+                                                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                           Text="{Binding LineNumberText}" />
+                                                            </Button>
+                                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                                                <TextBox FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                                         IsVisible="{Binding IsEditingLabel}"
+                                                                         MinWidth="0"
+                                                                         Padding="4,1"
+                                                                         VerticalAlignment="Center"
+                                                                         VerticalContentAlignment="Center"
+                                                                         Text="{Binding EditLabel, Mode=TwoWay}"
+                                                                         PlaceholderText="Add a label"
+                                                                         KeyDown="BookmarkLabelTextBox_OnKeyDown"
+                                                                         LostFocus="BookmarkLabelTextBox_OnLostFocus" />
+                                                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           IsVisible="{Binding IsLabelVisible}"
+                                                                           Text="{Binding Label}" />
+                                                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                                           Foreground="{Binding #RootWindow.MutedTextBrush}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           IsVisible="{Binding HasPreview}"
+                                                                           Text="{Binding Preview}" />
+                                                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                                           Foreground="{Binding #RootWindow.DangerBrush}"
+                                                                           TextTrimming="CharacterEllipsis"
+                                                                           IsVisible="{Binding IsUnresolved}"
+                                                                           Text="{Binding StatusText}" />
+                                                            </StackPanel>
+                                                            <Button Grid.Column="2"
+                                                                    Classes="activity"
+                                                                    Width="24"
+                                                                    Height="24"
+                                                                    Padding="0"
+                                                                    Click="RemoveBookmarkButton_OnClick"
+                                                                    Tag="{Binding}"
+                                                                    AutomationProperties.Name="Remove this bookmark"
+                                                                    ToolTip.Tip="Remove this bookmark"
+                                                                    VerticalAlignment="Center">
+                                                                <Viewbox Width="8" Height="8">
+                                                                    <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                                                        <svg:Svg Width="24" Height="24"
+                                                                                 CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                                                 Source="{x:Static kodo:KodoIcons.XMark}" />
+                                                                    </Canvas>
+                                                                </Viewbox>
+                                                            </Button>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <StackPanel IsVisible="{Binding !HasBookmarks}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Margin="16,0"
+                                Spacing="8">
+                        <Viewbox Width="32" Height="32" HorizontalAlignment="Center">
+                            <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                <svg:Svg Width="24" Height="24"
+                                         CurrentColor="{Binding AccentBrush, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                         Source="{x:Static kodo:KodoIcons.Pin}" />
+                            </Canvas>
+                        </Viewbox>
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding PrimaryTextBrush}"
+                                   HorizontalAlignment="Center"
+                                   Text="No bookmarks yet" />
+                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                   Foreground="{Binding MutedTextBrush}"
+                                   TextAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   HorizontalAlignment="Center"
+                                   Text="Click a line number, or press Ctrl+Alt+B, to bookmark a line." />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Border>
         </Grid>
 
         <Border Grid.Row="1" Grid.Column="2"
                 x:Name="ExplorerPanelSplitter"
                 Width="{x:Static kodo:KodoDesignTokens.SplitterWidth}"
                 Background="Transparent"
-                IsVisible="{Binding IsFileExplorerVisible}"
+                IsVisible="{Binding IsSidebarPanelVisible}"
                 Cursor="SizeWestEast"
                 ToolTip.Tip="Drag to resize the file explorer panel"
                 PointerPressed="ExplorerPanelSplitter_OnPointerPressed"
@@ -6677,6 +6957,8 @@ ToolTip.Tip="{Binding Path}" />
 </ContentControl>
                 </Grid>
             </Grid>
+
+
             <Grid x:Name="AtlasPageGrid"
                   IsVisible="{Binding IsAtlasPageVisible}"
                   IsHitTestVisible="{Binding IsAtlasPageVisible}"

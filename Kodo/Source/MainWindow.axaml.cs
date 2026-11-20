@@ -281,8 +281,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isWhatsNewPageVisible;
     private bool _isWhatsNewExpanded;
     private bool _isKeyboardShortcutsExpanded;
-    private bool _isUpdateSplashVisible;
-    private bool _openingSplashShowsReleaseNotes;
+    private bool _isUpdateSplashVisible; private bool _openingSplashShowsReleaseNotes;
     private string _lastSeenVersion = string.Empty;
     private bool _isHomePageVisible;
     private bool _isFileExplorerVisible;
@@ -990,6 +989,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         EditorTextBox.LineNumbersMargin = new Thickness(8, 0, 8, 0);
         EditorTextBox.FontFamily = KodoFonts.MonoFamily;
         EditorTextBox.TextArea.TextView.Options.AllowScrollBelowDocument = false;
+        EnsureBookmarkMargin(EditorTextBox);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_indentGuideRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_deadCodeHighlightRenderer);
         EditorTextBox.TextArea.TextView.BackgroundRenderers.Add(_errorHighlightRenderer);
@@ -2639,18 +2639,34 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         var explorerOn = IsFileExplorerVisible;
         var gitOn = IsGitSourceControlPanelOpen;
-        if (split.RowDefinitions is not { Count: >= 3 } rows)
-            return;
-        var star = new GridLength(1, GridUnitType.Star);
-        var zero = new GridLength(0);
-        var splitOn = explorerOn && gitOn;
-        rows[0].Height = explorerOn ? star : zero;
-        rows[1].Height = splitOn ? GridLength.Auto : zero;
-        rows[2].Height = gitOn ? star : zero;
-        if (split.FindControl<GridSplitter>("SidebarSplitter") is { } splitter)
-            splitter.IsVisible = splitOn;
-        if (split.FindControl<ContentControl>("GitSourcePanelHost") is { } host)
-            host.IsVisible = gitOn;
+        var bookmarksOn = IsBookmarksPanelOpen;
+
+        if (split.FindControl<Border>("BookmarksPanel") is { } bookmarksPanel)
+            Grid.SetRow(bookmarksPanel, bookmarksOn && !gitOn ? 2 : 4);
+
+        if (split.RowDefinitions is { Count: >= 5 } rows)
+        {
+            var star = new GridLength(1, GridUnitType.Star);
+            var zero = new GridLength(0);
+            var auto = GridLength.Auto;
+            var topSplitOn = explorerOn && (gitOn || bookmarksOn);
+            var bottomSplitOn = gitOn && bookmarksOn;
+
+            rows[0].Height = explorerOn ? star : zero;
+            rows[1].Height = topSplitOn ? auto : zero;
+            rows[2].Height = gitOn || (bookmarksOn && !gitOn) ? star : zero;
+            rows[3].Height = bottomSplitOn ? auto : zero;
+            rows[4].Height = bookmarksOn && gitOn ? star : zero;
+
+            if (split.FindControl<GridSplitter>("SidebarSplitter") is { } splitter)
+                splitter.IsVisible = topSplitOn;
+            if (split.FindControl<GridSplitter>("BookmarksSplitter") is { } bookmarksSplitter)
+                bookmarksSplitter.IsVisible = bottomSplitOn;
+            if (split.FindControl<ContentControl>("GitSourcePanelHost") is { } host)
+                host.IsVisible = gitOn;
+        }
+
+        OnPropertyChanged(nameof(IsSidebarPanelVisible));
     }
 
     private void QueueCenterQuickAccessSearchFrame()
@@ -3471,6 +3487,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(IsGitSourceControlPanelOpen));
     }
 
+    public bool IsSidebarPanelVisible =>
+        IsFileExplorerVisible || IsGitSourceControlPanelOpen || IsBookmarksPanelOpen;
+
     private void GitSourceControlActivityButton_OnClick(object? sender, RoutedEventArgs e) =>
         _gitSourceControlIntegration?.ToggleSourcePanelFromHost();
 
@@ -3705,6 +3724,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         EditorMinimapView?.SetDocument(PrimaryEditorTextBox?.Document);
         SecondaryEditorMinimapView?.SetDocument(IsSplitScreenVisible ? SecondaryEditorTextBox?.Document : null);
+        RefreshBookmarkMinimaps();
         UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
         if (IsSplitScreenVisible)
             UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
@@ -6540,6 +6560,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("GoToLine",           "Go to line",              new KeyGesture(Key.G, KeyModifiers.Control),                         "Editor"),
         new("SelectCurrentLine",  "Select current line",      new KeyGesture(Key.L, KeyModifiers.Control),                         "Editor"),
         new("ToggleHighlightCurrentLine", "Toggle current line highlight", new KeyGesture(Key.K, KeyModifiers.Control | KeyModifiers.Alt), "Editor"),
+        new("ToggleBookmark",     "Toggle bookmark",        new KeyGesture(Key.B, KeyModifiers.Control | KeyModifiers.Alt),     "Editor"),
+        new("ShowBookmarksPanel", "Open bookmarks panel",  new KeyGesture(Key.B, KeyModifiers.Control | KeyModifiers.Shift), "Editor"),
         new("ScrollEditorLeft",     "Scroll editor left",         new KeyGesture(Key.Left, KeyModifiers.Alt),                      "Editor"),
         new("ScrollEditorRight",    "Scroll editor right",        new KeyGesture(Key.Right, KeyModifiers.Alt),                     "Editor"),
         new("ScrollEditorPageLeft", "Scroll editor left (page)",  new KeyGesture(Key.PageUp, KeyModifiers.Alt),                     "Editor"),
@@ -7181,6 +7203,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
         AddRecentFolder(path);
+        BookmarkService.LoadForWorkspace(path);
+        RefreshBookmarksList();
+        InvalidateBookmarkMargins();
         if (deferFileTreePopulation)
             _ = PopulateFileTreeAsync(path);
         else
@@ -7199,10 +7224,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         DisposeProjectFolderWatcher();
         SmartFileIcons.InvalidateWorkspace(_currentFolderPath);
         _currentFolderPath = null;
+        BookmarkService.LoadForWorkspace(null);
+        RefreshBookmarksList();
+        InvalidateBookmarkMargins();
         _searchFileCache = null;
         InvalidateLspResolutionCaches();
         InvalidateDotnetProjectCache();
         IsFileExplorerVisible = false;
+        SetBookmarksPanelOpen(false);
         FileTreeItems.Clear();
         RefreshState(fullRefresh: true);
         RefreshRunBuildState();
@@ -8485,6 +8514,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void CloseFolderButton_OnClick(object? sender, RoutedEventArgs e) =>
         CloseFolder();
+
+    private void BookmarksButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (IsFirstRunTutorialActive) return;
+        ToggleBookmarksPanel();
+    }
 
     private void AtlasButton_OnClick(object? sender, RoutedEventArgs e)
     {
@@ -11054,6 +11089,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void MainWindow_OnClosed(object? sender, EventArgs e)
     {
         StopGitSourceControl();
+        BookmarkService.Flush();
         SaveSettings(immediate: true, synchronous: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
@@ -11262,6 +11298,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             if (IsFolderOpen)
                 IsFileExplorerVisible = !IsFileExplorerVisible;
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "ToggleBookmark"))
+        {
+            ToggleBookmarkAtCaret();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "ShowBookmarksPanel"))
+        {
+            ShowBookmarks();
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "ToggleTerminal") || MatchesKeybind(e, "ToggleTerminalAlt"))

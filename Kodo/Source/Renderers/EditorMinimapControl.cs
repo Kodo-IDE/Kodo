@@ -5,6 +5,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using AvaloniaEdit.Document;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace Kodo.Renderers;
 
@@ -22,10 +24,14 @@ public sealed class EditorMinimapControl : Control
     private double _dragGrabOffset;
     private TextDocument? _document;
     private ITextSourceVersion? _documentVersion;
+    private int[] _bookmarkLines = [];
+    private int[] _unresolvedBookmarkLines = [];
     private IBrush _backgroundBrush = Brushes.Transparent;
     private IBrush _lineBrush = Brushes.Gray;
     private IBrush _viewportBrush = Brushes.Transparent;
     private IBrush _viewportBorderBrush = Brushes.Gray;
+    private IBrush _bookmarkBrush = Brushes.Magenta;
+    private IBrush _unresolvedBookmarkBrush = Brushes.Gray;
 
     public event Action<double>? ScrollRequested;
 
@@ -36,12 +42,14 @@ public sealed class EditorMinimapControl : Control
         Focusable = false;
     }
 
-    public void SetTheme(IBrush background, IBrush mutedText, IBrush accent)
+    public void SetTheme(IBrush background, IBrush mutedText, IBrush accent, IBrush danger)
     {
         _backgroundBrush = background;
         _lineBrush = WithOpacity(mutedText, 0.48);
         _viewportBrush = WithOpacity(accent, 0.17);
         _viewportBorderBrush = WithOpacity(accent, 0.85);
+        _bookmarkBrush = accent;
+        _unresolvedBookmarkBrush = danger;
         InvalidateVisual();
     }
 
@@ -175,6 +183,24 @@ public sealed class EditorMinimapControl : Control
         InvalidateVisual();
     }
 
+    public void SetBookmarks(IReadOnlyList<int> lines, IReadOnlyList<int> unresolvedLines)
+    {
+        _bookmarkLines = SortedUnique(lines);
+        _unresolvedBookmarkLines = SortedUnique(unresolvedLines);
+        InvalidateVisual();
+    }
+
+    private static int[] SortedUnique(IReadOnlyList<int> lines)
+    {
+        if (lines.Count == 0) return [];
+        var unique = new HashSet<int>(lines.Count);
+        foreach (var line in lines)
+            if (line > 0) unique.Add(line);
+        var result = unique.ToArray();
+        Array.Sort(result);
+        return result;
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -206,6 +232,35 @@ public sealed class EditorMinimapControl : Control
         var viewportRect = new Rect(0.5, viewportTop + 0.5, Math.Max(0, width - 1), Math.Max(0, viewportHeight - 1));
         context.FillRectangle(_viewportBrush, viewportRect);
         context.DrawRectangle(null, new Pen(_viewportBorderBrush, 1), viewportRect);
+
+        DrawBookmarkMarkers(context, width, height);
+    }
+
+    private void DrawBookmarkMarkers(DrawingContext context, double width, double height)
+    {
+        if (_lineCount <= 0 || height <= 0 || width <= 0) return;
+        if (_bookmarkLines.Length == 0 && _unresolvedBookmarkLines.Length == 0) return;
+
+        var markerWidth = 3d;
+        var x = width - markerWidth - 1;
+        var markerHeight = Math.Min(10, Math.Max(2, height / _lineCount * 1.5));
+        var maxTop = Math.Max(0, height - markerHeight);
+
+        foreach (var line in _bookmarkLines)
+        {
+            if (line < 1 || line > _lineCount) continue;
+            var y = (line - 0.5d) / _lineCount * height;
+            var top = Math.Clamp(y - markerHeight / 2, 0, maxTop);
+            context.FillRectangle(_bookmarkBrush, new Rect(x, top, markerWidth, markerHeight));
+        }
+
+        foreach (var line in _unresolvedBookmarkLines)
+        {
+            if (line < 1 || line > _lineCount) continue;
+            var y = (line - 0.5d) / _lineCount * height;
+            var top = Math.Clamp(y - markerHeight / 2, 0, maxTop);
+            context.FillRectangle(_unresolvedBookmarkBrush, new Rect(x, top, markerWidth, markerHeight));
+        }
     }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
