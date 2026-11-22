@@ -5,6 +5,16 @@ using System.Collections.Generic;
 
 namespace Kodo.Models;
 
+public sealed class QuickActionItem
+{
+    public string Id { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
+    public string Icon { get; init; } = string.Empty;
+    public string ContextKey { get; init; } = string.Empty;
+    public double BaseRelevance { get; init; }
+    public string[] LearningFeatures { get; init; } = [];
+}
+
 public sealed class NaturalSortComparer : IComparer<string>
 {
     public static readonly NaturalSortComparer OrdinalIgnoreCase = new();

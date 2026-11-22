@@ -7,6 +7,8 @@ namespace Kodo;
 
 internal static class KodoFonts
 {
+    public static FontFamily UiFamily { get; } = new("Inter");
+
     public const string WindowsMonoStack =
         "Cascadia Code,Consolas,Menlo,Segoe UI Emoji,Apple Color Emoji,Noto Color Emoji,Monospace";
 

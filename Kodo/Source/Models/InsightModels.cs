@@ -127,13 +127,13 @@ public sealed class InsightSuggestion : ICompletionData
 
     private static (string Glyph, string Color) GlyphAndColorFor(InsightKind kind) => kind switch
     {
-        InsightKind.Variable => ("V", "#3a79df"),
-        InsightKind.Function => ("F", "#9c51e2"),
-        InsightKind.Property => ("P", "#1bc0ad"),
-        InsightKind.Type => ("T", "#e76e17"),
-        InsightKind.Namespace => ("N", "#0db373"),
-        InsightKind.Keyword => ("K", "#5b5dda"),
-        _ => ("•", "#6B7280"),
+        InsightKind.Variable => ("V", KodoDesignTokens.CompletionVariableColor.ToString()),
+        InsightKind.Function => ("F", KodoDesignTokens.CompletionFunctionColor.ToString()),
+        InsightKind.Property => ("P", KodoDesignTokens.CompletionPropertyColor.ToString()),
+        InsightKind.Type => ("T", KodoDesignTokens.CompletionTypeColor.ToString()),
+        InsightKind.Namespace => ("N", KodoDesignTokens.CompletionNamespaceColor.ToString()),
+        InsightKind.Keyword => ("K", KodoDesignTokens.CompletionKeywordColor.ToString()),
+        _ => ("•", KodoDesignTokens.CompletionFallbackColor.ToString()),
     };
 
     private static readonly Dictionary<InsightKind, IBrush> GlyphBrushes =
@@ -164,8 +164,8 @@ public sealed class InsightSuggestion : ICompletionData
 
         var iconChip = new Border
         {
-            Width = 22,
-            Height = 22,
+            Width = KodoDesignTokens.CompletionIconChipSize,
+            Height = KodoDesignTokens.CompletionIconChipSize,
             CornerRadius = KodoDesignTokens.ControlRadius,
             Background = GlyphBrushes[Kind],
             BorderBrush = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0)),
@@ -181,8 +181,8 @@ public sealed class InsightSuggestion : ICompletionData
                 {
                     new Viewbox
                     {
-                        Width = 12,
-                        Height = 12,
+                        Width = KodoDesignTokens.CompletionIconSize,
+                        Height = KodoDesignTokens.CompletionIconSize,
                         Stretch = Stretch.Uniform,
                         StretchDirection = StretchDirection.Both,
                         HorizontalAlignment = HorizontalAlignment.Center,
@@ -190,8 +190,8 @@ public sealed class InsightSuggestion : ICompletionData
                         Child = new Image
                         {
                             Source = new Avalonia.Svg.Skia.SvgImage { Source = symbolIcon },
-                            Width = 12,
-                            Height = 12,
+                            Width = KodoDesignTokens.CompletionIconSize,
+                            Height = KodoDesignTokens.CompletionIconSize,
                             Stretch = Stretch.Uniform,
                             HorizontalAlignment = HorizontalAlignment.Center,
                             VerticalAlignment = VerticalAlignment.Center,
@@ -206,9 +206,9 @@ public sealed class InsightSuggestion : ICompletionData
             Text = Text,
             Foreground = PanelForeground,
             FontFamily = MonoFontFamily,
-            FontSize = 13,
+            FontSize = KodoDesignTokens.CompletionNameFontSize,
             FontWeight = FontWeight.Medium,
-            Margin = new Thickness(10, 0, 12, 0),
+            Margin = new Thickness(KodoDesignTokens.CompletionNameMarginLeft, 0, KodoDesignTokens.CompletionNameMarginRight, 0),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextWrapping = TextWrapping.NoWrap,
@@ -218,13 +218,13 @@ public sealed class InsightSuggestion : ICompletionData
         {
             Text = KindLabel(Kind),
             Foreground = MutedForeground,
-            FontSize = 11,
+            FontSize = KodoDesignTokens.CompletionKindFontSize,
             FontWeight = FontWeight.Normal,
-            Opacity = 0.84,
+            Opacity = KodoDesignTokens.CompletionKindOpacity,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
             TextWrapping = TextWrapping.NoWrap,
-            MaxWidth = 220,
+            MaxWidth = KodoDesignTokens.CompletionKindMaxWidth,
             Margin = new Thickness(0, 0, 2, 0),
         };
 

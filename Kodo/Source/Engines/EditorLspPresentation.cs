@@ -205,13 +205,20 @@ public partial class MainWindow
             });
             return;
         }
-        var documentation = signature.TryGetProperty("documentation", out var documentationEl) ? documentationEl.ToString() : "";
+        var documentation = signature.TryGetProperty("documentation", out var documentationEl)
+            ? GetLspDocumentationText(documentationEl)
+            : string.Empty;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!LspSignatureHelpEnabled || !ReferenceEquals(ctx.Editor, EditorTextBox) || !LspPresentationContextIsCurrent(ctx, LspEnabled) || EditorTextBox?.Document is null || EditorTextBox.TextArea.Caret.Offset != ctx.Caret) return;
             _lspSignatureHelpTooltip = string.IsNullOrWhiteSpace(documentation) ? label : $"{label}\n\n{documentation}";
-            ToolTip.SetTip(EditorTextBox.TextArea.TextView, _lspSignatureHelpTooltip);
-            ToolTip.SetShowDelay(EditorTextBox.TextArea.TextView, 80);
+            SignatureHelpLabel.Text = label;
+            SignatureHelpDocumentation.Text = documentation;
+            SignatureHelpDocumentation.IsVisible = !string.IsNullOrWhiteSpace(documentation);
+            SignatureHelpPopup.PlacementTarget = EditorTextBox.TextArea.TextView;
+            SignatureHelpPopup.HorizontalOffset = 8;
+            SignatureHelpPopup.VerticalOffset = 8;
+            SignatureHelpPopup.IsOpen = true;
         });
     }
 

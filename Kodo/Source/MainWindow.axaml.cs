@@ -117,9 +117,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private System.Text.Encoding _currentFileEncoding = Kodo.Models.EditorTab.DefaultEncoding;
     private Kodo.Models.LineEnding _currentLineEnding = Environment.NewLine == "\r\n" ? Kodo.Models.LineEnding.CRLF : Kodo.Models.LineEnding.LF;
     private string? _currentFolderPath;
+    private string? _statusBarMessage;
     private DiscordRpcClient? _discordRpcClient;
     private readonly DispatcherTimer _autoSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(800) };
     private readonly DispatcherTimer _autoSaveStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
+    private readonly DispatcherTimer _statusBarMessageTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private readonly DispatcherTimer _discordReconnectTimer = new() { Interval = TimeSpan.FromSeconds(10) };
     private readonly DispatcherTimer _editorStateRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
     private readonly DispatcherTimer _wordCountRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
@@ -1098,6 +1100,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isMinimapVisible = settings.MinimapVisible;
+        _isQuickActionsEnabled = settings.QuickActionsEnabled;
+        InitializeQuickActionLearning(settings);
         _isStickyScrollEnabled = settings.StickyScrollEnabled;
         _stickyScrollMaxLines = Math.Clamp(settings.StickyScrollMaxLines, 1, 5);
         _isInsightEnabled = settings.InsightEnabled;
@@ -1198,6 +1202,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _deferredPreferredShellId = settings.PreferredTerminalShellId;
         _autoSaveTimer.Tick += AutoSaveTimer_OnTick;
         _autoSaveStatusTimer.Tick += AutoSaveStatusTimer_OnTick;
+        _statusBarMessageTimer.Tick += StatusBarMessageTimer_OnTick;
         _discordReconnectTimer.Tick += DiscordReconnectTimer_OnTick;
         _editorStateRefreshTimer.Tick += EditorStateRefreshTimer_OnTick;
         _wordCountRefreshTimer.Tick += WordCountRefreshTimer_OnTick;
@@ -2859,10 +2864,32 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         get => _extensionsStatusText;
         private set
         {
+            ShowStatusBarMessage(value);
             if (_extensionsStatusText == value) return;
             _extensionsStatusText = value;
             OnPropertyChanged();
         }
+    }
+
+    public string? StatusBarMessage => _statusBarMessage;
+    public bool HasStatusBarMessage => !string.IsNullOrWhiteSpace(_statusBarMessage);
+
+    private void ShowStatusBarMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return;
+        _statusBarMessage = message;
+        OnPropertyChanged(nameof(StatusBarMessage));
+        OnPropertyChanged(nameof(HasStatusBarMessage));
+        _statusBarMessageTimer.Stop();
+        _statusBarMessageTimer.Start();
+    }
+
+    private void StatusBarMessageTimer_OnTick(object? sender, EventArgs e)
+    {
+        _statusBarMessageTimer.Stop();
+        _statusBarMessage = null;
+        OnPropertyChanged(nameof(StatusBarMessage));
+        OnPropertyChanged(nameof(HasStatusBarMessage));
     }
 
     public string LatestReleaseStatusText
@@ -5883,6 +5910,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _pendingFullStateRefresh = false;
         RefreshWordCount();
         RefreshNonCaretState();
+        RefreshQuickActions();
         watch.Stop();
         KodoDiagnostics.ReportSlowStage("editor state refresh", watch.ElapsedMilliseconds, 250);
     }
@@ -6523,6 +6551,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         new("FindInFile",         "Find in file",            new KeyGesture(Key.F, KeyModifiers.Control),                        "Editor"),
         new("FindInProject",      "Find in project",         new KeyGesture(Key.F, KeyModifiers.Control | KeyModifiers.Shift),  "Editor"),
         new("ToggleFileExplorer", "Toggle file explorer",    new KeyGesture(Key.B, KeyModifiers.Control),                        "Editor"),
+        new("QuickActions",       "Run Top Quick Action",     new KeyGesture(Key.OemPeriod, KeyModifiers.Control),               "Editor"),
         new("ToggleSplitEditor",  "Split editor / close split", new KeyGesture(Key.OemPipe, KeyModifiers.Control),               "Editor"),
         new("FocusFirstEditorGroup",  "Focus first editor group",  new KeyGesture(Key.D1, KeyModifiers.Control),                 "Editor"),
         new("FocusSecondEditorGroup", "Focus second editor group", new KeyGesture(Key.D2, KeyModifiers.Control),                 "Editor"),
@@ -6696,6 +6725,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
             WordWrapEnabled = IsWordWrapEnabled,
             MinimapVisible = IsMinimapVisible,
+            QuickActionsEnabled = IsQuickActionsEnabled,
+            QuickActionsLearningEnabled = IsQuickActionsLearningEnabled,
             StickyScrollEnabled = IsStickyScrollEnabled,
             StickyScrollMaxLines = _stickyScrollMaxLines,
             InsightEnabled = IsInsightEnabled,
@@ -10213,6 +10244,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ActivateEditorPane(_editorPane, focusEditor: false);
 
         var hasSelection = EditorTextBox?.TextArea?.Selection is { IsEmpty: false };
+        bool SupportsLsp(string method) => LspEnabled && !string.IsNullOrWhiteSpace(_currentFilePath) &&
+            GetLspClientForFile(_currentFilePath, method) is { IsInitialized: true };
         foreach (var item in menu.Items.OfType<MenuItem>())
         {
             var name = item.Name ?? string.Empty;
@@ -10239,29 +10272,33 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (name.EndsWith("GoToDefinitionMenuItem", StringComparison.Ordinal))
             {
                 var word = GetLanguageWordAtCaret();
-                var isVariable = word is not null && CurrentLanguageExtension?.LangRules is { HasDefinitionProvider: true };
-                item.IsEnabled = isVariable;
-                item.IsVisible = isVariable;
+                var isAvailable = word is not null &&
+                    (CurrentLanguageExtension?.LangRules is { HasDefinitionProvider: true } || SupportsLsp("textDocument/definition"));
+                item.IsEnabled = isAvailable;
+                item.IsVisible = isAvailable;
                 item.InputGesture = _keybinds.TryGetValue("GoToDefinition", out var definitionGesture) ? definitionGesture : null;
             }
             if (name.EndsWith("FindReferencesMenuItem", StringComparison.Ordinal))
-                item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true && GetLanguageWordAtCaret() is not null;
+                item.IsEnabled = GetLanguageWordAtCaret() is not null &&
+                    (CurrentLanguageExtension?.LangRules?.HasReferenceProvider == true || SupportsLsp("textDocument/references"));
             if (name.EndsWith("RenameSymbolMenuItem", StringComparison.Ordinal))
-                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
-            if (name.EndsWith("TypeDefinitionMenuItem", StringComparison.Ordinal) || name.EndsWith("ImplementationMenuItem", StringComparison.Ordinal))
-                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true } && GetLanguageWordAtCaret() is not null;
+                item.IsEnabled = SupportsLsp("textDocument/rename") && GetLanguageWordAtCaret() is not null;
+            if (name.EndsWith("TypeDefinitionMenuItem", StringComparison.Ordinal))
+                item.IsEnabled = SupportsLsp("textDocument/typeDefinition") && GetLanguageWordAtCaret() is not null;
+            if (name.EndsWith("ImplementationMenuItem", StringComparison.Ordinal))
+                item.IsEnabled = SupportsLsp("textDocument/implementation") && GetLanguageWordAtCaret() is not null;
             if (name.EndsWith("DocumentSymbolsMenuItem", StringComparison.Ordinal))
-                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+                item.IsEnabled = SupportsLsp("textDocument/documentSymbol");
             if (name.EndsWith("SignatureHelpMenuItem", StringComparison.Ordinal))
-                item.IsEnabled = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+                item.IsEnabled = SupportsLsp("textDocument/signatureHelp");
             if (name.EndsWith("FormatDocumentMenuItem", StringComparison.Ordinal))
                 item.IsEnabled = CurrentLanguageExtension?.LangRules?.HasFormatter == true ||
-                                 (ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true });
+                                 SupportsLsp("textDocument/formatting");
             if (name.EndsWith("QuickFixMenuItem", StringComparison.Ordinal))
             {
                 var hasDiagnostic = GetDiagnosticAtCaret() is not null;
                 var hasProvider = CurrentLanguageExtension?.LangRules?.HasCodeActionProvider == true ||
-                                  ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+                                  SupportsLsp("textDocument/codeAction");
                 item.IsEnabled = hasDiagnostic || hasProvider;
                 item.Header = hasDiagnostic ? "Quick Fix for Diagnostic…" : "Quick Fix…";
             }
@@ -10340,6 +10377,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private async void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await CutSelectionAsync();
+
+    private async Task CutSelectionAsync(Action? onSuccess = null)
     {
         var targetPane = _activeEditorPane;
         var targetEditor = EditorTextBox;
@@ -10355,16 +10395,23 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             !ReferenceEquals(targetEditor.Document, targetDocument) || !ReferenceEquals(targetEditor.TextArea.Selection, sel))
             return;
         sel.ReplaceSelectionWithText(string.Empty);
+        onSuccess?.Invoke();
     }
 
     private async void EditorCopyMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await CopySelectionAsync();
+
+    private async Task CopySelectionAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.TextArea?.Selection is not { } sel) return;
         var text = sel.GetText();
         if (string.IsNullOrEmpty(text)) return;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
         if (clipboard is not null)
+        {
             await clipboard.SetTextAsync(text);
+            onSuccess?.Invoke();
+        }
     }
 
     private async void EditorPasteMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -10853,10 +10900,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             RefreshStatusBarDiagnostics();
     }
 
-    private const double InsightRowHeight = 32d;
-    private const double InsightListVerticalPadding = 12d;
-    private const double InsightBorderThickness = 2d;
-    private const int InsightVisibleRows = 7;
 
     private static void SetCaretOffsetSafely(
         AvaloniaEdit.Editing.Caret caret,
@@ -11089,9 +11132,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         StopGitSourceControl();
         BookmarkService.Flush();
+        _quickActionLearningSaveTimer.Stop();
+        try { _quickActionLearningStore.Save(); }
+        catch (Exception ex) { KodoDiagnostics.LogWarning("Quick Actions learning data could not be saved on close.", ex); }
         SaveSettings(immediate: true, synchronous: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
+        _statusBarMessageTimer.Stop();
         _discordReconnectTimer.Stop();
         _extensionsRefreshDebounceTimer.Stop();
         _searchFilterDebounceTimer.Stop();
@@ -11307,6 +11354,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         else if (MatchesKeybind(e, "ShowBookmarksPanel"))
         {
             ShowBookmarks();
+            e.Handled = true;
+        }
+        else if (MatchesKeybind(e, "QuickActions"))
+        {
+            OpenQuickActions();
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "ToggleTerminal") || MatchesKeybind(e, "ToggleTerminalAlt"))

@@ -22,5 +22,8 @@
         <Style Selector="HyperlinkButton:pointerover">
             <Setter Property="Foreground" Value="{x:Static kodo:KodoDesignTokens.LinkActiveBrush}" />
         </Style>
+        <Style Selector="PopupRoot">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
     </Application.Styles>
 </Application>

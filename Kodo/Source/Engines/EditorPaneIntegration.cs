@@ -314,6 +314,8 @@ public partial class MainWindow
     private void EditorCaretPositionChanged(TextEditor editor)
     {
         if (!ReferenceEquals(editor, EditorTextBox)) return;
+        ClearLspSignatureHelpTooltip();
+        RefreshQuickActions();
         CloseCompletionWindow();
         HideDiagnosticPopup();
         _lspPresentationCancellation?.Cancel();
