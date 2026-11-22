@@ -21,6 +21,7 @@
         Title="Kodo"
         Background="{Binding WindowBackgroundBrush}"
         WindowState="Maximized"
+        GotFocus="MainWindow_OnQuickActionsFocusChanged"
         KeyDown="MainWindow_OnKeyDown">
     <Window.Styles>
         <Style Selector="Button">
@@ -57,6 +58,14 @@
         <Style Selector="Border.savegroup">
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
             <Setter Property="ClipToBounds" Value="True" />
+        </Style>
+
+        <Style Selector="Border.editorpopupsurface">
+            <Setter Property="Background" Value="{Binding CardBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+            <Setter Property="BorderThickness" Value="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
+            <Setter Property="Padding" Value="{x:Static kodo:KodoDesignTokens.EditorPopupPadding}" />
         </Style>
 
         <Style Selector="Button.saveprimary">
@@ -610,6 +619,26 @@
         <Style Selector="Button.activity:pointerover">
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
+        </Style>
+
+        <Style Selector="Button.activity.quickaction">
+            <Setter Property="Foreground" Value="{Binding #RootWindow.MutedTextBrush}" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:pointerover /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding #RootWindow.ButtonHoverBrush}" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:pointerover">
+            <Setter Property="Foreground" Value="{Binding #RootWindow.PrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:pressed /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{Binding #RootWindow.AccentBrush}" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:pressed">
+            <Setter Property="Foreground" Value="{Binding #RootWindow.AccentForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:focus /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="Button.activity.active /template/ Border#PART_Border">
@@ -1262,6 +1291,34 @@
                             Opacity="{x:Static kodo:KodoDesignTokens.MutedForegroundOpacity}"
                             HorizontalAlignment="Center"
                             Margin="0,2,0,2" />
+                    <ItemsControl ItemsSource="{Binding QuickActions}"
+                                  IsVisible="{Binding HasQuickActions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="kodoModels:QuickActionItem" x:CompileBindings="True">
+                                <Button Classes="activity quickaction"
+                                        AutomationProperties.Name="{Binding Title}"
+                                        ToolTip.Tip="{Binding Title}"
+                                        Tag="{Binding Id}"
+                                        Click="QuickAction_OnClick">
+                                    <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                            <svg:Svg Width="24" Height="24"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{Binding Icon}" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Border Height="2"
+                            Width="28"
+                            CornerRadius="{x:Static kodo:KodoDesignTokens.SmallRadius}"
+                            Background="{Binding AccentBrush}"
+                            Opacity="{x:Static kodo:KodoDesignTokens.MutedForegroundOpacity}"
+                            HorizontalAlignment="Center"
+                            Margin="0,2,0,2"
+                            IsVisible="{Binding HasQuickActions}" />
                     <Button Classes="activity" Click="NewFileButton_OnClick" AutomationProperties.Name="{Binding NewFileTooltip}"
                             ToolTip.Tip="{Binding NewFileTooltip}">
                         <Viewbox Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -2922,17 +2979,13 @@
                             WindowManagerAddShadowHint="False">
                         <Border x:Name="DiagnosticPopupHitBorder"
                                 Background="Transparent"
-                                Padding="12"
+                                Padding="{x:Static kodo:KodoDesignTokens.EditorPopupHitPadding}"
                                 PointerEntered="DiagnosticPopup_OnPointerEntered"
                                 PointerExited="DiagnosticPopup_OnPointerExited">
                             <Border x:Name="DiagnosticPopupBorder"
-                                    Background="{Binding CardBrush}"
-                                    BorderBrush="{Binding SurfaceBorderBrush}"
-                                    BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
-                                    CornerRadius="{x:Static kodo:KodoDesignTokens.CardRadius}"
-                                    Padding="16"
-                                    MaxWidth="460"
-                                    MaxHeight="260">
+                                    Classes="editorpopupsurface"
+                                    MaxWidth="{x:Static kodo:KodoDesignTokens.DiagnosticPopupMaxWidth}"
+                                    MaxHeight="{x:Static kodo:KodoDesignTokens.EditorPopupMaxHeight}">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
                                 <Border Classes="accentpill" Height="14" Background="{Binding AccentBrush}" VerticalAlignment="Center"/>
                                 <SelectableTextBlock x:Name="DiagnosticPopupText"
@@ -2957,6 +3010,29 @@
                                         HorizontalAlignment="Center" />
                             </Grid>
                         </Border>
+                        </Border>
+                    </Popup>
+                    <Popup x:Name="SignatureHelpPopup"
+                           Placement="AnchorAndGravity"
+                           PlacementAnchor="TopLeft"
+                           PlacementGravity="BottomRight"
+                           HorizontalOffset="0"
+                           VerticalOffset="0"
+                           IsLightDismissEnabled="True"
+                           WindowManagerAddShadowHint="False">
+                        <Border Classes="editorpopupsurface"
+                                MaxWidth="{x:Static kodo:KodoDesignTokens.EditorPopupMaxWidth}">
+                            <StackPanel Spacing="8">
+                                <TextBlock x:Name="SignatureHelpLabel"
+                                           Foreground="{Binding PrimaryTextBrush}"
+                                           FontFamily="JetBrains Mono,DejaVu Sans Mono,Ubuntu Mono,Noto Sans Mono,Cascadia Code,Consolas,Menlo,monospace"
+                                           TextWrapping="Wrap" />
+                                <TextBlock x:Name="SignatureHelpDocumentation"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                           TextWrapping="Wrap"
+                                           MaxHeight="180" />
+                            </StackPanel>
                         </Border>
                     </Popup>
                     <Grid Grid.Row="2" Grid.ColumnSpan="2" IsVisible="{Binding IsPrimaryPaneImagePreviewVisible}"
@@ -4655,10 +4731,19 @@ ToolTip.Tip="{Binding Path}" />
                                            Text="No problems"
                                            IsVisible="{Binding !HasDiagnostics}"
                                            VerticalAlignment="Center" />
+                                <Border Classes="statusDivider"
+                                        IsVisible="{Binding HasStatusBarMessage}"
+                                        Margin="6,0" />
+                                <TextBlock Classes="statusDim"
+                                           FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Text="{Binding StatusBarMessage}"
+                                           ToolTip.Tip="{Binding StatusBarMessage}"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxWidth="300"
+                                           IsVisible="{Binding HasStatusBarMessage}"
+                                           VerticalAlignment="Center" />
                             </StackPanel>
                         </StackPanel>
-
-                        <Border Grid.Column="1" Background="Transparent" />
 
                         <StackPanel Grid.Column="2"
                                     Orientation="Horizontal"
@@ -7495,6 +7580,19 @@ ToolTip.Tip="{Binding Path}" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Keep enclosing scopes visible at the top of the editor while you scroll"
                                           Content="Show sticky scroll" />
+                                <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Show context-aware quick actions in the Activity Bar"
+                                          Content="Show Quick Actions" />
+                                <CheckBox IsChecked="{Binding IsQuickActionsLearningEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Personalize Quick Actions using local action selections"
+                                          Content="Personalize Quick Actions" />
+                                <Button Classes="chrome"
+                                        HorizontalAlignment="Left"
+                                        Content="Reset learned preferences"
+                                        IsEnabled="{Binding HasQuickActionLearningData}"
+                                        Click="ResetQuickActionLearningButton_OnClick" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
                                             VerticalAlignment="Center">
                                     <TextBlock VerticalAlignment="Center"

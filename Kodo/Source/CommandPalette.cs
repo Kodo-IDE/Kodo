@@ -1089,16 +1089,18 @@ public partial class MainWindow
 
     private List<PaletteCommand> BuildCommandPaletteCommands()
     {
-        var hasLsp = ResolveLspExtensionForFile(_currentFilePath) is { HasLsp: true };
+        var lspPath = _currentFilePath;
+        bool LspSupports(string method) => LspEnabled && !string.IsNullOrWhiteSpace(lspPath) &&
+            GetLspClientForFile(lspPath, method) is { IsInitialized: true };
         var rules = CurrentLanguageExtension?.LangRules;
-        var hasDefinitionProvider = rules?.HasDefinitionProvider == true || hasLsp;
-        var hasFormatter = rules?.HasFormatter == true || hasLsp;
-        var hasReferences = rules?.HasReferenceProvider == true || hasLsp;
-        var hasCodeActions = rules?.HasCodeActionProvider == true || hasLsp;
+        var hasDefinitionProvider = rules?.HasDefinitionProvider == true || LspSupports("textDocument/definition");
+        var hasFormatter = rules?.HasFormatter == true || LspSupports("textDocument/formatting");
+        var hasReferences = rules?.HasReferenceProvider == true || LspSupports("textDocument/references");
+        var hasCodeActions = rules?.HasCodeActionProvider == true || LspSupports("textDocument/codeAction");
         var hasWritableTextFile = HasFileOpen && IsTextEditorVisible && ActiveEditorTab is { IsUntitled: false, Path.Length: > 0 };
 
         bool HasDocument() => IsTextEditorVisible && EditorTextBox?.Document is not null;
-        bool HasLspDocument() => HasDocument() && hasLsp;
+        bool HasLspDocument(string method) => HasDocument() && LspSupports(method);
         Task WithEditor(Action<AvaloniaEdit.Document.TextDocument, AvaloniaEdit.Editing.TextArea> action)
         {
             if (EditorTextBox?.Document is { } doc && EditorTextBox.TextArea is { } area)
@@ -1267,12 +1269,12 @@ public partial class MainWindow
             new("Go Forward", "Navigation", "EditorGoForward", () => NavigateEditorHistoryAsync(false), HasDocument, "next location history"),
             new("Next Problem", "Editor", "NextProblem", () => { NavigateEditorDiagnostic(1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning"),
             new("Previous Problem", "Editor", "PreviousProblem", () => { NavigateEditorDiagnostic(-1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning"),
-            new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), HasLspDocument, "language server"),
-            new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), HasLspDocument, "language server"),
+            new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), () => HasLspDocument("textDocument/typeDefinition"), "language server"),
+            new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), () => HasLspDocument("textDocument/implementation"), "language server"),
             new("Find All References", "Editor", "", () => RunMenuHandler(EditorFindReferencesMenuItem_OnClick), () => HasDocument() && hasReferences, "usages"),
-            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), HasLspDocument, "refactor dialog rename input"),
-            new("Show Document Symbols", "Editor", "", () => RunMenuHandler(EditorDocumentSymbolsMenuItem_OnClick), HasLspDocument, "outline language server"),
-            new("Show Signature Help", "Editor", "", () => RunMenuHandler(EditorSignatureHelpMenuItem_OnClick), HasLspDocument, "parameters"),
+            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), () => HasLspDocument("textDocument/rename"), "refactor dialog rename input"),
+            new("Show Document Symbols", "Editor", "", () => RunMenuHandler(EditorDocumentSymbolsMenuItem_OnClick), () => HasLspDocument("textDocument/documentSymbol"), "outline language server"),
+            new("Show Signature Help", "Editor", "", () => RunMenuHandler(EditorSignatureHelpMenuItem_OnClick), () => HasLspDocument("textDocument/signatureHelp"), "parameters"),
             new("Quick Fix…", "Editor", "", () => RunMenuHandler(EditorQuickFixMenuItem_OnClick), () => HasDocument() && hasCodeActions, "code action"),
             new("Format Document", "Editor", "", () => RunMenuHandler(EditorFormatDocumentMenuItem_OnClick), () => HasDocument() && hasFormatter, "prettify indent"),
             new("Change All Occurrences", "Editor", "ChangeAllOccurrences", () => RunMenuHandler(EditorChangeAllOccurrencesMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "multi cursor replace"),
@@ -1609,7 +1611,7 @@ public partial class MainWindow
         var revision = EditorSession.Revision;
         var revisionToken = EditorSession.RevisionCancellationToken;
         var snapshot = EditorTextSnapshotStore.GetSnapshot(document);
-        var encoding = hasLsp ? GetLspClientForFile(filePath!)?.PositionEncoding ?? "utf-16" : "utf-16";
+        var encoding = hasLsp ? GetLspClientForFile(filePath!, "textDocument/documentSymbol")?.PositionEncoding ?? "utf-16" : "utf-16";
         _ = LoadPaletteSymbolsAsync(document, snapshot, revision, revisionToken, filePath, languageRules, hasLsp, encoding, _paletteSymbolsVersion);
     }
 

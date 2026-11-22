@@ -3,13 +3,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Primitives.PopupPositioning;
-using Avalonia.Controls.Templates;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Avalonia.VisualTree;
 using AvaloniaEdit;
 using AvaloniaEdit.Document;
 using Kodo.Editor;
@@ -43,7 +40,7 @@ internal sealed class CodeActionItem
 {
     public required string Title { get; init; }
 
-    public required string Kind { get; init; }
+    public required string Kind { get; set; }
 
     public string? Detail { get; init; }
 
@@ -63,6 +60,8 @@ internal sealed class CodeActionItem
 
     public bool HasMalformedCommandArguments { get; set; }
 
+    public bool IsResolved { get; set; }
+
     public LangRuleCodeAction? LocalAction { get; init; }
 
     public bool IsEnabled => DisabledReason is null && !HasMalformedCommandArguments;
@@ -76,6 +75,62 @@ internal sealed class CodeActionItem
     internal static bool KindMatches(string kind, string requestedKind) =>
         string.Equals(kind, requestedKind, StringComparison.OrdinalIgnoreCase) ||
         kind.StartsWith(requestedKind + ".", StringComparison.OrdinalIgnoreCase);
+}
+
+internal static class CodeActionPolicy
+{
+    internal static bool HasExecutableAction(CodeActionItem action) =>
+        action.IsEnabled && (action.Edit is not null || !string.IsNullOrWhiteSpace(action.Command));
+
+    internal static bool ShouldKeepQuickFix(CodeActionItem action)
+    {
+        if (!HasExecutableAction(action)) return false;
+        if (!string.IsNullOrWhiteSpace(action.Kind))
+            return CodeActionItem.KindMatches(action.Kind, "quickfix");
+        return !LooksLikeUnclassifiedRefactorTitle(action.Title);
+    }
+
+    internal static void MergeResolvedAction(CodeActionItem action, JsonElement resolved)
+    {
+        if (resolved.ValueKind != JsonValueKind.Object) return;
+        if (resolved.TryGetProperty("kind", out var kind) && kind.ValueKind == JsonValueKind.String)
+            action.Kind = kind.GetString() ?? string.Empty;
+        if (resolved.TryGetProperty("edit", out var edit))
+            action.Edit = edit.ValueKind == JsonValueKind.Object ? edit.Clone() : null;
+        if (!resolved.TryGetProperty("command", out var command)) return;
+
+        action.Command = null;
+        action.CommandArguments = null;
+        action.HasMalformedCommandArguments = false;
+        if (command.ValueKind == JsonValueKind.String)
+            action.Command = command.GetString();
+        else if (command.ValueKind == JsonValueKind.Object &&
+                 command.TryGetProperty("command", out var name) && name.ValueKind == JsonValueKind.String)
+        {
+            action.Command = name.GetString();
+            if (command.TryGetProperty("arguments", out var arguments))
+            {
+                if (arguments.ValueKind == JsonValueKind.Array) action.CommandArguments = arguments.Clone();
+                else action.HasMalformedCommandArguments = true;
+            }
+        }
+    }
+
+    private static bool LooksLikeUnclassifiedRefactorTitle(string title)
+    {
+        string[] refactorPrefixes =
+        [
+            "Encapsulate field",
+            "Move static members",
+            "Move declaration",
+            "Introduce local",
+            "Extract ",
+            "Inline ",
+            "Change signature",
+            "Refactor "
+        ];
+        return refactorPrefixes.Any(prefix => title.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 internal sealed record WorkspaceEditConfirmation(string AnnotationId, string Label, string? Description);
@@ -169,6 +224,8 @@ public partial class MainWindow
             snapshot = snapshot with { SyncedOpenDocuments = syncedOpenDocuments };
 
             var actions = await RequestCodeActionsAsync(client, snapshot, scope).ConfigureAwait(false);
+            if (scope == CodeActionScope.QuickFix)
+                actions = await PrepareQuickFixActionsAsync(client, actions).ConfigureAwait(false);
             if (actions.Count == 0)
             {
                 SetLspFeatureStatus(scope == CodeActionScope.QuickFix
@@ -422,19 +479,7 @@ public partial class MainWindow
 
     private LspClient? ResolveCodeActionClient(string filePath)
     {
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return null;
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return null;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is { IsInitialized: true }) return client;
-        foreach (var candidate in lspExt.AllLspConfigurations)
-        {
-            client = _lspManager.TryGetClient(workspace, candidate);
-            if (client is { IsInitialized: true }) return client;
-        }
-        return null;
+        return GetLspClientForFile(filePath, "textDocument/codeAction");
     }
 
     private async Task<List<CodeActionItem>> RequestCodeActionsAsync(
@@ -609,50 +654,64 @@ public partial class MainWindow
 
     private async Task<bool> ResolveCodeActionIfNeededAsync(LspClient client, CodeActionItem action)
     {
+        if (action.IsResolved)
+            return CodeActionPolicy.HasExecutableAction(action);
+
         if (action.Data is null ||
             action.Edit is not null && !string.IsNullOrWhiteSpace(action.Command) ||
             !client.Supports("codeAction/resolve"))
-            return HasExecutableCodeAction(action);
+        {
+            action.IsResolved = true;
+            return CodeActionPolicy.HasExecutableAction(action);
+        }
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(CodeActionRequestTimeoutSeconds));
             var resolved = await client.SendRequestAsync("codeAction/resolve", action.Raw, cts.Token).ConfigureAwait(false);
-            if (resolved is not { ValueKind: JsonValueKind.Object }) return HasExecutableCodeAction(action);
-            MergeResolvedCodeAction(action, resolved.Value);
-            return HasExecutableCodeAction(action);
+            if (resolved is not { ValueKind: JsonValueKind.Object })
+            {
+                action.IsResolved = true;
+                return CodeActionPolicy.HasExecutableAction(action);
+            }
+            CodeActionPolicy.MergeResolvedAction(action, resolved.Value);
+            action.IsResolved = true;
+            return CodeActionPolicy.HasExecutableAction(action);
         }
         catch (Exception ex)
         {
             KodoDiagnostics.LogDebug("codeAction/resolve failed", ex);
-            return HasExecutableCodeAction(action);
+            action.IsResolved = true;
+            return CodeActionPolicy.HasExecutableAction(action);
         }
     }
 
-    private static bool HasExecutableCodeAction(CodeActionItem action) =>
-        action.IsEnabled && (action.Edit is not null || !string.IsNullOrWhiteSpace(action.Command));
-
-    internal static void MergeResolvedCodeAction(CodeActionItem action, JsonElement resolved)
+    private async Task<List<CodeActionItem>> PrepareQuickFixActionsAsync(LspClient client, List<CodeActionItem> actions)
     {
-        if (resolved.ValueKind != JsonValueKind.Object) return;
-        if (resolved.TryGetProperty("edit", out var edit))
-            action.Edit = edit.ValueKind == JsonValueKind.Object ? edit.Clone() : null;
-        if (!resolved.TryGetProperty("command", out var command)) return;
-
-        action.Command = null;
-        action.CommandArguments = null;
-        action.HasMalformedCommandArguments = false;
-        if (command.ValueKind == JsonValueKind.String)
-            action.Command = command.GetString();
-        else if (command.ValueKind == JsonValueKind.Object &&
-                 command.TryGetProperty("command", out var name) && name.ValueKind == JsonValueKind.String)
+        var prepared = new List<CodeActionItem>(actions.Count);
+        foreach (var action in actions)
         {
-            action.Command = name.GetString();
-            if (command.TryGetProperty("arguments", out var arguments))
+            if (!action.IsEnabled)
             {
-                if (arguments.ValueKind == JsonValueKind.Array) action.CommandArguments = arguments.Clone();
-                else action.HasMalformedCommandArguments = true;
+                prepared.Add(action);
+                continue;
             }
+
+            if (!await ResolveCodeActionIfNeededAsync(client, action).ConfigureAwait(false))
+            {
+                KodoDiagnostics.LogDebug("Skipped an LSP quick-fix candidate that resolved without an executable edit or command.");
+                continue;
+            }
+
+            if (!CodeActionPolicy.ShouldKeepQuickFix(action))
+            {
+                KodoDiagnostics.LogDebug("Skipped an LSP action that is not an executable quick fix.");
+                continue;
+            }
+
+            prepared.Add(action);
         }
+
+        return prepared;
     }
 
     internal static bool WorkspaceEditVersionMatches(int? expectedVersion, int? currentVersion) =>
@@ -1748,40 +1807,80 @@ public partial class MainWindow
 
             var requestEditor = snapshot.Editor;
             var textView = requestEditor.TextArea.TextView;
-            var firstEnabled = 0;
+            Popup? popup = null;
+            var actionButtons = new List<Button>(actions.Count);
+            var actionRows = new StackPanel { Spacing = KodoDesignTokens.KnotSpacing };
             for (var i = 0; i < actions.Count; i++)
             {
-                if (actions[i].IsEnabled) { firstEnabled = i; break; }
+                var action = actions[i];
+                if (!action.IsEnabled) continue;
+                var actionButton = new Button
+                {
+                    Content = BuildCodeActionRow(action),
+                    Background = Brushes.Transparent,
+                    Foreground = PrimaryTextBrush,
+                    BorderBrush = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    CornerRadius = KodoDesignTokens.ControlRadius,
+                    Padding = new Thickness(KodoDesignTokens.KnotSpacing, KodoDesignTokens.TightPadding.Top),
+                    MinHeight = KodoDesignTokens.LargeControlHeight,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch
+                };
+                actionButton.PointerEntered += (_, _) => actionButton.Background = ButtonHoverBrush;
+                actionButton.PointerExited += (_, _) => actionButton.Background = Brushes.Transparent;
+                actionButton.Click += (_, _) => Finish(action);
+                actionButton.KeyDown += (_, e) =>
+                {
+                    if (e.Key == Key.Escape)
+                    {
+                        Finish(null);
+                        e.Handled = true;
+                    }
+                    else if (e.Key is Key.Down or Key.Up && actionButtons.Count > 1)
+                    {
+                        var current = actionButtons.IndexOf(actionButton);
+                        var delta = e.Key == Key.Down ? 1 : -1;
+                        actionButtons[(current + delta + actionButtons.Count) % actionButtons.Count].Focus();
+                        e.Handled = true;
+                    }
+                };
+                actionButtons.Add(actionButton);
+                actionRows.Children.Add(actionButton);
             }
 
-            var list = new ListBox
+            var actionList = new ScrollViewer
             {
-                ItemsSource = actions,
-                SelectedIndex = firstEnabled,
-                ItemTemplate = new FuncDataTemplate<CodeActionItem>((item, _) => BuildCodeActionRow(item), supportsRecycling: false)
+                Content = actionRows,
+                Background = Brushes.Transparent,
+                MinWidth = KodoDesignTokens.CodeActionPopupMinWidth,
+                MaxHeight = KodoDesignTokens.CodeActionPopupMaxHeight,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
             };
-            list.Classes.Add("codeactions");
 
-            var popup = new Popup
+            popup = new Popup
             {
                 Child = new Border
                 {
                     Background = Brushes.Transparent,
-                    Padding = new Thickness(12),
+                    Padding = KodoDesignTokens.EditorPopupHitPadding,
                     Child = new Border
                     {
                         Background = CardBrush,
                         BorderBrush = SurfaceBorderBrush,
-                        BorderThickness = new Thickness(1),
+                        BorderThickness = KodoDesignTokens.BorderThin,
                         CornerRadius = KodoDesignTokens.CardRadius,
-                        Padding = new Thickness(16, 12),
-                        MaxWidth = 520,
-                        MaxHeight = 420,
-                        Child = list
+                        ClipToBounds = true,
+                        Padding = KodoDesignTokens.EditorPopupPadding,
+                        MinWidth = KodoDesignTokens.CodeActionPopupMinWidth,
+                        MaxWidth = KodoDesignTokens.EditorPopupMaxWidth,
+                        MaxHeight = KodoDesignTokens.CodeActionPopupMaxHeight,
+                        Child = actionList
                     }
                 },
                 PlacementTarget = textView,
-                Placement = PlacementMode.AnchorAndGravity,
+                Placement = PlacementMode.Custom,
                 PlacementAnchor = PopupAnchor.TopLeft,
                 PlacementGravity = PopupGravity.BottomRight,
                 IsLightDismissEnabled = true,
@@ -1793,6 +1892,7 @@ public partial class MainWindow
 
             void Finish(CodeActionItem? picked)
             {
+                if (popup is null) return;
                 completion.TrySetResult(picked);
                 popup.IsOpen = false;
                 _codeActionPopup = null;
@@ -1801,34 +1901,10 @@ public partial class MainWindow
                     requestEditor.Focus();
             }
 
-            list.DoubleTapped += (_, _) =>
+            popup.Opened += (_, _) =>
             {
-                if (list.SelectedItem is CodeActionItem item && item.IsEnabled) Finish(item);
+                if (actionButtons.Count > 0) actionButtons[0].Focus();
             };
-
-            list.KeyDown += (_, e) =>
-            {
-                switch (e.Key)
-                {
-                    case Key.Enter:
-                        if (list.SelectedItem is CodeActionItem enter && enter.IsEnabled) Finish(enter);
-                        e.Handled = true;
-                        break;
-                    case Key.Escape:
-                        Finish(null);
-                        e.Handled = true;
-                        break;
-                }
-            };
-
-            list.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
-            {
-                if (!e.GetCurrentPoint(list).Properties.IsLeftButtonPressed) return;
-                if (FindAncestor<ListBoxItem>(e.Source as Visual) is not { DataContext: CodeActionItem item }) return;
-                if (item.IsEnabled) Finish(item);
-            }, RoutingStrategies.Bubble, handledEventsToo: true);
-
-            popup.Opened += (_, _) => list.Focus();
 
             popup.Closed += (_, _) =>
             {
@@ -1881,7 +1957,8 @@ public partial class MainWindow
         text.Children.Add(new TextBlock
         {
             Text = action.DisplayTitle,
-            FontSize = 13,
+            FontFamily = KodoFonts.UiFamily,
+            FontSize = KodoDesignTokens.BodyFontSize,
             Foreground = action.IsEnabled ? PrimaryTextBrush : MutedTextBrush,
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -1892,7 +1969,8 @@ public partial class MainWindow
             text.Children.Add(new TextBlock
             {
                 Text = subtitle,
-                FontSize = 11,
+                FontFamily = KodoFonts.UiFamily,
+                FontSize = KodoDesignTokens.SmallFontSize,
                 FontStyle = action.IsEnabled ? FontStyle.Normal : FontStyle.Italic,
                 Foreground = MutedTextBrush,
                 Opacity = 0.85,
@@ -1908,13 +1986,4 @@ public partial class MainWindow
         };
     }
 
-    private static T? FindAncestor<T>(Visual? visual) where T : class
-    {
-        while (visual is not null)
-        {
-            if (visual is T match) return match;
-            visual = visual.GetVisualParent();
-        }
-        return null;
-    }
 }

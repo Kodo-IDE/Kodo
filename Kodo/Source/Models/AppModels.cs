@@ -25,6 +25,8 @@ internal sealed class AppSettings
     public bool StatusBarFilePathVisible { get; set; } = true;
     public bool WordWrapEnabled { get; set; }
     public bool MinimapVisible { get; set; } = true;
+    public bool QuickActionsEnabled { get; set; } = true;
+    public bool QuickActionsLearningEnabled { get; set; } = true;
     public bool StickyScrollEnabled { get; set; } = true;
     public int StickyScrollMaxLines { get; set; } = 5;
     public bool InsightEnabled { get; set; } = true;

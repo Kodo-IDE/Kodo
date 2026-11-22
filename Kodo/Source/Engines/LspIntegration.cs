@@ -2097,11 +2097,29 @@ public partial class MainWindow
         }
     }
 
-    private LspClient? GetLspClientForFile(string filePath)
+    private IEnumerable<LspClient> GetLspClientsForFile(string filePath)
     {
         var extension = ResolveLspExtensionForFile(filePath);
-        var configuration = ResolveLspConfigurationForFile(filePath) ?? extension?.Lsp ?? extension?.Lsps.FirstOrDefault();
-        return configuration is null ? null : _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), configuration);
+        if (extension is null) yield break;
+        var configurations = extension.AllLspConfigurations.ToList();
+        if (ResolveLspConfigurationForFile(filePath) is { } preferred)
+            configurations.Insert(0, preferred);
+        var seen = new HashSet<LspClient>();
+        var workspace = GetWorkspaceRootForFile(filePath);
+        foreach (var configuration in configurations.Distinct())
+        {
+            var client = _lspManager.TryGetClient(workspace, configuration);
+            if (client is not null && seen.Add(client))
+                yield return client;
+        }
+    }
+
+    private LspClient? GetLspClientForFile(string filePath, string? requiredMethod = null)
+    {
+        var clients = GetLspClientsForFile(filePath).ToList();
+        return requiredMethod is null
+            ? clients.FirstOrDefault()
+            : clients.FirstOrDefault(client => client.IsInitialized && client.Supports(requiredMethod));
     }
 
     private async Task<string?> GetLspTargetTextAsync(string filePath, CancellationToken cancellationToken = default)
@@ -2136,21 +2154,8 @@ public partial class MainWindow
         if (!LspEnabled || !LspCompletionEnabled)
             return Array.Empty<InsightSuggestion>();
         if (string.IsNullOrWhiteSpace(filePath)) return Array.Empty<InsightSuggestion>();
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return Array.Empty<InsightSuggestion>();
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return Array.Empty<InsightSuggestion>();
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized)
-        {
-            foreach (var c in lspExt.AllLspConfigurations)
-            {
-                client = _lspManager.TryGetClient(workspace, c);
-                if (client is not null && client.IsInitialized) break;
-            }
-        }
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/completion")) return Array.Empty<InsightSuggestion>();
+        var client = GetLspClientForFile(filePath, "textDocument/completion");
+        if (client is not { IsInitialized: true }) return Array.Empty<InsightSuggestion>();
         var request = await Dispatcher.UIThread.InvokeAsync<(
             AvaloniaEdit.Document.TextDocument Document,
             EditorTextSnapshot Snapshot,
@@ -2417,21 +2422,8 @@ public partial class MainWindow
     private async Task<string?> GetLspHoverInnerAsync(string? filePath, int offset, int line, int character, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(filePath)) return null;
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return null;
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return null;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized)
-        {
-            foreach (var c in lspExt.AllLspConfigurations)
-            {
-                client = _lspManager.TryGetClient(workspace, c);
-                if (client is not null && client.IsInitialized) break;
-            }
-        }
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/hover")) return null;
+        var client = GetLspClientForFile(filePath, "textDocument/hover");
+        if (client is not { IsInitialized: true }) return null;
         var hoverText = await CaptureOpenDocumentTextAsync(filePath, ct).ConfigureAwait(false);
         if (hoverText is null) return null;
         await FlushLspDocumentAsync(filePath, hoverText).ConfigureAwait(false);
@@ -2495,21 +2487,8 @@ public partial class MainWindow
     {
         if (!LspEnabled) return false;
         if (string.IsNullOrWhiteSpace(filePath)) return false;
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return false;
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return false;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized)
-        {
-            foreach (var c in lspExt.AllLspConfigurations)
-            {
-                client = _lspManager.TryGetClient(workspace, c);
-                if (client is not null && client.IsInitialized) break;
-            }
-        }
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/references")) return false;
+        var client = GetLspClientForFile(filePath, "textDocument/references");
+        if (client is null) return false;
         var requestPane = _activeEditorPane;
         var requestTab = requestPane.ActiveTab;
         var requestEditor = GetEditorForPane(requestPane);
@@ -2555,10 +2534,9 @@ public partial class MainWindow
         var firstStart = firstRange.TryGetProperty("start", out var firstS) ? firstS : default;
         var firstPath = FileUriToPath(firstUri);
         if (string.IsNullOrWhiteSpace(firstPath)) return false;
-        var firstClient = GetLspClientForFile(firstPath);
         var firstLine = LspDiagnosticInt(LspDiagnosticChild(firstStart, "line"), 0);
         var firstCharacter = LspDiagnosticInt(LspDiagnosticChild(firstStart, "character"), 0);
-        var firstEncoding = firstClient?.PositionEncoding ?? "utf-16";
+        var firstEncoding = client.PositionEncoding;
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             await OpenFileFromPathAsync(firstPath, requestPane);
@@ -2597,21 +2575,8 @@ public partial class MainWindow
     {
         if (!LspEnabled) return false;
         if (string.IsNullOrWhiteSpace(filePath)) return false;
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return false;
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return false;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized)
-        {
-            foreach (var c in lspExt.AllLspConfigurations)
-            {
-                client = _lspManager.TryGetClient(workspace, c);
-                if (client is not null && client.IsInitialized) break;
-            }
-        }
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/formatting")) return false;
+        var client = GetLspClientForFile(filePath, "textDocument/formatting");
+        if (client is null) return false;
         var activeDocument = EditorTextBox?.Document;
         if (activeDocument is null) return false;
         var requestPane = _activeEditorPane;
@@ -2690,11 +2655,8 @@ public partial class MainWindow
     {
         if (!LspEnabled) return false;
         if (string.IsNullOrWhiteSpace(filePath) || string.IsNullOrWhiteSpace(newName)) return false;
-        var ext = ResolveLspExtensionForFile(filePath);
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
-        if (ext is null || cfg is null) return false;
-        var client = _lspManager.TryGetClient(GetWorkspaceRootForFile(filePath), cfg);
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/rename")) return false;
+        var client = GetLspClientForFile(filePath, "textDocument/rename");
+        if (client is null) return false;
         var activeDocument = EditorTextBox?.Document;
         if (activeDocument is null) return false;
         var requestPane = _activeEditorPane;
@@ -2735,13 +2697,8 @@ public partial class MainWindow
     {
         if (!LspEnabled) return null;
         if (string.IsNullOrWhiteSpace(filePath)) return null;
-        var ext = ResolveLspExtensionForFile(filePath);
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? ext?.Lsp ?? ext?.Lsps.FirstOrDefault();
-        if (ext is null || cfg is null) return null;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized) return null;
-        if (!client.Supports(method)) return null;
+        var client = GetLspClientForFile(filePath, method);
+        if (client is null) return null;
         try
         {
             var snapshot = await Dispatcher.UIThread.InvokeAsync(() =>
@@ -2904,7 +2861,7 @@ public partial class MainWindow
         var activeDocument = requestEditor?.Document;
         if (activeDocument is null) return false;
         var requestVersion = activeDocument.Version;
-        var encoding = GetLspClientForFile(filePath)?.PositionEncoding ?? "utf-16";
+        var encoding = GetLspClientForFile(filePath, method)?.PositionEncoding ?? "utf-16";
         var (line, character) = LspPath.OffsetToLspPosition(activeDocument, offset, encoding);
         var result = await (method == "textDocument/typeDefinition"
             ? GetLspTypeDefinitionAsync(filePath, line, character, ct)
@@ -2924,10 +2881,9 @@ public partial class MainWindow
         var start = range.TryGetProperty("start", out var startEl) ? startEl : default;
         var path = FileUriToPath(uri);
         if (string.IsNullOrWhiteSpace(path)) return false;
-        var client = GetLspClientForFile(path);
         var targetLine = LspDiagnosticInt(LspDiagnosticChild(start, "line"), 0);
         var targetCharacter = LspDiagnosticInt(LspDiagnosticChild(start, "character"), 0);
-        var targetEncoding = client?.PositionEncoding ?? "utf-16";
+        var targetEncoding = GetLspClientForFile(filePath, method)?.PositionEncoding ?? "utf-16";
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             await OpenFileFromPathAsync(path, requestPane);
@@ -3109,21 +3065,8 @@ public partial class MainWindow
     {
         if (!LspEnabled) return false;
         if (string.IsNullOrWhiteSpace(filePath)) return false;
-        var lspExt = ResolveLspExtensionForFile(filePath);
-        if (lspExt is null || !lspExt.HasLsp) return false;
-        var cfg = ResolveLspConfigurationForFile(filePath) ?? lspExt.Lsp ?? lspExt.Lsps.FirstOrDefault();
-        if (cfg is null) return false;
-        var workspace = GetWorkspaceRootForFile(filePath);
-        var client = _lspManager.TryGetClient(workspace, cfg);
-        if (client is null || !client.IsInitialized)
-        {
-            foreach (var c in lspExt.AllLspConfigurations)
-            {
-                client = _lspManager.TryGetClient(workspace, c);
-                if (client is not null && client.IsInitialized) break;
-            }
-        }
-        if (client is null || !client.IsInitialized || !client.Supports("textDocument/definition")) return false;
+        var client = GetLspClientForFile(filePath, "textDocument/definition");
+        if (client is null) return false;
 
         var uri = FilePathToUri(filePath);
         var requestPane = _activeEditorPane;
@@ -3196,8 +3139,7 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug($"LSP definition target not found: {first.targetUri}");
             return false;
         }
-        var targetClient = GetLspClientForFile(targetPath);
-        var targetEncoding = targetClient?.PositionEncoding ?? "utf-16";
+        var targetEncoding = client.PositionEncoding;
 
         await Dispatcher.UIThread.InvokeAsync(async () =>
         {

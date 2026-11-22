@@ -179,9 +179,9 @@ public partial class MainWindow
         }
     }
 
-    private void NavigateEditorDiagnostic(int direction)
+    private bool NavigateEditorDiagnostic(int direction)
     {
-        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return;
+        if (EditorTextBox?.Document is null || EditorTextBox.TextArea is null) return false;
         var problems = _errorHighlightRenderer.Spans
             .Select(span => (Offset: span.StartOffset, Message: span.Message))
             .Concat(_deadCodeHighlightRenderer.Spans.Select(span => (Offset: span.StartOffset, Message: span.Reason)))
@@ -189,7 +189,7 @@ public partial class MainWindow
             .Distinct()
             .OrderBy(problem => problem.Offset)
             .ToList();
-        if (problems.Count == 0) return;
+        if (problems.Count == 0) return false;
 
         var caret = EditorTextBox.TextArea.Caret.Offset;
         var index = direction >= 0
@@ -200,6 +200,7 @@ public partial class MainWindow
         EditorTextBox.TextArea.Caret.Offset = problems[index].Offset;
         EditorTextBox.TextArea.Caret.BringCaretToView();
         EditorTextBox.Focus();
+        return true;
     }
 
     private async Task RefreshEditorInsightsSafelyAsync(InsightRefreshKind requestedKind)
@@ -463,6 +464,8 @@ public partial class MainWindow
 
     private void ClearLspSignatureHelpTooltip()
     {
+        if (SignatureHelpPopup.IsOpen)
+            SignatureHelpPopup.IsOpen = false;
         var textView = EditorTextBox?.TextArea?.TextView;
         if (textView is not null && _lspSignatureHelpTooltip is not null &&
             Equals(ToolTip.GetTip(textView), _lspSignatureHelpTooltip))
@@ -1441,7 +1444,7 @@ public partial class MainWindow
         GoToDefinitionAtCaret();
     }
 
-    private async void GoToDefinitionAtCaret()
+    private async void GoToDefinitionAtCaret(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
@@ -1467,7 +1470,12 @@ public partial class MainWindow
             {
                 if (await TryLspGoToDefinitionAsync(path, offset))
                 {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        if (IsRequestCurrent()) ExtensionsStatusText = "Definition opened.";
+                    });
                     RecordEditorNavigation(origin);
+                    onSuccess?.Invoke();
                     return;
                 }
             }
@@ -1476,8 +1484,16 @@ public partial class MainWindow
 
         if (!IsRequestCurrent()) return;
         var extension = CurrentLanguageExtension;
-        if (extension?.LangRules is not { HasDefinitionProvider: true } rules || string.IsNullOrWhiteSpace(word) || EditorTextBox?.Document is null)
+        if (string.IsNullOrWhiteSpace(word))
+        {
+            if (IsRequestCurrent()) ExtensionsStatusText = "No symbol at the caret to resolve.";
             return;
+        }
+        if (extension?.LangRules is not { HasDefinitionProvider: true } rules || EditorTextBox?.Document is null)
+        {
+            if (IsRequestCurrent()) ExtensionsStatusText = "No definition was found at the caret.";
+            return;
+        }
         string text;
         try
         {
@@ -1507,7 +1523,12 @@ public partial class MainWindow
             KodoDiagnostics.LogDebug("Local go-to-definition failed.", ex);
             return;
         }
-        if (definition is null || !IsRequestCurrent()) return;
+        if (!IsRequestCurrent()) return;
+        if (definition is null)
+        {
+            ExtensionsStatusText = "No definition was found for this symbol.";
+            return;
+        }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!IsRequestCurrent()) return;
@@ -1516,11 +1537,16 @@ public partial class MainWindow
             EditorTextBox.Select(start, length);
             EditorTextBox.TextArea.Caret.BringCaretToView();
             EditorTextBox.Focus();
+            ExtensionsStatusText = "Definition found.";
             RecordEditorNavigation(origin);
+            onSuccess?.Invoke();
         });
     }
 
     private async void EditorFindReferencesMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await FindReferencesAtCaretAsync();
+
+    private async Task FindReferencesAtCaretAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
@@ -1537,7 +1563,10 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
             {
                 if (await TryLspFindReferencesAsync(path, offset, word))
+                {
+                    onSuccess?.Invoke();
                     return;
+                }
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP find references failed, falling back", ex); }
@@ -1547,12 +1576,20 @@ public partial class MainWindow
             !FileSystemPaths.Equals(path, _currentFilePath) || requestEditor.TextArea.Caret.Offset != offset)
             return;
         var extension = CurrentLanguageExtension;
-        if (extension?.LangRules is not { HasReferenceProvider: true } || string.IsNullOrWhiteSpace(word)) return;
+        if (extension?.LangRules is not { HasReferenceProvider: true } || string.IsNullOrWhiteSpace(word))
+        {
+            ExtensionsStatusText = "No references were found for this symbol.";
+            return;
+        }
         FindText = word;
         OpenSearchPanel(IsFolderOpen ? SearchMode.ProjectSearch : SearchMode.FindInFile);
+        onSuccess?.Invoke();
     }
 
     private async void EditorFormatDocumentMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await FormatDocumentAsync();
+
+    private async Task FormatDocumentAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var targetEditor = EditorTextBox;
@@ -1589,12 +1626,20 @@ public partial class MainWindow
             if (!string.IsNullOrWhiteSpace(path) && ResolveLspExtensionForFile(path) is not null)
             {
                 if (await TryLspFormatDocumentAsync(path, text, revisionToken))
+                {
+                    ExtensionsStatusText = "Document formatted.";
+                    onSuccess?.Invoke();
                     return;
+                }
             }
         }
         catch (Exception ex) { KodoDiagnostics.LogDebug("LSP formatting failed, falling back", ex); }
         if (!IsRequestCurrent()) return;
-        if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules) return;
+        if (CurrentLanguageExtension?.LangRules is not { HasFormatter: true } rules)
+        {
+            if (IsRequestCurrent()) ExtensionsStatusText = "No document formatter is available for this file.";
+            return;
+        }
         string? formatted;
         try
         {
@@ -1611,7 +1656,13 @@ public partial class MainWindow
                 ExtensionsStatusText = "Formatting failed. See the log for details.";
             return;
         }
-        if (formatted is null || string.Equals(formatted, text, StringComparison.Ordinal) || !IsRequestCurrent()) return;
+        if (formatted is null || !IsRequestCurrent()) return;
+        if (string.Equals(formatted, text, StringComparison.Ordinal))
+        {
+            ExtensionsStatusText = "Document is already formatted.";
+            onSuccess?.Invoke();
+            return;
+        }
         var caret = targetEditor.TextArea.Caret.Offset;
         if (!IsRequestCurrent()) return;
         try
@@ -1634,6 +1685,8 @@ public partial class MainWindow
             return;
         }
         targetEditor.TextArea.Caret.Offset = Math.Min(caret, document.TextLength);
+        ExtensionsStatusText = "Document formatted.";
+        onSuccess?.Invoke();
     }
 
     private async void EditorApplyCodeActionMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1641,7 +1694,7 @@ public partial class MainWindow
         await RunCodeActionsWithFallbackAsync(CodeActionScope.All).ConfigureAwait(false);
     }
 
-    private async Task RunCodeActionsWithFallbackAsync(CodeActionScope scope)
+    private async Task<bool> RunCodeActionsWithFallbackAsync(CodeActionScope scope, Action? onSuccess = null)
     {
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
@@ -1651,18 +1704,30 @@ public partial class MainWindow
         var requestCaret = requestEditor?.TextArea.Caret.Offset ?? -1;
 
         var outcome = await RunCodeActionsAsync(scope).ConfigureAwait(false);
-        if (!ShouldRunLocalCodeActionFallback(outcome)) return;
+        if (outcome == CodeActionRunOutcome.Applied)
+        {
+            onSuccess?.Invoke();
+            return true;
+        }
+        if (!ShouldRunLocalCodeActionFallback(outcome)) return false;
 
         var requestIsCurrent = await Dispatcher.UIThread.InvokeAsync(() =>
             ReferenceEquals(_activeEditorPane, requestPane) && ReferenceEquals(EditorTextBox, requestEditor) &&
             ReferenceEquals(requestPane.ActiveTab, requestTab) &&
             ReferenceEquals(requestEditor?.Document, requestDocument) && EditorSession.Revision == requestRevision &&
             requestEditor?.TextArea.Caret.Offset == requestCaret);
-        if (requestIsCurrent)
-            await RunLangRuleFallbackAsync().ConfigureAwait(false);
+        if (requestIsCurrent && await RunLangRuleFallbackAsync().ConfigureAwait(false))
+        {
+            onSuccess?.Invoke();
+            return true;
+        }
+        return false;
     }
 
     private async void EditorRenameSymbolMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await RenameSymbolAsync();
+
+    private async Task RenameSymbolAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
@@ -1685,7 +1750,15 @@ public partial class MainWindow
         if (!IsRequestCurrent()) return;
         var text = await EditorTextSnapshotStore.GetSnapshot(document).GetTextAsync();
         if (text is null || !IsRequestCurrent()) return;
-        if (!await TryLspRenameAsync(path, caretOffset, text, newName))
+        if (await TryLspRenameAsync(path, caretOffset, text, newName))
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (IsRequestCurrent()) ExtensionsStatusText = $"Renamed '{oldName}' to '{newName}'.";
+            });
+            onSuccess?.Invoke();
+        }
+        else
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (IsRequestCurrent()) ExtensionsStatusText = "The language server could not rename this symbol.";
@@ -1693,6 +1766,9 @@ public partial class MainWindow
     }
 
     private async void EditorTypeDefinitionMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await NavigateToTypeDefinitionAsync();
+
+    private async Task NavigateToTypeDefinitionAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
@@ -1701,12 +1777,20 @@ public partial class MainWindow
         var path = _currentFilePath;
         var offset = EditorTextBox.TextArea.Caret.Offset;
         var ok = await TryLspNavigateFeatureAsync(path, offset, "textDocument/typeDefinition");
-        if (ok) RecordEditorNavigation(origin);
+        if (ok)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Type definition opened.");
+            RecordEditorNavigation(origin);
+            onSuccess?.Invoke();
+        }
         if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
         if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No type definition was found by the language server.");
     }
 
     private async void EditorImplementationMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await NavigateToImplementationAsync();
+
+    private async Task NavigateToImplementationAsync(Action? onSuccess = null)
     {
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
@@ -1715,7 +1799,12 @@ public partial class MainWindow
         var path = _currentFilePath;
         var offset = EditorTextBox.TextArea.Caret.Offset;
         var ok = await TryLspNavigateFeatureAsync(path, offset, "textDocument/implementation");
-        if (ok) RecordEditorNavigation(origin);
+        if (ok)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "Implementation opened.");
+            RecordEditorNavigation(origin);
+            onSuccess?.Invoke();
+        }
         if (!ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != revision || !FileSystemPaths.Equals(path, _currentFilePath)) return;
         if (!ok) await Dispatcher.UIThread.InvokeAsync(() => ExtensionsStatusText = "No implementation was found by the language server.");
     }
@@ -1726,6 +1815,9 @@ public partial class MainWindow
     }
 
     private async void EditorSignatureHelpMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await ShowSignatureHelpAsync();
+
+    private async Task ShowSignatureHelpAsync(Action? onSuccess = null)
     {
         if (!LspEnabled || !LspSignatureHelpEnabled) return;
         if (EditorTextBox?.Document is null) return;
@@ -1734,7 +1826,7 @@ public partial class MainWindow
         var document = EditorTextBox.Document;
         var documentRevision = EditorSession.Revision;
         var offset = Math.Clamp(EditorTextBox.TextArea.Caret.Offset, 0, document.TextLength);
-        var client = GetLspClientForFile(filePath);
+        var client = GetLspClientForFile(filePath, "textDocument/signatureHelp");
         var encoding = client?.PositionEncoding ?? "utf-16";
         (int line, int character) position;
         if (string.Equals(encoding, "utf-16", StringComparison.OrdinalIgnoreCase))
@@ -1746,12 +1838,84 @@ public partial class MainWindow
             position = await EditorBackgroundWork.RunAsync(_ => LspPath.OffsetToLspPosition(text, offset, encoding), CancellationToken.None).ConfigureAwait(false);
         }
         var result = await GetLspSignatureHelpAsync(filePath, position.line, position.character).ConfigureAwait(false);
-        var label = result is { } value && value.ValueKind == JsonValueKind.Object && value.TryGetProperty("signatures", out var signatures) && signatures.ValueKind == JsonValueKind.Array && signatures.GetArrayLength() > 0 && signatures[0].TryGetProperty("label", out var labelElement) ? labelElement.GetString() : null;
+        string? label = null;
+        string? documentation = null;
+        if (result is { ValueKind: JsonValueKind.Object } value &&
+            value.TryGetProperty("signatures", out var signatures) && signatures.ValueKind == JsonValueKind.Array && signatures.GetArrayLength() > 0)
+        {
+            var activeSignature = value.TryGetProperty("activeSignature", out var activeSignatureElement) &&
+                                  activeSignatureElement.TryGetInt32(out var activeIndex)
+                ? Math.Clamp(activeIndex, 0, signatures.GetArrayLength() - 1)
+                : 0;
+            var signature = signatures[activeSignature];
+            label = signature.TryGetProperty("label", out var labelElement) && labelElement.ValueKind == JsonValueKind.String
+                ? labelElement.GetString()
+                : null;
+            if (signature.TryGetProperty("documentation", out var documentationElement))
+                documentation = GetLspDocumentationText(documentationElement);
+            if (string.IsNullOrWhiteSpace(documentation) && signature.TryGetProperty("parameters", out var parameters) && parameters.ValueKind == JsonValueKind.Array)
+            {
+                var activeParameter = signature.TryGetProperty("activeParameter", out var signatureParameter) && signatureParameter.TryGetInt32(out var signatureParameterIndex)
+                    ? signatureParameterIndex
+                    : value.TryGetProperty("activeParameter", out var responseParameter) && responseParameter.TryGetInt32(out var responseParameterIndex)
+                        ? responseParameterIndex
+                        : -1;
+                if (activeParameter >= 0 && activeParameter < parameters.GetArrayLength() &&
+                    parameters[activeParameter].TryGetProperty("documentation", out var parameterDocumentation))
+                    documentation = GetLspDocumentationText(parameterDocumentation);
+            }
+        }
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!FileSystemPaths.Equals(_currentFilePath, filePath) || !ReferenceEquals(EditorTextBox?.Document, document) || EditorSession.Revision != documentRevision || EditorTextBox.TextArea.Caret.Offset != offset) return;
-            ExtensionsStatusText = string.IsNullOrWhiteSpace(label) ? "No signature help was returned by the language server." : $"Signature: {label}";
+            var hasSignature = !string.IsNullOrWhiteSpace(label);
+            ExtensionsStatusText = hasSignature ? $"Signature: {label}" : "No signature help at this position.";
+            var textView = EditorTextBox.TextArea.TextView;
+            SignatureHelpLabel.Text = hasSignature ? label : "No signature help at this position";
+            SignatureHelpDocumentation.Text = hasSignature
+                ? documentation
+                : "Place the caret inside a function call's parentheses to see its signature.";
+            SignatureHelpDocumentation.IsVisible = hasSignature
+                ? !string.IsNullOrWhiteSpace(documentation)
+                : true;
+            SignatureHelpPopup.PlacementTarget = textView;
+            try
+            {
+                var caret = EditorTextBox.TextArea.Caret;
+                var caretPosition = textView.GetVisualPosition(new TextViewPosition(caret.Line, caret.Column), VisualYPosition.LineBottom) - textView.ScrollOffset;
+                SignatureHelpPopup.HorizontalOffset = Math.Clamp(caretPosition.X, 8, Math.Max(8, textView.Bounds.Width - 520));
+                SignatureHelpPopup.VerticalOffset = Math.Clamp(caretPosition.Y, 8, Math.Max(8, textView.Bounds.Height - 80));
+            }
+            catch
+            {
+                SignatureHelpPopup.HorizontalOffset = 8;
+                SignatureHelpPopup.VerticalOffset = 8;
+            }
+            SignatureHelpPopup.IsOpen = true;
+            if (hasSignature) onSuccess?.Invoke();
         });
+    }
+
+    private static string? GetLspDocumentationText(JsonElement documentation)
+    {
+        if (documentation.ValueKind == JsonValueKind.String)
+            return documentation.GetString();
+        if (documentation.ValueKind == JsonValueKind.Object &&
+            documentation.TryGetProperty("value", out var value) && value.ValueKind == JsonValueKind.String)
+            return value.GetString();
+        if (documentation.ValueKind == JsonValueKind.Array)
+        {
+            var parts = new List<string>();
+            foreach (var item in documentation.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                    parts.Add(item.GetString() ?? string.Empty);
+                else if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("value", out var itemValue) && itemValue.ValueKind == JsonValueKind.String)
+                    parts.Add(itemValue.GetString() ?? string.Empty);
+            }
+            return string.Join("\n\n", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+        }
+        return null;
     }
 
     private async void EditorQuickFixMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1759,7 +1923,7 @@ public partial class MainWindow
         await RunCodeActionsWithFallbackAsync(CodeActionScope.QuickFix).ConfigureAwait(false);
     }
 
-    private async Task RunLangRuleFallbackAsync()
+    private async Task<bool> RunLangRuleFallbackAsync()
     {
         var captured = await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -1791,7 +1955,7 @@ public partial class MainWindow
         if (captured.Document is null || captured.Snapshot is null || captured.Rules is null)
         {
             SetLspFeatureStatus("No quick fixes available at the caret.");
-            return;
+            return false;
         }
         bool IsRequestCurrent() =>
             ReferenceEquals(_activeEditorPane, captured.Pane) && ReferenceEquals(EditorTextBox, captured.Editor) &&
@@ -1806,7 +1970,7 @@ public partial class MainWindow
                 if (IsRequestCurrent())
                     ExtensionsStatusText = "Local quick fixes are skipped for large files to keep the editor responsive.";
             });
-            return;
+            return false;
         }
 
         IReadOnlyList<LangRuleCodeAction>? actions;
@@ -1825,7 +1989,7 @@ public partial class MainWindow
         }
         catch (OperationCanceledException)
         {
-            return;
+            return false;
         }
         var matchingActions = GetApplicableLangRuleCodeActions(
             actions,
@@ -1838,7 +2002,7 @@ public partial class MainWindow
                 if (IsRequestCurrent())
                     ExtensionsStatusText = "No quick fixes available at the caret.";
             });
-            return;
+            return false;
         }
 
         using var rawAction = JsonDocument.Parse("{}");
@@ -1864,18 +2028,19 @@ public partial class MainWindow
             captured.Tab);
         var selected = await PresentCodeActionsAsync(menuItems, snapshot).ConfigureAwait(false);
         var action = selected?.LocalAction;
-        if (action is null) return;
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        if (action is null) return false;
+        return await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (!IsRequestCurrent()) return;
+            if (!IsRequestCurrent()) return false;
             try
             {
                 captured.Document.Replace(action.Start, action.Length, action.NewText);
                 ExtensionsStatusText = string.IsNullOrWhiteSpace(action.Title)
                     ? "Applied local fix."
                     : $"Applied: {action.Title}";
+                return true;
             }
-            catch (Exception ex) { KodoDiagnostics.LogDebug("LangRules quick fix failed", ex); }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("LangRules quick fix failed", ex); return false; }
         });
     }
 
@@ -2356,34 +2521,34 @@ public partial class MainWindow
     {
         var window = new CompletionWindow(EditorTextBox.TextArea)
         {
-            MaxHeight = InsightRowHeight * InsightVisibleRows
-                + InsightListVerticalPadding + InsightBorderThickness,
-            MaxWidth = 720,
-            Width = 600,
-            MinWidth = 420,
+            MaxHeight = KodoDesignTokens.CompletionRowHeight * KodoDesignTokens.CompletionVisibleRows
+                + KodoDesignTokens.CompletionListVerticalPadding + KodoDesignTokens.CompletionBorderThickness,
+            MaxWidth = KodoDesignTokens.CompletionPopupMaxWidth,
+            Width = KodoDesignTokens.CompletionPopupWidth,
+            MinWidth = KodoDesignTokens.CompletionPopupMinWidth,
             WindowManagerAddShadowHint = true,
         };
 
         var panelBrush = CardBrush;
         window.CompletionList.Background = panelBrush;
         window.CompletionList.BorderBrush = SurfaceBorderBrush;
-        window.CompletionList.BorderThickness = new Thickness(1);
+        window.CompletionList.BorderThickness = KodoDesignTokens.BorderThin;
         window.CompletionList.FontFamily = EditorTextBox.FontFamily;
         window.CompletionList.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         var panelCornerStyle = new Style(x => x.OfType<CompletionList>().Template().OfType<Border>());
-        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, KodoDesignTokens.ControlRadius));
+        panelCornerStyle.Setters.Add(new Setter(Border.CornerRadiusProperty, KodoDesignTokens.CardRadius));
         panelCornerStyle.Setters.Add(new Setter(Border.BackgroundProperty, panelBrush));
         panelCornerStyle.Setters.Add(new Setter(Border.BoxShadowProperty, new BoxShadows(
-            new BoxShadow { OffsetX = 0, OffsetY = 8, Blur = 28, Spread = 0, Color = Color.FromArgb(38, 0, 0, 0) },
-            new BoxShadow[] { new BoxShadow { OffsetX = 0, OffsetY = 2, Blur = 10, Spread = 0, Color = Color.FromArgb(20, 0, 0, 0) } })));
+            new BoxShadow { OffsetX = 0, OffsetY = KodoDesignTokens.EditorPopupShadowOffsetY, Blur = KodoDesignTokens.EditorPopupShadowBlur, Spread = 0, Color = KodoDesignTokens.CompletionShadowColor },
+            new BoxShadow[] { new BoxShadow { OffsetX = 0, OffsetY = KodoDesignTokens.CompletionShadowOffsetYSecondary, Blur = KodoDesignTokens.CompletionShadowBlurSecondary, Spread = 0, Color = KodoDesignTokens.CompletionShadowSecondaryColor } })));
         window.Styles.Add(panelCornerStyle);
 
         if (window.CompletionList.ListBox is { } listBox)
         {
             listBox.Background = panelBrush;
             listBox.BorderThickness = new Thickness(0);
-            listBox.Padding = new Thickness(6, 4);
+            listBox.Padding = new Thickness(KodoDesignTokens.CompletionListPaddingHorizontal, KodoDesignTokens.CompletionListPaddingVertical);
             listBox.Margin = new Thickness(0);
             listBox.HorizontalAlignment = HorizontalAlignment.Stretch;
             listBox.ClipToBounds = true;
