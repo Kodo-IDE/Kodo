@@ -12,7 +12,7 @@
     <UsedAvaloniaProducts></UsedAvaloniaProducts>
     <ApplicationIcon Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win'))">..\Assets\kodo_logo.ico</ApplicationIcon>
     <ApplicationIcon Condition="'$(RuntimeIdentifier)' == '' And $([MSBuild]::IsOSPlatform('Windows'))">..\Assets\kodo_logo.ico</ApplicationIcon>
-    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
     <UseAppHost>true</UseAppHost>
     <Version>2.4.0-DEV</Version>
     <InformationalVersion>v2.4.0-DEV</InformationalVersion>

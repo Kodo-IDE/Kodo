@@ -318,7 +318,7 @@ public sealed class ConsoleTerminal : Control
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
         }
-        else if (OperatingSystem.IsLinux())
+        else
         {
             Stop();
             _cts = new CancellationTokenSource();
@@ -327,11 +327,6 @@ public sealed class ConsoleTerminal : Control
                 return;
             StartUnixShell(shellPath, arguments, workingDirectory, suppressOutputUntilRestored);
             WriteFallbackNotice();
-            return;
-        }
-        else
-        {
-            KodoDiagnostics.LogDebug("Embedded terminal is supported on Windows and Linux only. Start ignored.");
             return;
         }
         Stop();

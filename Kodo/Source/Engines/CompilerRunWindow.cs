@@ -281,7 +281,8 @@ internal sealed class CompilerRunWindow : Window
     private void RunCommand()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
-            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) &&
+            !RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             ApplyState(failed: true);
             _statusText.Text = "Unavailable on this platform";

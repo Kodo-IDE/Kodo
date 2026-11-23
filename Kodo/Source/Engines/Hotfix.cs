@@ -177,12 +177,14 @@ internal static class HotfixValidator
     public const int SupportedSchemaVersion = 1;
     public const string ExpectedProduct = "Kodo";
 
-    private static readonly HashSet<string> KnownPlatforms = new(StringComparer.OrdinalIgnoreCase)
-    {
+    private static readonly string[] KnownPlatforms =
+    [
         "win-x64",
         "linux-x64",
         "linux-arm64",
-    };
+        "osx-x64",
+        "osx-arm64",
+    ];
 
     public static bool TryValidate(HotfixManifest? manifest, out string? error)
     {
@@ -216,8 +218,9 @@ internal static class HotfixValidator
             errors.Add($"Invalid minimumHotfix {manifest.MinimumHotfix} (must be >= 0).");
         else if (manifest.Hotfix >= 1 && manifest.MinimumHotfix > manifest.Hotfix)
             errors.Add($"minimumHotfix {manifest.MinimumHotfix} exceeds hotfix {manifest.Hotfix}.");
-        if (string.IsNullOrWhiteSpace(manifest.Platform) || !KnownPlatforms.Contains(manifest.Platform.Trim()))
-            errors.Add($"Unrecognized platform '{manifest.Platform}' (expected one of: win-x64, linux-x64, linux-arm64).");
+        if (string.IsNullOrWhiteSpace(manifest.Platform) ||
+            !KnownPlatforms.Contains(manifest.Platform.Trim(), StringComparer.OrdinalIgnoreCase))
+            errors.Add($"Unrecognized platform '{manifest.Platform}' (expected one of: {string.Join(", ", KnownPlatforms)}).");
         if (manifest.Files is null)
         {
             errors.Add("File list is missing.");
@@ -564,6 +567,10 @@ internal static class HotfixDiscovery
             return RuntimeInformation.ProcessArchitecture == Architecture.Arm64
                 ? "linux-arm64"
                 : "linux-x64";
+        if (OperatingSystem.IsMacOS())
+            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+                ? "osx-arm64"
+                : "osx-x64";
         return "win-x64";
     }
 
@@ -585,6 +592,8 @@ internal static class HotfixDiscovery
                     "win-x64" => $"Kodo-Windows-{safeVersion}.zip",
                     "linux-x64" => $"Kodo-Linux-x64-{safeVersion}.tar.gz",
                     "linux-arm64" => $"Kodo-Linux-arm64-{safeVersion}.tar.gz",
+                    "osx-x64" => $"Kodo-macOS-x64-{safeVersion}.tar.gz",
+                    "osx-arm64" => $"Kodo-macOS-arm64-{safeVersion}.tar.gz",
                     _ => ""
                 }
             };
@@ -936,8 +945,8 @@ internal static class HotfixStaging
 
     internal static string NormalizeArchiveForInstaller(string packagePath, string platformRid, string? assetName = null)
     {
-        if (!string.Equals(platformRid, "linux-x64", StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(platformRid, "linux-arm64", StringComparison.OrdinalIgnoreCase)) return packagePath;
+        if (!platformRid.StartsWith("linux-", StringComparison.OrdinalIgnoreCase) &&
+            !platformRid.StartsWith("osx-", StringComparison.OrdinalIgnoreCase)) return packagePath;
         var archiveName = string.IsNullOrWhiteSpace(assetName) ? packagePath : Path.GetFileName(assetName.Trim());
         if (!archiveName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return packagePath;
         var normalizedPath = packagePath + ".normalized.zip";

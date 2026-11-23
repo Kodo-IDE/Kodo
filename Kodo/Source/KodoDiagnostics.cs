@@ -14,8 +14,9 @@ namespace Kodo;
 
 internal static class KodoPaths
 {
-    public static string DataRoot => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo");
+    public static string DataRoot => OperatingSystem.IsMacOS()
+        ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Application Support", "Kodo")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Kodo");
 
     public static string LegacyDataRoot => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
@@ -326,9 +327,9 @@ internal static class KodoDiagnostics
     }
 
     public static string LogDirectoryPath =>
-        OperatingSystem.IsLinux()
-            ? KodoPaths.DataRoot
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo");
+        OperatingSystem.IsWindows()
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Kodo")
+            : KodoPaths.DataRoot;
 
     public static string MainLogFilePath => Path.Combine(LogDirectoryPath, "kodo.log");
 
@@ -542,7 +543,7 @@ internal static class KodoDiagnostics
     private static readonly string CachedAppData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
     private static readonly string CachedLocalAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
     public static string DisplayLogPath =>
-        OperatingSystem.IsLinux() ? Path.Combine(KodoPaths.DataRoot, "kodo.log") : Path.Combine(KodoPaths.LegacyDataRoot, "kodo.log");
+        OperatingSystem.IsWindows() ? Path.Combine(KodoPaths.LegacyDataRoot, "kodo.log") : Path.Combine(KodoPaths.DataRoot, "kodo.log");
 
     private static readonly string CachedRepoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
 

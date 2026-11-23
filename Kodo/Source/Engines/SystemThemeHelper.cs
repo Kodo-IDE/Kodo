@@ -16,6 +16,7 @@ internal static class SystemThemeHelper
     {
         if (OperatingSystem.IsWindows()) return GetWindowsAccentHex();
         if (OperatingSystem.IsLinux()) return GetLinuxAccentHex();
+        if (OperatingSystem.IsMacOS()) return GetMacAccentHex();
         return null;
     }
 
@@ -23,11 +24,12 @@ internal static class SystemThemeHelper
     {
         if (OperatingSystem.IsWindows()) return GetWindowsIsLightTheme();
         if (OperatingSystem.IsLinux()) return GetLinuxIsLightTheme();
+        if (OperatingSystem.IsMacOS()) return GetMacIsLightTheme();
         return null;
     }
 
     public static bool SupportsAccent =>
-        OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
+        OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
     public static string AccentModeDisplayName(bool isAmericanEnglish) =>
         OperatingSystem.IsWindows() ? "Windows" : "System";
@@ -41,7 +43,10 @@ internal static class SystemThemeHelper
     }
 
     private static string AccentSourceNoun() =>
-        OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsLinux() ? "your desktop's" : "your system's";
+        OperatingSystem.IsWindows() ? "Windows"
+        : OperatingSystem.IsLinux() ? "your desktop's"
+        : OperatingSystem.IsMacOS() ? "macOS"
+        : "your system's";
 
     public static string SystemThemeTooltip(bool isAmericanEnglish) =>
         isAmericanEnglish
@@ -49,9 +54,12 @@ internal static class SystemThemeHelper
             : $"Match your {SystemThemeSource()} light/dark setting";
 
     private static string SystemThemeSource() =>
-        OperatingSystem.IsWindows() ? "Windows" : OperatingSystem.IsLinux() ? "desktop's" : "system's";
+        OperatingSystem.IsWindows() ? "Windows"
+        : OperatingSystem.IsLinux() ? "desktop's"
+        : OperatingSystem.IsMacOS() ? "macOS"
+        : "system's";
 
-    public static bool SupportsSystemTheme => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
+    public static bool SupportsSystemTheme => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
     public static string RevealInFileManagerText(bool isAmericanEnglish) =>
         OperatingSystem.IsWindows() ? "Reveal in File Explorer"
@@ -89,6 +97,35 @@ internal static class SystemThemeHelper
         }
         catch { }
         return null;
+    }
+
+    private static string? GetMacAccentHex()
+    {
+        var exe = FindOnPath("defaults");
+        if (exe is null) return null;
+        var raw = RunCapture(exe, "read -g AppleHighlightColor");
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var parts = Unquote(raw).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 3) return null;
+
+        var channels = new byte[3];
+        for (var i = 0; i < 3; i++)
+        {
+            if (!double.TryParse(parts[i], System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var channel)) return null;
+            channels[i] = (byte)Math.Clamp((int)Math.Round(channel * 255), 0, 255);
+        }
+        return $"#{channels[0]:X2}{channels[1]:X2}{channels[2]:X2}";
+    }
+
+    private static bool? GetMacIsLightTheme()
+    {
+        var exe = FindOnPath("defaults");
+        if (exe is null) return null;
+        var raw = RunCapture(exe, "read -g AppleInterfaceStyle");
+        if (string.IsNullOrWhiteSpace(raw)) return true;
+        return !Unquote(raw).Equals("Dark", StringComparison.OrdinalIgnoreCase);
     }
 
     private static readonly string[] GSettingsKeys =

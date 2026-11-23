@@ -134,7 +134,7 @@ internal static class SingleInstance
 
     private static void RemoveStaleUnixPipeSocket()
     {
-        if (!OperatingSystem.IsLinux()) return;
+        if (OperatingSystem.IsWindows()) return;
         try
         {
             var socketPath = Path.Combine(Path.GetTempPath(), "CoreFxPipe_" + PipeName);
