@@ -1779,9 +1779,14 @@ public partial class MainWindow
             }
 
             var fallbackDir = Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
-            if (OperatingSystem.IsLinux())
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             {
-                Process.Start(new ProcessStartInfo { FileName = "xdg-open", Arguments = $"\"{fallbackDir}\"", UseShellExecute = false });
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = OperatingSystem.IsMacOS() ? "open" : "xdg-open",
+                    Arguments = $"\"{fallbackDir}\"",
+                    UseShellExecute = false
+                });
                 return;
             }
 

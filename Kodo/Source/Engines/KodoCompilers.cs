@@ -2977,10 +2977,11 @@ public partial class MainWindow
     private async Task ExecuteCurrentCommandAsync(bool isBuild, string? extraArgs)
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) &&
-            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            !RuntimeInformation.IsOSPlatform(OSPlatform.Linux) &&
+            !RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             await ShowWarningDialogAsync("Run / Build",
-                new InvalidOperationException("The terminal is only available on Windows and Linux."));
+                new InvalidOperationException("The terminal is only available on Windows, Linux, and macOS."));
             return;
         }
 

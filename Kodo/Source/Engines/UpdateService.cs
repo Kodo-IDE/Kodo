@@ -324,6 +324,25 @@ internal static class UpdateService
             KodoDiagnostics.LogDebug(LastIncompatibleReason);
             return null;
         }
+        if (OperatingSystem.IsMacOS())
+        {
+            var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
+            var archTokens = arch == "arm64"
+                ? new[] { "arm64", "aarch64" }
+                : new[] { "x64", "x86_64", "amd64" };
+            GitHubAsset? MatchMac(Func<GitHubAsset, bool> pred) =>
+                assets.FirstOrDefault(a => archTokens.Any(t => a.Name.Contains(t, StringComparison.OrdinalIgnoreCase)) && pred(a));
+            static bool IsMacAsset(string name) =>
+                name.Contains("macos", StringComparison.OrdinalIgnoreCase) ||
+                name.Contains("osx", StringComparison.OrdinalIgnoreCase);
+            var dmg = MatchMac(a => IsMacAsset(a.Name) && a.Name.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase));
+            if (dmg is not null) return dmg;
+            var tarball = MatchMac(a => IsMacAsset(a.Name) && (a.Name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || a.Name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase)));
+            if (tarball is not null) return tarball;
+            LastIncompatibleReason = $"No compatible build available (arch={arch}, need macOS {string.Join("/", archTokens)} asset).";
+            KodoDiagnostics.LogDebug(LastIncompatibleReason);
+            return null;
+        }
         if (OperatingSystem.IsWindows() && IsWindowsPortableInstall())
         {
             var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant();
@@ -499,7 +518,7 @@ internal static class UpdateService
     internal static bool IsLinuxNotifyOnly => OperatingSystem.IsLinux() && !IsManagedLinuxInstall();
 
     internal static bool IsManualInstallOnly =>
-        IsLinuxNotifyOnly || IsWindowsPortableInstall();
+        IsLinuxNotifyOnly || IsWindowsPortableInstall() || OperatingSystem.IsMacOS();
 
     internal static bool IsWindowsPortableInstall()
     {
@@ -557,6 +576,20 @@ internal static class UpdateService
                 });
             }
             catch (Exception ex) { KodoDiagnostics.LogDebug("OpenFolderInFileManager xdg-open failed", ex); }
+        }
+        if (OperatingSystem.IsMacOS())
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "open",
+                    Arguments = $"\"{directory}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                });
+            }
+            catch (Exception ex) { KodoDiagnostics.LogDebug("OpenFolderInFileManager open failed", ex); }
         }
     }
 

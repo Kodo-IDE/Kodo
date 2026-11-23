@@ -566,7 +566,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private EventHandler<TerminalProcessHandle>? _activeSessionExitedHandler;
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
-    private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+    private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
     private bool _isPSReadLinePredictionEnabled;
     private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
@@ -5252,7 +5252,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
     public bool HasTerminalSessions => TerminalSessions.Count > 0;
     public int TerminalSessionCount => TerminalSessions.Count;
-    public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows and Linux only");
+    public string ActiveTerminalStatusText => ActiveTerminalSession?.StatusText ?? (IsTerminalSupported ? "No active terminal" : "Windows, Linux, and macOS only");
     public string ActiveTerminalWorkingDirectory
     {
         get
@@ -5266,7 +5266,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public string ActiveTerminalShellDisplayName => ActiveTerminalSession?.ShellDisplayName ?? SelectedTerminalShell?.DisplayName ?? "Terminal";
     public string ActiveTerminalFooterText => HasActiveTerminal
         ? $"{ActiveTerminalWorkingDirectory}  |  {ActiveTerminalStatusText}"
-        : IsTerminalSupported ? "Choose a shell and open a terminal session." : "Embedded terminal is currently supported on Windows and Linux.";
+        : IsTerminalSupported ? "Choose a shell and open a terminal session." : "Embedded terminal is currently supported on Windows, Linux, and macOS.";
     public string TerminalStatusBarText => IsTerminalVisible
         ? $"Terminal ({TerminalSessionCount})"
         : TerminalSessionCount > 0 ? $"Show terminal ({TerminalSessionCount})" : "Terminal";
@@ -5661,7 +5661,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
     }
 
-    public bool IsAutoUpdateAppSupported => OperatingSystem.IsWindows() || OperatingSystem.IsLinux();
+    public bool IsAutoUpdateAppSupported => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
     public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
         ? "The status bar shows the full path for the current file or folder."

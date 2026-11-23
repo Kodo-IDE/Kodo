@@ -9,7 +9,7 @@ namespace Kodo.HotfixShared;
 
 internal static class HotfixShared
 {
-    public static readonly string[] KnownPlatforms = { "win-x64", "linux-x64", "linux-arm64" };
+    public static readonly string[] KnownPlatforms = { "win-x64", "linux-x64", "linux-arm64", "osx-x64", "osx-arm64" };
 
     public static void WriteTextAtomically(string path, string contents) =>
         WriteBytesAtomically(path, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(contents));

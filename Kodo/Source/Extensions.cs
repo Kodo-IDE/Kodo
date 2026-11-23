@@ -1598,7 +1598,7 @@ public partial class MainWindow
     {
         yield return ExtensionsFolderPath;
 
-        if (OperatingSystem.IsLinux())
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
         {
             var legacy = Path.Combine(KodoPaths.LegacyDataRoot, "Extensions");
             if (!FileSystemPaths.Equals(legacy, ExtensionsFolderPath) && Directory.Exists(legacy))
