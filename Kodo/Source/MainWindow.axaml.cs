@@ -2340,7 +2340,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         if (_isFileCorrupted == corrupted) return;
         _isFileCorrupted = corrupted;
-        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText));
+        RaiseMany(nameof(IsCorruptedFileViewVisible), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor), nameof(CanShowFindInFile), nameof(CanShowSearchPanel), nameof(IsSearchPanelActive), nameof(CanShowSaveActions), nameof(CanUseClipboardActions), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IsIndentationVisible), nameof(IndentationDisplayText));
     }
 
     private void ConfigureInterpolatedStrings(CompiledSyntaxProfile? syntaxProfile)
@@ -2436,7 +2436,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isHomePageVisible == value) return;
             _isHomePageVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions),
+            RaiseMany(nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(CanShowSaveActions), nameof(CanUseClipboardActions),
                       nameof(IsProjectFileContext),
                       nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled));
         }
@@ -3481,7 +3481,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var setting = _isScreenReaderAnnouncementsEnabled
             ? Avalonia.Automation.AutomationLiveSetting.Polite
             : Avalonia.Automation.AutomationLiveSetting.Off;
-        foreach (var name in new[] { "FileSummaryLiveRegion", "StatusBarCaretLiveRegion", "AutoSaveStatusLiveRegion" })
+        foreach (var name in new[] { "StatusBarCaretLiveRegion", "AutoSaveStatusLiveRegion" })
         {
             if (this.FindControl<Control>(name) is { } control)
                 Avalonia.Automation.AutomationProperties.SetLiveSetting(control, setting);
@@ -5755,6 +5755,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool HasSelection => !string.IsNullOrWhiteSpace(_statusBarSelectionText);
 
+    public bool HasClipboardSelection => EditorTextBox?.TextArea?.Selection is { IsEmpty: false };
+
+    public bool CanUndoEdit => EditorTextBox?.Document?.UndoStack.CanUndo == true;
+
+    public bool CanRedoEdit => EditorTextBox?.Document?.UndoStack.CanRedo == true;
+
+    public bool CanUseClipboardActions => HasDocumentOpen && IsTextEditorVisible;
+
+    public string ClipboardPrimaryIcon => HasClipboardSelection ? KodoIcons.Cut : KodoIcons.Paste;
+
+    public string ClipboardPrimaryActionName => HasClipboardSelection ? "Cut" : "Paste";
+
+    public string ClipboardPrimaryTooltip => HasClipboardSelection ? "Cut (Ctrl+X)" : "Paste (Ctrl+V)";
+
     public string StatusBarDiagnosticsText
     {
         get => _statusBarDiagnosticsText;
@@ -5902,6 +5916,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void RefreshState(bool fullRefresh = false)
     {
         RefreshCaretAndDocumentStats();
+        RaiseMany(nameof(CanUndoEdit), nameof(CanRedoEdit), nameof(CanUseClipboardActions), nameof(HasClipboardSelection),
+            nameof(ClipboardPrimaryIcon), nameof(ClipboardPrimaryActionName), nameof(ClipboardPrimaryTooltip));
 
         if (!fullRefresh)
             return;
@@ -6320,7 +6336,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(IsPrimaryPaneImagePreviewVisible), nameof(IsSecondaryPaneImagePreviewVisible),
         nameof(IsPrimaryPaneCorruptedFileViewVisible), nameof(IsSecondaryPaneCorruptedFileViewVisible),
         nameof(IsPrimaryPaneTextEditorVisible), nameof(IsSecondaryPaneTextEditorVisible),
-        nameof(CanShowSaveActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsProjectFileContext),
+        nameof(CanShowSaveActions), nameof(CanUseClipboardActions), nameof(IsWordCountVisible), nameof(HasFileOpen), nameof(IsFolderOpen), nameof(IsProjectFileContext),
         nameof(IsCompilerIconVisible), nameof(IsRunButtonEnabled), nameof(IsBuildButtonEnabled),
         nameof(HomeQuickSearchPlaceholderText), nameof(WorkspaceFolderPath), nameof(IsEmptyStateVisible), nameof(HasRecentFiles), nameof(FileSummaryText),
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
@@ -8202,7 +8218,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (shownPage is not null && this.FindControl<Control>(shownPage) is { } pagePreset)
             AnimationKit.PresetFade(pagePreset, 10);
 
-        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsAtlasPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(FileSummaryText), nameof(FilePathText));
+        RaiseMany(nameof(IsHomePageVisible), nameof(IsSettingsPageVisible), nameof(IsExtensionsPageVisible), nameof(IsTutorialPageVisible), nameof(AreSidebarButtonsEnabled), nameof(IsWhatsNewPageVisible), nameof(IsAtlasPageVisible), nameof(IsEditorPageVisible), nameof(IsHomeOrEditorPageVisible), nameof(IsSearchPanelActive), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsDocumentViewVisible), nameof(IsEmptyStateVisible), nameof(CanShowSaveActions), nameof(CanUseClipboardActions), nameof(FileSummaryText), nameof(FilePathText));
         RefreshState(fullRefresh: true);
 
         if (shownPage is not null)
@@ -10415,6 +10431,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     }
 
     private async void EditorPasteMenuItem_OnClick(object? sender, RoutedEventArgs e)
+        => await PasteFromClipboardAsync();
+
+    private async Task PasteFromClipboardAsync()
     {
         var targetPane = _activeEditorPane;
         var targetEditor = EditorTextBox;
@@ -10431,6 +10450,26 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             !ReferenceEquals(textArea?.Selection, selection))
             return;
         selection.ReplaceSelectionWithText(text);
+    }
+
+    private void ToolbarUndoButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is { UndoStack.CanUndo: true } document)
+            document.UndoStack.Undo();
+    }
+
+    private void ToolbarRedoButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (EditorTextBox?.Document is { UndoStack.CanRedo: true } document)
+            document.UndoStack.Redo();
+    }
+
+    private async void ToolbarClipboardPrimaryButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (HasClipboardSelection)
+            await CutSelectionAsync();
+        else
+            await PasteFromClipboardAsync();
     }
 
     private void IncreaseFontSizeButton_OnClick(object? sender, RoutedEventArgs e) =>

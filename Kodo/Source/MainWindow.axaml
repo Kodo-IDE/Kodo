@@ -56,8 +56,7 @@
         </Style>
 
         <Style Selector="Border.savegroup">
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
-            <Setter Property="ClipToBounds" Value="True" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
         </Style>
 
         <Style Selector="Border.editorpopupsurface">
@@ -80,6 +79,7 @@
 
         <Style Selector="Button.saveprimary:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
         </Style>
 
         <Style Selector="Button.saveprimary:disabled">
@@ -99,6 +99,7 @@
 
         <Style Selector="Button.savearrow:pointerover">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
         </Style>
 
         <Style Selector="Button.savearrow:disabled">
@@ -125,6 +126,12 @@
             <Setter Property="Background" Value="{Binding ButtonBrush}" />
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
+        </Style>
+
+        <Style Selector="Button.toolbaricon">
+            <Setter Property="Padding" Value="10,8" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
 
         <Style Selector="Button.chrome:pointerover">
@@ -158,11 +165,7 @@
             <Setter Property="Foreground" Value="{Binding DangerForegroundBrush}" />
         </Style>
 
-        <Style Selector="Button:focus">
-            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="Button.activity:focus /template/ Border#PART_Border">
+        <Style Selector="Button:focus-visible">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
@@ -187,8 +190,7 @@
         </Style>
 
         <Style Selector="Border.runbuildgroup">
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.CardRadius}" />
-            <Setter Property="ClipToBounds" Value="True" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
         </Style>
 
         <Style Selector="Button.runbuildprimary">
@@ -203,6 +205,7 @@
 
         <Style Selector="Button.runbuildprimary:pointerover">
             <Setter Property="Opacity" Value="{x:Static kodo:KodoDesignTokens.SecondaryOpacity}" />
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
         </Style>
 
         <Style Selector="Button.runbuildprimary:disabled">
@@ -222,6 +225,7 @@
 
         <Style Selector="Button.runbuildarrow:pointerover">
             <Setter Property="Opacity" Value="{x:Static kodo:KodoDesignTokens.SecondaryOpacity}" />
+            <Setter Property="RenderTransform" Value="translate(0px,0px)" />
         </Style>
 
         <Style Selector="Button.runbuildarrow:disabled">
@@ -416,7 +420,7 @@
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
         </Style>
-        <Style Selector="Button.settingsnav:focus">
+        <Style Selector="Button.settingsnav:focus-visible">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
             <Setter Property="BorderThickness" Value="1" />
         </Style>
@@ -448,11 +452,11 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
-        <Style Selector="Button.chrome.groupheader:focus">
+        <Style Selector="Button.chrome.groupheader:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
-        <Style Selector="Button.recentpin:focus">
+        <Style Selector="Button.recentpin:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
@@ -636,10 +640,6 @@
         <Style Selector="Button.activity.quickaction:pressed">
             <Setter Property="Foreground" Value="{Binding #RootWindow.AccentForegroundBrush}" />
         </Style>
-        <Style Selector="Button.activity.quickaction:focus /template/ Border#PART_Border">
-            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
 
         <Style Selector="Button.activity.active /template/ Border#PART_Border">
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
@@ -656,6 +656,15 @@
 
         <Style Selector="Button.activity:pressed">
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+        </Style>
+
+        <Style Selector="Button.activity:focus-visible /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Button.activity.quickaction:focus-visible /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{Binding #RootWindow.AccentBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
         </Style>
 
         <Style Selector="Button.activity">
@@ -726,7 +735,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="RenderTransform" Value="translate(0px,-1px)" />
         </Style>
-        <Style Selector="Button.statusitem:focus">
+        <Style Selector="Button.statusitem:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
         <Style Selector="Button.statusitem:pressed /template/ Border#PART_Border">
@@ -997,7 +1006,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="RenderTransform" Value="translate(0px,-2px)" />
         </Style>
-        <Style Selector="Button.editortab:focus">
+        <Style Selector="Button.editortab:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
@@ -1035,7 +1044,7 @@
             <Setter Property="Foreground" Value="{Binding PrimaryTextBrush}" />
             <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
-        <Style Selector="Button.openeditor:focus">
+        <Style Selector="Button.openeditor:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
@@ -1128,7 +1137,7 @@
             <Setter Property="Background" Value="{Binding ButtonHoverBrush}" />
             <Setter Property="RenderTransform" Value="translate(2px,0px)" />
         </Style>
-        <Style Selector="Button.fileitem:focus">
+        <Style Selector="Button.fileitem:focus-visible">
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
@@ -2370,15 +2379,81 @@
                                        Stretch="UniformToFill" />
                             </Border>
 
-                            <StackPanel Spacing="2">
-                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
-                                           FontWeight="SemiBold"
-                                           Foreground="{Binding PrimaryTextBrush}"
-                                           Text="Kodo" />
-                                <TextBlock x:Name="FileSummaryLiveRegion" FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                           Foreground="{Binding MutedTextBrush}"
-                                           AutomationProperties.LiveSetting="Polite"
-                                           Text="{Binding FileSummaryText}" />
+                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
+                                       FontWeight="SemiBold"
+                                       Foreground="{Binding PrimaryTextBrush}"
+                                       Text="Kodo"
+                                       VerticalAlignment="Center" />
+
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="6"
+                                        Margin="8,0,0,0"
+                                        VerticalAlignment="Center"
+                                        IsVisible="{Binding IsEditorTabsVisible}">
+                                <Button Classes="toolbarprimary toolbaricon"
+                                        ToolTip.Tip="Undo (Ctrl+Z)"
+                                        IsEnabled="{Binding CanUndoEdit}"
+                                        Click="ToolbarUndoButton_OnClick"
+                                        AutomationProperties.Name="Undo">
+                                    <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                            <svg:Svg Width="24" Height="24"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.Undo}" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </Button>
+                                <Button Classes="toolbarprimary toolbaricon"
+                                        ToolTip.Tip="Redo (Ctrl+Y)"
+                                        IsEnabled="{Binding CanRedoEdit}"
+                                        Click="ToolbarRedoButton_OnClick"
+                                        AutomationProperties.Name="Redo">
+                                    <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                            <svg:Svg Width="24" Height="24"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.Redo}" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </Button>
+
+                                <Border Classes="savegroup">
+                                    <Grid ColumnDefinitions="Auto,Auto">
+                                        <Button Classes="saveprimary toolbaricon"
+                                                ToolTip.Tip="{Binding ClipboardPrimaryTooltip}"
+                                                IsEnabled="{Binding CanUseClipboardActions}"
+                                                Click="ToolbarClipboardPrimaryButton_OnClick"
+                                                AutomationProperties.Name="{Binding ClipboardPrimaryActionName}">
+                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                                    <svg:Svg Width="24" Height="24"
+                                                             CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                             Source="{Binding ClipboardPrimaryIcon}" />
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Button>
+                                        <Button Grid.Column="1"
+                                                Classes="savearrow"
+                                                ToolTip.Tip="More clipboard options"
+                                                IsEnabled="{Binding CanUseClipboardActions}"
+                                                AutomationProperties.Name="More clipboard options">
+                                            <TextBlock Text="&#x25BE;" LineHeight="16" />
+                                            <Button.Flyout>
+                                                <MenuFlyout Placement="Bottom">
+                                                    <MenuItem Header="Cut"
+                                                              Click="EditorCutMenuItem_OnClick"
+                                                              AutomationProperties.Name="Cut" />
+                                                    <MenuItem Header="Copy"
+                                                              Click="EditorCopyMenuItem_OnClick"
+                                                              AutomationProperties.Name="Copy" />
+                                                    <MenuItem Header="Paste"
+                                                              Click="EditorPasteMenuItem_OnClick"
+                                                              AutomationProperties.Name="Paste" />
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </Border>
                             </StackPanel>
                         </StackPanel>
 
