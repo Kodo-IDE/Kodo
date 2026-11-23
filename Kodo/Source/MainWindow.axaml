@@ -7232,8 +7232,8 @@ ToolTip.Tip="{Binding Path}" />
                             <StackPanel Spacing="4">
                                 <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
                                 <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
-                                <Button Classes="settingsnav" Tag="insight" Click="SettingsSectionButton_OnClick" Content="Insight" />
                                 <Button Classes="settingsnav" Tag="keyboard" Click="SettingsSectionButton_OnClick" Content="Keyboard Shortcuts" />
+                                <Button Classes="settingsnav" Tag="insight" Click="SettingsSectionButton_OnClick" Content="Insight" />
                                 <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
                                 <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
                                 <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
@@ -7764,17 +7764,95 @@ ToolTip.Tip="Increase font size" />
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
                                   </StackPanel>
-                                <TextBlock Classes="settingsgroupheader"
-                                           Text="KEYBOARD SHORTCUTS" />
-                                <Button Classes="chrome"
-                                        HorizontalAlignment="Left"
-                                        Click="ViewShortcutsButton_OnClick"
-                                        ToolTip.Tip="Open the keyboard shortcuts page"
-                                        AutomationProperties.Name="Open the keyboard shortcuts page"
-                                        Content="Open Keyboard Shortcuts" />
+                            </StackPanel>
+                        </Border>
+
+                        <Grid x:Name="SectionHeaderKeyboard" Tag="keyboard" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="KEYBOARD SHORTCUTS" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
+                        </Grid>
+
+                        <Border x:Name="KeyboardShortcutsSettingsCard"
+                                Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                Tag="keyboard">
+                            <StackPanel Spacing="14">
+                                <Grid ColumnDefinitions="*,Auto"
+                                      ColumnSpacing="16">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   VerticalAlignment="Center"
+                                                   Text="Keyboard Shortcuts" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Classes="chrome"
+                                            Click="ToggleKeyboardShortcutsExpandedButton_OnClick"
+                                            VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding KeyboardShortcutsToggleTooltip}"
+                                            AutomationProperties.Name="{Binding KeyboardShortcutsToggleTooltip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="{Binding KeyboardShortcutsToggleText}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding IsKeyboardShortcutsExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronUp}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding !IsKeyboardShortcutsExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronDown}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <StackPanel IsVisible="{Binding IsKeyboardShortcutsExpanded}" Spacing="14">
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="Browse and rebind every editor action." />
+                                           Text="Click Edit, then press a new key combination. Some shortcuts are fixed and listed under Other. Changes save automatically." />
+                                <Grid x:Name="KeyboardShortcutsColumnHeader" ColumnDefinitions="164,*,72,72,88" ColumnSpacing="0" Margin="0,4,0,-2">
+                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="ACTION" />
+                                    <TextBlock Grid.Column="2" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="EDIT" />
+                                    <TextBlock Grid.Column="3" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="RESET" />
+                                    <TextBlock Grid.Column="4" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="STATE" />
+                                </Grid>
+                                <StackPanel x:Name="KeyboardShortcutsEditableHost" Spacing="2" />
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.85" Margin="0,6" />
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
+                                    <Border Grid.Column="0" Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" VerticalAlignment="Center" Text="OTHER" />
+                                </Grid>
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,0,0,0" />
+                                <Grid x:Name="KeyboardShortcutsOtherColumnHeader" ColumnDefinitions="164,*" ColumnSpacing="0" Margin="0,0,0,2">
+                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
+                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Margin="8,0,0,0" Text="ACTION" />
+                                </Grid>
+                                <StackPanel x:Name="KeyboardShortcutsOtherHost" Spacing="2" />
+                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,4,0,0" />
+                                <Border x:Name="KeyboardShortcutsStatusBorder"
+                                        IsVisible="False"
+                                        Background="{Binding DangerBrush}"
+                                        Opacity="0.12"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                        Padding="10,7">
+                                    <TextBlock x:Name="KeyboardShortcutsStatusText"
+                                               Foreground="{Binding DangerBrush}"
+                                               TextWrapping="Wrap" />
+                                </Border>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -8152,95 +8230,6 @@ ToolTip.Tip="Increase font size" />
                                             Content="Clear Insight Backup"
                                             IsVisible="{Binding HasInsightBackupFile}" />
                                 </StackPanel>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <Grid x:Name="SectionHeaderKeyboard" Tag="keyboard" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
-                            <TextBlock Grid.Column="0"
-                                       FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                       FontWeight="Bold"
-                                       LetterSpacing="1"
-                                       Foreground="{Binding AccentBrush}"
-                                       VerticalAlignment="Center"
-                                       Text="KEYBOARD SHORTCUTS" />
-                            <Border Grid.Column="1"
-                                    Height="1"
-                                    VerticalAlignment="Center"
-                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
-                        </Grid>
-
-                        <Border x:Name="KeyboardShortcutsSettingsCard"
-                                Background="{Binding CardBrush}"
-                                BorderBrush="{Binding SurfaceBorderBrush}"
-                                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
-                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
-                                Padding="24"
-                                Tag="keyboard">
-                            <StackPanel Spacing="14">
-                                <Grid ColumnDefinitions="*,Auto"
-                                      ColumnSpacing="16">
-                                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                        <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
-                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   VerticalAlignment="Center"
-                                                   Text="Keyboard Shortcuts" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            Classes="chrome"
-                                            Click="ToggleKeyboardShortcutsExpandedButton_OnClick"
-                                            VerticalAlignment="Center"
-                                            ToolTip.Tip="{Binding KeyboardShortcutsToggleTooltip}"
-                                            AutomationProperties.Name="{Binding KeyboardShortcutsToggleTooltip}">
-                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                                       Foreground="{Binding PrimaryTextBrush}"
-                                                       Text="{Binding KeyboardShortcutsToggleText}" />
-                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding IsKeyboardShortcutsExpanded}"
-                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
-                                                     Source="{x:Static kodo:KodoIcons.ChevronUp}" />
-                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding !IsKeyboardShortcutsExpanded}"
-                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
-                                                     Source="{x:Static kodo:KodoIcons.ChevronDown}" />
-                                        </StackPanel>
-                                    </Button>
-                                </Grid>
-                                <StackPanel IsVisible="{Binding IsKeyboardShortcutsExpanded}" Spacing="14">
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="Click Edit, then press a new key combination. Some shortcuts are fixed and listed under Other. Changes save automatically." />
-                                <Grid x:Name="KeyboardShortcutsColumnHeader" ColumnDefinitions="164,*,72,72,88" ColumnSpacing="0" Margin="0,4,0,-2">
-                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
-                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="ACTION" />
-                                    <TextBlock Grid.Column="2" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="EDIT" />
-                                    <TextBlock Grid.Column="3" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="RESET" />
-                                    <TextBlock Grid.Column="4" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" HorizontalAlignment="Center" Text="STATE" />
-                                </Grid>
-                                <StackPanel x:Name="KeyboardShortcutsEditableHost" Spacing="2" />
-                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.85" Margin="0,6" />
-                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8">
-                                    <Border Grid.Column="0" Width="3" Height="14" CornerRadius="2" Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" VerticalAlignment="Center" Text="OTHER" />
-                                </Grid>
-                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,0,0,0" />
-                                <Grid x:Name="KeyboardShortcutsOtherColumnHeader" ColumnDefinitions="164,*" ColumnSpacing="0" Margin="0,0,0,2">
-                                    <TextBlock Grid.Column="0" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Text="SHORTCUT" />
-                                    <TextBlock Grid.Column="1" FontSize="{x:Static kodo:KodoDesignTokens.CaptionFontSize}" FontWeight="SemiBold" Foreground="{Binding MutedTextBrush}" LetterSpacing="0.3" Opacity="0.8" Margin="8,0,0,0" Text="ACTION" />
-                                </Grid>
-                                <StackPanel x:Name="KeyboardShortcutsOtherHost" Spacing="2" />
-                                <Border Height="1" Background="{Binding SurfaceBorderBrush}" Opacity="0.9" Margin="0,4,0,0" />
-                                <Border x:Name="KeyboardShortcutsStatusBorder"
-                                        IsVisible="False"
-                                        Background="{Binding DangerBrush}"
-                                        Opacity="0.12"
-                                        CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
-                                        Padding="10,7">
-                                    <TextBlock x:Name="KeyboardShortcutsStatusText"
-                                               Foreground="{Binding DangerBrush}"
-                                               TextWrapping="Wrap" />
-                                </Border>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
