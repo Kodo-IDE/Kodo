@@ -5,6 +5,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Kodo.Insight;
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
@@ -18,9 +19,10 @@ namespace Kodo;
 public partial class MainWindow
 {
     private bool _isQuickActionsEnabled = true;
-    private bool _isQuickActionsLearningEnabled = true;
-    private QuickActionLearningStore _quickActionLearningStore = null!;
-    private readonly DispatcherTimer _quickActionLearningSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    private InsightUserIntelligence? _userInsight;
+    private InsightUserIntelligence UserInsight =>
+        _userInsight ??= InsightUserIntelligence.Load(KodoPaths.SettingsWritePath("quick-actions-learning.json"));
+    private readonly DispatcherTimer _insightSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     public ObservableCollection<QuickActionItem> QuickActions { get; } = new();
     public bool IsQuickActionsEnabled
     {
@@ -39,48 +41,117 @@ public partial class MainWindow
     public bool HasQuickActions => IsQuickActionsEnabled && QuickActions.Count > 0;
     public bool IsQuickActionsLearningEnabled
     {
-        get => _isQuickActionsLearningEnabled;
+        get => UserInsight.IsQuickActionsLearningEnabled;
         set
         {
-            if (_isQuickActionsLearningEnabled == value) return;
-            _isQuickActionsLearningEnabled = value;
+            if (UserInsight.IsQuickActionsLearningEnabled == value) return;
+            UserInsight.IsQuickActionsLearningEnabled = value;
             OnPropertyChanged();
             SaveSettings();
             RefreshQuickActions();
+            RefreshInsightDashboard();
+            ShowStatusBarMessage(value ? "Quick Actions personalization enabled." : "Quick Actions personalization disabled.");
         }
     }
 
-    public bool HasQuickActionLearningData => _quickActionLearningStore?.HasPreferences == true;
-
-    private void InitializeQuickActionLearning(AppSettings settings)
+    public bool IsPaletteLearningEnabled
     {
-        _isQuickActionsLearningEnabled = settings.QuickActionsLearningEnabled;
-        _quickActionLearningStore = QuickActionLearningStore.Load(KodoPaths.SettingsWritePath("quick-actions-learning.json"));
-        if (_quickActionLearningStore.LoadFailed)
-            KodoDiagnostics.LogDebug("Quick Actions learning data could not be read; using default recommendations.");
-        _quickActionLearningSaveTimer.Tick += QuickActionLearningSaveTimer_OnTick;
+        get => UserInsight.IsPaletteLearningEnabled;
+        set
+        {
+            if (UserInsight.IsPaletteLearningEnabled == value) return;
+            UserInsight.IsPaletteLearningEnabled = value;
+            OnPropertyChanged();
+            SaveSettings();
+            RefreshOpenCommandPaletteRanking();
+            RefreshInsightDashboard();
+            ShowStatusBarMessage(value ? "Command Palette personalization enabled." : "Command Palette personalization disabled.");
+        }
     }
 
-    private void QuickActionLearningSaveTimer_OnTick(object? sender, EventArgs e)
+    public bool HasQuickActionLearningData => _userInsight?.HasQuickActionLearningData == true;
+
+    public bool HasPaletteLearningData => _userInsight?.HasPaletteLearningData == true;
+
+    private void InitializeInsightLearning(AppSettings settings)
     {
-        _quickActionLearningSaveTimer.Stop();
-        _ = SaveQuickActionLearningAsync();
+        UserInsight.IsQuickActionsLearningEnabled = settings.QuickActionsLearningEnabled;
+        UserInsight.IsPaletteLearningEnabled = settings.PaletteLearningEnabled;
+        UserInsight.IsLearningEnabled = settings.InsightLearningEnabled;
+        if (UserInsight.LoadFailed)
+            KodoDiagnostics.LogDebug("Insight learning data could not be read; using defaults.");
+        KodoDiagnostics.LogDebug($"Insight learning loaded: file={UserInsight.FilePath} quickActions={UserInsight.HasQuickActionLearningData} palette={UserInsight.HasPaletteLearningData} queries={UserInsight.HasQueryAssociationData} analysisDays={UserInsight.AnalysisCompletedDays}");
+        _insightSaveTimer.Tick += InsightSaveTimer_OnTick;
+        RefreshInsightBackupState();
     }
 
-    private async Task SaveQuickActionLearningAsync()
+    private void InsightSaveTimer_OnTick(object? sender, EventArgs e)
     {
-        try { await Task.Run(_quickActionLearningStore.Save); }
-        catch (Exception ex) { KodoDiagnostics.LogWarning("Quick Actions learning data could not be saved.", ex); }
+        _insightSaveTimer.Stop();
+        _ = SaveInsightAsync();
+    }
+
+    private async Task SaveInsightAsync()
+    {
+        try { await Task.Run(UserInsight.Save); }
+        catch (Exception ex) { KodoDiagnostics.LogWarning("Insight learning data could not be saved.", ex); }
+    }
+
+    private void ScheduleInsightSave()
+    {
+        _insightSaveTimer.Stop();
+        _insightSaveTimer.Start();
+    }
+
+    private void RefreshOpenCommandPaletteRanking()
+    {
+        if (_commandPaletteOverlay is not { IsVisible: true }) return;
+        _commandPaletteCommands = BuildCommandPaletteCommands();
+        RefreshCommandPaletteResults();
+    }
+
+    private double GetPaletteCommandAdjustment(string commandId) =>
+        UserInsight.GetPaletteCommandAdjustment(commandId, DateTime.UtcNow);
+
+    private void RecordPaletteCommandSelection(string commandId)
+    {
+        if (string.IsNullOrWhiteSpace(commandId)) return;
+        UserInsight.RecordPaletteCommandSelection(commandId, DateTime.UtcNow);
+        OnPropertyChanged(nameof(HasPaletteLearningData));
+        ScheduleInsightSave();
+    }
+
+    private void RecordPaletteQuerySelection(string? query, string commandId)
+    {
+        if (!UserInsight.RecordPaletteQuerySelection(query, commandId, DateTime.UtcNow)) return;
+        OnPropertyChanged(nameof(HasPaletteLearningData));
+        ScheduleInsightSave();
     }
 
     private async void ResetQuickActionLearningButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (!await ShowConfirmationDialogAsync("Reset learned preferences", "Quick Actions will return to their default recommendations.", "Reset", "Cancel", isDestructive: true)) return;
-        _quickActionLearningStore.Reset();
-        _quickActionLearningSaveTimer.Stop();
+        if (!await ShowConfirmationDialogAsync("Reset Quick Actions learning", "Quick Actions will return to their default order. Command Palette learning is kept.", "Reset", "Cancel", isDestructive: true)) return;
+        UserInsight.ResetQuickActionLearning();
+        RestartInsightAnalysisAfterClear();
+        _insightSaveTimer.Stop();
         OnPropertyChanged(nameof(HasQuickActionLearningData));
         RefreshQuickActions();
-        await SaveQuickActionLearningAsync();
+        RefreshInsightDashboard();
+        ShowStatusBarMessage("Quick Actions learning reset.");
+        await SaveInsightAsync();
+    }
+
+    private async void ResetPaletteLearningButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (!await ShowConfirmationDialogAsync("Reset Command Palette learning", "Command Palette results will return to their default order. Quick Actions learning is kept.", "Reset", "Cancel", isDestructive: true)) return;
+        UserInsight.ResetPaletteLearning();
+        RestartInsightAnalysisAfterClear();
+        _insightSaveTimer.Stop();
+        OnPropertyChanged(nameof(HasPaletteLearningData));
+        RefreshOpenCommandPaletteRanking();
+        RefreshInsightDashboard();
+        ShowStatusBarMessage("Command Palette learning reset.");
+        await SaveInsightAsync();
     }
 
     private void RecordQuickActionSelection(string actionId, QuickActionItem? selected = null)
@@ -90,10 +161,9 @@ public partial class MainWindow
         Dispatcher.UIThread.Post(() =>
         {
             if (!IsQuickActionsLearningEnabled) return;
-            _quickActionLearningStore.RecordSelection(selected.Id, selected.ContextKey, DateTime.UtcNow, learningEnabled: true, selected.LearningFeatures);
+            UserInsight.RecordQuickActionSelection(selected, DateTime.UtcNow);
             OnPropertyChanged(nameof(HasQuickActionLearningData));
-            _quickActionLearningSaveTimer.Stop();
-            _quickActionLearningSaveTimer.Start();
+            ScheduleInsightSave();
             RefreshQuickActions();
         });
     }
@@ -232,7 +302,7 @@ public partial class MainWindow
             AddQuickAction(actions, "CopyProjectPath", "Copy Project Path", KodoIcons.CopyProjectPath, Context("project"), 63);
         }
 
-        var rankedActions = _quickActionLearningStore.Rank(actions, IsQuickActionsLearningEnabled, DateTime.UtcNow, maximum: 3);
+        var rankedActions = UserInsight.RankQuickActions(actions, DateTime.UtcNow, maximum: 3);
 
         if (QuickActions.Count == rankedActions.Count)
         {

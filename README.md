@@ -60,7 +60,7 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | Feature                             | Description                                                                                             |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | 🧩 **Extension Marketplace**        | Install languages, themes, and **plugins** via `.kox` files and **compilers** via standalone installers |
-| 🔍 **Insight**                      | Code completion, error detection, and dead-code highlighting - configurable per file type               |
+| 🔍 **Insight**                      | Code completion, error detection and dead-code highlighting, plus on-device learning for Quick Actions and Command Palette ordering, reviewable in Settings → Insight - configurable per file type |
 | 🔨 **Build / Run**                  | Compile and run projects from within Kodo with custom commands                                          |
 | 🧑‍💻 **Integrated Terminal**       | Run code from within Kodo, no extra terminal needed                                                     |
 | 🎨 **Themes**                       | Built-in Dark, Light, and System Default modes + custom extension themes                                |

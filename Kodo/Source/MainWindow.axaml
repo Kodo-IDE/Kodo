@@ -75,6 +75,7 @@
             <Setter Property="CornerRadius" Value="8,0,0,8" />
             <Setter Property="Padding" Value="12,8" />
             <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="{x:Static kodo:KodoDesignTokens.LargeControlHeight}" />
         </Style>
 
         <Style Selector="Button.saveprimary:pointerover">
@@ -95,6 +96,7 @@
             <Setter Property="BorderThickness" Value="0,1,1,1" />
             <Setter Property="CornerRadius" Value="0,8,8,0" />
             <Setter Property="Padding" Value="8,8" />
+            <Setter Property="Height" Value="{x:Static kodo:KodoDesignTokens.LargeControlHeight}" />
         </Style>
 
         <Style Selector="Button.savearrow:pointerover">
@@ -2420,24 +2422,33 @@
                                 <Border Classes="savegroup">
                                     <Grid ColumnDefinitions="Auto,Auto">
                                         <Button Classes="saveprimary toolbaricon"
+                                                Padding="12,8"
                                                 ToolTip.Tip="{Binding ClipboardPrimaryTooltip}"
                                                 IsEnabled="{Binding CanUseClipboardActions}"
                                                 Click="ToolbarClipboardPrimaryButton_OnClick"
                                                 AutomationProperties.Name="{Binding ClipboardPrimaryActionName}">
-                                            <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
-                                                    <svg:Svg Width="24" Height="24"
-                                                             CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
-                                                             Source="{Binding ClipboardPrimaryIcon}" />
-                                                </Canvas>
-                                            </Viewbox>
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="6"
+                                                        VerticalAlignment="Center">
+                                                <Viewbox Width="16" Height="16" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Canvas Width="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}" Height="{x:Static kodo:KodoDesignTokens.GlyphCanvasSize}">
+                                                        <svg:Svg Width="24" Height="24"
+                                                                 CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                                 Source="{Binding ClipboardPrimaryIcon}" />
+                                                    </Canvas>
+                                                </Viewbox>
+                                                <TextBlock Text="{Binding ClipboardPrimaryActionName}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
                                         </Button>
                                         <Button Grid.Column="1"
                                                 Classes="savearrow"
                                                 ToolTip.Tip="More clipboard options"
                                                 IsEnabled="{Binding CanUseClipboardActions}"
                                                 AutomationProperties.Name="More clipboard options">
-                                            <TextBlock Text="&#x25BE;" LineHeight="16" />
+                                            <TextBlock Text="&#x25BE;"
+                                                       LineHeight="16"
+                                                       VerticalAlignment="Center" />
                                             <Button.Flyout>
                                                 <MenuFlyout Placement="Bottom">
                                                     <MenuItem Header="Cut"
@@ -2547,7 +2558,9 @@
                                             ToolTip.Tip="More save options"
                                             IsEnabled="{Binding HasOpenEditors}"
                                             AutomationProperties.Name="More save options">
-                                        <TextBlock Text="&#x25BE;" LineHeight="16" />
+                                        <TextBlock Text="&#x25BE;"
+                                                   LineHeight="16"
+                                                   VerticalAlignment="Center" />
                                         <Button.Flyout>
                                             <MenuFlyout Placement="Bottom">
                                                 <MenuItem Header="Save As..."
@@ -7219,6 +7232,7 @@ ToolTip.Tip="{Binding Path}" />
                             <StackPanel Spacing="4">
                                 <Button Classes="settingsnav" Tag="appearance" Click="SettingsSectionButton_OnClick" Content="Appearance" />
                                 <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
+                                <Button Classes="settingsnav" Tag="insight" Click="SettingsSectionButton_OnClick" Content="Insight" />
                                 <Button Classes="settingsnav" Tag="keyboard" Click="SettingsSectionButton_OnClick" Content="Keyboard Shortcuts" />
                                 <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
                                 <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
@@ -7643,7 +7657,7 @@ ToolTip.Tip="{Binding Path}" />
                                                Text="Editor" />
                                 </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
-                                           Text="EDITING" />
+                                           Text="VIEW" />
                                 <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           Content="Enable word wrap" />
@@ -7655,21 +7669,10 @@ ToolTip.Tip="{Binding Path}" />
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Keep enclosing scopes visible at the top of the editor while you scroll"
                                           Content="Show sticky scroll" />
-                                <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Show context-aware quick actions in the Activity Bar"
-                                          Content="Show Quick Actions" />
-                                <CheckBox IsChecked="{Binding IsQuickActionsLearningEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Personalize Quick Actions using local action selections"
-                                          Content="Personalize Quick Actions" />
-                                <Button Classes="chrome"
-                                        HorizontalAlignment="Left"
-                                        Content="Reset learned preferences"
-                                        IsEnabled="{Binding HasQuickActionLearningData}"
-                                        Click="ResetQuickActionLearningButton_OnClick" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
-                                            VerticalAlignment="Center">
+                                            VerticalAlignment="Center"
+                                            Margin="24,0,0,0"
+                                            IsVisible="{Binding IsStickyScrollEnabled}">
                                     <TextBlock VerticalAlignment="Center"
                                                Foreground="{Binding PrimaryTextBrush}"
                                                Text="Sticky scroll lines" />
@@ -7683,6 +7686,15 @@ ToolTip.Tip="{Binding Path}" />
                                         <ComboBoxItem Content="5 lines" />
                                     </ComboBox>
                                 </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="QUICK ACTIONS" />
+                                <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Show context-aware quick actions in the Activity Bar"
+                                          Content="Show Quick Actions" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Personalization and learned preferences are managed in the Insight section of Settings." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="INDENTATION" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
@@ -7752,21 +7764,40 @@ ToolTip.Tip="Increase font size" />
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
                                   </StackPanel>
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="KEYBOARD SHORTCUTS" />
                                 <Button Classes="chrome"
                                         HorizontalAlignment="Left"
                                         Click="ViewShortcutsButton_OnClick"
                                         ToolTip.Tip="Open the keyboard shortcuts page"
                                         AutomationProperties.Name="Open the keyboard shortcuts page"
                                         Content="Open Keyboard Shortcuts" />
+                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Browse and rebind every editor action." />
                             </StackPanel>
                         </Border>
+
+                        <Grid x:Name="SectionHeaderInsight" Tag="insight" ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="4,10,4,-2">
+                            <TextBlock Grid.Column="0"
+                                       FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                       FontWeight="Bold"
+                                       LetterSpacing="1"
+                                       Foreground="{Binding AccentBrush}"
+                                       VerticalAlignment="Center"
+                                       Text="INSIGHT" />
+                            <Border Grid.Column="1"
+                                    Height="1"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding AccentBrush}" Opacity="{x:Static kodo:KodoDesignTokens.AccentPillOpacity}" />
+                        </Grid>
 
                         <Border Background="{Binding CardBrush}"
                                 BorderBrush="{Binding SurfaceBorderBrush}"
                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
                                 CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
                                 Padding="24"
-                                x:Name="EditorInsightSettingsCard" Tag="editor">
+                                x:Name="EditorInsightSettingsCard" Tag="insight">
                             <StackPanel Spacing="14">
                                 <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                     <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
@@ -7852,6 +7883,275 @@ ToolTip.Tip="Increase font size" />
                                              Padding="8,6"
                                              FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                              PlaceholderText=".cs,.cpp" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{Binding CardBrush}"
+                                BorderBrush="{Binding SurfaceBorderBrush}"
+                                BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                CornerRadius="{x:Static kodo:KodoDesignTokens.HeroRadius}"
+                                Padding="24"
+                                x:Name="InsightDashboardSettingsCard" Tag="insight">
+                            <StackPanel Spacing="14">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                                    <StackPanel Spacing="2" VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <Border Classes="accentpill" Height="22" Background="{Binding AccentBrush}" />
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.HeaderFontSize}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       VerticalAlignment="Center"
+                                                       Text="Personalization" />
+                                        </StackPanel>
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding InsightLearningSummary}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Classes="chrome"
+                                            Click="ToggleInsightDashboardExpandedButton_OnClick"
+                                            VerticalAlignment="Center"
+                                            ToolTip.Tip="{Binding InsightDashboardToggleTooltip}"
+                                            AutomationProperties.Name="{Binding InsightDashboardToggleTooltip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="{Binding InsightDashboardToggleText}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding IsInsightDashboardExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronUp}" />
+                                            <svg:Svg Width="16" Height="16" IsVisible="{Binding !IsInsightDashboardExpanded}"
+                                                     CurrentColor="{Binding $parent[Button].Foreground, Converter={x:Static kodoModels:BrushColorConverter.Instance}}"
+                                                     Source="{x:Static kodo:KodoIcons.ChevronDown}" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                                <StackPanel IsVisible="{Binding IsInsightDashboardExpanded}" Spacing="14">
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Insight adjusts what Kodo shows based on how you use it, and everything it learns stays in a local file on this device. It uses no model and never connects to the network." />
+
+                                <Border IsVisible="{Binding IsInsightAnalysisPeriodVisible}"
+                                        Background="{Binding ButtonBrush}"
+                                        BorderBrush="{Binding SurfaceBorderBrush}"
+                                        BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}"
+                                        CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                        Padding="14,12">
+                                    <StackPanel Spacing="4">
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Analysis Period" />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="{Binding InsightAnalysisProgressText}" />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="{Binding InsightAnalysisDetailText}" />
+                                    </StackPanel>
+                                </Border>
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="LEARNING" />
+                                <CheckBox IsChecked="{Binding IsInsightLearningEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Stop recording new interactions and stop Insight from influencing results. Existing learning is kept."
+                                          AutomationProperties.Name="Learn from my usage"
+                                          Content="Learn from my usage" />
+                                <TextBlock Margin="24,0,0,0"
+                                           FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Turning this off stops new learning and removes its effect, but keeps what has already been learned until you reset it." />
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="QUICK ACTIONS" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Quick Actions are ordered using the ones you tend to run in the current context, with recent choices counting most." />
+                                <CheckBox IsChecked="{Binding IsQuickActionsLearningEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Personalize the Quick Actions shown for the current context"
+                                          Content="Personalize Quick Actions" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="{Binding InsightQuickActionSummary}" />
+                                <ItemsControl ItemsSource="{Binding InsightQuickActionRows}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              IsVisible="{Binding HasInsightQuickActionRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodo:InsightLearningRow" x:CompileBindings="True">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="0,2">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                               Opacity="0.65"
+                                                               Text="{Binding Detail}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                           Opacity="0.8"
+                                                           Text="{Binding StrengthText}" />
+                                                <Button Grid.Column="2"
+                                                        Classes="chrome"
+                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                        BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                        Content="Remove"
+                                                        Tag="{Binding Key}"
+                                                        AutomationProperties.Name="Remove this Quick Actions preference"
+                                                        Click="RemoveInsightQuickActionPreference_OnClick" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="chrome"
+                                        HorizontalAlignment="Left"
+                                        Content="Reset Quick Actions learning"
+                                        IsEnabled="{Binding HasQuickActionLearningData}"
+                                        Click="ResetQuickActionLearningButton_OnClick" />
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="COMMAND PALETTE" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Commands you pick gain a small boost, although a clearly better text match still ranks above them." />
+                                <CheckBox IsChecked="{Binding IsPaletteLearningEnabled, Mode=TwoWay}"
+                                          Foreground="{Binding PrimaryTextBrush}"
+                                          ToolTip.Tip="Personalize Command Palette order and remember search terms"
+                                          Content="Personalize Command Palette" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="{Binding InsightCommandPaletteSummary}" />
+                                <ItemsControl ItemsSource="{Binding InsightCommandPaletteRows}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              IsVisible="{Binding HasInsightCommandPaletteRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodo:InsightLearningRow" x:CompileBindings="True">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="0,2">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                               Opacity="0.65"
+                                                               Text="{Binding Detail}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                           Opacity="0.8"
+                                                           Text="{Binding StrengthText}" />
+                                                <Button Grid.Column="2"
+                                                        Classes="chrome"
+                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                        BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                        Content="Remove"
+                                                        Tag="{Binding Key}"
+                                                        AutomationProperties.Name="Remove this Command Palette preference"
+                                                        Click="RemoveInsightCommandPalettePreference_OnClick" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="chrome"
+                                        HorizontalAlignment="Left"
+                                        Content="Reset Command Palette learning"
+                                        IsEnabled="{Binding HasPaletteLearningData}"
+                                        Click="ResetPaletteLearningButton_OnClick" />
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="PERSONALIZED SEARCH" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="When a search term leads you to a command, Insight remembers that pairing and ranks the command higher the next time you search for it." />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           Text="{Binding InsightQuerySummary}" />
+                                <ItemsControl ItemsSource="{Binding InsightQueryRows}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              IsVisible="{Binding HasInsightQueryRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="kodo:InsightLearningRow" x:CompileBindings="True">
+                                            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="12" Margin="0,2">
+                                                <StackPanel Spacing="1">
+                                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap" />
+                                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                               Opacity="0.65"
+                                                               Text="{Binding Detail}" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                           Opacity="0.8"
+                                                           Text="{Binding StrengthText}" />
+                                                <Button Grid.Column="2"
+                                                        Classes="chrome"
+                                                        Background="{Binding #RootWindow.ButtonBrush}"
+                                                        BorderBrush="{Binding #RootWindow.SurfaceBorderBrush}"
+                                                        Foreground="{Binding #RootWindow.PrimaryTextBrush}"
+                                                        Content="Remove"
+                                                        Tag="{Binding Key}"
+                                                        AutomationProperties.Name="Remove this search association"
+                                                        Click="RemoveInsightQueryAssociation_OnClick" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="chrome"
+                                        HorizontalAlignment="Left"
+                                        Content="Reset Personalized Search learning"
+                                        IsEnabled="{Binding HasInsightQueryAssociations}"
+                                        Click="ResetPersonalizedSearchLearningButton_OnClick" />
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="ALL LEARNING" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="{Binding InsightLearningSummary}" />
+                                <Button Classes="chrome red"
+                                        HorizontalAlignment="Left"
+                                        Content="Reset all Insight learning"
+                                        IsEnabled="{Binding HasInsightLearningData}"
+                                        ToolTip.Tip="Remove every learned preference and search association"
+                                        AutomationProperties.Name="Reset all Insight learning"
+                                        Click="ResetAllInsightLearningButton_OnClick" />
+
+                                <TextBlock Classes="settingsgroupheader"
+                                           Text="BACKUP" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Save a copy of what Insight has learned so you can restore it later." />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="chrome"
+                                            Click="BackupInsightDataButton_OnClick"
+                                            ToolTip.Tip="Copy the current Insight data to quick-actions-learning.json.bak"
+                                            AutomationProperties.Name="Copy the current Insight data to quick-actions-learning.json.bak"
+                                            Content="Backup Insight Data" />
+                                    <Button Classes="chrome red"
+                                            Click="RestoreInsightBackupButton_OnClick"
+                                            ToolTip.Tip="Overwrite your current Insight data with the backup and relaunch Kodo"
+                                            AutomationProperties.Name="Overwrite your current Insight data with the backup and relaunch Kodo"
+                                            Content="Restore Insight Backup"
+                                            IsVisible="{Binding HasInsightBackupFile}" />
+                                    <Button Classes="chrome red"
+                                            Click="ClearInsightBackupButton_OnClick"
+                                            ToolTip.Tip="Delete quick-actions-learning.json.bak"
+                                            AutomationProperties.Name="Delete quick-actions-learning.json.bak"
+                                            Content="Clear Insight Backup"
+                                            IsVisible="{Binding HasInsightBackupFile}" />
+                                </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
