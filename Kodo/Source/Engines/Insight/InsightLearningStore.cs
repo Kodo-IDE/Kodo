@@ -326,13 +326,13 @@ public sealed class InsightLearningStore
         {
             var entries = new List<InsightQueryAssociation>();
             foreach (var pair in _queryAssociations)
-            foreach (var command in pair.Value)
-            {
-                var strength = Strength(command.Value, utcNow);
-                if (strength <= 0) continue;
-                entries.Add(new InsightQueryAssociation(
-                    pair.Key, command.Key, strength, new DateTime(command.Value.LastUsedUtcTicks, DateTimeKind.Utc)));
-            }
+                foreach (var command in pair.Value)
+                {
+                    var strength = Strength(command.Value, utcNow);
+                    if (strength <= 0) continue;
+                    entries.Add(new InsightQueryAssociation(
+                        pair.Key, command.Key, strength, new DateTime(command.Value.LastUsedUtcTicks, DateTimeKind.Utc)));
+                }
 
             return entries
                 .OrderByDescending(entry => entry.Strength)
@@ -525,8 +525,8 @@ public sealed class InsightLearningStore
         foreach (var preference in store._palettePreferences.Values)
             AddAnalysisDay(days, preference.LastUsedUtcTicks);
         foreach (var commands in store._queryAssociations.Values)
-        foreach (var preference in commands.Values)
-            AddAnalysisDay(days, preference.LastUsedUtcTicks);
+            foreach (var preference in commands.Values)
+                AddAnalysisDay(days, preference.LastUsedUtcTicks);
 
         foreach (var day in days.Take(AnalysisPeriodDays))
             store._analysisActiveDays.Add(day);
