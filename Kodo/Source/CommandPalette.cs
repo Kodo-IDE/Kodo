@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using AvaloniaEdit.Document;
 using GitSourceControl;
 using Kodo.Editor;
+using Kodo.Insight;
 using Kodo.Models;
 using System;
 using System.Collections.Generic;
@@ -45,6 +46,7 @@ public partial class MainWindow
         string Section = "",
         string Badge = "",
         bool KeepOpen = false,
+        string Id = "",
         IReadOnlyList<int>? TitleMatches = null,
         IReadOnlyList<int>? DetailMatches = null);
 
@@ -78,7 +80,8 @@ public partial class MainWindow
     private readonly List<(Button Row, Border Accent)> _paletteRows = [];
     private readonly List<string> _recentPaletteCommands = [];
     private int _paletteSelectedIndex = -1;
-    private int _palettePressedIndex = -1;
+    private Button? _palettePressedRow;
+    private bool _palettePointerActivated;
     private bool _paletteShortcutIsCommands;
     private bool _suppressQuickAccessTextChanged;
     private bool _isCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
@@ -365,7 +368,30 @@ public partial class MainWindow
         SyncLayout();
         overlay.SizeChanged += (_, _) => SyncLayout();
 
-        card.AddHandler(InputElement.PointerPressedEvent, (_, _) => _commandPaletteSearchBox?.Focus(), RoutingStrategies.Bubble);
+        card.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
+        {
+            _palettePointerActivated = false;
+            _palettePressedRow = FindPaletteRow(e.Source as Visual);
+            _commandPaletteSearchBox?.Focus();
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
+
+        card.AddHandler(InputElement.PointerReleasedEvent, async (_, e) =>
+        {
+            var pressedRow = _palettePressedRow;
+            _palettePressedRow = null;
+            if (pressedRow is null || e.InitialPressMouseButton != MouseButton.Left) return;
+            if (_commandPaletteOverlay is not { IsVisible: true }) return;
+
+            var releasePoint = e.GetPosition(pressedRow);
+            if (releasePoint.X < 0 || releasePoint.Y < 0 ||
+                releasePoint.X > pressedRow.Bounds.Width || releasePoint.Y > pressedRow.Bounds.Height)
+                return;
+
+            var index = _paletteRows.FindIndex(entry => ReferenceEquals(entry.Row, pressedRow));
+            if (index < 0) return;
+            _palettePointerActivated = true;
+            await ActivatePaletteRowAsync(index);
+        }, RoutingStrategies.Tunnel, handledEventsToo: true);
 
         AddHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed, RoutingStrategies.Tunnel);
 
@@ -464,7 +490,8 @@ public partial class MainWindow
         _paletteRows.Clear();
         _filteredPaletteCommands = [];
         _paletteSelectedIndex = -1;
-        _palettePressedIndex = -1;
+        _palettePressedRow = null;
+        _palettePointerActivated = false;
         _paletteSymbols = null;
         _paletteSymbolsLoading = false;
         _paletteSymbolsVersion++;
@@ -554,7 +581,8 @@ public partial class MainWindow
         {
             if (_commandPaletteOverlay is { IsVisible: true } && IsActive &&
                 !_isResizingCommandPalette && !_isResizingQuickAccessSearch &&
-                _commandPaletteSearchBox?.IsKeyboardFocusWithin != true)
+                _commandPaletteSearchBox?.IsKeyboardFocusWithin != true &&
+                _commandPaletteCard?.IsKeyboardFocusWithin != true)
                 DismissCommandPalette(restoreFocus: false);
         }, DispatcherPriority.Input);
     }
@@ -1179,155 +1207,155 @@ public partial class MainWindow
 
         var commands = new List<PaletteCommand>
         {
-            new("Go to Home", "Navigation", "GoHome", () => { NavigateTo(AppPage.Home); return Task.CompletedTask; }, Keywords: "welcome start"),
-            new("Go to Editor", "Navigation", "GoEditor", () => { NavigateTo(AppPage.Editor); FocusEditor(); return Task.CompletedTask; }, Keywords: "code workspace"),
-            new("Open Settings", "Preferences", "OpenSettings", () => { NavigateTo(AppPage.Settings); return Task.CompletedTask; }, Keywords: "preferences options"),
+            new("Go to Home", "Navigation", "GoHome", () => { NavigateTo(AppPage.Home); return Task.CompletedTask; }, Keywords: "welcome start", Id: "cmd.go-to-home"),
+            new("Go to Editor", "Navigation", "GoEditor", () => { NavigateTo(AppPage.Editor); FocusEditor(); return Task.CompletedTask; }, Keywords: "code workspace", Id: "cmd.go-to-editor"),
+            new("Open Settings", "Preferences", "OpenSettings", () => { NavigateTo(AppPage.Settings); return Task.CompletedTask; }, Keywords: "preferences options", Id: "cmd.open-settings"),
             new("Search Settings…", "Preferences", "", () =>
             {
                 NavigateTo(AppPage.Settings);
                 Dispatcher.UIThread.Post(() => this.FindControl<TextBox>("SettingsSearchTextBox")?.Focus(), DispatcherPriority.Input);
                 return Task.CompletedTask;
-            }, Keywords: "preferences find setting configuration"),
-            new("Open Marketplace", "Extensions", "OpenExtensions", () => { NavigateTo(AppPage.Extensions); RefreshMarketplaceConnectivityState(); _ = RefreshExtensionsDataAsync(); return Task.CompletedTask; }, Keywords: "plugins extensions themes"),
-            new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey dialog window"),
-            new("Open Tutorial", "Help", "", () => { NavigateTo(AppPage.Tutorial); return Task.CompletedTask; }, Keywords: "getting started help guide"),
-            new("Open What's New", "Help", "", () => { NavigateTo(AppPage.WhatsNew); return Task.CompletedTask; }, Keywords: "release notes updates changelog"),
+            }, Keywords: "preferences find setting configuration", Id: "cmd.search-settings"),
+            new("Open Marketplace", "Extensions", "OpenExtensions", () => { NavigateTo(AppPage.Extensions); RefreshMarketplaceConnectivityState(); _ = RefreshExtensionsDataAsync(); return Task.CompletedTask; }, Keywords: "plugins extensions themes", Id: "cmd.open-marketplace"),
+            new("Keyboard Shortcuts", "Preferences", "", ShowKeyboardShortcutsAsync, Keywords: "keybind hotkey dialog window", Id: "cmd.keyboard-shortcuts"),
+            new("Open Tutorial", "Help", "", () => { NavigateTo(AppPage.Tutorial); return Task.CompletedTask; }, Keywords: "getting started help guide", Id: "cmd.open-tutorial"),
+            new("Open What's New", "Help", "", () => { NavigateTo(AppPage.WhatsNew); return Task.CompletedTask; }, Keywords: "release notes updates changelog", Id: "cmd.open-what-s-new"),
             new(IsSplitScreenVisible ? "Close Split Editor" : "Split Editor Right", "View", "ToggleSplitEditor", () => { if (IsSplitScreenVisible) CloseSplitEditor(); else ShowSplitEditor(); return Task.CompletedTask; }, () => CanToggleSplitEditor, "side by side pane group"),
-            new("Focus First Editor Group", "View", "FocusFirstEditorGroup", () => { FocusEditorPane(_editorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group left"),
-            new("Focus Second Editor Group", "View", "FocusSecondEditorGroup", () => { FocusEditorPane(_secondaryEditorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group right"),
-            new("Focus Other Editor Pane", "View", "FocusOtherEditor", () => { FocusOtherEditorPaneButton_OnClick(null, new RoutedEventArgs()); return Task.CompletedTask; }, () => IsSplitScreenVisible && (_editorPane.ActiveTab is not null || _secondaryEditorPane.ActiveTab is not null), "switch group editor"),
-            new("Open Active File to the Side", "View", "OpenActiveFileToSide", () => { if (ActiveEditorTab is { } tab) OpenEditorTabToSide(tab, moveFromSourcePane: true); return Task.CompletedTask; }, () => ActiveEditorTab is not null && IsTextEditorVisible, "split move beside"),
+            new("Focus First Editor Group", "View", "FocusFirstEditorGroup", () => { FocusEditorPane(_editorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group left", Id: "cmd.focus-first-editor-group"),
+            new("Focus Second Editor Group", "View", "FocusSecondEditorGroup", () => { FocusEditorPane(_secondaryEditorPane); return Task.CompletedTask; }, () => IsSplitScreenVisible, "pane group right", Id: "cmd.focus-second-editor-group"),
+            new("Focus Other Editor Pane", "View", "FocusOtherEditor", () => { FocusOtherEditorPaneButton_OnClick(null, new RoutedEventArgs()); return Task.CompletedTask; }, () => IsSplitScreenVisible && (_editorPane.ActiveTab is not null || _secondaryEditorPane.ActiveTab is not null), "switch group editor", Id: "cmd.focus-other-editor-pane"),
+            new("Open Active File to the Side", "View", "OpenActiveFileToSide", () => { if (ActiveEditorTab is { } tab) OpenEditorTabToSide(tab, moveFromSourcePane: true); return Task.CompletedTask; }, () => ActiveEditorTab is not null && IsTextEditorVisible, "split move beside", Id: "cmd.open-active-file-to-the-side"),
 
-            new("Search Files by Name…", "Navigation", "QuickAccess", () => { SetPaletteText(string.Empty); return Task.CompletedTask; }, Keywords: "quick open file path", KeepOpen: true),
-            new("Go to Line…", "Navigation", "GoToLine", () => { SetPaletteText(":"); return Task.CompletedTask; }, HasDocument, "jump line number", KeepOpen: true, Badge: ":"),
-            new("Select Current Line", "Editor", "SelectCurrentLine", () => WithEditor((doc, area) => EditorSelectCurrentLine(doc, area)), HasDocument, "select line"),
-            new("Go to Symbol in File…", "Navigation", "", () => { SetPaletteText("@"); return Task.CompletedTask; }, HasDocument, "outline function method class member", KeepOpen: true, Badge: "@"),
-            new("Next Tab", "Navigation", "", () => { ActivateAdjacentTab(1); return Task.CompletedTask; }, () => _activeEditorPane.Tabs.Count > 1 || OpenTabs.Count > 1, "editor file cycle"),
-            new("Previous Tab", "Navigation", "", () => { ActivateAdjacentTab(-1); return Task.CompletedTask; }, () => _activeEditorPane.Tabs.Count > 1 || OpenTabs.Count > 1, "editor file cycle"),
+            new("Search Files by Name…", "Navigation", "QuickAccess", () => { SetPaletteText(string.Empty); return Task.CompletedTask; }, Keywords: "quick open file path", KeepOpen: true, Id: "cmd.search-files-by-name"),
+            new("Go to Line…", "Navigation", "GoToLine", () => { SetPaletteText(":"); return Task.CompletedTask; }, HasDocument, "jump line number", KeepOpen: true, Badge: ":", Id: "cmd.go-to-line"),
+            new("Select Current Line", "Editor", "SelectCurrentLine", () => WithEditor((doc, area) => EditorSelectCurrentLine(doc, area)), HasDocument, "select line", Id: "cmd.select-current-line"),
+            new("Go to Symbol in File…", "Navigation", "", () => { SetPaletteText("@"); return Task.CompletedTask; }, HasDocument, "outline function method class member", KeepOpen: true, Badge: "@", Id: "cmd.go-to-symbol-in-file"),
+            new("Next Tab", "Navigation", "", () => { ActivateAdjacentTab(1); return Task.CompletedTask; }, () => _activeEditorPane.Tabs.Count > 1 || OpenTabs.Count > 1, "editor file cycle", Id: "cmd.next-tab"),
+            new("Previous Tab", "Navigation", "", () => { ActivateAdjacentTab(-1); return Task.CompletedTask; }, () => _activeEditorPane.Tabs.Count > 1 || OpenTabs.Count > 1, "editor file cycle", Id: "cmd.previous-tab"),
 
-            new("New File", "File", "NewFile", () => { NewFile(); return Task.CompletedTask; }, Keywords: "create"),
-            new("Open File…", "File", "OpenFile", async () => await OpenFileAsync(), Keywords: "browse picker dialog"),
-            new("Open Folder…", "File", "OpenFolder", async () => await OpenFolderAsync(), Keywords: "workspace project picker dialog"),
-            new("Close Folder", "File", "CloseFolder", () => { if (IsFolderOpen) CloseFolder(); return Task.CompletedTask; }, () => IsFolderOpen, "workspace project"),
-            new("Save", "File", "Save", async () => { await SaveAsync(); }, () => ActiveEditorTab is not null, "file picker dialog"),
-            new("Save As…", "File", "SaveAs", async () => { await SaveAsAsync(); }, () => ActiveEditorTab is not null, "file picker dialog"),
-            new("Save All", "File", "", async () => await SaveAllAsync(), () => OpenTabs.Any(tab => tab.IsDirty), "dialog file"),
-            new("Toggle Bookmark", "Navigation", "", () => { ToggleBookmarkAtCaret(); return Task.CompletedTask; }, HasDocument, "bookmark line"),
-            new("Next Bookmark", "Navigation", "", () => { NextBookmark(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "bookmark forward"),
-            new("Previous Bookmark", "Navigation", "", () => { PreviousBookmark(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "bookmark backward"),
-            new("Clear File Bookmarks", "Navigation", "", () => { ClearFileBookmarks(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "remove bookmarks file"),
-            new("Clear All Bookmarks", "Navigation", "", async () => await ClearAllBookmarksAsync(), () => IsFolderOpen && HasBookmarks, "remove bookmarks workspace"),
-            new("Show Bookmarks", "View", "", () => { ShowBookmarks(); return Task.CompletedTask; }, () => IsFolderOpen, "bookmark list panel"),
-            new("Change File Encoding…", "File", "", () => { SetPaletteText("> Encoding:"); return Task.CompletedTask; }, () => hasWritableTextFile, "charset utf8 bom utf16 codepage", KeepOpen: true),
-            new("Encoding: UTF-8", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(false)), () => hasWritableTextFile, "charset no bom"),
-            new("Encoding: UTF-8 with BOM", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(true)), () => hasWritableTextFile, "charset signature"),
-            new("Encoding: UTF-16 LE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.Unicode), () => hasWritableTextFile, "charset little endian unicode"),
-            new("Encoding: UTF-16 BE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.BigEndianUnicode), () => hasWritableTextFile, "charset big endian unicode"),
-            new("Encoding: UTF-32", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.UTF32), () => hasWritableTextFile, "charset unicode"),
-            new("Encoding: Windows-1252", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.GetEncoding(1252)), () => hasWritableTextFile, "charset ansi"),
-            new("Encoding: ASCII", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.ASCII), () => hasWritableTextFile, "charset"),
-            new("Change Line Ending…", "File", "", () => { SetPaletteText("> Line Ending:"); return Task.CompletedTask; }, () => hasWritableTextFile, "eol newline crlf lf cr", KeepOpen: true),
-            new("Line Ending: LF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.LF), () => hasWritableTextFile, "eol unix macos newline"),
-            new("Line Ending: CRLF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CRLF), () => hasWritableTextFile, "eol windows newline"),
-            new("Line Ending: CR", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CR), () => hasWritableTextFile, "eol classic mac newline"),
-            new("Change Indentation…", "Editor", "", () => { SetPaletteText("> Indentation:"); return Task.CompletedTask; }, () => HasDocument(), "spaces tabs tab size indent", KeepOpen: true),
-            new("Indentation: Spaces 2", "Editor", "", () => { InsertSpaces = true; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Indentation: Spaces 4", "Editor", "", () => { InsertSpaces = true; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Indentation: Spaces 8", "Editor", "", () => { InsertSpaces = true; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Indentation: Tabs, size 2", "Editor", "", () => { InsertSpaces = false; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Indentation: Tabs, size 4", "Editor", "", () => { InsertSpaces = false; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Indentation: Tabs, size 8", "Editor", "", () => { InsertSpaces = false; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width"),
-            new("Close Active Tab", "File", "CloseTab", async () => { if (ActiveEditorTab is not null) await RequestCloseTabAsync(ActiveEditorTab); }, () => ActiveEditorTab is not null),
-            new("Close Other Tabs", "File", "", CloseOtherTabsAsync, () => OpenTabs.Count > 1, "close tabs documents"),
-            new("Close Tabs to the Right", "File", "", CloseTabsToRightAsync, () => ActiveEditorTab is not null && OpenTabs.IndexOf(ActiveEditorTab) < OpenTabs.Count - 1, "close tabs below after"),
-            new("Close All Tabs", "File", "", CloseAllTabsAsync, () => OpenTabs.Count > 0, "close documents"),
+            new("New File", "File", "NewFile", () => { NewFile(); return Task.CompletedTask; }, Keywords: "create", Id: "cmd.new-file"),
+            new("Open File…", "File", "OpenFile", async () => await OpenFileAsync(), Keywords: "browse picker dialog", Id: "cmd.open-file"),
+            new("Open Folder…", "File", "OpenFolder", async () => await OpenFolderAsync(), Keywords: "workspace project picker dialog", Id: "cmd.open-folder"),
+            new("Close Folder", "File", "CloseFolder", () => { if (IsFolderOpen) CloseFolder(); return Task.CompletedTask; }, () => IsFolderOpen, "workspace project", Id: "cmd.close-folder"),
+            new("Save", "File", "Save", async () => { await SaveAsync(); }, () => ActiveEditorTab is not null, "file picker dialog", Id: "cmd.save"),
+            new("Save As…", "File", "SaveAs", async () => { await SaveAsAsync(); }, () => ActiveEditorTab is not null, "file picker dialog", Id: "cmd.save-as"),
+            new("Save All", "File", "", async () => await SaveAllAsync(), () => OpenTabs.Any(tab => tab.IsDirty), "dialog file", Id: "cmd.save-all"),
+            new("Toggle Bookmark", "Navigation", "", () => { ToggleBookmarkAtCaret(); return Task.CompletedTask; }, HasDocument, "bookmark line", Id: "cmd.toggle-bookmark"),
+            new("Next Bookmark", "Navigation", "", () => { NextBookmark(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "bookmark forward", Id: "cmd.next-bookmark"),
+            new("Previous Bookmark", "Navigation", "", () => { PreviousBookmark(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "bookmark backward", Id: "cmd.previous-bookmark"),
+            new("Clear File Bookmarks", "Navigation", "", () => { ClearFileBookmarks(); return Task.CompletedTask; }, () => HasDocument() && IsFolderOpen, "remove bookmarks file", Id: "cmd.clear-file-bookmarks"),
+            new("Clear All Bookmarks", "Navigation", "", async () => await ClearAllBookmarksAsync(), () => IsFolderOpen && HasBookmarks, "remove bookmarks workspace", Id: "cmd.clear-all-bookmarks"),
+            new("Show Bookmarks", "View", "", () => { ShowBookmarks(); return Task.CompletedTask; }, () => IsFolderOpen, "bookmark list panel", Id: "cmd.show-bookmarks"),
+            new("Change File Encoding…", "File", "", () => { SetPaletteText("> Encoding:"); return Task.CompletedTask; }, () => hasWritableTextFile, "charset utf8 bom utf16 codepage", KeepOpen: true, Id: "cmd.change-file-encoding"),
+            new("Encoding: UTF-8", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(false)), () => hasWritableTextFile, "charset no bom", Id: "cmd.encoding-utf-8"),
+            new("Encoding: UTF-8 with BOM", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(true)), () => hasWritableTextFile, "charset signature", Id: "cmd.encoding-utf-8-with-bom"),
+            new("Encoding: UTF-16 LE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.Unicode), () => hasWritableTextFile, "charset little endian unicode", Id: "cmd.encoding-utf-16-le"),
+            new("Encoding: UTF-16 BE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.BigEndianUnicode), () => hasWritableTextFile, "charset big endian unicode", Id: "cmd.encoding-utf-16-be"),
+            new("Encoding: UTF-32", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.UTF32), () => hasWritableTextFile, "charset unicode", Id: "cmd.encoding-utf-32"),
+            new("Encoding: Windows-1252", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.GetEncoding(1252)), () => hasWritableTextFile, "charset ansi", Id: "cmd.encoding-windows-1252"),
+            new("Encoding: ASCII", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.ASCII), () => hasWritableTextFile, "charset", Id: "cmd.encoding-ascii"),
+            new("Change Line Ending…", "File", "", () => { SetPaletteText("> Line Ending:"); return Task.CompletedTask; }, () => hasWritableTextFile, "eol newline crlf lf cr", KeepOpen: true, Id: "cmd.change-line-ending"),
+            new("Line Ending: LF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.LF), () => hasWritableTextFile, "eol unix macos newline", Id: "cmd.line-ending-lf"),
+            new("Line Ending: CRLF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CRLF), () => hasWritableTextFile, "eol windows newline", Id: "cmd.line-ending-crlf"),
+            new("Line Ending: CR", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CR), () => hasWritableTextFile, "eol classic mac newline", Id: "cmd.line-ending-cr"),
+            new("Change Indentation…", "Editor", "", () => { SetPaletteText("> Indentation:"); return Task.CompletedTask; }, () => HasDocument(), "spaces tabs tab size indent", KeepOpen: true, Id: "cmd.change-indentation"),
+            new("Indentation: Spaces 2", "Editor", "", () => { InsertSpaces = true; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-2"),
+            new("Indentation: Spaces 4", "Editor", "", () => { InsertSpaces = true; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-4"),
+            new("Indentation: Spaces 8", "Editor", "", () => { InsertSpaces = true; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-8"),
+            new("Indentation: Tabs, size 2", "Editor", "", () => { InsertSpaces = false; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-2"),
+            new("Indentation: Tabs, size 4", "Editor", "", () => { InsertSpaces = false; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-4"),
+            new("Indentation: Tabs, size 8", "Editor", "", () => { InsertSpaces = false; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-8"),
+            new("Close Active Tab", "File", "CloseTab", async () => { if (ActiveEditorTab is not null) await RequestCloseTabAsync(ActiveEditorTab); }, () => ActiveEditorTab is not null, Id: "cmd.close-active-tab"),
+            new("Close Other Tabs", "File", "", CloseOtherTabsAsync, () => OpenTabs.Count > 1, "close tabs documents", Id: "cmd.close-other-tabs"),
+            new("Close Tabs to the Right", "File", "", CloseTabsToRightAsync, () => ActiveEditorTab is not null && OpenTabs.IndexOf(ActiveEditorTab) < OpenTabs.Count - 1, "close tabs below after", Id: "cmd.close-tabs-to-the-right"),
+            new("Close All Tabs", "File", "", CloseAllTabsAsync, () => OpenTabs.Count > 0, "close documents", Id: "cmd.close-all-tabs"),
             new("Copy Active File Path", "File", "", async () =>
             {
                 if (ActiveEditorTab is { IsUntitled: false } tab && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
                     await clipboard.SetTextAsync(tab.Path);
-            }, () => ActiveEditorTab is { IsUntitled: false }, "copy location directory"),
-            new("Copy Active File Relative Path", "File", "", () => CopyActiveFilePathAsync(relative: true), () => ActiveEditorTab is { IsUntitled: false }, "copy location workspace"),
+            }, () => ActiveEditorTab is { IsUntitled: false }, "copy location directory", Id: "cmd.copy-active-file-path"),
+            new("Copy Active File Relative Path", "File", "", () => CopyActiveFilePathAsync(relative: true), () => ActiveEditorTab is { IsUntitled: false }, "copy location workspace", Id: "cmd.copy-active-file-relative-path"),
             new("Copy Active File Name", "File", "", async () =>
             {
                 if (ActiveEditorTab is { IsUntitled: false, Path: { } path } && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
                     await clipboard.SetTextAsync(Path.GetFileName(path));
-            }, () => ActiveEditorTab is { IsUntitled: false }, "copy basename"),
-            new("Reveal Active File in File Manager", "File", "", RevealActiveFileAsync, () => ActiveEditorTab is { IsUntitled: false }, "show explorer folder finder"),
-            new("Open Active File Folder in Terminal", "Terminal", "", () => { OpenActiveFileInTerminal(); return Task.CompletedTask; }, () => ActiveEditorTab is { IsUntitled: false }, "integrated shell directory"),
+            }, () => ActiveEditorTab is { IsUntitled: false }, "copy basename", Id: "cmd.copy-active-file-name"),
+            new("Reveal Active File in File Manager", "File", "", RevealActiveFileAsync, () => ActiveEditorTab is { IsUntitled: false }, "show explorer folder finder", Id: "cmd.reveal-active-file-in-file-manager"),
+            new("Open Active File Folder in Terminal", "Terminal", "", () => { OpenActiveFileInTerminal(); return Task.CompletedTask; }, () => ActiveEditorTab is { IsUntitled: false }, "integrated shell directory", Id: "cmd.open-active-file-folder-in-terminal"),
 
-            new("Find in File", "Search", "FindInFile", () => { OpenSearchPanel(SearchMode.FindInFile); return Task.CompletedTask; }, () => ActiveEditorTab is not null),
-            new("Find in Project", "Search", "FindInProject", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search text files"),
-            new("Search in Current Folder", "Search", "", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search in directory workspace"),
-            new("Find Next", "Search", "", () => RunMenuHandler((_, _) => FindInEditor(forward: true)), () => IsSearchPanelActive && IsTextEditorVisible && !string.IsNullOrEmpty(FindText), "next match"),
-            new("Find Previous", "Search", "", () => RunMenuHandler((_, _) => FindInEditor(forward: false)), () => IsSearchPanelActive && IsTextEditorVisible && !string.IsNullOrEmpty(FindText), "previous match"),
-            new("Toggle Match Case", "Search", "", () => { IsSearchMatchCaseEnabled = !IsSearchMatchCaseEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search case sensitive"),
-            new("Toggle Whole Word", "Search", "", () => { IsSearchWholeWordEnabled = !IsSearchWholeWordEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search exact word"),
-            new("Toggle Regular Expression Search", "Search", "", () => { IsSearchRegexEnabled = !IsSearchRegexEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search regex pattern"),
+            new("Find in File", "Search", "FindInFile", () => { OpenSearchPanel(SearchMode.FindInFile); return Task.CompletedTask; }, () => ActiveEditorTab is not null, Id: "cmd.find-in-file"),
+            new("Find in Project", "Search", "FindInProject", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search text files", Id: "cmd.find-in-project"),
+            new("Search in Current Folder", "Search", "", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search in directory workspace", Id: "cmd.search-in-current-folder"),
+            new("Find Next", "Search", "", () => RunMenuHandler((_, _) => FindInEditor(forward: true)), () => IsSearchPanelActive && IsTextEditorVisible && !string.IsNullOrEmpty(FindText), "next match", Id: "cmd.find-next"),
+            new("Find Previous", "Search", "", () => RunMenuHandler((_, _) => FindInEditor(forward: false)), () => IsSearchPanelActive && IsTextEditorVisible && !string.IsNullOrEmpty(FindText), "previous match", Id: "cmd.find-previous"),
+            new("Toggle Match Case", "Search", "", () => { IsSearchMatchCaseEnabled = !IsSearchMatchCaseEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search case sensitive", Id: "cmd.toggle-match-case"),
+            new("Toggle Whole Word", "Search", "", () => { IsSearchWholeWordEnabled = !IsSearchWholeWordEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search exact word", Id: "cmd.toggle-whole-word"),
+            new("Toggle Regular Expression Search", "Search", "", () => { IsSearchRegexEnabled = !IsSearchRegexEnabled; return Task.CompletedTask; }, () => IsSearchPanelActive, "search regex pattern", Id: "cmd.toggle-regular-expression-search"),
 
-            new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => HasDocument() && hasDefinitionProvider, "language server navigation"),
-            new("Go Back", "Navigation", "EditorGoBack", () => NavigateEditorHistoryAsync(true), HasDocument, "previous location history"),
-            new("Go Forward", "Navigation", "EditorGoForward", () => NavigateEditorHistoryAsync(false), HasDocument, "next location history"),
-            new("Next Problem", "Editor", "NextProblem", () => { NavigateEditorDiagnostic(1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning"),
-            new("Previous Problem", "Editor", "PreviousProblem", () => { NavigateEditorDiagnostic(-1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning"),
-            new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), () => HasLspDocument("textDocument/typeDefinition"), "language server"),
-            new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), () => HasLspDocument("textDocument/implementation"), "language server"),
-            new("Find All References", "Editor", "", () => RunMenuHandler(EditorFindReferencesMenuItem_OnClick), () => HasDocument() && hasReferences, "usages"),
-            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), () => HasLspDocument("textDocument/rename"), "refactor dialog rename input"),
-            new("Show Document Symbols", "Editor", "", () => RunMenuHandler(EditorDocumentSymbolsMenuItem_OnClick), () => HasLspDocument("textDocument/documentSymbol"), "outline language server"),
-            new("Show Signature Help", "Editor", "", () => RunMenuHandler(EditorSignatureHelpMenuItem_OnClick), () => HasLspDocument("textDocument/signatureHelp"), "parameters"),
-            new("Quick Fix…", "Editor", "", () => RunMenuHandler(EditorQuickFixMenuItem_OnClick), () => HasDocument() && hasCodeActions, "code action"),
-            new("Format Document", "Editor", "", () => RunMenuHandler(EditorFormatDocumentMenuItem_OnClick), () => HasDocument() && hasFormatter, "prettify indent"),
-            new("Change All Occurrences", "Editor", "ChangeAllOccurrences", () => RunMenuHandler(EditorChangeAllOccurrencesMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "multi cursor replace"),
-            new("Undo", "Editor", "", () => WithEditor((doc, _) => { if (doc.UndoStack.CanUndo) doc.UndoStack.Undo(); }), HasDocument, "edit revert"),
-            new("Redo", "Editor", "", () => WithEditor((doc, _) => { if (doc.UndoStack.CanRedo) doc.UndoStack.Redo(); }), HasDocument, "edit repeat"),
-            new("Select All Text", "Editor", "", () => { EditorTextBox?.SelectAll(); return Task.CompletedTask; }, HasDocument, "highlight document contents"),
-            new("Cut", "Editor", "Cut", () => RunMenuHandler(EditorCutMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "clipboard remove"),
-            new("Copy", "Editor", "Copy", () => RunMenuHandler(EditorCopyMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "clipboard"),
-            new("Paste", "Editor", "Paste", () => RunMenuHandler(EditorPasteMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea is not null, "clipboard insert"),
-            new("Scroll Editor Left", "Editor", "ScrollEditorLeft", () => { ScrollEditorHorizontally(-EditorHorizontalScrollStep); return Task.CompletedTask; }, HasDocument, "horizontal view"),
-            new("Scroll Editor Right", "Editor", "ScrollEditorRight", () => { ScrollEditorHorizontally(EditorHorizontalScrollStep); return Task.CompletedTask; }, HasDocument, "horizontal view"),
-            new("Scroll Editor Left by Page", "Editor", "ScrollEditorPageLeft", () => { ScrollEditorHorizontallyByPage(-1); return Task.CompletedTask; }, HasDocument, "horizontal view"),
-            new("Scroll Editor Right by Page", "Editor", "ScrollEditorPageRight", () => { ScrollEditorHorizontallyByPage(1); return Task.CompletedTask; }, HasDocument, "horizontal view"),
-            new("Run Current File", "Run", "", () => RunCompilerCommandAsync(isBuild: false), () => IsRunButtonEnabled, "execute start launch"),
-            new("Build Current File", "Build", "", () => RunCompilerCommandAsync(isBuild: true), () => IsBuildButtonEnabled, "compile project"),
-            new("Toggle Line Comment", "Editor", "ToggleLineComment", () => WithEditor((doc, area) => ToggleLineComment(doc, area, area.Selection, area.Caret)), () => HasDocument() && IsSmartSyntaxEnabled(), "comment uncomment"),
-            new("Move Line Up", "Editor", "MoveLineUp", () => WithEditor((doc, area) => EditorMoveLines(doc, area, -1)), HasDocument),
-            new("Move Line Down", "Editor", "MoveLineDown", () => WithEditor((doc, area) => EditorMoveLines(doc, area, 1)), HasDocument),
-            new("Duplicate Line Up", "Editor", "DuplicateLineUp", () => WithEditor((doc, area) => EditorDuplicateLines(doc, area, -1)), HasDocument, "copy"),
-            new("Duplicate Line Down", "Editor", "DuplicateLineDown", () => WithEditor((doc, area) => EditorDuplicateLines(doc, area, 1)), HasDocument, "copy"),
-            new("Delete Line", "Editor", "DeleteLine", () => WithEditor((doc, area) => EditorDeleteLines(doc, area)), HasDocument, "remove"),
-            new("Insert Line Above", "Editor", "InsertLineAbove", () => WithEditor((doc, area) => EditorInsertLine(doc, area, false)), HasDocument),
-            new("Insert Line Below", "Editor", "InsertLineBelow", () => WithEditor((doc, area) => EditorInsertLine(doc, area, true)), HasDocument),
-            new("Toggle Current Line Highlight", "Editor", "ToggleHighlightCurrentLine", () => { EditorToggleHighlightCurrentLine(); return Task.CompletedTask; }, HasDocument),
+            new("Go to Definition", "Editor", "GoToDefinition", () => { GoToDefinitionAtCaret(); return Task.CompletedTask; }, () => HasDocument() && hasDefinitionProvider, "language server navigation", Id: "cmd.go-to-definition"),
+            new("Go Back", "Navigation", "EditorGoBack", () => NavigateEditorHistoryAsync(true), HasDocument, "previous location history", Id: "cmd.go-back"),
+            new("Go Forward", "Navigation", "EditorGoForward", () => NavigateEditorHistoryAsync(false), HasDocument, "next location history", Id: "cmd.go-forward"),
+            new("Next Problem", "Editor", "NextProblem", () => { NavigateEditorDiagnostic(1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning", Id: "cmd.next-problem"),
+            new("Previous Problem", "Editor", "PreviousProblem", () => { NavigateEditorDiagnostic(-1); return Task.CompletedTask; }, () => HasDocument() && (_errorHighlightRenderer.Spans.Count > 0 || _deadCodeHighlightRenderer.Spans.Count > 0), "diagnostic error warning", Id: "cmd.previous-problem"),
+            new("Go to Type Definition", "Editor", "", () => RunMenuHandler(EditorTypeDefinitionMenuItem_OnClick), () => HasLspDocument("textDocument/typeDefinition"), "language server", Id: "cmd.go-to-type-definition"),
+            new("Go to Implementation", "Editor", "", () => RunMenuHandler(EditorImplementationMenuItem_OnClick), () => HasLspDocument("textDocument/implementation"), "language server", Id: "cmd.go-to-implementation"),
+            new("Find All References", "Editor", "", () => RunMenuHandler(EditorFindReferencesMenuItem_OnClick), () => HasDocument() && hasReferences, "usages", Id: "cmd.find-all-references"),
+            new("Rename Symbol…", "Editor", "", () => RunMenuHandler(EditorRenameSymbolMenuItem_OnClick), () => HasLspDocument("textDocument/rename"), "refactor dialog rename input", Id: "cmd.rename-symbol"),
+            new("Show Document Symbols", "Editor", "", () => RunMenuHandler(EditorDocumentSymbolsMenuItem_OnClick), () => HasLspDocument("textDocument/documentSymbol"), "outline language server", Id: "cmd.show-document-symbols"),
+            new("Show Signature Help", "Editor", "", () => RunMenuHandler(EditorSignatureHelpMenuItem_OnClick), () => HasLspDocument("textDocument/signatureHelp"), "parameters", Id: "cmd.show-signature-help"),
+            new("Quick Fix…", "Editor", "", () => RunMenuHandler(EditorQuickFixMenuItem_OnClick), () => HasDocument() && hasCodeActions, "code action", Id: "cmd.quick-fix"),
+            new("Format Document", "Editor", "", () => RunMenuHandler(EditorFormatDocumentMenuItem_OnClick), () => HasDocument() && hasFormatter, "prettify indent", Id: "cmd.format-document"),
+            new("Change All Occurrences", "Editor", "ChangeAllOccurrences", () => RunMenuHandler(EditorChangeAllOccurrencesMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "multi cursor replace", Id: "cmd.change-all-occurrences"),
+            new("Undo", "Editor", "", () => WithEditor((doc, _) => { if (doc.UndoStack.CanUndo) doc.UndoStack.Undo(); }), HasDocument, "edit revert", Id: "cmd.undo"),
+            new("Redo", "Editor", "", () => WithEditor((doc, _) => { if (doc.UndoStack.CanRedo) doc.UndoStack.Redo(); }), HasDocument, "edit repeat", Id: "cmd.redo"),
+            new("Select All Text", "Editor", "", () => { EditorTextBox?.SelectAll(); return Task.CompletedTask; }, HasDocument, "highlight document contents", Id: "cmd.select-all-text"),
+            new("Cut", "Editor", "Cut", () => RunMenuHandler(EditorCutMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "clipboard remove", Id: "cmd.cut"),
+            new("Copy", "Editor", "Copy", () => RunMenuHandler(EditorCopyMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea?.Selection is { IsEmpty: false }, "clipboard", Id: "cmd.copy"),
+            new("Paste", "Editor", "Paste", () => RunMenuHandler(EditorPasteMenuItem_OnClick), () => HasDocument() && EditorTextBox?.TextArea is not null, "clipboard insert", Id: "cmd.paste"),
+            new("Scroll Editor Left", "Editor", "ScrollEditorLeft", () => { ScrollEditorHorizontally(-EditorHorizontalScrollStep); return Task.CompletedTask; }, HasDocument, "horizontal view", Id: "cmd.scroll-editor-left"),
+            new("Scroll Editor Right", "Editor", "ScrollEditorRight", () => { ScrollEditorHorizontally(EditorHorizontalScrollStep); return Task.CompletedTask; }, HasDocument, "horizontal view", Id: "cmd.scroll-editor-right"),
+            new("Scroll Editor Left by Page", "Editor", "ScrollEditorPageLeft", () => { ScrollEditorHorizontallyByPage(-1); return Task.CompletedTask; }, HasDocument, "horizontal view", Id: "cmd.scroll-editor-left-by-page"),
+            new("Scroll Editor Right by Page", "Editor", "ScrollEditorPageRight", () => { ScrollEditorHorizontallyByPage(1); return Task.CompletedTask; }, HasDocument, "horizontal view", Id: "cmd.scroll-editor-right-by-page"),
+            new("Run Current File", "Run", "", () => RunCompilerCommandAsync(isBuild: false), () => IsRunButtonEnabled, "execute start launch", Id: "cmd.run-current-file"),
+            new("Build Current File", "Build", "", () => RunCompilerCommandAsync(isBuild: true), () => IsBuildButtonEnabled, "compile project", Id: "cmd.build-current-file"),
+            new("Toggle Line Comment", "Editor", "ToggleLineComment", () => WithEditor((doc, area) => ToggleLineComment(doc, area, area.Selection, area.Caret)), () => HasDocument() && IsSmartSyntaxEnabled(), "comment uncomment", Id: "cmd.toggle-line-comment"),
+            new("Move Line Up", "Editor", "MoveLineUp", () => WithEditor((doc, area) => EditorMoveLines(doc, area, -1)), HasDocument, Id: "cmd.move-line-up"),
+            new("Move Line Down", "Editor", "MoveLineDown", () => WithEditor((doc, area) => EditorMoveLines(doc, area, 1)), HasDocument, Id: "cmd.move-line-down"),
+            new("Duplicate Line Up", "Editor", "DuplicateLineUp", () => WithEditor((doc, area) => EditorDuplicateLines(doc, area, -1)), HasDocument, "copy", Id: "cmd.duplicate-line-up"),
+            new("Duplicate Line Down", "Editor", "DuplicateLineDown", () => WithEditor((doc, area) => EditorDuplicateLines(doc, area, 1)), HasDocument, "copy", Id: "cmd.duplicate-line-down"),
+            new("Delete Line", "Editor", "DeleteLine", () => WithEditor((doc, area) => EditorDeleteLines(doc, area)), HasDocument, "remove", Id: "cmd.delete-line"),
+            new("Insert Line Above", "Editor", "InsertLineAbove", () => WithEditor((doc, area) => EditorInsertLine(doc, area, false)), HasDocument, Id: "cmd.insert-line-above"),
+            new("Insert Line Below", "Editor", "InsertLineBelow", () => WithEditor((doc, area) => EditorInsertLine(doc, area, true)), HasDocument, Id: "cmd.insert-line-below"),
+            new("Toggle Current Line Highlight", "Editor", "ToggleHighlightCurrentLine", () => { EditorToggleHighlightCurrentLine(); return Task.CompletedTask; }, HasDocument, Id: "cmd.toggle-current-line-highlight"),
             new(IsWordWrapEnabled ? "Disable Word Wrap" : "Enable Word Wrap", "Editor", "", () => { IsWordWrapEnabled = !IsWordWrapEnabled; return Task.CompletedTask; }, Keywords: "toggle wrap lines"),
             new(IsInsightEnabled ? "Disable Insight" : "Enable Insight", "Editor", "", () => { IsInsightEnabled = !IsInsightEnabled; return Task.CompletedTask; }, Keywords: "toggle language intelligence completion errors"),
             new(LspDiagnosticsEnabled ? "Disable Language Server Diagnostics" : "Enable Language Server Diagnostics", "Editor", "", () => { LspDiagnosticsEnabled = !LspDiagnosticsEnabled; return Task.CompletedTask; }, Keywords: "toggle lsp errors warnings"),
 
-            new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, () => IsFolderOpen, Keywords: "sidebar"),
-            new("New File in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true); }, () => IsFolderOpen, "create explorer"),
-            new("New Folder in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false); }, () => IsFolderOpen, "create directory explorer"),
-            new("Refresh File Explorer", "View", "", async () => await RefreshExplorerTreeAsync(), () => IsFolderOpen, "reload refresh project tree"),
+            new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, () => IsFolderOpen, Keywords: "sidebar", Id: "cmd.toggle-file-explorer"),
+            new("New File in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true); }, () => IsFolderOpen, "create explorer", Id: "cmd.new-file-in-workspace"),
+            new("New Folder in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "New Folder", null, false); }, () => IsFolderOpen, "create directory explorer", Id: "cmd.new-folder-in-workspace"),
+            new("Refresh File Explorer", "View", "", async () => await RefreshExplorerTreeAsync(), () => IsFolderOpen, "reload refresh project tree", Id: "cmd.refresh-file-explorer"),
             new(_isFileTreeExpanded ? "Collapse All Folders" : "Expand All Folders", "View", "", ToggleExplorerExpansionAsync, () => IsFolderOpen, "explorer tree directories"),
-            new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console"),
+            new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console", Id: "cmd.toggle-terminal"),
             new(IsMinimapVisible ? "Hide Minimap" : "Show Minimap", "View", "", () => { IsMinimapVisible = !IsMinimapVisible; return Task.CompletedTask; }, Keywords: "toggle overview code map"),
         new(IsStickyScrollEnabled ? "Hide Sticky Scroll" : "Show Sticky Scroll", "View", "", () => { IsStickyScrollEnabled = !IsStickyScrollEnabled; return Task.CompletedTask; }, Keywords: "toggle sticky scroll scope context header"),
-            new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel"),
-            new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
-            new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
-            new("Reset Zoom", "View", "ZoomReset", () => { ZoomImageReset(); return Task.CompletedTask; }, () => HasImagePreview, "image"),
-            new("New Terminal", "Terminal", "NewTerminalSession", () => { CreateTerminalSession(); return Task.CompletedTask; }, () => IsTerminalSupported, "shell console"),
-            new("Clear Terminal", "Terminal", "", () => { ClearActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "erase terminal output"),
-            new("Restart Terminal", "Terminal", "", () => { RestartActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "shell relaunch"),
-            new("Close Terminal Session", "Terminal", "", () => { if (ActiveTerminalSession is { } session) CloseTerminalSession(session); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "remove shell"),
-            new("Close All Terminal Sessions", "Terminal", "", () => { CloseAllTerminalSessions(); return Task.CompletedTask; }, () => IsTerminalSupported && TerminalSessions.Count > 0, "remove shells"),
+            new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel", Id: "cmd.focus-terminal"),
+            new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-in"),
+            new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-out"),
+            new("Reset Zoom", "View", "ZoomReset", () => { ZoomImageReset(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.reset-zoom"),
+            new("New Terminal", "Terminal", "NewTerminalSession", () => { CreateTerminalSession(); return Task.CompletedTask; }, () => IsTerminalSupported, "shell console", Id: "cmd.new-terminal"),
+            new("Clear Terminal", "Terminal", "", () => { ClearActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "erase terminal output", Id: "cmd.clear-terminal"),
+            new("Restart Terminal", "Terminal", "", () => { RestartActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "shell relaunch", Id: "cmd.restart-terminal"),
+            new("Close Terminal Session", "Terminal", "", () => { if (ActiveTerminalSession is { } session) CloseTerminalSession(session); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "remove shell", Id: "cmd.close-terminal-session"),
+            new("Close All Terminal Sessions", "Terminal", "", () => { CloseAllTerminalSessions(); return Task.CompletedTask; }, () => IsTerminalSupported && TerminalSessions.Count > 0, "remove shells", Id: "cmd.close-all-terminal-sessions"),
             new(IsAutoSaveEnabled ? "Disable Auto Save" : "Enable Auto Save", "File", "", () => { IsAutoSaveEnabled = !IsAutoSaveEnabled; return Task.CompletedTask; }, Keywords: "toggle automatic save"),
             new(IsPerformanceModeEnabled ? "Disable Performance Mode" : "Enable Performance Mode", "Preferences", "", () => { IsPerformanceModeEnabled = !IsPerformanceModeEnabled; return Task.CompletedTask; }, Keywords: "toggle speed lag lightweight"),
             new(IsStatusBarFilePathVisible ? "Show Short File Names in Status Bar" : "Show Full File Paths in Status Bar", "View", "", () => { IsStatusBarFilePathVisible = !IsStatusBarFilePathVisible; return Task.CompletedTask; }, Keywords: "toggle status path location"),
-            new("Use Dark Theme", "Appearance", "", () => { ApplyTheme("Dark"); return Task.CompletedTask; }, () => !IsDarkThemeActive, "appearance"),
-            new("Use Light Theme", "Appearance", "", () => { ApplyTheme("Light"); return Task.CompletedTask; }, () => !IsLightThemeActive, "appearance"),
-            new("Use System Theme", "Appearance", "", () => { ApplyTheme("System"); return Task.CompletedTask; }, () => !IsSystemThemeActive, "appearance operating system"),
+            new("Use Dark Theme", "Appearance", "", () => { ApplyTheme("Dark"); return Task.CompletedTask; }, () => !IsDarkThemeActive, "appearance", Id: "cmd.use-dark-theme"),
+            new("Use Light Theme", "Appearance", "", () => { ApplyTheme("Light"); return Task.CompletedTask; }, () => !IsLightThemeActive, "appearance", Id: "cmd.use-light-theme"),
+            new("Use System Theme", "Appearance", "", () => { ApplyTheme("System"); return Task.CompletedTask; }, () => !IsSystemThemeActive, "appearance operating system", Id: "cmd.use-system-theme"),
 
-            new("Check for Updates", "Help", "", async () => await CheckForUpdatesManuallyAsync(), Keywords: "update version"),
+            new("Check for Updates", "Help", "", async () => await CheckForUpdatesManuallyAsync(), Keywords: "update version", Id: "cmd.check-for-updates"),
         };
 
         void AddSettingToggle(string name, Func<bool> getValue, Action<bool> setValue, string keywords = "", Func<bool>? isAvailable = null)
@@ -1423,30 +1451,44 @@ public partial class MainWindow
         if (terms.Length == 0)
         {
             totalMatches = available.Count;
-            var recentTitles = _recentPaletteCommands;
-            var recent = recentTitles
-                .Select(title => available.FirstOrDefault(command => command.Title == title))
-                .Where(command => command is not null)
-                .Select(command => command! with { Section = "Recently Used" })
-                .ToList();
-            var recentSet = new HashSet<string>(recent.Select(command => command.Title), StringComparer.Ordinal);
-            var others = available
-                .Where(command => !recentSet.Contains(command.Title))
-                .Select(command => recent.Count > 0 ? command with { Section = "Commands" } : command);
+            var recentIds = new HashSet<string>(_recentPaletteCommands, StringComparer.Ordinal);
+            var recent = new List<PaletteCommand>();
+            var rest = new List<(PaletteCommand Command, double Score, int Index)>();
+            for (var i = 0; i < available.Count; i++)
+            {
+                var command = available[i];
+                var key = command.Id.Length > 0 ? command.Id : command.Title;
+                if (recentIds.Contains(key))
+                {
+                    recent.Add(command with { Section = "Recently Used" });
+                    continue;
+                }
+                rest.Add((command, GetPaletteCommandAdjustment(command.Id), i));
+            }
+            rest.Sort((x, y) =>
+            {
+                var byScore = y.Score.CompareTo(x.Score);
+                return byScore != 0 ? byScore : x.Index.CompareTo(y.Index);
+            });
+            var others = rest.Select(entry => entry.Command with { Section = recent.Count > 0 ? "Commands" : "" });
             return recent.Concat(others).ToList();
         }
 
-        var scored = new List<(PaletteCommand Command, int Score, List<int> Matches)>();
-        foreach (var command in available)
+        var normalizedQuery = InsightUserIntelligence.NormalizeQuery(query);
+        var scored = new List<(PaletteCommand Command, double Score, int Index, List<int> Matches)>();
+        for (var i = 0; i < available.Count; i++)
         {
+            var command = available[i];
             var matches = new List<int>();
             var score = ScorePaletteCommand(command, terms, matches);
             if (score != int.MinValue)
-                scored.Add((command, score, matches));
+                scored.Add((command, UserInsight.ScorePaletteCommand(
+                    score, command.Id, normalizedQuery, DateTime.UtcNow), i, matches));
         }
         totalMatches = scored.Count;
         return scored
             .OrderByDescending(item => item.Score)
+            .ThenBy(item => item.Index)
             .Take(PaletteMaxResults)
             .Select(item => item.Command with { TitleMatches = item.Matches })
             .ToList();
@@ -1505,10 +1547,10 @@ public partial class MainWindow
                 if (shown.Add(file.Path))
                     entries.Add(CreateQuickAccessFileEntry(file, "Recent", null, null, line, column));
             }
-            var recentCommands = _recentPaletteCommands
-                .Select(title => BuildCommandPaletteCommands().FirstOrDefault(command => command.Title == title))
-                .Where(command => command is not null && command.IsAvailable?.Invoke() != false)
-                .Select(command => command! with { Section = "Recently Used" })
+            var recentCommands = BuildCommandPaletteCommands()
+                .Where(command => command.Id.Length > 0 && _recentPaletteCommands.Contains(command.Id, StringComparer.Ordinal))
+                .Where(command => command.IsAvailable?.Invoke() != false)
+                .Select(command => command with { Section = "Recently Used" })
                 .ToList();
             entries.AddRange(recentCommands);
             entries.AddRange(BuildQuickAccessHintEntries());
@@ -1909,7 +1951,7 @@ public partial class MainWindow
         var list = _commandPaletteList;
         list.Children.Clear();
         _paletteRows.Clear();
-        _palettePressedIndex = -1;
+        _palettePressedRow = null;
         var lastSection = string.Empty;
         for (var i = 0; i < _filteredPaletteCommands.Count; i++)
         {
@@ -1927,26 +1969,14 @@ public partial class MainWindow
                 if (_paletteSelectedIndex != index)
                     SetPaletteSelection(index, scrollIntoView: false);
             };
-            row.PointerPressed += (_, e) =>
-            {
-                if (e.GetCurrentPoint(row).Properties.IsLeftButtonPressed)
-                {
-                    _palettePressedIndex = index;
-                    SetPaletteSelection(index, scrollIntoView: false);
-                }
-            };
-            row.PointerReleased += (_, e) =>
-            {
-                if (e.InitialPressMouseButton != MouseButton.Left || _palettePressedIndex != index)
-                    return;
-                _palettePressedIndex = -1;
-                SetPaletteSelection(index, scrollIntoView: false);
-            };
             row.Click += async (_, _) =>
             {
-                if (_paletteSelectedIndex != index)
-                    SetPaletteSelection(index, scrollIntoView: false);
-                await ExecuteSelectedPaletteCommandAsync();
+                if (_palettePointerActivated)
+                {
+                    _palettePointerActivated = false;
+                    return;
+                }
+                await ActivatePaletteRowAsync(index);
             };
             list.Children.Add(row);
             _paletteRows.Add((row, accent));
@@ -2237,6 +2267,16 @@ public partial class MainWindow
         return false;
     }
 
+    private static Button? FindPaletteRow(Visual? source) =>
+        source?.GetSelfAndVisualAncestors().OfType<Button>().FirstOrDefault(button => button.Tag is PaletteCommand);
+
+    private async Task ActivatePaletteRowAsync(int index)
+    {
+        if (_paletteSelectedIndex != index)
+            SetPaletteSelection(index, scrollIntoView: false);
+        await ExecuteSelectedPaletteCommandAsync();
+    }
+
     private async Task ExecuteSelectedPaletteCommandAsync()
     {
         if (_commandPaletteOverlay is null || _paletteSelectedIndex < 0 || _paletteSelectedIndex >= _filteredPaletteCommands.Count)
@@ -2248,20 +2288,23 @@ public partial class MainWindow
             RefreshCommandPaletteResults();
             return;
         }
-        var mode = GetPaletteMode(_commandPaletteSearchBox?.Text, out _);
+        var mode = GetPaletteMode(_commandPaletteSearchBox?.Text, out var paletteQuery);
+        var learnableId = mode == PaletteMode.Commands && command.Id.Length > 0 && !command.KeepOpen ? command.Id : null;
         try
         {
             if (command.KeepOpen)
             {
                 await command.Execute();
                 RefreshCommandPaletteResults();
+                _commandPaletteSearchBox?.Focus();
                 return;
             }
 
             if (mode == PaletteMode.Commands)
             {
-                _recentPaletteCommands.Remove(command.Title);
-                _recentPaletteCommands.Insert(0, command.Title);
+                var key = command.Id.Length > 0 ? command.Id : command.Title;
+                _recentPaletteCommands.Remove(key);
+                _recentPaletteCommands.Insert(0, key);
                 if (_recentPaletteCommands.Count > PaletteMaxRecentCommands)
                     _recentPaletteCommands.RemoveRange(PaletteMaxRecentCommands, _recentPaletteCommands.Count - PaletteMaxRecentCommands);
             }
@@ -2269,6 +2312,11 @@ public partial class MainWindow
             DismissCommandPalette(restoreFocus: false);
             ReleasePaletteFocus();
             await command.Execute();
+            if (learnableId is not null)
+            {
+                RecordPaletteCommandSelection(learnableId);
+                RecordPaletteQuerySelection(paletteQuery, learnableId);
+            }
             ReleasePaletteFocus();
             Dispatcher.UIThread.Post(ReleasePaletteFocus, Avalonia.Threading.DispatcherPriority.Background);
         }

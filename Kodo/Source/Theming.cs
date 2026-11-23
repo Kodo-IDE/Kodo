@@ -39,12 +39,15 @@ public partial class MainWindow
     {
         if (string.Equals(section, "keyboard", StringComparison.OrdinalIgnoreCase))
             IsKeyboardShortcutsExpanded = true;
+        if (string.Equals(section, "insight", StringComparison.OrdinalIgnoreCase))
+            IsInsightDashboardExpanded = true;
 
         SetActiveSettingsNavigation(section);
         var targetName = section.ToLowerInvariant() switch
         {
             "appearance" => "SectionHeaderAppearance",
             "editor" => "SectionHeaderEditor",
+            "insight" => "SectionHeaderInsight",
             "keyboard" => "SectionHeaderKeyboard",
             "lsp" => "SectionHeaderLsp",
             "general" => "SectionHeaderGeneral",
@@ -101,6 +104,7 @@ public partial class MainWindow
         {
             ("appearance", "SectionHeaderAppearance"),
             ("editor", "SectionHeaderEditor"),
+            ("insight", "SectionHeaderInsight"),
             ("keyboard", "SectionHeaderKeyboard"),
             ("lsp", "SectionHeaderLsp"),
             ("general", "SectionHeaderGeneral"),
@@ -797,8 +801,8 @@ public partial class MainWindow
             _customAccentHex = hex;
             CustomAccentHex = hex;
             AccentColorMode = "custom";
+            SaveSettings(immediate: true, synchronous: true);
             ApplyAccentOverride();
-            SaveSettings();
         }
         catch { }
     }
@@ -841,22 +845,22 @@ public partial class MainWindow
     private void AccentKodoButton_OnClick(object? sender, RoutedEventArgs e)
     {
         AccentColorMode = "kodo";
+        SaveSettings(immediate: true, synchronous: true);
         ApplyAccentOverride();
-        SaveSettings();
     }
 
     private void AccentThemeButton_OnClick(object? sender, RoutedEventArgs e)
     {
         AccentColorMode = "theme";
+        SaveSettings(immediate: true, synchronous: true);
         ApplyAccentOverride();
-        SaveSettings();
     }
 
     private void AccentWindowsButton_OnClick(object? sender, RoutedEventArgs e)
     {
         AccentColorMode = "windows";
+        SaveSettings(immediate: true, synchronous: true);
         ApplyAccentOverride();
-        SaveSettings();
     }
 
     private int _systemAccentProbeInFlight;

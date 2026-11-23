@@ -1101,7 +1101,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isWordWrapEnabled = settings.WordWrapEnabled;
         _isMinimapVisible = settings.MinimapVisible;
         _isQuickActionsEnabled = settings.QuickActionsEnabled;
-        InitializeQuickActionLearning(settings);
+        InitializeInsightLearning(settings);
         _isStickyScrollEnabled = settings.StickyScrollEnabled;
         _stickyScrollMaxLines = Math.Clamp(settings.StickyScrollMaxLines, 1, 5);
         _isInsightEnabled = settings.InsightEnabled;
@@ -1230,9 +1230,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _lspRefreshDebounceTimer.Stop();
             _findHighlightDebounceTimer.Stop();
         };
-
-        if (_accentColorMode == "kodo" && _hasThemeAccent)
-            _accentColorMode = "theme";
 
         DataContext = this;
         InitializeQuickAccessPlaceholder();
@@ -2370,6 +2367,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isSettingsPageVisible = value;
             OnPropertyChanged();
             RaiseMany(EditorPageVisibilityDependents);
+            if (value) RefreshInsightDashboard();
         }
     }
 
@@ -6743,6 +6741,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             MinimapVisible = IsMinimapVisible,
             QuickActionsEnabled = IsQuickActionsEnabled,
             QuickActionsLearningEnabled = IsQuickActionsLearningEnabled,
+            PaletteLearningEnabled = IsPaletteLearningEnabled,
+            InsightLearningEnabled = IsInsightLearningEnabled,
             StickyScrollEnabled = IsStickyScrollEnabled,
             StickyScrollMaxLines = _stickyScrollMaxLines,
             InsightEnabled = IsInsightEnabled,
@@ -8205,7 +8205,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _isAtlasPageVisible = newAtlas;
 
         if (newSettings)
+        {
             NotifySettingsSearchChanged();
+            RefreshInsightDashboard();
+        }
 
         if (_isUpdateSplashVisible)
             IsUpdateSplashVisible = false;
@@ -11171,9 +11174,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         StopGitSourceControl();
         BookmarkService.Flush();
-        _quickActionLearningSaveTimer.Stop();
-        try { _quickActionLearningStore.Save(); }
-        catch (Exception ex) { KodoDiagnostics.LogWarning("Quick Actions learning data could not be saved on close.", ex); }
+        _insightSaveTimer.Stop();
+        try { UserInsight.Save(); }
+        catch (Exception ex) { KodoDiagnostics.LogWarning("Insight learning data could not be saved on close.", ex); }
         SaveSettings(immediate: true, synchronous: true);
         _autoSaveTimer.Stop();
         _autoSaveStatusTimer.Stop();
