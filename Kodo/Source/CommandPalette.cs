@@ -313,7 +313,7 @@ public partial class MainWindow
         };
         overlay.Children.Add(new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)),
+            Background = new SolidColorBrush(Color.FromArgb(64, 0, 0, 0)),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         });

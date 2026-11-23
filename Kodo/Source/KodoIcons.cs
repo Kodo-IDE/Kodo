@@ -85,6 +85,7 @@ internal static class KodoIcons
     public static string ChangeOccurrences { get; } = Load("change-occurrences");
     public static string Cut { get; } = Load("cut");
     public static string Copy { get; } = Load("copy");
+    public static string Paste { get; } = Load("paste");
     public static string FindInFile { get; } = Load("find-in-file");
     public static string ToggleComment { get; } = Load("toggle-comment");
     public static string Undo { get; } = Load("undo");

@@ -176,11 +176,7 @@ public partial class MainWindow
             AddQuickAction(actions, "PreviousProblem", "Go to Previous Problem", KodoIcons.PreviousProblem, Context("diagnostic"), 108);
 
         if (selection)
-        {
             AddQuickAction(actions, "ChangeOccurrences", "Change All Occurrences", KodoIcons.ChangeOccurrences, Context("selection"), 105);
-            AddQuickAction(actions, "Cut", "Cut Selection", KodoIcons.Cut, Context("selection"), 104);
-            AddQuickAction(actions, "Copy", "Copy Selection", KodoIcons.Copy, Context("selection"), 103);
-        }
 
         if (!string.IsNullOrWhiteSpace(word))
         {
@@ -223,10 +219,6 @@ public partial class MainWindow
             AddQuickAction(actions, "FindInFile", "Find in File", KodoIcons.FindInFile, Context("editor"), 75);
         if (hasDocument && IsSmartSyntaxEnabled())
             AddQuickAction(actions, "ToggleComment", "Toggle Line Comment", KodoIcons.ToggleComment, Context("editor"), 74);
-        if (document?.UndoStack.CanUndo == true)
-            AddQuickAction(actions, "Undo", "Undo", KodoIcons.Undo, Context("editor"), 73);
-        if (document?.UndoStack.CanRedo == true)
-            AddQuickAction(actions, "Redo", "Redo", KodoIcons.Redo, Context("editor"), 72);
         if (hasDocument)
             AddQuickAction(actions, "SelectLine", "Select Current Line", KodoIcons.SelectLine, Context("editor"), 71);
         if (hasDocument && ActiveRelativePath() is not null)
@@ -305,12 +297,6 @@ public partial class MainWindow
                     Record();
                 }
                 break;
-            case "Undo":
-                if (EditorTextBox?.Document is { UndoStack.CanUndo: true } undoDocument) { undoDocument.UndoStack.Undo(); Record(); }
-                break;
-            case "Redo":
-                if (EditorTextBox?.Document is { UndoStack.CanRedo: true } redoDocument) { redoDocument.UndoStack.Redo(); Record(); }
-                break;
             case "SelectLine":
                 if (EditorTextBox?.Document is { } selectDocument && EditorTextBox.TextArea is { } selectArea)
                 {
@@ -327,8 +313,6 @@ public partial class MainWindow
             case "InsertLineBelow": RunEditorLineAction(0, duplicate: false, delete: false, insertBelow: true, Record); break;
             case "ToggleBookmark": if (EditorTextBox?.Document is not null && ActiveRelativePath() is not null) { ToggleBookmarkAtCaret(); Record(); } break;
             case "ChangeOccurrences": if (EditorTextBox?.TextArea?.Selection is { IsEmpty: false }) { EditorChangeAllOccurrencesMenuItem_OnClick(null, new RoutedEventArgs()); Record(); } break;
-            case "Cut": _ = CutSelectionAsync(Record); break;
-            case "Copy": _ = CopySelectionAsync(Record); break;
             case "ProjectTerminal":
                 var terminalCount = TerminalSessions.Count;
                 CreateTerminalSession(workingDirectoryOverride: _currentFolderPath);
