@@ -104,8 +104,8 @@ public partial class MainWindow
         {
             ("appearance", "SectionHeaderAppearance"),
             ("editor", "SectionHeaderEditor"),
-            ("insight", "SectionHeaderInsight"),
             ("keyboard", "SectionHeaderKeyboard"),
+            ("insight", "SectionHeaderInsight"),
             ("lsp", "SectionHeaderLsp"),
             ("general", "SectionHeaderGeneral"),
             ("terminal", "SectionHeaderTerminal"),
