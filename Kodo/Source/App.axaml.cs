@@ -60,6 +60,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
         Dispatcher.UIThread.UnhandledException += DispatcherUiThread_OnUnhandledException;
         AvaloniaXamlLoader.Load(this);
+        ThemeManager.Apply(SettingsStore.Current.Fluent2ThemeEnabled);
         StartupTrace.Mark("app initialize end");
     }
 

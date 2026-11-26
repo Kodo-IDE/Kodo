@@ -14,6 +14,7 @@ internal sealed class AppSettings
     public const double DefaultCommandPaletteWidth = 520;
 
     public string ThemeName { get; set; } = "Dark";
+    public bool Fluent2ThemeEnabled { get; set; }
     public bool AutoSaveEnabled { get; set; }
     public bool DiscordRichPresenceEnabled { get; set; }
     public bool GitSourceControlEnabled { get; set; }

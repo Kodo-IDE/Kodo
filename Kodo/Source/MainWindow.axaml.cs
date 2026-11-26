@@ -5,10 +5,12 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using AvaloniaEdit;
@@ -290,6 +292,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private bool _isFileTreeExpanded;
     private bool _isStatusBarFilePathVisible = true;
     private bool _isWordWrapEnabled;
+    private bool _isFluent2ThemeEnabled;
+    private Styles? _fluent2CompatStyles;
     private bool _isMinimapVisible = true;
     private bool _isInsightEnabled = true;
     private bool _isInsightCodeSuggestionsEnabled = true;
@@ -956,6 +960,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             SecondaryEditorPane_OnPointerPressed,
             RoutingStrategies.Bubble,
             handledEventsToo: true);
+        SuppressNativeSearchPanel(PrimaryEditorTextBox);
+        SuppressNativeSearchPanel(SecondaryEditorTextBox);
         _editorSession = new EditorDocumentSession(EditorTextBox.Document);
         PrimaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_editorPane, PrimaryEditorTextBox, e.NewDocument);
         SecondaryEditorTextBox.DocumentChanged += (_, e) => HandleEditorPaneDocumentChanged(_secondaryEditorPane, SecondaryEditorTextBox, e.NewDocument);
@@ -1102,6 +1108,8 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         KodoDiagnostics.VerboseLoggingEnabled = _isVerboseLoggingEnabled;
         _isStatusBarFilePathVisible = settings.StatusBarFilePathVisible;
         _isWordWrapEnabled = settings.WordWrapEnabled;
+        _isFluent2ThemeEnabled = settings.Fluent2ThemeEnabled;
+        ApplyFluent2CompatStyles(_isFluent2ThemeEnabled);
         _isMinimapVisible = settings.MinimapVisible;
         _isQuickActionsEnabled = settings.QuickActionsEnabled;
         InitializeInsightLearning(settings);
@@ -3691,6 +3699,58 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 SecondaryEditorMinimapView?.SetDocument(null);
             }
         }
+    }
+
+    public bool IsFluent2ThemeEnabled
+    {
+        get => _isFluent2ThemeEnabled;
+        set
+        {
+            if (_isFluent2ThemeEnabled == value)
+                return;
+
+            _isFluent2ThemeEnabled = value;
+            ApplyFluent2CompatStyles(value);
+            ThemeManager.Apply(value);
+            RaiseMany(nameof(IsFluent2ThemeEnabled), nameof(IsFluentThemeEngineActive), nameof(IsFluent2ThemeEngineActive));
+            SaveSettings();
+        }
+    }
+
+    public bool IsFluentThemeEngineActive => !IsFluent2ThemeEnabled;
+
+    public bool IsFluent2ThemeEngineActive => IsFluent2ThemeEnabled;
+
+    private void ApplyFluent2CompatStyles(bool enabled)
+    {
+        if (enabled)
+        {
+            _fluent2CompatStyles ??= (Styles)AvaloniaXamlLoader.Load(new Uri("avares://Kodo/Fluent2Compat.axaml"));
+            if (!Styles.Contains(_fluent2CompatStyles))
+                Styles.Add(_fluent2CompatStyles);
+            return;
+        }
+
+        if (_fluent2CompatStyles is not null)
+            Styles.Remove(_fluent2CompatStyles);
+    }
+
+    private static void SuppressNativeSearchPanel(TextEditor editor)
+    {
+        editor.TemplateApplied += (_, _) =>
+        {
+            if (editor.SearchPanel is not { } panel)
+                return;
+
+            panel.Close();
+            panel.Uninstall();
+        };
+    }
+
+    private void ThemeEngineButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string engine })
+            IsFluent2ThemeEnabled = string.Equals(engine, "Fluent2", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool IsStickyScrollEnabled
@@ -6746,6 +6806,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             VerboseLoggingEnabled = IsVerboseLoggingEnabled,
             StatusBarFilePathVisible = IsStatusBarFilePathVisible,
             WordWrapEnabled = IsWordWrapEnabled,
+            Fluent2ThemeEnabled = IsFluent2ThemeEnabled,
             MinimapVisible = IsMinimapVisible,
             QuickActionsEnabled = IsQuickActionsEnabled,
             QuickActionsLearningEnabled = IsQuickActionsLearningEnabled,
