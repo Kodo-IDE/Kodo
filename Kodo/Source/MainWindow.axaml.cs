@@ -3710,8 +3710,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
 
             _isFluent2ThemeEnabled = value;
-            ApplyFluent2CompatStyles(value);
-            ThemeManager.Apply(value);
             RaiseMany(nameof(IsFluent2ThemeEnabled), nameof(IsFluentThemeEngineActive), nameof(IsFluent2ThemeEngineActive));
             SaveSettings();
         }
@@ -3747,10 +3745,52 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         };
     }
 
-    private void ThemeEngineButton_OnClick(object? sender, RoutedEventArgs e)
+    private async void ThemeEngineButton_OnClick(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button { Tag: string engine })
-            IsFluent2ThemeEnabled = string.Equals(engine, "Fluent2", StringComparison.OrdinalIgnoreCase);
+        if (sender is not Button { Tag: string engine })
+            return;
+
+        var useFluent2 = string.Equals(engine, "Fluent2", StringComparison.OrdinalIgnoreCase);
+        if (useFluent2 == IsFluent2ThemeEnabled)
+            return;
+
+        var confirmed = await ShowConfirmationDialogAsync(
+            "Restart required",
+            $"Kodo needs to restart to switch to the {engine} theme engine. Save your work before restarting.",
+            confirmLabel: "Restart");
+
+        if (!confirmed)
+            return;
+
+        IsFluent2ThemeEnabled = useFluent2;
+        SaveSettings(immediate: true, synchronous: true);
+
+        _isConfirmedClose = true;
+        _suppressSettingsSave = true;
+        _settingsSaveDebounceTimer.Stop();
+
+        var exeFileName = OperatingSystem.IsWindows() ? "Kodo.exe" : "Kodo";
+        var exePath = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            exePath = Path.Combine(AppContext.BaseDirectory, exeFileName);
+
+        if (File.Exists(exePath))
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exePath,
+                    UseShellExecute = true,
+                });
+                Environment.Exit(0);
+            }
+            catch { }
+        }
+
+        _isConfirmedClose = false;
+        _suppressSettingsSave = false;
+        ShowStatusBarMessage("Kodo could not restart itself. Restart it manually to apply the theme engine.");
     }
 
     public bool IsStickyScrollEnabled

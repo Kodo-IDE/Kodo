@@ -7569,7 +7569,7 @@ ToolTip.Tip="{Binding Path}" />
                                                 Click="ThemeEngineButton_OnClick"
                                                 Tag="Fluent"
                                                 AutomationProperties.Name="Use the Fluent theme engine"
-                                                ToolTip.Tip="Use the Fluent theme engine">
+                                                ToolTip.Tip="Use the Fluent theme engine (restart required)">
                                             <TextBlock Text="Fluent" />
                                         </Button>
                                         <Button Classes="searchmode"
@@ -7577,14 +7577,14 @@ ToolTip.Tip="{Binding Path}" />
                                                 Click="ThemeEngineButton_OnClick"
                                                 Tag="Fluent2"
                                                 AutomationProperties.Name="Use the Fluent2 theme engine (beta)"
-                                                ToolTip.Tip="Use the Fluent2 theme engine (beta)">
+                                                ToolTip.Tip="Use the Fluent2 theme engine (beta, restart required)">
                                             <TextBlock Text="Fluent2 (BETA)" />
                                         </Button>
                                     </StackPanel>
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
-                                               Text="Fluent2 is Avalonia's next-generation theme and is in beta. It switches immediately; some surfaces may still render differently from Fluent." />
+                                               Text="Fluent2 is Avalonia's next-generation theme and is in beta. Switching the theme engine requires restarting Kodo." />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
