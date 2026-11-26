@@ -3,18 +3,19 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:kodo="clr-namespace:Kodo"
+             xmlns:fluent="using:Avalonia.Themes.Fluent"
              x:Class="Kodo.App"
              RequestedThemeVariant="Dark">
 
     <Application.Styles>
-        <FluentTheme>
-            <FluentTheme.Palettes>
-                <ColorPaletteResources x:Key="Dark"
-                                       Accent="#8C00FF" />
-                <ColorPaletteResources x:Key="Light"
-                                       Accent="#7B00FF" />
-            </FluentTheme.Palettes>
-        </FluentTheme>
+        <fluent:FluentTheme>
+            <fluent:FluentTheme.Palettes>
+                <fluent:ColorPaletteResources x:Key="Dark"
+                                              Accent="#8C00FF" />
+                <fluent:ColorPaletteResources x:Key="Light"
+                                              Accent="#7B00FF" />
+            </fluent:FluentTheme.Palettes>
+        </fluent:FluentTheme>
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
         <Style Selector="HyperlinkButton">
             <Setter Property="Foreground" Value="{x:Static kodo:KodoDesignTokens.LinkBrush}" />

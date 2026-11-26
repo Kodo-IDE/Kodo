@@ -371,7 +371,7 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="Transitions">
                 <Transitions>
@@ -393,6 +393,14 @@
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
         </Style>
+        <Style Selector="Button.tab.tabactive:pointerover, Button.tab.tabactive:pressed">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="Button.tab.tabactive /template/ ContentPresenter, Button.tab.tabactive:pointerover /template/ ContentPresenter, Button.tab.tabactive:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+        </Style>
 
         <Style Selector="Button.settingsnav">
             <Setter Property="Background" Value="Transparent" />
@@ -400,6 +408,7 @@
             <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
+            <Setter Property="MinHeight" Value="33" />
             <Setter Property="Padding" Value="12,9" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -420,7 +429,13 @@
         <Style Selector="Button.settingsnav.active">
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
+        </Style>
+        <Style Selector="Button.settingsnav.active:pointerover, Button.settingsnav.active:pressed">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+        </Style>
+        <Style Selector="Button.settingsnav.active /template/ ContentPresenter, Button.settingsnav.active:pointerover /template/ ContentPresenter, Button.settingsnav.active:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
         </Style>
         <Style Selector="Button.settingsnav:focus-visible">
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
@@ -820,7 +835,8 @@
             <Setter Property="Foreground" Value="{Binding MutedTextBrush}" />
             <Setter Property="BorderBrush" Value="{Binding SurfaceBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.PillRadius}" />
+            <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
+            <Setter Property="MinHeight" Value="33" />
             <Setter Property="Padding" Value="14,8" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -836,6 +852,14 @@
             <Setter Property="Background" Value="{Binding AccentBrush}" />
             <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="Button.searchmode.selected:pointerover, Button.searchmode.selected:pressed">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
+            <Setter Property="Foreground" Value="{Binding AccentForegroundBrush}" />
+            <Setter Property="BorderBrush" Value="{Binding AccentBrush}" />
+        </Style>
+        <Style Selector="Button.searchmode.selected /template/ ContentPresenter, Button.searchmode.selected:pointerover /template/ ContentPresenter, Button.searchmode.selected:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="{Binding AccentBrush}" />
         </Style>
 
         <Style Selector="Button.chrome.selected">
@@ -7523,6 +7547,45 @@ ToolTip.Tip="{Binding Path}" />
 
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            Text="{Binding ThemeStatusText}" />
+
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                        <TextBlock Classes="settingsgroupheader"
+                                                   VerticalAlignment="Center"
+                                                   Text="THEME ENGINE" />
+                                        <Border Background="{Binding AccentBrush}"
+                                                CornerRadius="{x:Static kodo:KodoDesignTokens.CompactRadius}"
+                                                Padding="6,1"
+                                                VerticalAlignment="Center">
+                                            <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="White"
+                                                       Text="BETA" />
+                                        </Border>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="searchmode"
+                                                Classes.selected="{Binding IsFluentThemeEngineActive}"
+                                                Click="ThemeEngineButton_OnClick"
+                                                Tag="Fluent"
+                                                AutomationProperties.Name="Use the Fluent theme engine"
+                                                ToolTip.Tip="Use the Fluent theme engine">
+                                            <TextBlock Text="Fluent" />
+                                        </Button>
+                                        <Button Classes="searchmode"
+                                                Classes.selected="{Binding IsFluent2ThemeEngineActive}"
+                                                Click="ThemeEngineButton_OnClick"
+                                                Tag="Fluent2"
+                                                AutomationProperties.Name="Use the Fluent2 theme engine (beta)"
+                                                ToolTip.Tip="Use the Fluent2 theme engine (beta)">
+                                            <TextBlock Text="Fluent2 (BETA)" />
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Fluent2 is Avalonia's next-generation theme and is in beta. It switches immediately; some surfaces may still render differently from Fluent." />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
