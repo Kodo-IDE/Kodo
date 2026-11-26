@@ -525,6 +525,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private string _userTimezoneOffset = string.Empty;
     private string _userName = string.Empty;
     private bool _isSearchPanelVisible;
+    private long _searchPanelOpenedTimestamp;
     private SearchMode _searchMode = SearchMode.FindInFile;
     private readonly ObservableCollection<SearchResultItem> _searchResults = new();
     private ObservableCollection<SearchDisplayItem> _searchDisplayItems = new();
@@ -944,6 +945,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             : null;
         _activeEditorPane = _editorPane;
         InitializeComponent();
+        StartupTrace.Mark("xaml loaded");
         PrimaryEditorPane.AddHandler(
             InputElement.PointerPressedEvent,
             PrimaryEditorPane_OnPointerPressed,
@@ -1081,8 +1083,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         SecondaryImageScrollViewer.ScrollChanged += ImageScrollViewer_OnScrollChanged;
         _isFirstLaunch = !File.Exists(SettingsFilePath);
         var settings = LoadSettings();
+        StartupTrace.Mark("settings loaded", $"firstLaunch={_isFirstLaunch}");
         InitializeKeybinds(settings);
-        InitializeKeyboardShortcuts();
+        StartupTrace.Mark("keybinds initialized");
         _requestedThemeName = string.IsNullOrWhiteSpace(settings.ThemeName) ? "Dark" : settings.ThemeName;
         _isAutoSaveEnabled = settings.AutoSaveEnabled;
         _isDiscordRichPresenceEnabled = settings.DiscordRichPresenceEnabled;
@@ -1222,8 +1225,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         _marketplaceRefreshTimer.Tick += MarketplaceRefreshTimer_OnTick;
 
         EnsureExtensionsFolder();
+        StartupTrace.Mark("extensions folder ensured");
         LoadOrScanStartupThemes();
+        StartupTrace.Mark("startup themes loaded");
         ApplyThemeBrushes(_requestedThemeName);
+        StartupTrace.Mark("theme brushes applied");
 
         Closed += (_, _) =>
         {
@@ -1242,7 +1248,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Activated += (_, _) => _stallWatchdog.Reset();
         Closing += MainWindow_OnClosing;
         Closed += MainWindow_OnClosed;
+        StartupTrace.Mark("settings applied");
         RefreshState(fullRefresh: true);
+        StartupTrace.Mark("ctor complete");
         KodoDiagnostics.LogDebug($"Startup ctor fast-path: {_startupStopwatch.ElapsedMilliseconds}ms (extensions deferred)");
     }
 
@@ -6942,9 +6950,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
         Opened -= MainWindow_OnOpened;
-        LoadWindowIcon();
+        StartupTrace.Mark("window opened");
+        Dispatcher.UIThread.Post(() => StartupTrace.Mark("first render pass"), DispatcherPriority.Render);
+        Dispatcher.UIThread.Post(LoadWindowIcon, DispatcherPriority.Background);
+        StartupTrace.Mark("window icon deferred");
 
         ApplyThemeToEditor();
+        StartupTrace.Mark("editor theme applied");
         var startupRestoreLoading = IsRestoreOpenTabsOnLaunchEnabled && _startupOpenTabPaths.Count > 0
             ? BeginAppLoading("Restoring startup session")
             : null;
@@ -8197,6 +8209,9 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _isAtlasPageVisible == newAtlas)
             return;
 
+        if (newSettings)
+            InitializeKeyboardShortcuts();
+
         _isHomePageVisible = newHome;
         _isSettingsPageVisible = newSettings;
         _isExtensionsPageVisible = newExtensions;
@@ -8663,8 +8678,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         await RefreshLatestReleaseAsync(forceNetwork: true);
     }
 
-    private void ToggleKeyboardShortcutsExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
+    private void ToggleKeyboardShortcutsExpandedButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        InitializeKeyboardShortcuts();
         IsKeyboardShortcutsExpanded = !IsKeyboardShortcutsExpanded;
+    }
 
     private void ToggleWhatsNewExpandedButton_OnClick(object? sender, RoutedEventArgs e) =>
         IsWhatsNewExpanded = !IsWhatsNewExpanded;
@@ -8806,14 +8824,19 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         Dispatcher.UIThread.Post(() => ActivateSettingsSection("keyboard"), DispatcherPriority.Loaded);
     }
 
+    private bool _keyboardShortcutsUiBuilt;
+
     private void InitializeKeyboardShortcuts()
     {
+        if (_keyboardShortcutsUiBuilt) return;
         if (this.FindControl<StackPanel>("KeyboardShortcutsEditableHost") is not { } editableHost ||
             this.FindControl<StackPanel>("KeyboardShortcutsOtherHost") is not { } otherHost ||
             this.FindControl<TextBlock>("KeyboardShortcutsStatusText") is not { } statusText ||
             this.FindControl<Border>("KeyboardShortcutsStatusBorder") is not { } statusBorder ||
             this.FindControl<Border>("KeyboardShortcutsSettingsCard") is not { } card)
             return;
+
+        _keyboardShortcutsUiBuilt = true;
 
         var fixedShortcuts = new (string Gesture, string Description)[]
         {
@@ -11287,6 +11310,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             e.Handled = true;
             ShowCommandPalette();
+            return;
+        }
+        else if (MatchesKeybind(e, "FindInProject"))
+        {
+            e.Handled = true;
+            OpenSearchPanel(SearchMode.ProjectSearch);
+            return;
+        }
+        else if (MatchesKeybind(e, "FindInFile"))
+        {
+            e.Handled = true;
+            OpenSearchPanel(SearchMode.FindInFile);
             return;
         }
 

@@ -70,9 +70,20 @@ public partial class MainWindow
     private Border? _commandPaletteCard;
     private ScrollViewer? _commandPaletteScroll;
     private StackPanel? _commandPaletteList;
+    private StackPanel? _commandPaletteListHost;
+    private readonly Dictionary<PaletteMode, PaletteRowCache> _paletteRowCache = [];
     private TextBlock? _commandPaletteStatus;
     private TextBlock? _commandPalettePreviewText;
+    private Grid? _paletteCachedOverlay;
+    private bool _paletteCachedUsesOverlaySearchBox;
+    private Border? _commandPaletteCachedCard;
+    private ScrollViewer? _commandPaletteCachedScroll;
+    private StackPanel? _commandPaletteCachedList;
+    private TextBlock? _commandPaletteCachedStatus;
+    private TextBlock? _commandPaletteModeLabel;
+    private TextBlock? _commandPaletteCachedPreview;
     private TextBox? _commandPaletteSearchBox;
+    private TextBox? _commandPaletteCachedSearchBox;
     private TextBox? _quickAccessSearchBox;
     private bool _commandPaletteUsesOverlaySearchBox;
     private List<PaletteCommand> _commandPaletteCommands = [];
@@ -214,8 +225,36 @@ public partial class MainWindow
         return normalized.Equals("Codefaststaylight", StringComparison.OrdinalIgnoreCase);
     }
 
+    private System.Diagnostics.Stopwatch? _paletteTraceWatch;
+
+    private void PaletteTrace(string stage)
+    {
+        if (_paletteTraceWatch is null) return;
+        StartupTrace.Interaction("palette", _paletteTraceWatch.ElapsedMilliseconds, stage);
+    }
+
+    private static bool PaletteEntriesMatch(List<PaletteCommand> previous, List<PaletteCommand> current)
+    {
+        if (previous.Count != current.Count) return false;
+        for (var i = 0; i < current.Count; i++)
+        {
+            var a = previous[i];
+            var b = current[i];
+            if (!string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
+                !string.Equals(a.Title, b.Title, StringComparison.Ordinal) ||
+                !string.Equals(a.Detail, b.Detail, StringComparison.Ordinal) ||
+                !string.Equals(a.Section, b.Section, StringComparison.Ordinal) ||
+                !string.Equals(a.Badge, b.Badge, StringComparison.Ordinal) ||
+                !string.Equals(a.ShortcutId, b.ShortcutId, StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
     private void ShowCommandPalette(bool commandsOnly = false, string? prefix = null)
     {
+        _paletteTraceWatch = StartupTrace.IsUiTraceEnabled ? System.Diagnostics.Stopwatch.StartNew() : null;
+        PaletteTrace("begin");
         _quickAccessSearchBox ??= this.FindControl<TextBox>("QuickAccessSearchBox");
         var useOverlaySearchBox = !IsEditorPageVisible || _quickAccessSearchBox?.IsVisible != true;
         var paletteSearchBox = useOverlaySearchBox
@@ -247,7 +286,49 @@ public partial class MainWindow
         if (Content is not Grid root)
             return;
 
+        if (_paletteCachedOverlay is { } cachedOverlay &&
+            ReferenceEquals(cachedOverlay.Parent, root) &&
+            _paletteCachedUsesOverlaySearchBox == useOverlaySearchBox &&
+            (!useOverlaySearchBox || _commandPaletteCachedSearchBox is not null) &&
+            _commandPaletteCachedList is { } cachedList)
+        {
+            if (useOverlaySearchBox && _commandPaletteCachedSearchBox is { } cachedSearchBox)
+                paletteSearchBox = cachedSearchBox;
+            _commandPaletteOverlay = cachedOverlay;
+            _commandPaletteCard = _commandPaletteCachedCard;
+            _commandPaletteScroll = _commandPaletteCachedScroll;
+            _commandPaletteListHost = cachedList;
+            _commandPaletteList = null;
+            _commandPaletteStatus = _commandPaletteCachedStatus;
+            _commandPalettePreviewText = _commandPaletteCachedPreview;
+            _commandPaletteSearchBox = paletteSearchBox;
+            _commandPaletteUsesOverlaySearchBox = useOverlaySearchBox;
+            if (useOverlaySearchBox)
+            {
+                paletteSearchBox.TextChanged += CommandPalettePopupSearchBox_OnTextChanged;
+                paletteSearchBox.KeyDown += CommandPaletteSearch_OnKeyDown;
+            }
+            cachedOverlay.IsVisible = true;
+            AddHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed, RoutingStrategies.Tunnel);
+            IsCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
+            var reuseText = commandsOnly ? ">" : prefix ?? string.Empty;
+            _suppressQuickAccessTextChanged = true;
+            try
+            {
+                paletteSearchBox.Text = reuseText;
+                paletteSearchBox.CaretIndex = reuseText.Length;
+            }
+            finally { _suppressQuickAccessTextChanged = false; }
+            _commandPaletteSyncLayout?.Invoke();
+            RefreshCommandPaletteResults();
+            PaletteTrace("reused cached overlay");
+            Dispatcher.UIThread.Post(() => _commandPaletteSearchBox?.Focus(), DispatcherPriority.Input);
+            _paletteTraceWatch = null;
+            return;
+        }
+
         _commandPaletteCommands = BuildCommandPaletteCommands();
+        PaletteTrace("commands built");
         _paletteSymbols = null;
         _paletteSymbolsLoading = false;
         _paletteSymbolsVersion++;
@@ -255,12 +336,14 @@ public partial class MainWindow
         _paletteGitBranchesLoading = false;
         _paletteGitBranchesVersion++;
         RebuildQuickAccessExtras();
+        PaletteTrace("quick access extras rebuilt");
         StartQuickAccessFileIndex();
+        PaletteTrace("file index started");
 
-        var list = new StackPanel { Orientation = Orientation.Vertical };
+        var listHost = new StackPanel { Orientation = Orientation.Vertical };
         var scroll = new ScrollViewer
         {
-            Content = list,
+            Content = listHost,
             MaxHeight = 460,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
@@ -275,21 +358,26 @@ public partial class MainWindow
         };
         var body = new Grid
         {
-            RowDefinitions = useOverlaySearchBox ? new RowDefinitions("Auto,*,Auto") : new RowDefinitions("*,Auto")
+            RowDefinitions = useOverlaySearchBox ? new RowDefinitions("Auto,Auto,*,Auto") : new RowDefinitions("*,Auto")
         };
+        _commandPaletteModeLabel = null;
         if (useOverlaySearchBox)
         {
+            var modeHeader = CreatePaletteModeHeader(out var modeLabel);
+            body.Children.Add(modeHeader);
+            Grid.SetRow(modeHeader, 0);
+            _commandPaletteModeLabel = modeLabel;
             var searchRow = new Grid();
             searchRow.Children.Add(paletteSearchBox);
             _commandPalettePreviewText = CreateRareCommandPalettePreviewText();
             searchRow.Children.Add(_commandPalettePreviewText);
             body.Children.Add(searchRow);
-            Grid.SetRow(searchRow, 0);
+            Grid.SetRow(searchRow, 1);
         }
         body.Children.Add(scroll);
         body.Children.Add(status);
-        Grid.SetRow(scroll, useOverlaySearchBox ? 1 : 0);
-        Grid.SetRow(status, useOverlaySearchBox ? 2 : 1);
+        Grid.SetRow(scroll, useOverlaySearchBox ? 2 : 0);
+        Grid.SetRow(status, useOverlaySearchBox ? 3 : 1);
 
         var card = new Border
         {
@@ -364,8 +452,10 @@ public partial class MainWindow
         Grid.SetRow(overlay, 1);
         Grid.SetColumnSpan(overlay, Math.Max(1, root.ColumnDefinitions.Count));
         root.Children.Add(overlay);
+        PaletteTrace("overlay tree attached");
         overlay.ZIndex = int.MaxValue;
         SyncLayout();
+        PaletteTrace("layout synced");
         overlay.SizeChanged += (_, _) => SyncLayout();
 
         card.AddHandler(InputElement.PointerPressedEvent, (_, e) =>
@@ -398,9 +488,13 @@ public partial class MainWindow
         _commandPaletteOverlay = overlay;
         _commandPaletteCard = card;
         _commandPaletteScroll = scroll;
-        _commandPaletteList = list;
+        _commandPaletteListHost = listHost;
+        _commandPaletteList = null;
+        _paletteRowCache.Clear();
+        _paletteRows.Clear();
         _commandPaletteStatus = status;
         _commandPaletteSearchBox = paletteSearchBox;
+        _commandPaletteCachedSearchBox = useOverlaySearchBox ? paletteSearchBox : null;
         _commandPaletteUsesOverlaySearchBox = useOverlaySearchBox;
         Dispatcher.UIThread.Post(() => AnimationKit.FadeIn(card, 170, 18), DispatcherPriority.Loaded);
         if (useOverlaySearchBox)
@@ -420,7 +514,16 @@ public partial class MainWindow
             finally { _suppressQuickAccessTextChanged = false; }
         }
         RefreshCommandPaletteResults();
+        PaletteTrace("results populated");
+        _paletteCachedOverlay = overlay;
+        _paletteCachedUsesOverlaySearchBox = useOverlaySearchBox;
+        _commandPaletteCachedCard = card;
+        _commandPaletteCachedScroll = scroll;
+        _commandPaletteCachedList = listHost;
+        _commandPaletteCachedStatus = status;
+        _commandPaletteCachedPreview = _commandPalettePreviewText;
         Dispatcher.UIThread.Post(() => _commandPaletteSearchBox?.Focus(), DispatcherPriority.Input);
+        _paletteTraceWatch = null;
     }
 
     private TextBlock CreateRareCommandPalettePreviewText()
@@ -486,9 +589,6 @@ public partial class MainWindow
         _commandPaletteList = null;
         _commandPaletteStatus = null;
         _commandPalettePreviewText = null;
-        _commandPaletteSyncLayout = null;
-        _paletteRows.Clear();
-        _filteredPaletteCommands = [];
         _paletteSelectedIndex = -1;
         _palettePressedRow = null;
         _palettePointerActivated = false;
@@ -500,7 +600,9 @@ public partial class MainWindow
         _paletteGitBranchesVersion++;
         IsCommandPaletteRarePreviewVisible = ShowRareCommandPalettePreviewThisSession;
         RemoveHandler(InputElement.PointerPressedEvent, PaletteWindowPointerPressed);
-        if (overlay is not null && Content is Grid root)
+        if (overlay is not null && ReferenceEquals(overlay, _paletteCachedOverlay))
+            overlay.IsVisible = false;
+        else if (overlay is not null && Content is Grid root)
             root.Children.Remove(overlay);
 
         _suppressQuickAccessTextChanged = true;
@@ -1444,7 +1546,7 @@ public partial class MainWindow
         return commands;
     }
 
-    private List<PaletteCommand> BuildCommandModeEntries(string query, out int totalMatches)
+    private List<PaletteCommand> BuildCommandModeEntries(string query, out int totalMatches, out int shownMatches)
     {
         var available = _commandPaletteCommands.Where(command => command.IsAvailable?.Invoke() != false).ToList();
         var terms = SplitPaletteTerms(query);
@@ -1471,7 +1573,9 @@ public partial class MainWindow
                 return byScore != 0 ? byScore : x.Index.CompareTo(y.Index);
             });
             var others = rest.Select(entry => entry.Command with { Section = recent.Count > 0 ? "Commands" : "" });
-            return recent.Concat(others).ToList();
+            var result = recent.Concat(others).ToList();
+            shownMatches = result.Count;
+            return result;
         }
 
         var normalizedQuery = InsightUserIntelligence.NormalizeQuery(query);
@@ -1486,12 +1590,14 @@ public partial class MainWindow
                     score, command.Id, normalizedQuery, DateTime.UtcNow), i, matches));
         }
         totalMatches = scored.Count;
-        return scored
+        var limited = scored
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.Index)
             .Take(PaletteMaxResults)
             .Select(item => item.Command with { TitleMatches = item.Matches })
             .ToList();
+        shownMatches = limited.Count;
+        return limited;
     }
 
     private PaletteCommand CreateQuickAccessFileEntry(QuickAccessFile file, string section, IReadOnlyList<int>? nameMatches, IReadOnlyList<int>? directoryMatches, int line = 0, int column = 1) =>
@@ -1515,7 +1621,7 @@ public partial class MainWindow
         return entries.Where(entry => entry.IsAvailable?.Invoke() != false).ToList();
     }
 
-    private List<PaletteCommand> BuildQuickAccessFileCommands(string query, out int totalMatches)
+    private List<PaletteCommand> BuildQuickAccessFileCommands(string query, out int totalMatches, out int shownMatches)
     {
         var line = 0;
         var column = 1;
@@ -1566,6 +1672,7 @@ public partial class MainWindow
                 filesShown++;
             }
             totalMatches = _quickAccessWorkspaceEntries.Count + _quickAccessExtraEntries.Count;
+            shownMatches = filesShown;
             return entries;
         }
 
@@ -1606,6 +1713,7 @@ public partial class MainWindow
             ScoreQuickAccessFile(file, terms, nameMatches, directoryMatches);
             results.Add(CreateQuickAccessFileEntry(file, string.Empty, nameMatches, directoryMatches, line, column));
         }
+        shownMatches = results.Count;
         return results;
     }
 
@@ -1850,10 +1958,11 @@ public partial class MainWindow
         });
     }
 
-    private List<PaletteCommand> BuildSymbolCommands(string query, out string? message, out int totalMatches)
+    private List<PaletteCommand> BuildSymbolCommands(string query, out string? message, out int totalMatches, out int shownMatches)
     {
         message = null;
         totalMatches = 0;
+        shownMatches = 0;
         if (!IsTextEditorVisible || ActiveEditorTab is null || EditorTextBox?.Document is not { } doc)
         {
             message = "Open a text file to go to a symbol.";
@@ -1900,14 +2009,115 @@ public partial class MainWindow
 
         totalMatches = scored.Count;
         var ordered = terms.Length == 0 ? scored : scored.OrderByDescending(item => item.Score).ToList();
-        return ordered.Take(PaletteMaxResults * 2).Select(item => item.Command).ToList();
+        var shown = ordered.Take(PaletteMaxResults * 2).Select(item => item.Command).ToList();
+        shownMatches = shown.Count;
+        return shown;
+    }
+
+    private sealed class PaletteRowCache
+    {
+        public PaletteRowCache(List<PaletteCommand> entries, StackPanel panel, List<(Button Row, Border Accent)> rows)
+        {
+            Entries = entries;
+            Panel = panel;
+            Rows = rows;
+        }
+
+        public List<PaletteCommand> Entries { get; }
+        public StackPanel Panel { get; }
+        public List<(Button Row, Border Accent)> Rows { get; }
+    }
+
+    private void ShowPaletteRows(PaletteMode mode, List<PaletteCommand> entries)
+    {
+        if (!_paletteRowCache.TryGetValue(mode, out var cache))
+        {
+            cache = new PaletteRowCache([], new StackPanel { Orientation = Orientation.Vertical }, []);
+            _paletteRowCache[mode] = cache;
+            _commandPaletteListHost?.Children.Add(cache.Panel);
+        }
+        else if (cache.Rows.Count == entries.Count &&
+                 entries.Count > 0 &&
+                 PaletteEntriesMatch(cache.Entries, entries))
+        {
+            ActivatePaletteRowSet(cache);
+            PaletteTrace($"rows swapped count={cache.Rows.Count}");
+            return;
+        }
+
+        var splitTrace = _paletteTraceWatch is not null;
+        long clearTicks = 0, createTicks = 0, attachTicks = 0, headerTicks = 0;
+        var clearStart = splitTrace ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        cache.Panel.Children.Clear();
+        cache.Rows.Clear();
+        if (splitTrace)
+            clearTicks = System.Diagnostics.Stopwatch.GetTimestamp() - clearStart;
+
+        var lastSection = string.Empty;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var command = entries[i];
+            if (command.Section.Length > 0 && !string.Equals(command.Section, lastSection, StringComparison.Ordinal))
+            {
+                lastSection = command.Section;
+                var headerStart = splitTrace ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+                cache.Panel.Children.Add(CreatePaletteSectionHeader(command.Section, cache.Panel.Children.Count == 0));
+                if (splitTrace)
+                    headerTicks += System.Diagnostics.Stopwatch.GetTimestamp() - headerStart;
+            }
+
+            var createStart = splitTrace ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            var (row, accent) = CreatePaletteCommandRow(command, mode);
+            if (splitTrace)
+                createTicks += System.Diagnostics.Stopwatch.GetTimestamp() - createStart;
+            var index = cache.Rows.Count;
+            row.PointerMoved += (_, _) =>
+            {
+                if (_paletteSelectedIndex != index)
+                    SetPaletteSelection(index, scrollIntoView: false);
+            };
+            row.Click += async (_, _) =>
+            {
+                if (_palettePointerActivated)
+                {
+                    _palettePointerActivated = false;
+                    return;
+                }
+                await ActivatePaletteRowAsync(index);
+            };
+            var attachStart = splitTrace ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+            cache.Panel.Children.Add(row);
+            if (splitTrace)
+                attachTicks += System.Diagnostics.Stopwatch.GetTimestamp() - attachStart;
+            cache.Rows.Add((row, accent));
+        }
+
+        cache.Entries.Clear();
+        cache.Entries.AddRange(entries);
+        ActivatePaletteRowSet(cache);
+        PaletteTrace($"rows created count={cache.Rows.Count}");
+        if (splitTrace)
+        {
+            var frequency = (double)System.Diagnostics.Stopwatch.Frequency;
+            PaletteTrace($"rows split create={createTicks * 1000.0 / frequency:F1}ms attach={attachTicks * 1000.0 / frequency:F1}ms header={headerTicks * 1000.0 / frequency:F1}ms clear={clearTicks * 1000.0 / frequency:F1}ms");
+        }
+    }
+
+    private void ActivatePaletteRowSet(PaletteRowCache cache)
+    {
+        foreach (var other in _paletteRowCache.Values)
+            other.Panel.IsVisible = ReferenceEquals(other, cache);
+        _commandPaletteList = cache.Panel;
+        _paletteRows.Clear();
+        _paletteRows.AddRange(cache.Rows);
     }
 
     private void RefreshCommandPaletteResults()
     {
-        if (_commandPaletteList is null || _commandPaletteSearchBox is null) return;
+        if (_commandPaletteListHost is null || _commandPaletteSearchBox is null) return;
 
         var mode = GetPaletteMode(_commandPaletteSearchBox.Text, out var query);
+        UpdatePaletteModeLabel(mode);
         UpdatePaletteShortcutText();
         var showRarePreview = ShowRareCommandPalettePreviewThisSession && string.IsNullOrEmpty(_commandPaletteSearchBox.Text);
         IsCommandPaletteRarePreviewVisible = showRarePreview;
@@ -1923,6 +2133,7 @@ public partial class MainWindow
 
         string? message = null;
         var totalMatches = 0;
+        var shownMatches = 0;
         List<PaletteCommand> entries;
         if (IsKodoTaglineQuery(_commandPaletteSearchBox.Text))
         {
@@ -1934,54 +2145,31 @@ public partial class MainWindow
             {
                 case PaletteMode.Commands:
                     _commandPaletteCommands = BuildCommandPaletteCommands();
-                    entries = BuildCommandModeEntries(query, out totalMatches);
+                    entries = BuildCommandModeEntries(query, out totalMatches, out shownMatches);
                     break;
                 case PaletteMode.Symbols:
-                    entries = BuildSymbolCommands(query, out message, out totalMatches);
+                    entries = BuildSymbolCommands(query, out message, out totalMatches, out shownMatches);
                     break;
                 case PaletteMode.Line:
                     entries = BuildLineCommands(query, out message);
                     break;
                 default:
-                    entries = BuildQuickAccessFileCommands(query, out totalMatches);
+                    entries = BuildQuickAccessFileCommands(query, out totalMatches, out shownMatches);
                     break;
             }
         _filteredPaletteCommands = entries;
+        PaletteTrace($"entries built mode={mode} count={entries.Count}");
 
-        var list = _commandPaletteList;
-        list.Children.Clear();
-        _paletteRows.Clear();
+        var reuseRows = _paletteRowCache.TryGetValue(mode, out var activeRows) &&
+                        ReferenceEquals(_commandPaletteList, activeRows.Panel) &&
+                        activeRows.Rows.Count == entries.Count &&
+                        entries.Count > 0 &&
+                        PaletteEntriesMatch(activeRows.Entries, entries);
+        if (!reuseRows)
+            ShowPaletteRows(mode, entries);
         _palettePressedRow = null;
-        var lastSection = string.Empty;
-        for (var i = 0; i < _filteredPaletteCommands.Count; i++)
-        {
-            var command = _filteredPaletteCommands[i];
-            if (command.Section.Length > 0 && !string.Equals(command.Section, lastSection, StringComparison.Ordinal))
-            {
-                lastSection = command.Section;
-                list.Children.Add(CreatePaletteSectionHeader(command.Section, list.Children.Count == 0));
-            }
-
-            var (row, accent) = CreatePaletteCommandRow(command, mode);
-            var index = _paletteRows.Count;
-            row.PointerMoved += (_, _) =>
-            {
-                if (_paletteSelectedIndex != index)
-                    SetPaletteSelection(index, scrollIntoView: false);
-            };
-            row.Click += async (_, _) =>
-            {
-                if (_palettePointerActivated)
-                {
-                    _palettePointerActivated = false;
-                    return;
-                }
-                await ActivatePaletteRowAsync(index);
-            };
-            list.Children.Add(row);
-            _paletteRows.Add((row, accent));
-        }
-
+        if (reuseRows)
+            PaletteTrace($"rows reused count={_paletteRows.Count}");
         if (_paletteRows.Count == 0)
         {
             var text = message ?? mode switch
@@ -1992,7 +2180,7 @@ public partial class MainWindow
                 PaletteMode.Files => _quickAccessIndexing ? "Indexing files…" : "No matching files",
                 _ => "No results",
             };
-            list.Children.Add(new TextBlock { Text = text, Foreground = MutedTextBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 14) });
+            _commandPaletteList!.Children.Add(new TextBlock { Text = text, Foreground = MutedTextBrush, FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 14) });
         }
 
         _paletteSelectedIndex = -1;
@@ -2003,13 +2191,55 @@ public partial class MainWindow
         string? statusText = null;
         if (mode == PaletteMode.Files && _quickAccessIndexing)
             statusText = "Indexing workspace files…";
-        else if (_paletteRows.Count > 0 && totalMatches > _filteredPaletteCommands.Count(entry => entry.Section is "" or "Files"))
-            statusText = $"Showing the first {PaletteMaxResults:N0} of {totalMatches:N0} results. Keep typing to narrow it down.";
+        else if (totalMatches > shownMatches)
+            statusText = $"Showing the first {shownMatches:N0} of {totalMatches:N0} results. Keep typing to narrow it down.";
         if (_commandPaletteStatus is not null)
         {
             _commandPaletteStatus.Text = statusText ?? string.Empty;
             _commandPaletteStatus.IsVisible = statusText is not null;
         }
+    }
+
+    private Control CreatePaletteModeHeader(out TextBlock label)
+    {
+        var bar = new Border
+        {
+            Width = KodoDesignTokens.AccentPillWidth,
+            Height = 14,
+            CornerRadius = new CornerRadius(2),
+            Background = AccentBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        label = new TextBlock
+        {
+            FontSize = KodoDesignTokens.SmallFontSize,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = MutedTextBrush,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        return new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 6,
+            Margin = new Thickness(4, 3, 4, 6),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Children = { bar, label },
+        };
+    }
+
+    private void UpdatePaletteModeLabel(PaletteMode mode)
+    {
+        if (_commandPaletteModeLabel is null)
+            return;
+        _commandPaletteModeLabel.Text = mode switch
+        {
+            PaletteMode.Commands => "COMMAND PALETTE",
+            PaletteMode.Symbols => "GO TO SYMBOL",
+            PaletteMode.Line => "GO TO LINE",
+            _ => "QUICK OPEN",
+        };
     }
 
     private Control CreatePaletteSectionHeader(string section, bool first) =>
