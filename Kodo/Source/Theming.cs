@@ -38,7 +38,10 @@ public partial class MainWindow
     private void ActivateSettingsSection(string section)
     {
         if (string.Equals(section, "keyboard", StringComparison.OrdinalIgnoreCase))
+        {
+            InitializeKeyboardShortcuts();
             IsKeyboardShortcutsExpanded = true;
+        }
         if (string.Equals(section, "insight", StringComparison.OrdinalIgnoreCase))
             IsInsightDashboardExpanded = true;
 

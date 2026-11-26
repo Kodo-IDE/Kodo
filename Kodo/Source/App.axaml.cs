@@ -55,15 +55,19 @@ public partial class App : Application
 
     public override void Initialize()
     {
+        StartupTrace.Mark("app initialize begin");
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_OnUnhandledException;
         TaskScheduler.UnobservedTaskException += TaskScheduler_OnUnobservedTaskException;
         Dispatcher.UIThread.UnhandledException += DispatcherUiThread_OnUnhandledException;
         AvaloniaXamlLoader.Load(this);
+        StartupTrace.Mark("app initialize end");
     }
 
     public override void OnFrameworkInitializationCompleted()
     {
+        StartupTrace.Mark("framework init begin");
         AptabaseClient.Initialize();
+        StartupTrace.Mark("telemetry initialized");
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -76,6 +80,7 @@ public partial class App : Application
                 ? null
                 : desktop.Args?.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
             var mainWindow = new MainWindow(startupFilePath);
+            StartupTrace.Mark("main window constructed");
             desktop.MainWindow = mainWindow;
 
             SingleInstance.StartListening(handoffPath =>
@@ -111,6 +116,7 @@ public partial class App : Application
         DeferHotfixConfirmation();
 
         base.OnFrameworkInitializationCompleted();
+        StartupTrace.Mark("framework init end");
     }
 
     private static void DeferHotfixConfirmation()

@@ -422,6 +422,7 @@ public partial class MainWindow
 
     private async void OpenSearchResult(SearchResultItem result)
     {
+        StartupTrace.Interaction("search", 0, $"result opening path={Path.GetFileName(result.Path)}");
         var targetPane = _activeEditorPane;
         var query = FindText;
         await OpenFileFromPathAsync(result.Path, targetPane);
@@ -487,6 +488,8 @@ public partial class MainWindow
 
     private void OpenSearchPanel(SearchMode mode)
     {
+        _searchPanelOpenedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
+        StartupTrace.Interaction("search", 0, $"open requested mode={mode} allowed={CanShowSearchPanelForMode(mode)}");
         if (!CanShowSearchPanelForMode(mode))
             return;
 
@@ -507,7 +510,10 @@ public partial class MainWindow
         if (mode == SearchMode.FindInFile)
             UpdateFindHighlights();
         else
+        {
+            SearchTraceStage("panel ready");
             _ = RunActiveSearchAsync();
+        }
         FocusSearchInput();
     }
 
@@ -834,6 +840,11 @@ public partial class MainWindow
         var includeFilter = IsProjectSearchMode ? SearchIncludeFilter : null;
         var excludeFilter = IsProjectSearchMode ? SearchExcludeFilter : null;
         var sw = Stopwatch.StartNew();
+        var cacheSw = new Stopwatch();
+        var scanSw = new Stopwatch();
+        long cacheDoneTicks = 0, scanDoneTicks = 0;
+        long rulesMs = -1, enumMs = -1;
+        var scannedFiles = 0;
 
         List<SearchResultItem> results;
         bool truncated = false;
@@ -843,18 +854,38 @@ public partial class MainWindow
             {
                 results = await Task.Run(() =>
                 {
+                    cacheSw.Restart();
                     var cache = GetOrBuildSearchCache(folderPath, includeFilter, excludeFilter);
-                    return SearchEngine.SearchFilesByName(FindText, folderPath, matchCase, useRegex, cache.Files, token,
+                    cacheSw.Stop();
+                    cacheDoneTicks = Stopwatch.GetTimestamp();
+                    rulesMs = cache.RulesMs;
+                    enumMs = cache.EnumMs;
+                    scannedFiles = cache.Files.Count;
+                    scanSw.Restart();
+                    var found = SearchEngine.SearchFilesByName(FindText, folderPath, matchCase, useRegex, cache.Files, token,
                         progress => loading.Report(progress));
+                    scanSw.Stop();
+                    scanDoneTicks = Stopwatch.GetTimestamp();
+                    return found;
                 }, token);
             }
             else
             {
                 var (projectResults, wasTruncated) = await Task.Run(() =>
                 {
+                    cacheSw.Restart();
                     var cache = GetOrBuildSearchCache(folderPath, includeFilter, excludeFilter);
-                    return SearchProjectForText(FindText, folderPath, matchCase, wholeWord, useRegex, cache.Files, token,
+                    cacheSw.Stop();
+                    cacheDoneTicks = Stopwatch.GetTimestamp();
+                    rulesMs = cache.RulesMs;
+                    enumMs = cache.EnumMs;
+                    scannedFiles = cache.Files.Count;
+                    scanSw.Restart();
+                    var found = SearchProjectForText(FindText, folderPath, matchCase, wholeWord, useRegex, cache.Files, token,
                         progress => loading.Report(progress));
+                    scanSw.Stop();
+                    scanDoneTicks = Stopwatch.GetTimestamp();
+                    return found;
                 }, token);
                 results = projectResults;
                 truncated = wasTruncated;
@@ -877,8 +908,15 @@ public partial class MainWindow
         foreach (var item in results)
             _searchResults.Add(item);
         RebuildDisplayItems();
+        SearchTraceStage($"cache built cache={cacheSw.ElapsedMilliseconds}ms rules={rulesMs}ms enum={enumMs}ms files={scannedFiles}", cacheDoneTicks);
+        SearchTraceStage($"scan done scan={scanSw.ElapsedMilliseconds}ms", scanDoneTicks);
+        SearchTraceStage("display built");
         AddToHistory(FindText);
         SearchStatusText = BuildSearchStatusText(results.Count, truncated, sw.Elapsed);
+        var sinceOpenMs = _searchPanelOpenedTimestamp == 0
+            ? -1L
+            : (long)((System.Diagnostics.Stopwatch.GetTimestamp() - _searchPanelOpenedTimestamp) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+        StartupTrace.Interaction("search", sinceOpenMs, $"results ready count={results.Count} truncated={truncated} query={FindText}");
         IsSearchBusy = false;
     }
 
@@ -902,7 +940,7 @@ public partial class MainWindow
         return text;
     }
 
-    private (List<string> Files, SearchIgnoreRules Rules) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
+    private (List<string> Files, SearchIgnoreRules Rules, long RulesMs, long EnumMs) GetOrBuildSearchCache(string root, string? includeFilter = null, string? excludeFilter = null)
     {
         var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         if (_searchFileCache is { } cached &&
@@ -910,17 +948,29 @@ public partial class MainWindow
             string.Equals(cached.Rules.IncludeFilterSnapshot, includeFilter ?? "", StringComparison.Ordinal) &&
             string.Equals(cached.Rules.ExcludeFilterSnapshot, excludeFilter ?? "", StringComparison.Ordinal))
         {
-            return cached;
+            return (cached.Files, cached.Rules, 0, 0);
         }
 
+        var rulesSw = Stopwatch.StartNew();
         var rules = SearchIgnoreRules.Load(root, includeFilter, excludeFilter);
+        rulesSw.Stop();
         rules.RootSnapshot = normalizedRoot;
         rules.IncludeFilterSnapshot = includeFilter ?? "";
         rules.ExcludeFilterSnapshot = excludeFilter ?? "";
         var files = new List<string>();
+        var enumSw = Stopwatch.StartNew();
         SearchEngine.EnumerateProjectFiles(root, files, rules);
+        enumSw.Stop();
         _searchFileCache = (files, rules);
-        return _searchFileCache.Value;
+        return (files, rules, rulesSw.ElapsedMilliseconds, enumSw.ElapsedMilliseconds);
+    }
+
+    private void SearchTraceStage(string stage, long atTimestamp = 0)
+    {
+        var sinceOpenMs = _searchPanelOpenedTimestamp == 0
+            ? -1L
+            : (long)(((atTimestamp > 0 ? atTimestamp : System.Diagnostics.Stopwatch.GetTimestamp()) - _searchPanelOpenedTimestamp) * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+        StartupTrace.Interaction("search", sinceOpenMs, stage);
     }
 
     private static (List<SearchResultItem> Results, bool Truncated) SearchProjectForText(string query, string root, bool matchCase, bool wholeWord, bool useRegex, List<string> files, CancellationToken token, Action<double>? reportProgress = null)
@@ -944,25 +994,36 @@ public partial class MainWindow
 
         var results = new List<SearchResultItem>();
         var truncated = false;
+        Span<byte> sample = stackalloc byte[8192];
         for (var fileIndex = 0; fileIndex < files.Count; fileIndex++)
         {
             token.ThrowIfCancellationRequested();
             if (fileIndex % 16 == 0)
                 reportProgress?.Invoke((double)fileIndex / Math.Max(1, files.Count));
             var file = files[fileIndex];
-            if (IsImagePreviewFile(file) || IsBinaryContent(file)) continue;
-            try
-            {
-                var fi = new FileInfo(file);
-                if (fi.Length > maxFileBytes) continue;
-                if (fi.Length == 0) continue;
-            }
-            catch { continue; }
+            if (IsImagePreviewFile(file)) continue;
 
             try
             {
+                using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024);
+                var length = stream.Length;
+                if (length > maxFileBytes) continue;
+                if (length == 0) continue;
+
+                var sampleRead = stream.Read(sample);
+                var binary = false;
+                for (var i = 0; i < sampleRead; i++)
+                {
+                    if (sample[i] != 0x00) continue;
+                    binary = true;
+                    break;
+                }
+                if (binary) continue;
+                stream.Position = 0;
+
                 var lineNumber = 0;
-                foreach (var line in File.ReadLines(file))
+                using var reader = new StreamReader(stream, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                while (reader.ReadLine() is { } line)
                 {
                     lineNumber++;
                     if (line.Length > 5000) continue;
