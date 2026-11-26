@@ -24,9 +24,9 @@
 
 Kodo is built by [KerbalMissile](https://github.com/KerbalMissile) and [SS-YYC](https://github.com/SS-YYC) around a few simple ideas: your editor should stay out of your way. Quick setup, syntax highlighting via extensions, and zero friction from launch to coding. We want to make coding human again; no bloat, but still a good user experience.
 
-**Kodo v2.3.0** redesigns the UI around a shared token system, rebuilds the terminal around an always-visible, resizable sidebar, adds project-aware file icons, ships a much more capable engine for extensions, and introduces KodoIcons - our custom-drawn SVG icon set. Announcement banners can now appear right above the editor for real-time posts from Kodo devs.
+**Kodo v2.4.0** adds Sticky Scroll, bookmarks with their own panel, Quick Actions in the Activity Bar, Signature Help, and a personalization layer built on local, on-device learning. The Command Palette and Quick Open now reuse their overlay and keep result rows between modes, making them **3.5× faster** than v2.3.0, and workspace search reads each file once for a **38% faster** scan.
 
-A fresh Kodo install is **15.4%** of VS Code's initial size (i.e. **84.6%** less disk). In ratio terms, a fresh install of VS Code is **6.48x** bigger. 
+A fresh Kodo install is **14.9%** of VS Code's installed size (i.e. **85.1%** less disk). In ratio terms, a fresh install of VS Code is **6.7×** bigger.
 
 Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main/LICENSE).
 
@@ -41,17 +41,16 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 ---
 
-## What's New in v2.3.0
+## What's New in v2.4.0
 
-* **Smart File Icons** - project-aware Explorer icons: .NET, Rust, Go, Node, Python, CMake and other project markers get their own labels, as do Git files, licenses, READMEs, changelogs, lockfiles, and folder roles (source, tests, docs, CI, dependencies). Extensions can declare their own labels via `fileIcon` and `fileIcons`.
-* **Extensions, supercharged** - an expanded `ILangRulesProvider` with asynchronous analysis, cancellation, document and workspace context (up to 128 open documents), diagnostic codes, tags, related locations, and diagnostic-aware code actions. Analysis runs in Kodo's isolated Insight worker, and a conformance tool in Kodo-Extension-Template validates your provider before you publish.
-* **UI overhaul** - a unified token system across all of Kodo's surfaces and dialogs, micro-animations (toggleable in Accessibility Settings), a reworked editor toolbar with a Refresh Open Editors button, and settings reorganized into subsections you can find by Search.
-* **Terminal** - redesigned UI: tabs replaced by a sidebar, making the terminal host itself bigger; the sidebar is resizable, including auto-resize on double-click.
-* **The Editor** - the Explorer pane now splits vertically to show the File Explorer and Git Source Control at the same time; the Keyboard Shortcuts dialog is now part of Settings.
-* **Smart build/run** - compiler dialogs reworked to pick up exit codes and adjust the UI accordingly.
-* **Announcement Banners** - real-time banners from Kodo devs above the editor, with optional action buttons; critical banners stay until the announcement is removed.
-* **KodoIcons** - our custom-drawn, standalone SVG icon set now powers the app's UI.
-* **Removals** - the Encoding, Line Ending, and Tab Size dialogs are gone; those actions now live in the command palette.
+* **Sticky Scroll** - nested classes and other relevant structures stay pinned at the top of the editor with their original syntax highlighting; click a sticky line to jump to it, and turn the feature off in Editor Settings.
+* **Bookmarks** - bookmark a line from its line number or with `Ctrl + Alt + B`, open the Bookmarks panel with `Ctrl + Shift + B`, label and manage bookmarks across files, and see them marked on the minimap.
+* **Quick Actions** - an Activity Bar section with up to three context-aware actions, with `Ctrl + .` to run the highest-ranked one. Actions adapt to editor focus, selection, diagnostics, language-server capabilities and project state, and unavailable ones are omitted.
+* **Insight** - split into Code Intelligence (LSP, diagnostics, navigation, Signature Help) and Context Intelligence (learning-driven Quick Actions and palette ordering), with a Personalization Dashboard to inspect, disable or reset what has been learned locally.
+* **Personalized search** - the Command Palette learns from your queries and selections to rank results over time, and can be turned off in Settings.
+* **Faster palette and search** - the Command Palette and Quick Open reuse their overlay and keep result rows between modes (3.5× faster opens), and project-wide search now reads each file once instead of twice (38% faster warm scans).
+* **Editor and LSP** - a clipboard combo box that adapts its primary action, undo/redo in the toolbar, a Signature Help popup, and language-server messages in the status bar.
+* **Fixes** - palette results ignoring clicks, palette input going dead after reopening, incorrect truncation counts, borders rendering beneath their contents, `Ctrl + F` and `Ctrl + Shift + F` when focus is outside the editor, and editor startup stutter.
 
 ---
 
@@ -67,6 +66,9 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 | 🗂️ **Smart File Icons**          | Project markers, repo files, READMEs and folder roles get their own Explorer labels; extensions can declare theirs too |
 | 📁 **Folder Support**               | Browse, auto-refresh, and resize the file explorer; rename inline; split vertically with Git Source Control           |
 | 🔎 **Search**                       | Find in file, file-name search, and project-wide search (`Ctrl+Shift+F`)                                |
+| 📌 **Bookmarks**                    | Bookmark lines, label them, jump across files, and track them on the minimap                            |
+| 🧷 **Sticky Scroll**                | Nested classes and structures stay pinned at the top while you scroll                                    |
+| ⚡ **Quick Actions**                 | Context-aware actions in the Activity Bar — run the top one with `Ctrl + .`                              |
 | ⌘ **Command Palette**                | Open files, run commands, navigate to lines and symbols, and run plugin commands                        |
 | ↔ **Split Editor**                   | Edit two files side by side with independent editor groups                                                |
 | 🌿 **Git Source Control**            | Review repository changes and use Git tools from the native Integrations UI                              |
@@ -87,24 +89,22 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 ## Benchmarks
 
-| Benchmark | Kodo Result | VS Code Result | Kodo's Advantage |
+Measured on the same Windows machine with clean profiles and the same project, 26 November 2026. Kodo numbers come from the v2.4.0 release build.
+
+| Benchmark | Kodo v2.4.0 | VS Code | Result |
 |---|---:|---:|---|
-| Private Memory (Welcome Idle) | **241 MB** | 2,213 MB | ~89% less private memory |
-| Large Project Memory (2,501 files / 51 MB) | **~292 MB WS** | ~2.2 GB WS | ~87% less working-set memory |
-| Idle CPU | **1.9–2.1%** | 16.5% | ~8× lower measured CPU usage |
+| Fresh install on disk | **176 MB** | 1,186 MB | **6.7× smaller** |
+| Private memory, welcome screen | **223 MB** | 1,035 MB | **78% less** |
+| Working set, 12,000-file project | **314 MB** | 1,127 MB | **72% less** |
+| Idle CPU, no project open | 1.2–1.8% of one core | **0.46%** | VS Code lower |
+| Command Palette open | 54.5 ms | **51.1 ms** | within 7% |
+| Quick Open | 54.6 ms | **50.6 ms** | within 8% |
 
-These results were gathered from the same machine, opening the same project during our benchmarks.
+Palette figures are medians of 12 alternating trials per case; memory figures are medians of 3 trials; idle CPU comes from 150–300 second process-tree CPU deltas. Install sizes exclude runtime caches created on first launch.
 
-### Responsiveness in v2.4.0
+Project-wide search (3,000 files) returns results in **183 ms** warm and **238 ms** on the first run, measured with Kodo's internal timing marks. VS Code's search was measured with a different detector, so the two numbers are not directly comparable and no comparison is claimed.
 
-| Interaction (3,000-file project) | v2.3.0 | v2.4.0 | Change |
-|---|---:|---:|---:|
-| Command Palette open | 190 ms | **54.5 ms** | **3.5× faster** |
-| Quick Open | 211 ms | **54.6 ms** | **3.9× faster** |
-| Project-wide search, warm | 297 ms | **183 ms** | **38% faster** |
-| Project-wide search, first run | ~805 ms | **~238 ms** | **3.4× faster** |
-
-The palette figures are medians of 12 alternating trials per case on a clean profile, measured the same way as the VS Code numbers above. VS Code opens its palette in 51.1 ms and Quick Open in 50.6 ms on the same machine and project, so Kodo's palettes are now on the same footing — 54.5 ms against 190 ms in v2.3.0. Search figures are Kodo's internal timing marks, not a VS Code comparison.
+Kodo's palettes were **190 ms** (Command Palette) and **211 ms** (Quick Open) in v2.3.0, measured with the same harness, so v2.4.0 is **3.5× faster** and now within a few milliseconds of VS Code.
 
 ---
 
