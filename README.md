@@ -95,6 +95,17 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 These results were gathered from the same machine, opening the same project during our benchmarks.
 
+### Responsiveness in v2.4.0
+
+| Interaction (3,000-file project) | v2.3.0 | v2.4.0 | Change |
+|---|---:|---:|---:|
+| Command Palette open | 190 ms | **54.5 ms** | **3.5× faster** |
+| Quick Open | 211 ms | **54.6 ms** | **3.9× faster** |
+| Project-wide search, warm | 297 ms | **183 ms** | **38% faster** |
+| Project-wide search, first run | ~805 ms | **~238 ms** | **3.4× faster** |
+
+The palette figures are medians of 12 alternating trials per case on a clean profile, measured the same way as the VS Code numbers above. VS Code opens its palette in 51.1 ms and Quick Open in 50.6 ms on the same machine and project, so Kodo's palettes are now on the same footing — 54.5 ms against 190 ms in v2.3.0. Search figures are Kodo's internal timing marks, not a VS Code comparison.
+
 ---
 
 ## Getting Started
