@@ -54,6 +54,10 @@ class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions
+            {
+                UseCompositionSwapChain = string.Equals(Environment.GetEnvironmentVariable("KODO_COMPOSITION_SWAPCHAIN"), "1", StringComparison.Ordinal),
+            })
             .WithInterFont()
             .LogToTrace();
 }
