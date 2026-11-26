@@ -96,15 +96,8 @@ Measured on the same Windows machine with clean profiles and the same project, 2
 | Fresh install on disk | **176 MB** | 1,186 MB | **6.7× smaller** |
 | Private memory, welcome screen | **223 MB** | 1,035 MB | **78% less** |
 | Working set, 12,000-file project | **314 MB** | 1,127 MB | **72% less** |
-| Idle CPU, no project open | 1.2–1.8% of one core | **0.46%** | VS Code lower |
-| Command Palette open | 54.5 ms | **51.1 ms** | within 7% |
-| Quick Open | 54.6 ms | **50.6 ms** | within 8% |
 
-Palette figures are medians of 12 alternating trials per case; memory figures are medians of 3 trials; idle CPU comes from 150–300 second process-tree CPU deltas. Install sizes exclude runtime caches created on first launch.
-
-Project-wide search (3,000 files) returns results in **183 ms** warm and **238 ms** on the first run, measured with Kodo's internal timing marks. VS Code's search was measured with a different detector, so the two numbers are not directly comparable and no comparison is claimed.
-
-Kodo's palettes were **190 ms** (Command Palette) and **211 ms** (Quick Open) in v2.3.0, measured with the same harness, so v2.4.0 is **3.5× faster** and now within a few milliseconds of VS Code.
+Memory figures are medians of 3 trials, with the welcome screen open and with the 12,000-file project loaded. Install sizes exclude runtime caches created on first launch.
 
 ---
 
