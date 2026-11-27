@@ -43,14 +43,13 @@ Released under the [GPL-v3.0 license](https://github.com/Kodo-IDE/Kodo/blob/main
 
 ## What's New in v2.4.0
 
-* **Sticky Scroll** - nested classes and other relevant structures stay pinned at the top of the editor with their original syntax highlighting; click a sticky line to jump to it, and turn the feature off in Editor Settings.
-* **Bookmarks** - bookmark a line from its line number or with `Ctrl + Alt + B`, open the Bookmarks panel with `Ctrl + Shift + B`, label and manage bookmarks across files, and see them marked on the minimap.
-* **Quick Actions** - an Activity Bar section with up to three context-aware actions, with `Ctrl + .` to run the highest-ranked one. Actions adapt to editor focus, selection, diagnostics, language-server capabilities and project state, and unavailable ones are omitted.
-* **Insight** - split into Code Intelligence (LSP, diagnostics, navigation, Signature Help) and Context Intelligence (learning-driven Quick Actions and palette ordering), with a Personalization Dashboard to inspect, disable or reset what has been learned locally.
-* **Personalized search** - the Command Palette learns from your queries and selections to rank results over time, and can be turned off in Settings.
-* **Faster palette and search** - the Command Palette and Quick Open reuse their overlay and keep result rows between modes (3.5× faster opens), and project-wide search now reads each file once instead of twice (38% faster warm scans).
-* **Editor and LSP** - a clipboard combo box that adapts its primary action, undo/redo in the toolbar, a Signature Help popup, and language-server messages in the status bar.
-* **Fixes** - palette results ignoring clicks, palette input going dead after reopening, incorrect truncation counts, borders rendering beneath their contents, `Ctrl + F` and `Ctrl + Shift + F` when focus is outside the editor, and editor startup stutter.
+* **Sticky Scroll** - the class or structure you're working inside stays pinned to the top of the editor while you scroll, and clicking it takes you back to it.
+* **Bookmarks** - mark the lines you want to return to, label them, and jump between them across files.
+* **Quick Actions** - a short list of actions that fit what you're doing right now, run with `Ctrl + .`.
+* **Insight** - Kodo understands the code you're working in well enough to navigate it, flag problems and offer fixes.
+* **Learning that stays on your device** - Kodo learns from the actions you actually complete and adapts Quick Actions and search ordering to match. That learning lives in a local file, and you can review, disable or reset it in Settings at any time.
+* **A faster, smoother editor** - the Command Palette, project search and startup are noticeably quicker, and the interface has been polished throughout.
+* **Fluent 2 preview** - try Avalonia's next-generation theme engine from Appearance Settings.
 
 ---
 
