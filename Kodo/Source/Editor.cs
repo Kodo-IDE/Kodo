@@ -14,6 +14,7 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Rendering;
 using Kodo.Editor;
 using Kodo.Models;
+using Kodo.QuickActions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -1447,7 +1448,8 @@ public partial class MainWindow
 
     private async void GoToDefinitionAtCaret(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("Definition", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("Definition", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var requestPane = _activeEditorPane;
@@ -1550,7 +1552,8 @@ public partial class MainWindow
 
     private async Task FindReferencesAtCaretAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("References", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("References", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
@@ -1594,7 +1597,8 @@ public partial class MainWindow
 
     private async Task FormatDocumentAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("Format", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("Format", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var targetEditor = EditorTextBox;
         var requestPane = _activeEditorPane;
@@ -1700,7 +1704,8 @@ public partial class MainWindow
 
     private async Task<bool> RunCodeActionsWithFallbackAsync(CodeActionScope scope, Action? onSuccess = null)
     {
-        if (scope == CodeActionScope.QuickFix) onSuccess = WrapObservedAction("QuickFix", onSuccess);
+        if (scope == CodeActionScope.QuickFix)
+            onSuccess = WrapObservedAction("QuickFix", onSuccess, QuickActionExecution.Begin());
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
         var requestTab = requestPane.ActiveTab;
@@ -1734,7 +1739,8 @@ public partial class MainWindow
 
     private async Task RenameSymbolAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("Rename", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("Rename", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
@@ -1776,7 +1782,8 @@ public partial class MainWindow
 
     private async Task NavigateToTypeDefinitionAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("TypeDefinition", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("TypeDefinition", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
@@ -1799,7 +1806,8 @@ public partial class MainWindow
 
     private async Task NavigateToImplementationAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("Implementation", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("Implementation", onSuccess, execution);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
@@ -1828,7 +1836,8 @@ public partial class MainWindow
 
     private async Task ShowSignatureHelpAsync(Action? onSuccess = null)
     {
-        onSuccess = WrapObservedAction("SignatureHelp", onSuccess);
+        var execution = QuickActionExecution.Begin();
+        onSuccess = WrapObservedAction("SignatureHelp", onSuccess, execution);
         if (!LspEnabled || !LspSignatureHelpEnabled) return;
         if (EditorTextBox?.Document is null) return;
         var filePath = _currentFilePath;

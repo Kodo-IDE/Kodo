@@ -18,18 +18,36 @@ public sealed class QuickActionObservationWrapperTests
         Assert.Empty(identities);
 
         wrapper();
-        wrapper();
 
-        Assert.Equal(2, identities.Count);
+        Assert.Single(identities);
         Assert.NotEqual(Guid.Empty, identities[0]);
-        Assert.Equal(identities[0], identities[1]);
     }
 
     [Fact]
-    public void RepeatedCallbacksForOneExecutionRecordOnce()
+    public void ReusingOneWrapperGivesEachInvocationItsOwnExecution()
     {
         var log = new QuickActionObservationLog();
-        var wrapper = QuickActionObservation.Wrap("Format", null, (id, execution) => log.TryRecord(id, execution));
+        var identities = new List<Guid>();
+        var wrapper = QuickActionObservation.Wrap("Format", null, (id, execution) =>
+        {
+            identities.Add(execution);
+            log.TryRecord(id, execution);
+        });
+
+        wrapper();
+        wrapper();
+
+        Assert.Equal(2, identities.Count);
+        Assert.NotEqual(identities[0], identities[1]);
+        Assert.Equal(2, log.Count);
+    }
+
+    [Fact]
+    public void RepeatedCallbacksForOnePropagatedExecutionRecordOnce()
+    {
+        var log = new QuickActionObservationLog();
+        var execution = QuickActionExecution.Begin();
+        var wrapper = QuickActionObservation.Wrap("Format", null, (id, token) => log.TryRecord(id, token), execution);
 
         wrapper();
         wrapper();
