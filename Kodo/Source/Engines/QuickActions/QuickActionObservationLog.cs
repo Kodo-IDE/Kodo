@@ -6,49 +6,38 @@ namespace Kodo.QuickActions;
 
 public sealed class QuickActionObservationLog
 {
-    public static readonly TimeSpan MinimumInterval = TimeSpan.FromSeconds(2);
+    private const int MaximumTrackedExecutions = 256;
 
-    private const int MaximumTrackedActions = 256;
-
-    private readonly Dictionary<string, DateTime> _lastRecordedUtc = new(StringComparer.Ordinal);
+    private readonly HashSet<(string ActionId, Guid ExecutionId)> _recorded = new();
+    private readonly Queue<(string ActionId, Guid ExecutionId)> _order = new();
     private readonly object _gate = new();
 
-    public bool TryRecord(string actionId, DateTime utcNow)
+    public int Count
+    {
+        get { lock (_gate) return _recorded.Count; }
+    }
+
+    public bool TryRecord(string actionId, Guid executionId)
     {
         if (string.IsNullOrWhiteSpace(actionId)) return false;
 
-        var key = actionId.Trim();
-        var now = utcNow.ToUniversalTime();
-
+        var key = (actionId.Trim(), executionId);
         lock (_gate)
         {
-            if (_lastRecordedUtc.TryGetValue(key, out var lastRecorded) && now - lastRecorded < MinimumInterval)
-                return false;
+            if (!_recorded.Add(key)) return false;
 
-            if (!_lastRecordedUtc.ContainsKey(key) && _lastRecordedUtc.Count >= MaximumTrackedActions)
-                RemoveOldest();
-
-            _lastRecordedUtc[key] = now;
+            _order.Enqueue(key);
+            while (_order.Count > MaximumTrackedExecutions) _recorded.Remove(_order.Dequeue());
             return true;
         }
     }
 
     public void Clear()
     {
-        lock (_gate) _lastRecordedUtc.Clear();
-    }
-
-    private void RemoveOldest()
-    {
-        string? oldestKey = null;
-        var oldest = DateTime.MaxValue;
-        foreach (var pair in _lastRecordedUtc)
+        lock (_gate)
         {
-            if (pair.Value >= oldest) continue;
-            oldest = pair.Value;
-            oldestKey = pair.Key;
+            _recorded.Clear();
+            _order.Clear();
         }
-
-        if (oldestKey is not null) _lastRecordedUtc.Remove(oldestKey);
     }
 }

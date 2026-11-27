@@ -1,41 +1,39 @@
 // Licensed under the GNU GPL-v3.0
 using Kodo.QuickActions;
 using System;
-using System.Linq;
 using Xunit;
 
 namespace Kodo.Tests;
 
 public sealed class QuickActionObservationTests
 {
-    private static readonly DateTime Now = new(2026, 8, 3, 10, 0, 0, DateTimeKind.Utc);
-
     [Fact]
-    public void FirstObservationIsRecorded()
+    public void FirstObservationOfAnExecutionIsRecorded()
     {
         var log = new QuickActionObservationLog();
 
-        Assert.True(log.TryRecord("Format", Now));
+        Assert.True(log.TryRecord("Format", Guid.NewGuid()));
     }
 
     [Fact]
-    public void RepeatedObservationInsideTheWindowIsSuppressed()
+    public void OneExecutionReportedBySeveralLayersIsRecordedOnce()
     {
         var log = new QuickActionObservationLog();
+        var execution = Guid.NewGuid();
 
-        Assert.True(log.TryRecord("Format", Now));
-        Assert.False(log.TryRecord("Format", Now));
-        Assert.False(log.TryRecord("Format", Now.AddMilliseconds(500)));
-        Assert.False(log.TryRecord("Format", Now + QuickActionObservationLog.MinimumInterval - TimeSpan.FromMilliseconds(1)));
+        Assert.True(log.TryRecord("Format", execution));
+        Assert.False(log.TryRecord("Format", execution));
+        Assert.False(log.TryRecord(" Format ", execution));
     }
 
     [Fact]
-    public void ObservationAfterTheWindowIsRecorded()
+    public void SeparateExecutionsOfTheSameActionAreEachRecorded()
     {
         var log = new QuickActionObservationLog();
 
-        Assert.True(log.TryRecord("Format", Now));
-        Assert.True(log.TryRecord("Format", Now + QuickActionObservationLog.MinimumInterval));
+        Assert.True(log.TryRecord("MoveLineDown", Guid.NewGuid()));
+        Assert.True(log.TryRecord("MoveLineDown", Guid.NewGuid()));
+        Assert.True(log.TryRecord("MoveLineDown", Guid.NewGuid()));
     }
 
     [Fact]
@@ -43,9 +41,9 @@ public sealed class QuickActionObservationTests
     {
         var log = new QuickActionObservationLog();
 
-        Assert.True(log.TryRecord("Format", Now));
-        Assert.True(log.TryRecord("MoveLineUp", Now));
-        Assert.True(log.TryRecord("ToggleComment", Now));
+        Assert.True(log.TryRecord("Format", Guid.NewGuid()));
+        Assert.True(log.TryRecord("MoveLineUp", Guid.NewGuid()));
+        Assert.True(log.TryRecord("ToggleComment", Guid.NewGuid()));
     }
 
     [Fact]
@@ -53,8 +51,9 @@ public sealed class QuickActionObservationTests
     {
         var log = new QuickActionObservationLog();
 
-        Assert.False(log.TryRecord(string.Empty, Now));
-        Assert.False(log.TryRecord("   ", Now));
+        Assert.False(log.TryRecord(string.Empty, Guid.NewGuid()));
+        Assert.False(log.TryRecord("   ", Guid.NewGuid()));
+        Assert.Equal(0, log.Count);
     }
 
     [Fact]
@@ -62,33 +61,36 @@ public sealed class QuickActionObservationTests
     {
         var log = new QuickActionObservationLog();
 
-        Assert.True(log.TryRecord("Format", Now));
-        Assert.True(log.TryRecord("format", Now));
+        Assert.True(log.TryRecord("Format", Guid.NewGuid()));
+        Assert.True(log.TryRecord("format", Guid.NewGuid()));
     }
 
     [Fact]
-    public void ClearAllowsAnImmediateRecord()
+    public void ClearAllowsAnImmediateRecordOfTheSameExecution()
     {
         var log = new QuickActionObservationLog();
+        var execution = Guid.NewGuid();
 
-        Assert.True(log.TryRecord("Format", Now));
-        Assert.False(log.TryRecord("Format", Now));
+        Assert.True(log.TryRecord("Format", execution));
+        Assert.False(log.TryRecord("Format", execution));
 
         log.Clear();
 
-        Assert.True(log.TryRecord("Format", Now));
+        Assert.True(log.TryRecord("Format", execution));
     }
 
     [Fact]
-    public void TrackedActionsStayBounded()
+    public void TrackedExecutionsStayBounded()
     {
         var log = new QuickActionObservationLog();
+        var firstExecution = Guid.NewGuid();
 
-        for (var index = 0; index < 300; index++)
-            Assert.True(log.TryRecord($"Action{index}", Now.AddMilliseconds(index)));
+        Assert.True(log.TryRecord("Action0", firstExecution));
+        for (var index = 1; index < 300; index++)
+            Assert.True(log.TryRecord($"Action{index}", Guid.NewGuid()));
 
-        Assert.True(log.TryRecord("Action0", Now.AddSeconds(10)));
-        Assert.False(log.TryRecord("Action0", Now.AddSeconds(10)));
+        Assert.Equal(256, log.Count);
+        Assert.True(log.TryRecord("Action0", firstExecution));
     }
 
     [Fact]
@@ -124,16 +126,22 @@ public sealed class QuickActionObservationTests
         Assert.Contains("cmd.format-document", QuickActionIdentity.CoveredCommandIds);
         Assert.Contains("cmd.open-workspace-in-terminal", QuickActionIdentity.CoveredCommandIds);
         Assert.DoesNotContain("cmd.toggle-terminal", QuickActionIdentity.CoveredCommandIds);
+        Assert.DoesNotContain("cmd.new-terminal", QuickActionIdentity.CoveredCommandIds);
         Assert.DoesNotContain("Format", QuickActionIdentity.CoveredCommandIds);
     }
 
     [Fact]
-    public void AliasedCommandsAreRecordedByTheirOwnExecution()
+    public void CommandsWithTheirOwnExecutionReportAreNotRecordedByThePalette()
     {
-        Assert.All(QuickActionIdentity.CoveredCommandIds, id => Assert.True(QuickActionIdentity.IsAliased(id)));
-        Assert.False(QuickActionIdentity.IsAliased("cmd.toggle-terminal"));
-        Assert.False(QuickActionIdentity.IsAliased("Format"));
-        Assert.False(QuickActionIdentity.IsAliased(null));
+        Assert.All(QuickActionIdentity.CoveredCommandIds, id => Assert.True(QuickActionIdentity.IsObservedByExecution(id)));
+
+        Assert.True(QuickActionIdentity.IsObservedByExecution("cmd.new-terminal"));
+        Assert.True(QuickActionIdentity.IsObservedByExecution("cmd.open-active-file-folder-in-terminal"));
+        Assert.True(QuickActionIdentity.IsObservedByExecution("cmd.search-in-current-folder"));
+        Assert.False(QuickActionIdentity.IsObservedByExecution("cmd.toggle-terminal"));
+        Assert.False(QuickActionIdentity.IsObservedByExecution("plugin.formatter.run"));
+        Assert.False(QuickActionIdentity.IsObservedByExecution("Format"));
+        Assert.False(QuickActionIdentity.IsObservedByExecution(null));
     }
 
     [Fact]

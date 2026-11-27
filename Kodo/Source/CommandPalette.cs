@@ -1465,7 +1465,7 @@ public partial class MainWindow
             new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-in"),
             new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-out"),
             new("Reset Zoom", "View", "ZoomReset", () => { ZoomImageReset(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.reset-zoom"),
-            new("New Terminal", "Terminal", "NewTerminalSession", () => { CreateTerminalSession(); return Task.CompletedTask; }, () => IsTerminalSupported, "shell console", Id: "cmd.new-terminal"),
+            new("New Terminal", "Terminal", "NewTerminalSession", () => { if (CreateTerminalSession()) RecordObservedAction("cmd.new-terminal"); return Task.CompletedTask; }, () => IsTerminalSupported, "shell console", Id: "cmd.new-terminal"),
             new("Clear Terminal", "Terminal", "", () => { ClearActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "erase terminal output", Id: "cmd.clear-terminal"),
             new("Restart Terminal", "Terminal", "", () => { RestartActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "shell relaunch", Id: "cmd.restart-terminal"),
             new("Close Terminal Session", "Terminal", "", () => { if (ActiveTerminalSession is { } session) CloseTerminalSession(session); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "remove shell", Id: "cmd.close-terminal-session"),
@@ -2579,7 +2579,7 @@ public partial class MainWindow
                 RecordPaletteCommandSelection(learnableId);
                 RecordPaletteQuerySelection(paletteQuery, learnableId);
             }
-            if (mode == PaletteMode.Commands && command.Id.Length > 0 && !QuickActionIdentity.IsAliased(command.Id))
+            if (mode == PaletteMode.Commands && command.Id.Length > 0 && !QuickActionIdentity.IsObservedByExecution(command.Id))
                 RecordObservedAction(command.Id);
             ReleasePaletteFocus();
             Dispatcher.UIThread.Post(ReleasePaletteFocus, Avalonia.Threading.DispatcherPriority.Background);

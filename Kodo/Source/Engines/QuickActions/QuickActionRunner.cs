@@ -8,6 +8,9 @@ public sealed record QuickActionExecutionResult(bool Succeeded, Exception? Error
 
 public static class QuickActionRunner
 {
+    public static Task<QuickActionExecutionResult> RunAsync(Func<Task<bool>> action) =>
+        RunAsync(action, static () => { });
+
     public static async Task<QuickActionExecutionResult> RunAsync(Func<Task<bool>> action, Action onSuccess)
     {
         ArgumentNullException.ThrowIfNull(action);
