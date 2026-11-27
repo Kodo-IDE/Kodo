@@ -14,6 +14,7 @@ using GitSourceControl;
 using Kodo.Editor;
 using Kodo.Insight;
 using Kodo.Models;
+using Kodo.QuickActions;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -1320,8 +1321,9 @@ public partial class MainWindow
         {
             if (ActiveEditorTab is not { IsUntitled: false, Path: { } path }) return;
             var directory = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
-                CreateTerminalSession(workingDirectoryOverride: directory);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory) &&
+                CreateTerminalSession(workingDirectoryOverride: directory))
+                RecordObservedAction("cmd.open-active-file-folder-in-terminal");
         }
 
         var commands = new List<PaletteCommand>
@@ -1547,7 +1549,8 @@ public partial class MainWindow
                 command.Detail,
                 ownerName,
                 command.Shortcut,
-                command.KeepPaletteOpen));
+                command.KeepPaletteOpen,
+                Id: command.Id));
         }
 
         commands.AddRange(BuildGitBranchCommands());
@@ -2576,6 +2579,8 @@ public partial class MainWindow
                 RecordPaletteCommandSelection(learnableId);
                 RecordPaletteQuerySelection(paletteQuery, learnableId);
             }
+            if (mode == PaletteMode.Commands && command.Id.Length > 0 && !QuickActionIdentity.IsAliased(command.Id))
+                RecordObservedAction(command.Id);
             ReleasePaletteFocus();
             Dispatcher.UIThread.Post(ReleasePaletteFocus, Avalonia.Threading.DispatcherPriority.Background);
         }

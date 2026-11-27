@@ -166,6 +166,7 @@ public partial class MainWindow
         BookmarkService.ToggleBookmark(relative, lineNumber, lineText);
         InvalidateBookmarkMargins();
         RefreshBookmarksList();
+        RecordObservedAction("ToggleBookmark");
     }
 
     private void EnsureBookmarkMargin(TextEditor editor)
@@ -220,7 +221,10 @@ public partial class MainWindow
             target = BookmarkService.PreviousLine(relative, line) ?? BookmarkService.PreviousLine(relative, int.MaxValue);
 
         if (target is { } destination)
+        {
             GoToLineInActiveEditor(destination, 1);
+            RecordObservedAction(direction > 0 ? "cmd.next-bookmark" : "cmd.previous-bookmark");
+        }
     }
 
     private void NextBookmark() => MoveToBookmark(1);

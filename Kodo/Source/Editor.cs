@@ -200,6 +200,7 @@ public partial class MainWindow
         EditorTextBox.TextArea.Caret.Offset = problems[index].Offset;
         EditorTextBox.TextArea.Caret.BringCaretToView();
         EditorTextBox.Focus();
+        RecordObservedAction(direction >= 0 ? "NextProblem" : "PreviousProblem");
         return true;
     }
 
@@ -1446,6 +1447,7 @@ public partial class MainWindow
 
     private async void GoToDefinitionAtCaret(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("Definition", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var requestPane = _activeEditorPane;
@@ -1548,6 +1550,7 @@ public partial class MainWindow
 
     private async Task FindReferencesAtCaretAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("References", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
@@ -1591,6 +1594,7 @@ public partial class MainWindow
 
     private async Task FormatDocumentAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("Format", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var targetEditor = EditorTextBox;
         var requestPane = _activeEditorPane;
@@ -1696,6 +1700,7 @@ public partial class MainWindow
 
     private async Task<bool> RunCodeActionsWithFallbackAsync(CodeActionScope scope, Action? onSuccess = null)
     {
+        if (scope == CodeActionScope.QuickFix) onSuccess = WrapObservedAction("QuickFix", onSuccess);
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
         var requestTab = requestPane.ActiveTab;
@@ -1729,6 +1734,7 @@ public partial class MainWindow
 
     private async Task RenameSymbolAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("Rename", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var requestPane = _activeEditorPane;
         var requestEditor = EditorTextBox;
@@ -1770,6 +1776,7 @@ public partial class MainWindow
 
     private async Task NavigateToTypeDefinitionAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("TypeDefinition", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
@@ -1792,6 +1799,7 @@ public partial class MainWindow
 
     private async Task NavigateToImplementationAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("Implementation", onSuccess);
         if (EditorTextBox?.Document is null) return;
         var origin = CaptureEditorNavigationLocation();
         var document = EditorTextBox.Document;
@@ -1812,6 +1820,7 @@ public partial class MainWindow
     private void EditorDocumentSymbolsMenuItem_OnClick(object? sender, RoutedEventArgs e)
     {
         ShowCommandPalette(prefix: "@");
+        RecordObservedAction("DocumentSymbols");
     }
 
     private async void EditorSignatureHelpMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -1819,6 +1828,7 @@ public partial class MainWindow
 
     private async Task ShowSignatureHelpAsync(Action? onSuccess = null)
     {
+        onSuccess = WrapObservedAction("SignatureHelp", onSuccess);
         if (!LspEnabled || !LspSignatureHelpEnabled) return;
         if (EditorTextBox?.Document is null) return;
         var filePath = _currentFilePath;

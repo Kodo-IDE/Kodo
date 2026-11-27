@@ -262,6 +262,7 @@ public partial class MainWindow
 
         EditorRestoreLineSelection(doc, textArea, first + direction, last + direction);
         EditorInvalidateEditorLayers(textArea);
+        RecordObservedAction(direction > 0 ? "MoveLineDown" : "MoveLineUp");
     }
 
     private void EditorDuplicateLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, int direction)
@@ -290,6 +291,7 @@ public partial class MainWindow
             direction > 0 ? last + 1 : first,
             direction > 0 ? last + span : first);
         EditorInvalidateEditorLayers(textArea);
+        RecordObservedAction(direction > 0 ? "DuplicateLineDown" : "DuplicateLineUp");
     }
 
     private void EditorDeleteLines(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
@@ -333,6 +335,7 @@ public partial class MainWindow
         }
 
         EditorInvalidateEditorLayers(textArea);
+        RecordObservedAction("DeleteLine");
     }
 
     private void EditorInsertLine(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea, bool below)
@@ -354,6 +357,7 @@ public partial class MainWindow
 
         SetCaretOffsetSafely(caret, doc, offset + Environment.NewLine.Length);
         EditorInvalidateEditorLayers(textArea);
+        RecordObservedAction(below ? "InsertLineBelow" : "InsertLineAbove");
     }
 
     private Task EditorGoToLineAsync(AvaloniaEdit.Document.TextDocument doc, AvaloniaEdit.Editing.TextArea textArea)
@@ -366,6 +370,7 @@ public partial class MainWindow
     {
         var line = document.GetLineByOffset(Math.Clamp(textArea.Caret.Offset, 0, document.TextLength));
         textArea.Selection = AvaloniaEdit.Editing.Selection.Create(textArea, line.Offset, line.Offset + line.TotalLength);
+        RecordObservedAction("SelectLine");
     }
 
     private bool _isHighlightCurrentLineEnabled = true;
@@ -950,6 +955,8 @@ public partial class MainWindow
         {
             SetCaretOffsetSafely(caret, doc, mappedCaretOffset);
         }
+
+        RecordObservedAction("ToggleComment");
     }
 
 }

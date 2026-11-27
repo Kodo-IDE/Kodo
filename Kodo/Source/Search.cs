@@ -486,7 +486,7 @@ public partial class MainWindow
         await OpenPathInSystemExplorer(result.Path, selectItem: true);
     }
 
-    private void OpenSearchPanel(SearchMode mode)
+    private void OpenSearchPanel(SearchMode mode, bool recordObservation = true)
     {
         _searchPanelOpenedTimestamp = System.Diagnostics.Stopwatch.GetTimestamp();
         StartupTrace.Interaction("search", 0, $"open requested mode={mode} allowed={CanShowSearchPanelForMode(mode)}");
@@ -515,6 +515,8 @@ public partial class MainWindow
             _ = RunActiveSearchAsync();
         }
         FocusSearchInput();
+        if (recordObservation)
+            RecordObservedAction(mode == SearchMode.FindInFile ? "FindInFile" : "ProjectSearch");
     }
 
     private void ToggleSearchPanel(SearchMode mode)
