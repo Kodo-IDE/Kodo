@@ -33,8 +33,6 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="DiscordRichPresence" Version="1.6.1.70" />
-    <PackageReference Include="ExCSS" Version="4.3.2" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="Svg.Controls.Skia.Avalonia" Version="12.2.0" />
   </ItemGroup>
 
