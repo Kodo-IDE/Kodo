@@ -27,6 +27,9 @@ public partial class MainWindow
     public ObservableCollection<QuickActionItem> QuickActions { get; } = new();
     private readonly Dictionary<string, DiscoveredQuickAction> _discoveredQuickActions = new(StringComparer.Ordinal);
     private List<PaletteCommand>? _quickActionCommandSource;
+    private readonly Dictionary<string, QuickActionItem> _observedQuickActions = new(StringComparer.Ordinal);
+    private readonly QuickActionObservationLog _quickActionObservations = new();
+    private string? _observedQuickActionSignature;
     public bool IsQuickActionsEnabled
     {
         get => _isQuickActionsEnabled;
@@ -199,6 +202,7 @@ public partial class MainWindow
     {
         if (!IsQuickActionsEnabled)
         {
+            _observedQuickActions.Clear();
             if (QuickActions.Count == 0) return;
             QuickActions.Clear();
             OnPropertyChanged(nameof(HasQuickActions));
@@ -310,7 +314,7 @@ public partial class MainWindow
             discoveredActions = QuickActionDiscovery.Discover(
                 BuildQuickActionCommandRegistrations(),
                 new QuickActionDiscoveryContext(extension, hasDocument, IsFolderOpen, IsTerminalSupported),
-                QuickActionCommandCoveredIds,
+                QuickActionIdentity.CoveredCommandIds,
                 ex => KodoDiagnostics.LogWarning("A Quick Action command availability check failed.", ex));
 
         _discoveredQuickActions.Clear();
@@ -319,6 +323,14 @@ public partial class MainWindow
             _discoveredQuickActions[discovered.Item.Id] = discovered;
             actions.Add(discovered.Item);
         }
+
+        var observationSignature = $"{_currentFilePath}|{IsFolderOpen}|{IsTerminalSupported}";
+        if (!string.Equals(observationSignature, _observedQuickActionSignature, StringComparison.Ordinal))
+        {
+            _observedQuickActionSignature = observationSignature;
+            _observedQuickActions.Clear();
+        }
+        foreach (var action in actions) _observedQuickActions[action.Id] = action;
 
         var rankedActions = UserInsight.RankQuickActions(actions, DateTime.UtcNow, maximum: 3);
 
@@ -345,10 +357,12 @@ public partial class MainWindow
             !Directory.Exists(_currentFolderPath))
             return false;
 
-        return CreateTerminalSession(workingDirectoryOverride: _currentFolderPath);
+        if (!CreateTerminalSession(workingDirectoryOverride: _currentFolderPath)) return false;
+        RecordObservedAction("ProjectTerminal");
+        return true;
     }
 
-    private async Task ExecuteDiscoveredQuickActionAsync(string id, QuickActionItem? selected)
+    private async Task ExecuteDiscoveredQuickActionAsync(string id)
     {
         if (!_discoveredQuickActions.TryGetValue(id, out var discovered)) return;
 
@@ -358,12 +372,43 @@ public partial class MainWindow
                 await discovered.Command.Execute();
                 return true;
             },
-            () => RecordQuickActionSelection(id, selected ?? discovered.Item));
+            () => RecordObservedAction(id));
 
         if (result.Error is null) return;
         KodoDiagnostics.LogWarning($"Quick Action '{id}' failed.", result.Error);
         ShowStatusBarMessage($"{discovered.Command.Title} failed. See the log for details.");
     }
+
+    private void RecordObservedAction(string actionId)
+    {
+        if (string.IsNullOrWhiteSpace(actionId) || !IsQuickActionsLearningEnabled) return;
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => RecordObservedAction(actionId));
+            return;
+        }
+
+        var resolvedId = QuickActionIdentity.ForCommand(actionId);
+        if (resolvedId.Length == 0) return;
+
+        if (ResolveObservedQuickAction(resolvedId) is not { } action) return;
+        if (!_quickActionObservations.TryRecord(action.Id, DateTime.UtcNow)) return;
+        RecordQuickActionSelection(action.Id, action);
+    }
+
+    private QuickActionItem? ResolveObservedQuickAction(string actionId)
+    {
+        if (_observedQuickActions.TryGetValue(actionId, out var observed)) return observed;
+        if (_discoveredQuickActions.TryGetValue(actionId, out var discovered)) return discovered.Item;
+        return QuickActions.FirstOrDefault(action => action.Id == actionId);
+    }
+
+    private Action WrapObservedAction(string actionId, Action? onSuccess) =>
+        () =>
+        {
+            onSuccess?.Invoke();
+            RecordObservedAction(actionId);
+        };
 
     private IEnumerable<QuickActionCommandRegistration> BuildQuickActionCommandRegistrations()
     {
@@ -409,35 +454,6 @@ public partial class MainWindow
         _ => KodoIcons.EllipsisHorizontal,
     };
 
-    private static readonly HashSet<string> QuickActionCommandCoveredIds = new(StringComparer.Ordinal)
-    {
-        "cmd.quick-fix",
-        "cmd.next-problem",
-        "cmd.previous-problem",
-        "cmd.change-all-occurrences",
-        "cmd.rename-symbol",
-        "cmd.go-to-definition",
-        "cmd.find-all-references",
-        "cmd.go-to-type-definition",
-        "cmd.go-to-implementation",
-        "cmd.show-document-symbols",
-        "cmd.show-signature-help",
-        "cmd.format-document",
-        "cmd.find-in-file",
-        "cmd.toggle-line-comment",
-        "cmd.select-current-line",
-        "cmd.move-line-up",
-        "cmd.move-line-down",
-        "cmd.duplicate-line-up",
-        "cmd.duplicate-line-down",
-        "cmd.delete-line",
-        "cmd.insert-line-above",
-        "cmd.insert-line-below",
-        "cmd.toggle-bookmark",
-        "cmd.find-in-project",
-        "cmd.open-workspace-in-terminal",
-    };
-
     private bool HasQuickActionLspCapability(string method)
     {
         if (!LspEnabled || string.IsNullOrWhiteSpace(_currentFilePath) ||
@@ -461,8 +477,7 @@ public partial class MainWindow
 
     private async Task ExecuteQuickAction(string id)
     {
-        var selectedAction = QuickActions.FirstOrDefault(action => action.Id == id);
-        void Record() => RecordQuickActionSelection(id, selectedAction);
+        void Record() => RecordObservedAction(id);
         switch (id)
         {
             case "QuickFix": await RunCodeActionsWithFallbackAsync(CodeActionScope.QuickFix, Record); break;
@@ -518,7 +533,7 @@ public partial class MainWindow
                 }
                 break;
             default:
-                await ExecuteDiscoveredQuickActionAsync(id, selectedAction);
+                await ExecuteDiscoveredQuickActionAsync(id);
                 break;
         }
     }

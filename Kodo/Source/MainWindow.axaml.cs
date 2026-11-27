@@ -8537,8 +8537,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void ToggleTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
         ToggleTerminalPanel();
 
-    private void NewTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
-        CreateTerminalSession();
+    private void NewTerminalButton_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (CreateTerminalSession()) RecordObservedAction("cmd.new-terminal");
+    }
 
     private void ClearTerminalButton_OnClick(object? sender, RoutedEventArgs e) =>
         ClearActiveTerminal();
@@ -10530,7 +10532,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (string.IsNullOrEmpty(selectedText)) return;
 
         FindText = selectedText;
-        OpenSearchPanel(SearchMode.FindInFile);
+        OpenSearchPanel(SearchMode.FindInFile, recordObservation: false);
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -10539,6 +10541,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             replaceTextBox.Focus();
             replaceTextBox.SelectAll();
         }, DispatcherPriority.Background);
+        RecordObservedAction("ChangeOccurrences");
     }
 
     private async void EditorCutMenuItem_OnClick(object? sender, RoutedEventArgs e)
@@ -11568,7 +11571,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }
         else if (MatchesKeybind(e, "NewTerminalSession"))
         {
-            CreateTerminalSession();
+            if (CreateTerminalSession()) RecordObservedAction("cmd.new-terminal");
             e.Handled = true;
         }
         else if (MatchesKeybind(e, "ToggleSplitEditor"))

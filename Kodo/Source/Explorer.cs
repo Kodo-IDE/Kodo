@@ -1945,7 +1945,8 @@ public partial class MainWindow
         var directory = Path.GetDirectoryName(tab.Path);
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
 
-        CreateTerminalSession(workingDirectoryOverride: directory);
+        if (CreateTerminalSession(workingDirectoryOverride: directory))
+            RecordObservedAction("cmd.open-active-file-folder-in-terminal");
     }
 
     private async Task CreateExplorerEntryAsync(string directory, string baseName, string? ext, bool isFile)
@@ -2048,7 +2049,8 @@ public partial class MainWindow
         var directory = item.IsDirectory ? item.FullPath : Path.GetDirectoryName(item.FullPath);
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory)) return;
 
-        CreateTerminalSession(workingDirectoryOverride: directory);
+        if (CreateTerminalSession(workingDirectoryOverride: directory))
+            RecordObservedAction("cmd.open-active-file-folder-in-terminal");
     }
 
     private void CopyFileNameMenuItem_OnClick(object? sender, RoutedEventArgs e)
