@@ -198,6 +198,28 @@ public sealed class PreviewHighlightConverter : IMultiValueConverter
         return inlines;
     }
 }
+public sealed class DepthBrushConverter : IValueConverter
+{
+    public static readonly DepthBrushConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        new SolidColorBrush(DialogHeader.DepthColor(value as IBrush));
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+public sealed class DepthShadowConverter : IValueConverter
+{
+    public static readonly DepthShadowConverter Instance = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        BoxShadows.Parse($"0 3 0 0 {DialogHeader.Hex(DialogHeader.DepthColor(value as IBrush))}, 0 6 12 0 #70000000");
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 public sealed class BrushColorConverter : IValueConverter
 {
     public static readonly BrushColorConverter Instance = new();

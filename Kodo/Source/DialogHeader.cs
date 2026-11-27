@@ -1,8 +1,10 @@
 // Licensed under the GNU GPL-v3.0
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Data;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Kodo.Models;
 using System;
 
 namespace Kodo;
@@ -32,18 +34,22 @@ internal static class DialogHeader
     public static Border CreateBadge(IBrush badge, IBrush icon, string svg, double tile = 36, double glyph = 20)
     {
         var iconColor = (icon as ISolidColorBrush)?.Color ?? Color.Parse("#FFFFFF");
-        return new Border
+        var badgeBorder = new Border
         {
             Width = tile,
             Height = tile,
             CornerRadius = KodoDesignTokens.ControlRadius,
             Background = badge,
             VerticalAlignment = VerticalAlignment.Center,
-            BoxShadow = SettingsStore.Current.Fluent2ThemeEnabled
-                ? BoxShadows.Parse($"0 3 0 0 {Hex(DepthColor(badge))}, 0 6 12 0 #70000000")
-                : default,
             Child = BuildImage(svg, iconColor, glyph),
         };
+        if (SettingsStore.Current.Fluent2ThemeEnabled)
+            badgeBorder.Bind(Border.BoxShadowProperty, new Binding(nameof(Border.Background))
+            {
+                Source = badgeBorder,
+                Converter = DepthShadowConverter.Instance,
+            });
+        return badgeBorder;
     }
 
     public static Control WithDepth(Button button)
@@ -51,18 +57,23 @@ internal static class DialogHeader
         if (!SettingsStore.Current.Fluent2ThemeEnabled)
             return button;
         button.Classes.Add("depth");
-        return new Border
+        var depth = new Border
         {
-            Background = new SolidColorBrush(DepthColor(button.Background)),
             CornerRadius = button.CornerRadius,
             Padding = new Thickness(0, 0, 0, 3),
             Margin = new Thickness(0, 0, 0, -3),
             BoxShadow = BoxShadows.Parse("0 4 12 0 #70000000"),
             Child = button,
         };
+        depth.Bind(Border.BackgroundProperty, new Binding(nameof(Button.Background))
+        {
+            Source = button,
+            Converter = DepthBrushConverter.Instance,
+        });
+        return depth;
     }
 
-    private static Color DepthColor(IBrush? brush)
+    internal static Color DepthColor(IBrush? brush)
     {
         var color = (brush as ISolidColorBrush)?.Color ?? Color.Parse("#16151C");
         return Color.FromRgb(
@@ -71,7 +82,7 @@ internal static class DialogHeader
             (byte)Math.Round(color.B * 0.45));
     }
 
-    private static string Hex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    internal static string Hex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 
     public static Border CreateDivider(IBrush borderBrush) =>
         new Border
