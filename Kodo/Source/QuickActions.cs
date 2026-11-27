@@ -359,20 +359,22 @@ public partial class MainWindow
     {
         if (!_discoveredQuickActions.TryGetValue(id, out var discovered)) return;
 
+        var execution = QuickActionExecution.Begin();
         var result = await QuickActionRunner.RunAsync(
             async () =>
             {
+                if (discovered.Command.IsAvailable?.Invoke() == false) return false;
                 await discovered.Command.Execute();
                 return true;
             },
-            () => RecordObservedAction(id));
+            QuickActionIdentity.IsObservedByExecution(id) ? null : () => RecordObservedAction(id, execution.Id));
 
         if (result.Error is null) return;
         KodoDiagnostics.LogWarning($"Quick Action '{id}' failed.", result.Error);
         ShowStatusBarMessage($"{discovered.Command.Title} failed. See the log for details.");
     }
 
-    private void RecordObservedAction(string actionId) => RecordObservedAction(actionId, Guid.NewGuid());
+    private void RecordObservedAction(string actionId) => RecordObservedAction(actionId, QuickActionExecution.Begin().Id);
 
     private void RecordObservedAction(string actionId, Guid executionId)
     {
@@ -405,15 +407,8 @@ public partial class MainWindow
         return QuickActions.FirstOrDefault(action => action.Id == actionId);
     }
 
-    private Action WrapObservedAction(string actionId, Action? onSuccess)
-    {
-        var executionId = Guid.NewGuid();
-        return () =>
-        {
-            onSuccess?.Invoke();
-            RecordObservedAction(actionId, executionId);
-        };
-    }
+    private Action WrapObservedAction(string actionId, Action? onSuccess, QuickActionExecution? execution = null) =>
+        QuickActionObservation.Wrap(actionId, onSuccess, RecordObservedAction, execution);
 
     private IEnumerable<QuickActionCommandRegistration> BuildQuickActionCommandRegistrations()
     {
