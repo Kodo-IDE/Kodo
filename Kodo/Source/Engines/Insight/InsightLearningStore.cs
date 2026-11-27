@@ -33,6 +33,8 @@ public sealed class InsightLearningStore
     private const double ModelLearningRate = 0.35;
     private const double ModelRegularization = 0.01;
     private const double MaximumModelWeight = 3;
+    private const string FileFeaturePrefix = "file:";
+    private const string UnknownFileFeature = "file:unknown";
     private const string KeySeparator = "\u001f";
     private const string BackupSuffix = ".bak";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, MaxDepth = 8 };
@@ -627,10 +629,22 @@ public sealed class InsightLearningStore
         var features = NormalizeFeatures(action.LearningFeatures);
         if (!features.Any(feature => ReadModelWeight(action.Id, feature, utcNow) > 0))
             return contextual;
+        if (!MatchesLearnedFileType(action.Id, features, utcNow))
+            return contextual;
 
         var ramp = Math.Min(1, bias.Observations / (double)(MinimumModelObservations * 2));
         var modelled = GetModelAdjustment(action.Id, features, utcNow) * ramp;
         return Math.Clamp(Math.Max(contextual, modelled), 0, MaximumQuickActionAdjustment);
+    }
+
+    private bool MatchesLearnedFileType(string actionId, string[] features, DateTime utcNow)
+    {
+        var currentFile = features.FirstOrDefault(feature =>
+            feature.StartsWith(FileFeaturePrefix, StringComparison.Ordinal));
+        if (currentFile is null || string.Equals(currentFile, UnknownFileFeature, StringComparison.Ordinal))
+            return true;
+
+        return ReadModelWeight(actionId, currentFile, utcNow) > 0;
     }
 
     private double ReadModelWeight(string actionId, string feature, DateTime utcNow)

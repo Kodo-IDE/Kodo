@@ -27,6 +27,7 @@ public partial class MainWindow
         {
             _pluginPaletteCommands[token] = (ownerName, command);
             RefreshOpenCommandPaletteForPluginCommands();
+            RefreshQuickActions();
         }
 
         if (Dispatcher.UIThread.CheckAccess()) Add();
@@ -37,8 +38,9 @@ public partial class MainWindow
     {
         void Remove()
         {
-            if (_pluginPaletteCommands.Remove(token))
-                RefreshOpenCommandPaletteForPluginCommands();
+            if (!_pluginPaletteCommands.Remove(token)) return;
+            RefreshOpenCommandPaletteForPluginCommands();
+            RefreshQuickActions();
         }
 
         if (Dispatcher.UIThread.CheckAccess()) Remove();

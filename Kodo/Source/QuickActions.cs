@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Kodo.Insight;
 using Kodo.Models;
+using Kodo.QuickActions;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -24,6 +25,8 @@ public partial class MainWindow
         _userInsight ??= InsightUserIntelligence.Load(KodoPaths.SettingsWritePath("quick-actions-learning.json"));
     private readonly DispatcherTimer _insightSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     public ObservableCollection<QuickActionItem> QuickActions { get; } = new();
+    private readonly Dictionary<string, DiscoveredQuickAction> _discoveredQuickActions = new(StringComparer.Ordinal);
+    private List<PaletteCommand>? _quickActionCommandSource;
     public bool IsQuickActionsEnabled
     {
         get => _isQuickActionsEnabled;
@@ -302,6 +305,21 @@ public partial class MainWindow
             AddQuickAction(actions, "CopyProjectPath", "Copy Project Path", KodoIcons.CopyProjectPath, Context("project"), 63);
         }
 
+        IReadOnlyList<DiscoveredQuickAction> discoveredActions = [];
+        if (hasDocument || IsFolderOpen)
+            discoveredActions = QuickActionDiscovery.Discover(
+                BuildQuickActionCommandRegistrations(),
+                new QuickActionDiscoveryContext(extension, hasDocument, IsFolderOpen, IsTerminalSupported),
+                QuickActionCommandCoveredIds,
+                ex => KodoDiagnostics.LogWarning("A Quick Action command availability check failed.", ex));
+
+        _discoveredQuickActions.Clear();
+        foreach (var discovered in discoveredActions)
+        {
+            _discoveredQuickActions[discovered.Item.Id] = discovered;
+            actions.Add(discovered.Item);
+        }
+
         var rankedActions = UserInsight.RankQuickActions(actions, DateTime.UtcNow, maximum: 3);
 
         if (QuickActions.Count == rankedActions.Count)
@@ -320,6 +338,105 @@ public partial class MainWindow
         foreach (var action in rankedActions) QuickActions.Add(action);
         OnPropertyChanged(nameof(HasQuickActions));
     }
+
+    private bool TryOpenWorkspaceInIntegratedTerminal()
+    {
+        if (!IsFolderOpen || !IsTerminalSupported || string.IsNullOrWhiteSpace(_currentFolderPath) ||
+            !Directory.Exists(_currentFolderPath))
+            return false;
+
+        return CreateTerminalSession(workingDirectoryOverride: _currentFolderPath);
+    }
+
+    private async Task ExecuteDiscoveredQuickActionAsync(string id, QuickActionItem? selected)
+    {
+        if (!_discoveredQuickActions.TryGetValue(id, out var discovered)) return;
+
+        var result = await QuickActionRunner.RunAsync(
+            async () =>
+            {
+                await discovered.Command.Execute();
+                return true;
+            },
+            () => RecordQuickActionSelection(id, selected ?? discovered.Item));
+
+        if (result.Error is null) return;
+        KodoDiagnostics.LogWarning($"Quick Action '{id}' failed.", result.Error);
+        ShowStatusBarMessage($"{discovered.Command.Title} failed. See the log for details.");
+    }
+
+    private IEnumerable<QuickActionCommandRegistration> BuildQuickActionCommandRegistrations()
+    {
+        foreach (var command in QuickActionCommandSource())
+        {
+            if (command.Id.Length == 0) continue;
+            yield return new QuickActionCommandRegistration(
+                command.Id, command.Title, command.Category, QuickActionIconFor(command.Category), command.IsAvailable, command.Execute);
+        }
+
+        foreach (var entry in _pluginPaletteCommands.Values
+                     .OrderBy(item => item.OwnerName, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(item => item.Command.Title, StringComparer.OrdinalIgnoreCase))
+            yield return new QuickActionCommandRegistration(
+                entry.Command.Id, entry.Command.Title, entry.Command.Category, KodoIcons.PuzzlePiece, entry.Command.CanExecute, entry.Command.Execute);
+    }
+
+    private List<PaletteCommand> QuickActionCommandSource()
+    {
+        if (_quickActionCommandSource is not null) return _quickActionCommandSource;
+        try
+        {
+            return _quickActionCommandSource = BuildCommandPaletteCommands();
+        }
+        catch (Exception ex)
+        {
+            KodoDiagnostics.LogWarning("Quick Action command discovery could not read the command list.", ex);
+            return _quickActionCommandSource = [];
+        }
+    }
+
+    private static string QuickActionIconFor(string category) => category switch
+    {
+        "Terminal" => KodoIcons.CommandLine,
+        "Search" => KodoIcons.Magnifier,
+        "Run" or "Build" => KodoIcons.ArrowPath,
+        "Editor" => KodoIcons.Pencil,
+        "Navigation" => KodoIcons.ChevronRight,
+        "View" => KodoIcons.Square,
+        "File" => KodoIcons.DocumentText,
+        "Appearance" => KodoIcons.Droplet,
+        "Git" => KodoIcons.Branch,
+        _ => KodoIcons.EllipsisHorizontal,
+    };
+
+    private static readonly HashSet<string> QuickActionCommandCoveredIds = new(StringComparer.Ordinal)
+    {
+        "cmd.quick-fix",
+        "cmd.next-problem",
+        "cmd.previous-problem",
+        "cmd.change-all-occurrences",
+        "cmd.rename-symbol",
+        "cmd.go-to-definition",
+        "cmd.find-all-references",
+        "cmd.go-to-type-definition",
+        "cmd.go-to-implementation",
+        "cmd.show-document-symbols",
+        "cmd.show-signature-help",
+        "cmd.format-document",
+        "cmd.find-in-file",
+        "cmd.toggle-line-comment",
+        "cmd.select-current-line",
+        "cmd.move-line-up",
+        "cmd.move-line-down",
+        "cmd.duplicate-line-up",
+        "cmd.duplicate-line-down",
+        "cmd.delete-line",
+        "cmd.insert-line-above",
+        "cmd.insert-line-below",
+        "cmd.toggle-bookmark",
+        "cmd.find-in-project",
+        "cmd.open-workspace-in-terminal",
+    };
 
     private bool HasQuickActionLspCapability(string method)
     {
@@ -384,9 +501,13 @@ public partial class MainWindow
             case "ToggleBookmark": if (EditorTextBox?.Document is not null && ActiveRelativePath() is not null) { ToggleBookmarkAtCaret(); Record(); } break;
             case "ChangeOccurrences": if (EditorTextBox?.TextArea?.Selection is { IsEmpty: false }) { EditorChangeAllOccurrencesMenuItem_OnClick(null, new RoutedEventArgs()); Record(); } break;
             case "ProjectTerminal":
-                var terminalCount = TerminalSessions.Count;
-                CreateTerminalSession(workingDirectoryOverride: _currentFolderPath);
-                if (TerminalSessions.Count > terminalCount) Record();
+                var terminalResult = await QuickActionRunner.RunAsync(
+                    () => Task.FromResult(TryOpenWorkspaceInIntegratedTerminal()), Record);
+                if (terminalResult.Error is not null)
+                {
+                    KodoDiagnostics.LogWarning("Quick Action 'ProjectTerminal' failed.", terminalResult.Error);
+                    ShowStatusBarMessage("The workspace terminal could not be opened.");
+                }
                 break;
             case "ProjectSearch": if (IsFolderOpen) { OpenSearchPanel(SearchMode.ProjectSearch); Record(); } break;
             case "CopyProjectPath":
@@ -395,6 +516,9 @@ public partial class MainWindow
                     await clipboard.SetTextAsync(_currentFolderPath);
                     Record();
                 }
+                break;
+            default:
+                await ExecuteDiscoveredQuickActionAsync(id, selectedAction);
                 break;
         }
     }
