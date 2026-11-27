@@ -3896,10 +3896,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (!IsMinimapVisible || editor?.Document is not { } document || editor.TextArea?.TextView is not { } textView || minimap is null)
             return;
 
+        var lineHeight = textView.DefaultLineHeight;
+        var visibleLines = lineHeight > 0 && textView.Bounds.Height > 0
+            ? Math.Max(1, (int)Math.Floor(textView.Bounds.Height / lineHeight))
+            : 0;
+        SetMinimapScrollability(editor, visibleLines == 0 || document.LineCount > visibleLines);
+
         if (TryGetEditorVisibleLines(editor) is { } range)
         {
             minimap?.SetViewport(range.StartLine, Math.Max(range.StartLine, range.EndLine));
-            SetMinimapScrollability(editor, range.EndLine - range.StartLine + 1 < document.LineCount);
             return;
         }
 
@@ -3907,13 +3912,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             var topPosition = textView.GetPositionFloor(new Point(textView.ScrollOffset.X, textView.ScrollOffset.Y));
             var topLine = Math.Clamp(topPosition?.Line ?? 1, 1, document.LineCount);
-            var visibleLines = Math.Max(1, (int)Math.Ceiling(textView.Bounds.Height / Math.Max(1, textView.DefaultLineHeight)));
-            minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + visibleLines));
-            SetMinimapScrollability(editor, document.LineCount > visibleLines);
+            minimap?.SetViewport(topLine, Math.Min(document.LineCount, topLine + Math.Max(1, visibleLines)));
         }
         catch
         {
-            SetMinimapScrollability(editor, document.LineCount > 1);
         }
     }
 
