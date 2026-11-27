@@ -11,8 +11,24 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: Run tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run test project
+        run: dotnet test Kodo/Tests/Kodo.Tests/Kodo.Tests.csproj -c Release --logger "console;verbosity=normal"
+
   windows:
     name: Build on Windows
+    needs: test
     runs-on: windows-latest
     steps:
       - name: Checkout source
@@ -42,6 +58,7 @@ jobs:
 
   linux:
     name: Build on ${{ matrix.distro }}
+    needs: test
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.image }}
