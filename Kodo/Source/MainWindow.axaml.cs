@@ -3786,6 +3786,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = exePath,
+                    Arguments = "--relaunch",
                     UseShellExecute = true,
                 });
                 Environment.Exit(0);
@@ -5915,7 +5916,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public IBrush WarningBorderBrush { get; } = new SolidColorBrush(KodoDesignTokens.WarningBorderColor);
 
     public IBrush AccentForegroundBrush { get; private set; } = Brushes.White;
-
     private static Color DarkenColor(Color c, double amount)
     {
         byte Adjust(byte ch) => (byte)Math.Clamp(ch * (1 - amount), 0, 255);
@@ -9495,6 +9495,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = exePath,
+                    Arguments = "--relaunch",
                     UseShellExecute = true,
                 });
                 Environment.Exit(0);
@@ -9636,7 +9637,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = exePath,
-                    Arguments = "--reset-kodo",
+                    Arguments = "--reset-kodo --relaunch",
                     UseShellExecute = true,
                 });
                 Environment.Exit(0);

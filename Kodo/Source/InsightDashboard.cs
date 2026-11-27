@@ -336,6 +336,7 @@ public partial class MainWindow
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
                     FileName = exePath,
+                    Arguments = "--relaunch",
                     UseShellExecute = true,
                 });
                 Environment.Exit(0);
