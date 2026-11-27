@@ -456,6 +456,7 @@ public partial class MainWindow
         try { AccentBrush = GetCachedBrush(resolvedAccent); } catch { AccentBrush = GetCachedBrush(KodoAccentHex); }
         AccentForegroundBrush = GetAccentForeground(AccentBrush);
         SyncSystemAccentResources(AccentBrush);
+        RefreshAccentDepthResources();
     }
 
     private void ApplyThemeBrushes(string themeName) { SetThemeBrushesCore(themeName); RefreshSystemThemePreview(); }
@@ -480,6 +481,7 @@ public partial class MainWindow
             SyncSystemAccentResources(AccentBrush);
             OnPropertyChanged(nameof(AccentBrush));
             OnPropertyChanged(nameof(AccentForegroundBrush));
+            RefreshAccentDepthResources();
             ApplyThemeToEditor();
             return;
         }
@@ -497,6 +499,7 @@ public partial class MainWindow
         SyncSystemAccentResources(AccentBrush);
         OnPropertyChanged(nameof(AccentBrush));
         OnPropertyChanged(nameof(AccentForegroundBrush));
+        RefreshAccentDepthResources();
         ApplyThemeToEditor();
     }
 
