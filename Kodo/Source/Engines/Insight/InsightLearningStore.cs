@@ -23,7 +23,7 @@ public sealed class InsightLearningStore
     internal const int MinimumQueryLength = 2;
     internal const int MaximumQueryLength = 64;
     internal const double MaximumQueryWeight = 8;
-    public const double MaximumQuickActionAdjustment = 10;
+    public const double MaximumQuickActionAdjustment = 30;
     public const double MaximumPaletteAdjustment = 1.5;
 
     public const double MaximumQueryAssociationAdjustment = 30;
@@ -614,7 +614,7 @@ public sealed class InsightLearningStore
         if (string.IsNullOrWhiteSpace(actionId)) return 0;
         var logit = ReadModelWeight(actionId, "bias", utcNow) +
                     features.Sum(feature => ReadModelWeight(actionId, feature, utcNow));
-        return Math.Clamp((Logistic(logit) - 0.5) * 3, 0, MaximumPaletteAdjustment);
+        return Math.Clamp((Logistic(logit) - 0.5) * 2, 0, 1) * MaximumQuickActionAdjustment;
     }
 
     private double GetPersonalizedAdjustment(QuickActionItem action, DateTime utcNow)
