@@ -11,10 +11,9 @@ public static class QuickActionRunner
     public static Task<QuickActionExecutionResult> RunAsync(Func<Task<bool>> action) =>
         RunAsync(action, static () => { });
 
-    public static async Task<QuickActionExecutionResult> RunAsync(Func<Task<bool>> action, Action onSuccess)
+    public static async Task<QuickActionExecutionResult> RunAsync(Func<Task<bool>> action, Action? onSuccess)
     {
         ArgumentNullException.ThrowIfNull(action);
-        ArgumentNullException.ThrowIfNull(onSuccess);
 
         bool succeeded;
         try
@@ -28,7 +27,7 @@ public static class QuickActionRunner
 
         if (!succeeded) return new QuickActionExecutionResult(false, null);
 
-        onSuccess();
+        onSuccess?.Invoke();
         return new QuickActionExecutionResult(true, null);
     }
 }
