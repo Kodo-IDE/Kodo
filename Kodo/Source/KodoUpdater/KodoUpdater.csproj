@@ -29,8 +29,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="..\Engines\HotfixContracts.cs" Link="HotfixContracts.cs" />
-    <Compile Include="..\Engines\HotfixShared.cs" Link="HotfixShared.cs" />
+    <Compile Include="..\Infrastructure\HotfixContracts.cs" Link="HotfixContracts.cs" />
+    <Compile Include="..\Infrastructure\HotfixShared.cs" Link="HotfixShared.cs" />
   </ItemGroup>
 
 </Project>
