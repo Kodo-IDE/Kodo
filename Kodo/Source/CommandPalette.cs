@@ -48,7 +48,8 @@ public partial class MainWindow
         bool KeepOpen = false,
         string Id = "",
         IReadOnlyList<int>? TitleMatches = null,
-        IReadOnlyList<int>? DetailMatches = null);
+        IReadOnlyList<int>? DetailMatches = null,
+        Func<string>? Confirm = null);
 
     private sealed record QuickAccessFile(string Path, string FileName, string Relative, string Directory);
 
@@ -1100,6 +1101,9 @@ public partial class MainWindow
         await OpenFolderFromPathAsync(path);
     }
 
+    private string IndentationConfirmation() =>
+        $"Indentation: {(InsertSpaces ? $"{TabSize} spaces" : $"tabs, size {TabSize}")}.";
+
     private async Task ApplyPaletteFileEncodingAsync(System.Text.Encoding encoding)
     {
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
@@ -1362,24 +1366,24 @@ public partial class MainWindow
             new("Clear All Bookmarks", "Navigation", "", async () => await ClearAllBookmarksAsync(), () => IsFolderOpen && HasBookmarks, "remove bookmarks workspace", Id: "cmd.clear-all-bookmarks"),
             new("Show Bookmarks", "View", "", () => { ShowBookmarks(); return Task.CompletedTask; }, () => IsFolderOpen, "bookmark list panel", Id: "cmd.show-bookmarks"),
             new("Change File Encoding…", "File", "", () => { SetPaletteText("> Encoding:"); return Task.CompletedTask; }, () => hasWritableTextFile, "charset utf8 bom utf16 codepage", KeepOpen: true, Id: "cmd.change-file-encoding"),
-            new("Encoding: UTF-8", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(false)), () => hasWritableTextFile, "charset no bom", Id: "cmd.encoding-utf-8"),
-            new("Encoding: UTF-8 with BOM", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(true)), () => hasWritableTextFile, "charset signature", Id: "cmd.encoding-utf-8-with-bom"),
-            new("Encoding: UTF-16 LE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.Unicode), () => hasWritableTextFile, "charset little endian unicode", Id: "cmd.encoding-utf-16-le"),
-            new("Encoding: UTF-16 BE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.BigEndianUnicode), () => hasWritableTextFile, "charset big endian unicode", Id: "cmd.encoding-utf-16-be"),
-            new("Encoding: UTF-32", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.UTF32), () => hasWritableTextFile, "charset unicode", Id: "cmd.encoding-utf-32"),
-            new("Encoding: Windows-1252", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.GetEncoding(1252)), () => hasWritableTextFile, "charset ansi", Id: "cmd.encoding-windows-1252"),
-            new("Encoding: ASCII", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.ASCII), () => hasWritableTextFile, "charset", Id: "cmd.encoding-ascii"),
+            new("Encoding: UTF-8", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(false)), () => hasWritableTextFile, "charset no bom", Id: "cmd.encoding-utf-8", Confirm: () => "File encoding: UTF-8."),
+            new("Encoding: UTF-8 with BOM", "File", "", () => ApplyPaletteFileEncodingAsync(new System.Text.UTF8Encoding(true)), () => hasWritableTextFile, "charset signature", Id: "cmd.encoding-utf-8-with-bom", Confirm: () => "File encoding: UTF-8 with BOM."),
+            new("Encoding: UTF-16 LE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.Unicode), () => hasWritableTextFile, "charset little endian unicode", Id: "cmd.encoding-utf-16-le", Confirm: () => "File encoding: UTF-16 LE."),
+            new("Encoding: UTF-16 BE", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.BigEndianUnicode), () => hasWritableTextFile, "charset big endian unicode", Id: "cmd.encoding-utf-16-be", Confirm: () => "File encoding: UTF-16 BE."),
+            new("Encoding: UTF-32", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.UTF32), () => hasWritableTextFile, "charset unicode", Id: "cmd.encoding-utf-32", Confirm: () => "File encoding: UTF-32."),
+            new("Encoding: Windows-1252", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.GetEncoding(1252)), () => hasWritableTextFile, "charset ansi", Id: "cmd.encoding-windows-1252", Confirm: () => "File encoding: Windows-1252."),
+            new("Encoding: ASCII", "File", "", () => ApplyPaletteFileEncodingAsync(System.Text.Encoding.ASCII), () => hasWritableTextFile, "charset", Id: "cmd.encoding-ascii", Confirm: () => "File encoding: ASCII."),
             new("Change Line Ending…", "File", "", () => { SetPaletteText("> Line Ending:"); return Task.CompletedTask; }, () => hasWritableTextFile, "eol newline crlf lf cr", KeepOpen: true, Id: "cmd.change-line-ending"),
-            new("Line Ending: LF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.LF), () => hasWritableTextFile, "eol unix macos newline", Id: "cmd.line-ending-lf"),
-            new("Line Ending: CRLF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CRLF), () => hasWritableTextFile, "eol windows newline", Id: "cmd.line-ending-crlf"),
-            new("Line Ending: CR", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CR), () => hasWritableTextFile, "eol classic mac newline", Id: "cmd.line-ending-cr"),
+            new("Line Ending: LF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.LF), () => hasWritableTextFile, "eol unix macos newline", Id: "cmd.line-ending-lf", Confirm: () => "Line endings: LF."),
+            new("Line Ending: CRLF", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CRLF), () => hasWritableTextFile, "eol windows newline", Id: "cmd.line-ending-crlf", Confirm: () => "Line endings: CRLF."),
+            new("Line Ending: CR", "File", "", () => ApplyPaletteLineEndingAsync(Kodo.Models.LineEnding.CR), () => hasWritableTextFile, "eol classic mac newline", Id: "cmd.line-ending-cr", Confirm: () => "Line endings: CR."),
             new("Change Indentation…", "Editor", "", () => { SetPaletteText("> Indentation:"); return Task.CompletedTask; }, () => HasDocument(), "spaces tabs tab size indent", KeepOpen: true, Id: "cmd.change-indentation"),
-            new("Indentation: Spaces 2", "Editor", "", () => { InsertSpaces = true; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-2"),
-            new("Indentation: Spaces 4", "Editor", "", () => { InsertSpaces = true; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-4"),
-            new("Indentation: Spaces 8", "Editor", "", () => { InsertSpaces = true; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-8"),
-            new("Indentation: Tabs, size 2", "Editor", "", () => { InsertSpaces = false; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-2"),
-            new("Indentation: Tabs, size 4", "Editor", "", () => { InsertSpaces = false; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-4"),
-            new("Indentation: Tabs, size 8", "Editor", "", () => { InsertSpaces = false; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-8"),
+            new("Indentation: Spaces 2", "Editor", "", () => { InsertSpaces = true; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-2", Confirm: () => IndentationConfirmation()),
+            new("Indentation: Spaces 4", "Editor", "", () => { InsertSpaces = true; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-4", Confirm: () => IndentationConfirmation()),
+            new("Indentation: Spaces 8", "Editor", "", () => { InsertSpaces = true; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-spaces-8", Confirm: () => IndentationConfirmation()),
+            new("Indentation: Tabs, size 2", "Editor", "", () => { InsertSpaces = false; TabSize = 2; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-2", Confirm: () => IndentationConfirmation()),
+            new("Indentation: Tabs, size 4", "Editor", "", () => { InsertSpaces = false; TabSize = 4; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-4", Confirm: () => IndentationConfirmation()),
+            new("Indentation: Tabs, size 8", "Editor", "", () => { InsertSpaces = false; TabSize = 8; return Task.CompletedTask; }, () => HasDocument(), "indent tab width", Id: "cmd.indentation-tabs-size-8", Confirm: () => IndentationConfirmation()),
             new("Close Active Tab", "File", "CloseTab", async () => { if (ActiveEditorTab is not null) await RequestCloseTabAsync(ActiveEditorTab); }, () => ActiveEditorTab is not null, Id: "cmd.close-active-tab"),
             new("Close Other Tabs", "File", "", CloseOtherTabsAsync, () => OpenTabs.Count > 1, "close tabs documents", Id: "cmd.close-other-tabs"),
             new("Close Tabs to the Right", "File", "", CloseTabsToRightAsync, () => ActiveEditorTab is not null && OpenTabs.IndexOf(ActiveEditorTab) < OpenTabs.Count - 1, "close tabs below after", Id: "cmd.close-tabs-to-the-right"),
@@ -1442,9 +1446,9 @@ public partial class MainWindow
             new("Insert Line Above", "Editor", "InsertLineAbove", () => WithEditor((doc, area) => EditorInsertLine(doc, area, false)), HasDocument, Id: "cmd.insert-line-above"),
             new("Insert Line Below", "Editor", "InsertLineBelow", () => WithEditor((doc, area) => EditorInsertLine(doc, area, true)), HasDocument, Id: "cmd.insert-line-below"),
             new("Toggle Current Line Highlight", "Editor", "ToggleHighlightCurrentLine", () => { EditorToggleHighlightCurrentLine(); return Task.CompletedTask; }, HasDocument, Id: "cmd.toggle-current-line-highlight"),
-            new(IsWordWrapEnabled ? "Disable Word Wrap" : "Enable Word Wrap", "Editor", "", () => { IsWordWrapEnabled = !IsWordWrapEnabled; return Task.CompletedTask; }, Keywords: "toggle wrap lines"),
-            new(IsInsightEnabled ? "Disable Insight" : "Enable Insight", "Editor", "", () => { IsInsightEnabled = !IsInsightEnabled; return Task.CompletedTask; }, Keywords: "toggle language intelligence completion errors"),
-            new(LspDiagnosticsEnabled ? "Disable Language Server Diagnostics" : "Enable Language Server Diagnostics", "Editor", "", () => { LspDiagnosticsEnabled = !LspDiagnosticsEnabled; return Task.CompletedTask; }, Keywords: "toggle lsp errors warnings"),
+            new(IsWordWrapEnabled ? "Disable Word Wrap" : "Enable Word Wrap", "Editor", "", () => { IsWordWrapEnabled = !IsWordWrapEnabled; return Task.CompletedTask; }, Keywords: "toggle wrap lines", Confirm: () => IsWordWrapEnabled ? "Word wrap enabled." : "Word wrap disabled."),
+            new(IsInsightEnabled ? "Disable Insight" : "Enable Insight", "Editor", "", () => { IsInsightEnabled = !IsInsightEnabled; return Task.CompletedTask; }, Keywords: "toggle language intelligence completion errors", Confirm: () => IsInsightEnabled ? "Insight enabled." : "Insight disabled."),
+            new(LspDiagnosticsEnabled ? "Disable Language Server Diagnostics" : "Enable Language Server Diagnostics", "Editor", "", () => { LspDiagnosticsEnabled = !LspDiagnosticsEnabled; return Task.CompletedTask; }, Keywords: "toggle lsp errors warnings", Confirm: () => LspDiagnosticsEnabled ? "Language server diagnostics enabled." : "Language server diagnostics disabled."),
 
             new("Toggle File Explorer", "View", "ToggleFileExplorer", () => { IsFileExplorerVisible = !IsFileExplorerVisible; return Task.CompletedTask; }, () => IsFolderOpen, Keywords: "sidebar", Id: "cmd.toggle-file-explorer"),
             new("New File in Workspace", "File", "", async () => { if (IsFolderOpen) await CreateExplorerEntryAsync(GetExplorerRootDirectory(), "new-file", ".txt", true); }, () => IsFolderOpen, "create explorer", Id: "cmd.new-file-in-workspace"),
@@ -1452,8 +1456,8 @@ public partial class MainWindow
             new("Refresh File Explorer", "View", "", async () => await RefreshExplorerTreeAsync(), () => IsFolderOpen, "reload refresh project tree", Id: "cmd.refresh-file-explorer"),
             new(_isFileTreeExpanded ? "Collapse All Folders" : "Expand All Folders", "View", "", ToggleExplorerExpansionAsync, () => IsFolderOpen, "explorer tree directories"),
             new("Toggle Terminal", "View", "ToggleTerminal", () => { ToggleTerminalPanel(); return Task.CompletedTask; }, Keywords: "panel console", Id: "cmd.toggle-terminal"),
-            new(IsMinimapVisible ? "Hide Minimap" : "Show Minimap", "View", "", () => { IsMinimapVisible = !IsMinimapVisible; return Task.CompletedTask; }, Keywords: "toggle overview code map"),
-        new(IsStickyScrollEnabled ? "Hide Sticky Scroll" : "Show Sticky Scroll", "View", "", () => { IsStickyScrollEnabled = !IsStickyScrollEnabled; return Task.CompletedTask; }, Keywords: "toggle sticky scroll scope context header"),
+            new(IsMinimapVisible ? "Hide Minimap" : "Show Minimap", "View", "", () => { IsMinimapVisible = !IsMinimapVisible; return Task.CompletedTask; }, Keywords: "toggle overview code map", Confirm: () => IsMinimapVisible ? "Minimap shown." : "Minimap hidden."),
+        new(IsStickyScrollEnabled ? "Hide Sticky Scroll" : "Show Sticky Scroll", "View", "", () => { IsStickyScrollEnabled = !IsStickyScrollEnabled; return Task.CompletedTask; }, Keywords: "toggle sticky scroll scope context header", Confirm: () => IsStickyScrollEnabled ? "Sticky scroll shown." : "Sticky scroll hidden."),
             new("Focus Terminal", "Terminal", "", () => { ToggleTerminalPanel(ensureVisible: true); FocusActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported, "activate switch panel", Id: "cmd.focus-terminal"),
             new("Zoom In", "View", "ZoomIn", () => { ZoomImageIn(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-in"),
             new("Zoom Out", "View", "ZoomOut", () => { ZoomImageOut(); return Task.CompletedTask; }, () => HasImagePreview, "image", Id: "cmd.zoom-out"),
@@ -1463,12 +1467,12 @@ public partial class MainWindow
             new("Restart Terminal", "Terminal", "", () => { RestartActiveTerminal(); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "shell relaunch", Id: "cmd.restart-terminal"),
             new("Close Terminal Session", "Terminal", "", () => { if (ActiveTerminalSession is { } session) CloseTerminalSession(session); return Task.CompletedTask; }, () => IsTerminalSupported && ActiveTerminalSession is not null, "remove shell", Id: "cmd.close-terminal-session"),
             new("Close All Terminal Sessions", "Terminal", "", () => { CloseAllTerminalSessions(); return Task.CompletedTask; }, () => IsTerminalSupported && TerminalSessions.Count > 0, "remove shells", Id: "cmd.close-all-terminal-sessions"),
-            new(IsAutoSaveEnabled ? "Disable Auto Save" : "Enable Auto Save", "File", "", () => { IsAutoSaveEnabled = !IsAutoSaveEnabled; return Task.CompletedTask; }, Keywords: "toggle automatic save"),
-            new(IsPerformanceModeEnabled ? "Disable Performance Mode" : "Enable Performance Mode", "Preferences", "", () => { IsPerformanceModeEnabled = !IsPerformanceModeEnabled; return Task.CompletedTask; }, Keywords: "toggle speed lag lightweight"),
-            new(IsStatusBarFilePathVisible ? "Show Short File Names in Status Bar" : "Show Full File Paths in Status Bar", "View", "", () => { IsStatusBarFilePathVisible = !IsStatusBarFilePathVisible; return Task.CompletedTask; }, Keywords: "toggle status path location"),
-            new("Use Dark Theme", "Appearance", "", () => { ApplyTheme("Dark"); return Task.CompletedTask; }, () => !IsDarkThemeActive, "appearance", Id: "cmd.use-dark-theme"),
-            new("Use Light Theme", "Appearance", "", () => { ApplyTheme("Light"); return Task.CompletedTask; }, () => !IsLightThemeActive, "appearance", Id: "cmd.use-light-theme"),
-            new("Use System Theme", "Appearance", "", () => { ApplyTheme("System"); return Task.CompletedTask; }, () => !IsSystemThemeActive, "appearance operating system", Id: "cmd.use-system-theme"),
+            new(IsAutoSaveEnabled ? "Disable Auto Save" : "Enable Auto Save", "File", "", () => { IsAutoSaveEnabled = !IsAutoSaveEnabled; return Task.CompletedTask; }, Keywords: "toggle automatic save", Confirm: () => IsAutoSaveEnabled ? "Auto save enabled." : "Auto save disabled."),
+            new(IsPerformanceModeEnabled ? "Disable Performance Mode" : "Enable Performance Mode", "Preferences", "", () => { IsPerformanceModeEnabled = !IsPerformanceModeEnabled; return Task.CompletedTask; }, Keywords: "toggle speed lag lightweight", Confirm: () => IsPerformanceModeEnabled ? "Performance mode enabled." : "Performance mode disabled."),
+            new(IsStatusBarFilePathVisible ? "Show Short File Names in Status Bar" : "Show Full File Paths in Status Bar", "View", "", () => { IsStatusBarFilePathVisible = !IsStatusBarFilePathVisible; return Task.CompletedTask; }, Keywords: "toggle status path location", Confirm: () => IsStatusBarFilePathVisible ? "Status bar shows full file paths." : "Status bar shows short file names."),
+            new("Use Dark Theme", "Appearance", "", () => { ApplyTheme("Dark"); return Task.CompletedTask; }, () => !IsDarkThemeActive, "appearance", Id: "cmd.use-dark-theme", Confirm: () => "Theme: Dark."),
+            new("Use Light Theme", "Appearance", "", () => { ApplyTheme("Light"); return Task.CompletedTask; }, () => !IsLightThemeActive, "appearance", Id: "cmd.use-light-theme", Confirm: () => "Theme: Light."),
+            new("Use System Theme", "Appearance", "", () => { ApplyTheme("System"); return Task.CompletedTask; }, () => !IsSystemThemeActive, "appearance operating system", Id: "cmd.use-system-theme", Confirm: () => "Theme: System."),
 
             new("Check for Updates", "Help", "", async () => await CheckForUpdatesManuallyAsync(), Keywords: "update version", Id: "cmd.check-for-updates"),
         };
@@ -1482,7 +1486,8 @@ public partial class MainWindow
                 string.Empty,
                 () => { setValue(!getValue()); return Task.CompletedTask; },
                 IsAvailable: isAvailable,
-                Keywords: $"settings preferences toggle {keywords}"));
+                Keywords: $"settings preferences toggle {keywords}",
+                Confirm: () => $"{name} {(getValue() ? "enabled" : "disabled")}."));
         }
 
         AddSettingToggle("Code Suggestions", () => IsInsightCodeSuggestionsEnabled, value => IsInsightCodeSuggestionsEnabled = value, "insight completion autocomplete");
@@ -1504,25 +1509,26 @@ public partial class MainWindow
 
         commands.Add(new PaletteCommand("Increase Editor Font Size", "Settings", string.Empty,
             () => { EditorFontSize = Math.Min(32, EditorFontSize + 1); return Task.CompletedTask; },
-            () => EditorFontSize < 32, "font zoom text"));
+            () => EditorFontSize < 32, "font zoom text", Confirm: () => $"Editor font size: {EditorFontSize}."));
         commands.Add(new PaletteCommand("Decrease Editor Font Size", "Settings", string.Empty,
             () => { EditorFontSize = Math.Max(8, EditorFontSize - 1); return Task.CompletedTask; },
-            () => EditorFontSize > 8, "font zoom text"));
+            () => EditorFontSize > 8, "font zoom text", Confirm: () => $"Editor font size: {EditorFontSize}."));
         commands.Add(new PaletteCommand("Use 2 Spaces for Indentation", "Settings", string.Empty,
-            () => { TabSizeIndex = 0; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 2, "indent tab size"));
+            () => { TabSizeIndex = 0; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 2, "indent tab size", Confirm: () => IndentationConfirmation()));
         commands.Add(new PaletteCommand("Use 4 Spaces for Indentation", "Settings", string.Empty,
-            () => { TabSizeIndex = 1; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 4, "indent tab size"));
+            () => { TabSizeIndex = 1; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 4, "indent tab size", Confirm: () => IndentationConfirmation()));
         commands.Add(new PaletteCommand("Use 8 Spaces for Indentation", "Settings", string.Empty,
-            () => { TabSizeIndex = 2; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 8, "indent tab size"));
+            () => { TabSizeIndex = 2; return Task.CompletedTask; }, () => InsertSpaces && TabSize != 8, "indent tab size", Confirm: () => IndentationConfirmation()));
         commands.Add(new PaletteCommand("Use Tabs for Indentation", "Settings", string.Empty,
-            () => { TabSizeIndex = 3; return Task.CompletedTask; }, () => InsertSpaces, "indent tab size"));
+            () => { TabSizeIndex = 3; return Task.CompletedTask; }, () => InsertSpaces, "indent tab size", Confirm: () => IndentationConfirmation()));
         foreach (var fontFamily in EditorFontChoices)
         {
             var selectedFontFamily = fontFamily;
             commands.Add(new PaletteCommand($"Use {selectedFontFamily} Editor Font", "Settings", string.Empty,
                 () => { EditorFontFamily = selectedFontFamily; return Task.CompletedTask; },
                 () => !string.Equals(EditorFontFamily, selectedFontFamily, StringComparison.OrdinalIgnoreCase),
-                "editor typography font family"));
+                "editor typography font family",
+                Confirm: () => $"Editor font: {EditorFontFamily}."));
         }
 
         foreach (var (ownerName, command) in _pluginPaletteCommands.Values
@@ -2558,6 +2564,12 @@ public partial class MainWindow
             DismissCommandPalette(restoreFocus: false);
             ReleasePaletteFocus();
             await command.Execute();
+            if (command.Confirm is { } confirm)
+            {
+                var confirmation = confirm();
+                if (!string.IsNullOrWhiteSpace(confirmation))
+                    ShowStatusBarMessage(confirmation);
+            }
             if (learnableId is not null)
             {
                 RecordPaletteCommandSelection(learnableId);
