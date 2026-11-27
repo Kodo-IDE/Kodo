@@ -269,10 +269,13 @@ public partial class MainWindow
                 CornerRadius = KodoDesignTokens.ControlRadius,
             };
 
+            var removeDepth = DialogHeader.WithDepth(removeButton);
+            var dismissDepth = DialogHeader.WithDepth(dismissButton);
+
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-            buttonRow.Children.Add(removeButton);
-            Grid.SetColumn(dismissButton, 1);
-            buttonRow.Children.Add(dismissButton);
+            buttonRow.Children.Add(removeDepth);
+            Grid.SetColumn(dismissDepth, 1);
+            buttonRow.Children.Add(dismissDepth);
 
             var divider = new Border
             {
@@ -384,20 +387,23 @@ public partial class MainWindow
                 MinWidth = 100,
             };
 
+            var cancelDepth = DialogHeader.WithDepth(cancelButton);
+            var confirmDepth = DialogHeader.WithDepth(confirmButton);
+
             var buttonRow = new Grid
             {
                 ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 Children =
                 {
-                    cancelButton,
+                    cancelDepth,
                     new Border { Width = 10 },
-                    confirmButton
+                    confirmDepth
                 }
             };
-            Grid.SetColumn(cancelButton, 0);
+            Grid.SetColumn(cancelDepth, 0);
             Grid.SetColumn(buttonRow.Children[1], 1);
-            Grid.SetColumn(confirmButton, 2);
+            Grid.SetColumn(confirmDepth, 2);
 
             var divider = new Border
             {
@@ -532,14 +538,16 @@ public partial class MainWindow
             MaxWidth = 320,
             MinWidth = 100,
         };
+        var closeDepth = DialogHeader.WithDepth(closeButton);
+
         var buttonRow = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto"),
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Children = { new Border(), new Border { Width = 10 }, closeButton }
+            Children = { new Border(), new Border { Width = 10 }, closeDepth }
         };
         Grid.SetColumn(buttonRow.Children[1], 1);
-        Grid.SetColumn(closeButton, 2);
+        Grid.SetColumn(closeDepth, 2);
 
         var content = new StackPanel
         {
@@ -769,13 +777,15 @@ public partial class MainWindow
             var leftButtons = new StackPanel
             {
                 Orientation = Avalonia.Layout.Orientation.Horizontal,
-                Children = { copyButton, reportButton },
+                Children = { DialogHeader.WithDepth(copyButton), DialogHeader.WithDepth(reportButton) },
             };
+
+            var dismissDepth = DialogHeader.WithDepth(dismissButton);
 
             var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
             buttonRow.Children.Add(leftButtons);
-            Grid.SetColumn(dismissButton, 1);
-            buttonRow.Children.Add(dismissButton);
+            Grid.SetColumn(dismissDepth, 1);
+            buttonRow.Children.Add(dismissDepth);
 
             var footerDivider = new Border
             {

@@ -2602,18 +2602,22 @@
                                 </Grid>
                             </Border>
 
-                            <Button Classes="toolbarprimary"
-                                    ToolTip.Tip="Reload clean editor tabs from their files"
-                                    IsEnabled="{Binding HasOpenEditors}"
-                                    Click="ToolbarRefreshOpenEditorsButton_OnClick"
-                                    AutomationProperties.Name="Refresh Open Editors"
-                                    Content="Refresh Open Editors" />
-                            <Button Classes="toolbarprimary"
-                                    ToolTip.Tip="Show or close the side-by-side editor pane"
-                                    IsEnabled="{Binding CanToggleSplitEditor}"
-                                    Click="ToggleSplitEditorButton_OnClick"
-                                    AutomationProperties.Name="Show or close the side-by-side editor pane"
-                                    Content="{Binding SplitEditorButtonText}" />
+                            <Border Classes="depth">
+                                <Button Classes="toolbarprimary"
+                                        ToolTip.Tip="Reload clean editor tabs from their files"
+                                        IsEnabled="{Binding HasOpenEditors}"
+                                        Click="ToolbarRefreshOpenEditorsButton_OnClick"
+                                        AutomationProperties.Name="Refresh Open Editors"
+                                        Content="Refresh Open Editors" />
+                            </Border>
+                            <Border Classes="depth">
+                                <Button Classes="toolbarprimary"
+                                        ToolTip.Tip="Show or close the side-by-side editor pane"
+                                        IsEnabled="{Binding CanToggleSplitEditor}"
+                                        Click="ToggleSplitEditorButton_OnClick"
+                                        AutomationProperties.Name="Show or close the side-by-side editor pane"
+                                        Content="{Binding SplitEditorButtonText}" />
+                            </Border>
                         </StackPanel>
 
                         <Border Width="1"
@@ -2666,6 +2670,7 @@
                                 </Grid>
                             </Border>
 
+                            <Border Classes="depth" IsVisible="{Binding IsCompilerIconVisible}">
                             <Button Classes="compilericon"
                                     IsVisible="{Binding IsCompilerIconVisible}"
                                     ToolTip.Tip="{Binding RunBuildButtonTooltip}"
@@ -2685,6 +2690,7 @@
                                              IsVisible="{Binding ActiveCompilerExtension.SvgData, Converter={x:Static ObjectConverters.IsNotNull}}" />
                                 </Panel>
                             </Button>
+                            </Border>
                         </StackPanel>
                         </StackPanel>
                     </Panel>
@@ -5263,9 +5269,11 @@ ToolTip.Tip="{Binding Path}" />
                             <Button Classes="chrome"
                                     Click="SkipTutorialButton_OnClick"
                                     Content="Skip Tutorial" />
-                            <Button Classes="marketaction"
-                                    Click="NextTutorialStepButton_OnClick"
-                                    Content="Get started" />
+                            <Border Classes="depth">
+                                <Button Classes="marketaction"
+                                        Click="NextTutorialStepButton_OnClick"
+                                        Content="Get started" />
+                            </Border>
                         </StackPanel>
                     </StackPanel>
                 </Grid>
@@ -5809,10 +5817,12 @@ ToolTip.Tip="{Binding Path}" />
                                                 </ScrollViewer>
                                             </Border>
                                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <Button Classes="marketaction"
-                                                        IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
-                                                        Click="AcceptPrivacyPolicyButton_OnClick"
-                                                        Content="Accept Privacy Policy" />
+                                                <Border Classes="depth">
+                                                    <Button Classes="marketaction"
+                                                            IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
+                                                            Click="AcceptPrivacyPolicyButton_OnClick"
+                                                            Content="Accept Privacy Policy" />
+                                                </Border>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
@@ -5841,9 +5851,11 @@ ToolTip.Tip="{Binding Path}" />
                                                 <Button Classes="chrome"
                                                         Click="DeclineDataTrackingButton_OnClick"
                                                         Content="Not now" />
-                                                <Button Classes="marketaction"
-                                                        Click="AcceptDataTrackingButton_OnClick"
-                                                        Content="Accept" />
+                                                <Border Classes="depth">
+                                                    <Button Classes="marketaction"
+                                                            Click="AcceptDataTrackingButton_OnClick"
+                                                            Content="Accept" />
+                                                </Border>
                                             </StackPanel>
                                         </StackPanel>
                                     </Border>
@@ -5914,11 +5926,13 @@ ToolTip.Tip="{Binding Path}" />
                                     IsVisible="{Binding IsNotTutorialSetupStep}"
                                     IsEnabled="{Binding CanSkipTutorial}"
                                     Content="Skip tutorial" />
-                            <Button Classes="marketaction"
-                                    Click="NextTutorialStepButton_OnClick"
-                                    MinWidth="148"
-                                    IsEnabled="{Binding CanAdvanceTutorial}"
-                                    Content="{Binding TutorialPrimaryButtonText}" />
+                            <Border Classes="depth">
+                                <Button Classes="marketaction"
+                                        Click="NextTutorialStepButton_OnClick"
+                                        MinWidth="148"
+                                        IsEnabled="{Binding CanAdvanceTutorial}"
+                                        Content="{Binding TutorialPrimaryButtonText}" />
+                            </Border>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -5938,7 +5952,7 @@ ToolTip.Tip="{Binding Path}" />
                     <StackPanel Spacing="16">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
-                                <Border Classes="iconwelllarge"
+                                <Border Classes="iconwelllarge badge3d"
                                         Background="{Binding AccentBrush}"
                                         VerticalAlignment="Center">
                                     <Viewbox Width="26" Height="26" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -6697,7 +6711,7 @@ ToolTip.Tip="{Binding Path}" />
                     IsVisible="{Binding IsSelected}" />
             <Grid RowDefinitions="Auto,*" RowSpacing="8">
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                    <Border Grid.Column="0" Classes="iconwelllarge"
+                    <Border Grid.Column="0" Classes="iconwelllarge badge3d"
                             Background="{Binding #RootWindow.AccentBrush}"
                             IsVisible="{Binding !HasIcon}">
                         <TextBlock HorizontalAlignment="Center"
@@ -6866,7 +6880,7 @@ ToolTip.Tip="{Binding Path}" />
                     IsVisible="{Binding IsSelected}" />
             <Grid RowDefinitions="Auto,*" RowSpacing="8">
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-                    <Border Grid.Column="0" Classes="iconwelllarge"
+                    <Border Grid.Column="0" Classes="iconwelllarge badge3d"
                             Background="{Binding #RootWindow.AccentBrush}"
                             IsVisible="{Binding !HasIcon}">
                         <TextBlock HorizontalAlignment="Center"
@@ -7033,7 +7047,7 @@ ToolTip.Tip="{Binding Path}" />
                             </Button>
                         </Grid>
                         <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="12">
-                        <Border Grid.Column="0" Classes="iconwelllarge"
+                        <Border Grid.Column="0" Classes="iconwelllarge badge3d"
                                 Background="{Binding #RootWindow.AccentBrush}"
                                 IsVisible="{Binding !HasIcon}">
                             <TextBlock HorizontalAlignment="Center"
@@ -7228,7 +7242,7 @@ ToolTip.Tip="{Binding Path}" />
                     <Grid RowDefinitions="Auto,*">
                         <StackPanel Spacing="5" Margin="4,0,4,20">
                             <Grid Height="{x:Static kodo:KodoDesignTokens.IconWellMediumSize}">
-                                <Border Classes="iconwellmedium"
+                                <Border Classes="iconwellmedium badge3d"
                                         Background="{Binding AccentBrush}"
                                         HorizontalAlignment="Left"
                                         VerticalAlignment="Center">

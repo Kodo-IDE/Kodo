@@ -23,6 +23,12 @@
         <Style Selector="HyperlinkButton:pointerover">
             <Setter Property="Foreground" Value="{x:Static kodo:KodoDesignTokens.LinkActiveBrush}" />
         </Style>
+        <Style Selector="Button.depth:pressed">
+            <Setter Property="RenderTransform" Value="translate(0px,1px)" />
+        </Style>
+        <Style Selector="Border.depth Button:pressed">
+            <Setter Property="RenderTransform" Value="translate(0px,1px)" />
+        </Style>
         <Style Selector="PopupRoot">
             <Setter Property="Background" Value="Transparent" />
         </Style>

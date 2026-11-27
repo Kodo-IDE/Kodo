@@ -666,13 +666,15 @@ public partial class App : Application
         var leftButtons = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { copyButton, reportButton },
+            Children = { DialogHeader.WithDepth(copyButton), DialogHeader.WithDepth(reportButton) },
         };
+
+        var dismissDepth = DialogHeader.WithDepth(dismissButton);
 
         var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         buttonRow.Children.Add(leftButtons);
-        Grid.SetColumn(dismissButton, 1);
-        buttonRow.Children.Add(dismissButton);
+        Grid.SetColumn(dismissDepth, 1);
+        buttonRow.Children.Add(dismissDepth);
 
         var footerDivider = new Border
         {

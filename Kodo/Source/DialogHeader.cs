@@ -39,9 +39,39 @@ internal static class DialogHeader
             CornerRadius = KodoDesignTokens.ControlRadius,
             Background = badge,
             VerticalAlignment = VerticalAlignment.Center,
+            BoxShadow = SettingsStore.Current.Fluent2ThemeEnabled
+                ? BoxShadows.Parse($"0 3 0 0 {Hex(DepthColor(badge))}, 0 6 12 0 #70000000")
+                : default,
             Child = BuildImage(svg, iconColor, glyph),
         };
     }
+
+    public static Control WithDepth(Button button)
+    {
+        if (!SettingsStore.Current.Fluent2ThemeEnabled)
+            return button;
+        button.Classes.Add("depth");
+        return new Border
+        {
+            Background = new SolidColorBrush(DepthColor(button.Background)),
+            CornerRadius = button.CornerRadius,
+            Padding = new Thickness(0, 0, 0, 3),
+            Margin = new Thickness(0, 0, 0, -3),
+            BoxShadow = BoxShadows.Parse("0 4 12 0 #70000000"),
+            Child = button,
+        };
+    }
+
+    private static Color DepthColor(IBrush? brush)
+    {
+        var color = (brush as ISolidColorBrush)?.Color ?? Color.Parse("#16151C");
+        return Color.FromRgb(
+            (byte)Math.Round(color.R * 0.45),
+            (byte)Math.Round(color.G * 0.45),
+            (byte)Math.Round(color.B * 0.45));
+    }
+
+    private static string Hex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 
     public static Border CreateDivider(IBrush borderBrush) =>
         new Border
