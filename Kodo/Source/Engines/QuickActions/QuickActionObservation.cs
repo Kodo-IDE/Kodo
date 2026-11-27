@@ -9,12 +9,10 @@ public static class QuickActionObservation
     {
         ArgumentNullException.ThrowIfNull(record);
 
-        QuickActionExecution? current = execution;
         return () =>
         {
             onSuccess?.Invoke();
-            current ??= QuickActionExecution.Begin();
-            record(actionId, current.Id);
+            record(actionId, execution?.Id ?? QuickActionExecution.Begin().Id);
         };
     }
 }
