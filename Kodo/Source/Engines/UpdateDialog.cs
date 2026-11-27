@@ -90,10 +90,13 @@ internal sealed class UpdateDialog : Window
 
         if (stagedInstallerPath is not null && File.Exists(stagedInstallerPath)) _isReady = true;
 
+        var laterDepth = DialogHeader.WithDepth(_laterButton);
+        var primaryDepth = DialogHeader.WithDepth(_primaryButton);
+
         var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        buttonRow.Children.Add(_laterButton);
-        Grid.SetColumn(_primaryButton, 1);
-        buttonRow.Children.Add(_primaryButton);
+        buttonRow.Children.Add(laterDepth);
+        Grid.SetColumn(primaryDepth, 1);
+        buttonRow.Children.Add(primaryDepth);
 
         var headerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
         var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
@@ -184,10 +187,13 @@ internal sealed class UpdateDialog : Window
 
         if (stagedTxPath is not null && File.Exists(stagedTxPath)) _isReady = true;
 
+        var laterDepth = DialogHeader.WithDepth(_laterButton);
+        var primaryDepth = DialogHeader.WithDepth(_primaryButton);
+
         var buttonRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
-        buttonRow.Children.Add(_laterButton);
-        Grid.SetColumn(_primaryButton, 1);
-        buttonRow.Children.Add(_primaryButton);
+        buttonRow.Children.Add(laterDepth);
+        Grid.SetColumn(primaryDepth, 1);
+        buttonRow.Children.Add(primaryDepth);
 
         var headerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
         var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };

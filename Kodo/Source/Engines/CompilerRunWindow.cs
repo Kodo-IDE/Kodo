@@ -136,7 +136,7 @@ internal sealed class CompilerRunWindow : Window
             Orientation = Orientation.Horizontal,
             Spacing = 8,
             VerticalAlignment = VerticalAlignment.Center,
-            Children = { _rerunButton, exitButton },
+            Children = { DialogHeader.WithDepth(_rerunButton), DialogHeader.WithDepth(exitButton) },
         };
 
         var headerGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };

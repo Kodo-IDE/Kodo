@@ -635,7 +635,7 @@ internal sealed class GitSourceControlIntegration
         };
         _commitButton.Click += CommitButton_OnClick;
         TrackButton(_commitButton, _fixedThemeSyncs, "AccentBrush", "AccentForegroundBrush");
-        commitPanel.Children.Add(_commitButton);
+        commitPanel.Children.Add(DialogHeader.WithDepth(_commitButton));
         DockPanel.SetDock(commitPanel, Dock.Top);
         dock.Children.Add(commitPanel);
 
@@ -1600,8 +1600,8 @@ internal sealed class GitSourceControlIntegration
         confirm.CornerRadius = KodoDesignTokens.ControlRadius;
         confirm.MinWidth = 100;
         confirm.BorderThickness = new Thickness(0);
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(confirm);
+        buttons.Children.Add(DialogHeader.WithDepth(cancel));
+        buttons.Children.Add(DialogHeader.WithDepth(confirm));
         var content = new StackPanel
         {
             Spacing = 12,

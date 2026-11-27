@@ -11820,7 +11820,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         return surface;
     }
 
-    private Button CreateDialogButton(
+    private Control CreateDialogButton(
         string text,
         IBrush background,
         IBrush borderBrush,
@@ -11842,7 +11842,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
         button.Click += (_, _) => AnimationKit.Pulse(button, 0.42, 360);
         button.Click += (_, _) => clickAction();
-        return button;
+        return DialogHeader.WithDepth(button);
     }
 }
 
