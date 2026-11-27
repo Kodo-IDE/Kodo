@@ -1401,6 +1401,7 @@ public partial class MainWindow
             }, () => ActiveEditorTab is { IsUntitled: false }, "copy basename", Id: "cmd.copy-active-file-name"),
             new("Reveal Active File in File Manager", "File", "", RevealActiveFileAsync, () => ActiveEditorTab is { IsUntitled: false }, "show explorer folder finder", Id: "cmd.reveal-active-file-in-file-manager"),
             new("Open Active File Folder in Terminal", "Terminal", "", () => { OpenActiveFileInTerminal(); return Task.CompletedTask; }, () => ActiveEditorTab is { IsUntitled: false }, "integrated shell directory", Id: "cmd.open-active-file-folder-in-terminal"),
+            new("Open Workspace in Integrated Terminal", "Terminal", "", () => { TryOpenWorkspaceInIntegratedTerminal(); return Task.CompletedTask; }, () => IsFolderOpen && IsTerminalSupported, "integrated shell workspace project directory", Id: "cmd.open-workspace-in-terminal"),
 
             new("Find in File", "Search", "FindInFile", () => { OpenSearchPanel(SearchMode.FindInFile); return Task.CompletedTask; }, () => ActiveEditorTab is not null, Id: "cmd.find-in-file"),
             new("Find in Project", "Search", "FindInProject", () => { OpenSearchPanel(SearchMode.ProjectSearch); return Task.CompletedTask; }, () => IsFolderOpen, "search text files", Id: "cmd.find-in-project"),

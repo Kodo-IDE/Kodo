@@ -203,7 +203,7 @@ public partial class MainWindow
         if (parts.Length == 0) return "Any context";
         return parts.Length == 1
             ? HumanizeIdentifier(parts[0])
-            : $"{HumanizeIdentifier(parts[0])} · {parts[1]}";
+            : $"{HumanizeIdentifier(parts[0])} · {string.Join(" · ", parts[1..])}";
     }
 
     private static string HumanizeIdentifier(string identifier)

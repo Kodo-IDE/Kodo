@@ -8101,14 +8101,14 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             FocusActiveTerminal();
     }
 
-    private void CreateTerminalSession(TerminalShellOption? shell = null, TerminalSession? replaceExisting = null, string? workingDirectoryOverride = null)
+    private bool CreateTerminalSession(TerminalShellOption? shell = null, TerminalSession? replaceExisting = null, string? workingDirectoryOverride = null)
     {
         if (!IsTerminalSupported)
-            return;
+            return false;
 
         try
         {
-            CreateTerminalSessionCore(shell, replaceExisting, workingDirectoryOverride);
+            return CreateTerminalSessionCore(shell, replaceExisting, workingDirectoryOverride);
         }
         catch (Exception ex)
         {
@@ -8116,14 +8116,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 operation: "Create terminal session");
             ExtensionsStatusText = $"Failed to create terminal: {ex.Message}";
             IsTerminalVisible = true;
+            return false;
         }
     }
 
-    private void CreateTerminalSessionCore(TerminalShellOption? shell, TerminalSession? replaceExisting, string? workingDirectoryOverride)
+    private bool CreateTerminalSessionCore(TerminalShellOption? shell, TerminalSession? replaceExisting, string? workingDirectoryOverride)
     {
         shell ??= GetSelectedTerminalShellOrFallback();
         if (shell is null)
-            return;
+            return false;
 
         var workingDirectory = workingDirectoryOverride is not null && Directory.Exists(workingDirectoryOverride)
             ? workingDirectoryOverride
@@ -8155,6 +8156,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         ActiveTerminalSession = session;
         IsTerminalVisible = true;
         FocusActiveTerminal();
+        return true;
     }
 
     private void TerminalHostControl_OnWorkingDirectoryChanged(object? sender, string path)
