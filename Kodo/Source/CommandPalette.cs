@@ -256,7 +256,7 @@ public partial class MainWindow
         _paletteTraceWatch = StartupTrace.IsUiTraceEnabled ? System.Diagnostics.Stopwatch.StartNew() : null;
         PaletteTrace("begin");
         _quickAccessSearchBox ??= this.FindControl<TextBox>("QuickAccessSearchBox");
-        var useOverlaySearchBox = !IsEditorPageVisible || _quickAccessSearchBox?.IsVisible != true;
+        var useOverlaySearchBox = !IsEditorPageVisible || _quickAccessSearchBox is not { IsEffectivelyVisible: true };
         var paletteSearchBox = useOverlaySearchBox
             ? new TextBox
             {
@@ -389,6 +389,7 @@ public partial class MainWindow
             BoxShadow = new BoxShadows(new BoxShadow { Blur = 14, Spread = 0, Color = Color.FromArgb(55, 0, 0, 0) }),
             HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Top,
+            ClipToBounds = true,
             Opacity = AnimationKit.ReduceMotion ? 1d : 0d,
             RenderTransform = AnimationKit.ReduceMotion ? null : AnimationKit.PresetLift(18),
         };
@@ -413,7 +414,7 @@ public partial class MainWindow
         void SyncLayout()
         {
             var frame = useOverlaySearchBox ? null : this.FindControl<Border>("QuickAccessSearchFrame");
-            if (frame is { IsVisible: false })
+            if (frame is not { IsEffectivelyVisible: true })
                 frame = null;
             var frameWidth = frame is null ? CommandPaletteWidth : GetEffectiveCommandPaletteWidth();
             var available = overlay.Bounds.Width > 0 ? Math.Max(1, overlay.Bounds.Width - 16) : frameWidth;
@@ -445,6 +446,8 @@ public partial class MainWindow
                     card.Margin = new Thickness(Math.Max(8, (overlay.Bounds.Width - card.Width) / 2), resultsTop, 0, 0);
                 }
             }
+            if (overlay.Bounds.Height > 0)
+                card.MaxHeight = Math.Max(180, overlay.Bounds.Height - resultsTop - 30);
             scroll.MaxHeight = overlay.Bounds.Height > 0 ? Math.Clamp(overlay.Bounds.Height - resultsTop - 30, 120, 460) : 460;
         }
         _commandPaletteSyncLayout = SyncLayout;
@@ -524,6 +527,16 @@ public partial class MainWindow
         _commandPaletteCachedPreview = _commandPalettePreviewText;
         Dispatcher.UIThread.Post(() => _commandPaletteSearchBox?.Focus(), DispatcherPriority.Input);
         _paletteTraceWatch = null;
+    }
+
+    private void ReopenCommandPaletteForLayout()
+    {
+        var text = _commandPaletteSearchBox?.Text ?? string.Empty;
+        Dispatcher.UIThread.Post(() =>
+        {
+            DismissCommandPalette(restoreFocus: false);
+            ShowCommandPalette(prefix: text);
+        }, DispatcherPriority.Background);
     }
 
     private TextBlock CreateRareCommandPalettePreviewText()
@@ -1678,8 +1691,11 @@ public partial class MainWindow
 
         var queue = new PriorityQueue<(QuickAccessFile File, int Score), long>();
         var matched = 0;
+        var considered = new HashSet<string>(FileSystemPaths.Comparer);
         void Consider(QuickAccessFile file)
         {
+            if (!considered.Add(file.Path))
+                return;
             var score = ScoreQuickAccessFile(file, terms, null, null);
             if (score == int.MinValue)
                 return;
@@ -2191,7 +2207,7 @@ public partial class MainWindow
         string? statusText = null;
         if (mode == PaletteMode.Files && _quickAccessIndexing)
             statusText = "Indexing workspace files…";
-        else if (totalMatches > shownMatches)
+        else if (query.Length > 0 && totalMatches > shownMatches)
             statusText = $"Showing the first {shownMatches:N0} of {totalMatches:N0} results. Keep typing to narrow it down.";
         if (_commandPaletteStatus is not null)
         {
