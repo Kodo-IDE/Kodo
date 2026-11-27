@@ -33,23 +33,15 @@ public partial class MainWindow
 
     public bool HasInsightQueryAssociations => UserInsight.HasQueryAssociationData;
 
-    public string InsightQuickActionSummary => !UserInsight.IsAnalysisComplete
-        ? AnalysisHeldLabel
-        : Summary(InsightQuickActionRows.Count, "Quick Actions preference", "Quick Actions preferences");
+    public string InsightQuickActionSummary => Summary(InsightQuickActionRows.Count, "Quick Actions preference", "Quick Actions preferences");
 
-    public string InsightCommandPaletteSummary => !UserInsight.IsAnalysisComplete
-        ? AnalysisHeldLabel
-        : Summary(InsightCommandPaletteRows.Count, "command preference", "command preferences");
+    public string InsightCommandPaletteSummary => Summary(InsightCommandPaletteRows.Count, "command preference", "command preferences");
 
-    public string InsightQuerySummary => !UserInsight.IsAnalysisComplete
-        ? AnalysisHeldLabel
-        : Summary(InsightQueryRows.Count, "search association", "search associations");
+    public string InsightQuerySummary => Summary(InsightQueryRows.Count, "search association", "search associations");
 
-    public string InsightLearningSummary => !UserInsight.IsAnalysisComplete
-        ? $"Analysis Period: {UserInsight.AnalysisCompletedDays} of {UserInsight.AnalysisRequiredDays} coding days completed."
-        : UserInsight.HasAnyLearningData
-            ? $"{InsightQuickActionRows.Count + InsightCommandPaletteRows.Count + InsightQueryRows.Count} learned items stored locally on this device."
-            : "Insight has not learned anything yet.";
+    public string InsightLearningSummary => UserInsight.HasAnyLearningData
+        ? $"{InsightQuickActionRows.Count + InsightCommandPaletteRows.Count + InsightQueryRows.Count} learned items stored locally on this device."
+        : "Nothing learned yet.";
 
     public bool IsInsightAnalysisPeriodVisible => !UserInsight.IsAnalysisComplete;
 
@@ -69,8 +61,6 @@ public partial class MainWindow
 
     public string InsightAnalysisDetailText =>
         "Only days you actually use Kodo count, so time away does not move the count. Nothing is shown until the period ends. Clearing learning data starts the Analysis Period again.";
-
-    private const string AnalysisHeldLabel = "Held until the Analysis Period ends.";
 
     private bool _isInsightDashboardExpanded;
 
@@ -131,7 +121,7 @@ public partial class MainWindow
 
     private static string Summary(int count, string singular, string plural) => count switch
     {
-        0 => "Nothing learned yet.",
+        0 => string.Empty,
         1 => $"1 {singular}.",
         _ => $"{count} {plural}.",
     };

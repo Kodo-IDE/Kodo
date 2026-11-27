@@ -3428,7 +3428,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             SaveSettings();
             UpdateDiscordRichPresenceLifecycle();
-            OnPropertyChanged(nameof(DiscordRichPresenceStatusText));
         }
     }
 
@@ -3666,7 +3665,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isStatusBarFilePathVisible == value) return;
             _isStatusBarFilePathVisible = value;
             OnPropertyChanged();
-            RaiseMany(nameof(FilePathText), nameof(LanguageDisplayText), nameof(StatusBarFilePathVisibilityText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(PrimaryPaneBreadcrumbText), nameof(SecondaryPaneBreadcrumbText));
+            RaiseMany(nameof(FilePathText), nameof(LanguageDisplayText), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText), nameof(PrimaryPaneBreadcrumbText), nameof(SecondaryPaneBreadcrumbText));
             SaveSettings();
         }
     }
@@ -3679,7 +3678,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isWordWrapEnabled == value) return;
             _isWordWrapEnabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(EditorBehaviorStatusText));
             ApplyEditorSettings();
             SaveSettings();
         }
@@ -4391,7 +4389,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             _tabSize = normalizedValue;
             OnPropertyChanged();
             OnPropertyChanged(nameof(TabSizeIndex));
-            OnPropertyChanged(nameof(EditorBehaviorStatusText));
             OnPropertyChanged(nameof(IndentationDisplayText));
             ApplyEditorSettings();
             SaveSettings();
@@ -4409,7 +4406,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(TabSizeIndex));
             OnPropertyChanged(nameof(IndentationDisplayText));
-            OnPropertyChanged(nameof(EditorBehaviorStatusText));
             ApplyEditorSettings();
             SaveSettings();
         }
@@ -5305,8 +5301,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isConfirmBeforeClosingUnsavedTabsEnabled == value) return;
             _isConfirmBeforeClosingUnsavedTabsEnabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(TabRestoreStatusText));
-            OnPropertyChanged(nameof(ConfirmBeforeClosingStatusText));
             SaveSettings();
         }
     }
@@ -5319,8 +5313,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             if (_isRestoreOpenTabsOnLaunchEnabled == value) return;
             _isRestoreOpenTabsOnLaunchEnabled = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(TabRestoreStatusText));
-            OnPropertyChanged(nameof(ConfirmBeforeClosingStatusText));
             SaveSettings();
         }
     }
@@ -5439,7 +5431,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             OnPropertyChanged();
             RaiseWelcomeMessageChanged();
             UpdateLocalizedSpelling();
-            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling), nameof(CustomizeWorkspaceText), nameof(SyntaxColorsDescriptionText));
+            RaiseMany(nameof(IsAmericanEnglish), nameof(LabelAccentColour), nameof(LabelAccentSystem), nameof(TooltipSystemTheme), nameof(RevealInFileManagerText), nameof(TerminalShellDescriptionText), nameof(RecheckLanguageServersLabel), nameof(TooltipAccentTheme), nameof(TooltipAccentWindows), nameof(TooltipAccentCustom), nameof(LabelPersonalization), nameof(LabelPersonalizationHeader), nameof(LabelPersonalizationDescription), nameof(PersonalizationExportTooltip), nameof(TutorialSpotlightTitle), nameof(TutorialBody), nameof(TutorialHighlightOne), nameof(TutorialHighlightThree), nameof(DeadCodeTooltip), nameof(CancelledSpelling), nameof(CustomizeWorkspaceText));
             SaveSettings();
         }
     }
@@ -5461,7 +5453,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     public bool IsAmericanEnglish => RegionalSpelling.IsAmericanEnglish;
     public string CancelledSpelling => RegionalSpelling.Cancelled;
     public string CustomizeWorkspaceText => $"{char.ToUpperInvariant(RegionalSpelling.Customize[0])}{RegionalSpelling.Customize[1..]} your workspace";
-    public string SyntaxColorsDescriptionText => $"Adds extra syntax {RegionalSpelling.Color}s using language server information. This optional feature is off by default.";
     public string DeadCodeTooltip => $"{RegionalSpelling.Gray} out unused variables, unused functions, and unreachable code. Experimental; please double-check whether it is correct.";
 
     public string LabelAccentColour => $"Accent {char.ToUpperInvariant(RegionalSpelling.Color[0])}{RegionalSpelling.Color[1..]}";
@@ -5728,59 +5719,20 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsLineEndingVisible => HasFileOpen && IsTextEditorVisible;
 
-    public string DiscordRichPresenceStatusText => !IsDiscordRichPresenceEnabled
-        ? "Discord Rich Presence is turned off."
-        : "Discord Rich Presence shows your current activity when the Discord desktop app is running.";
+    public string AutoSaveStatusText => IsAutoSaveEnabled && !HasFileOpen
+        ? "Autosave starts after you save the file once."
+        : string.Empty;
 
-    public string AutoSaveStatusText =>
-        !IsAutoSaveEnabled
-            ? "Autosave is turned off."
-            : HasFileOpen
-                ? "Changes are saved automatically a couple seconds after you stop typing."
-                : "Autosave will start working after the file has been saved once.";
+    public string AutoUpdateExtensionsStatusText => IsAutoUpdateExtensionsEnabled && AvailableExtensionUpdatesCount > 0
+        ? $"{AvailableExtensionUpdatesCount} extension update{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} pending."
+        : string.Empty;
 
-    public string AutoUpdateExtensionsStatusText =>
-        !IsAutoUpdateExtensionsEnabled
-            ? "Extensions only update when you click Update in the Marketplace."
-            : AvailableExtensionUpdatesCount > 0
-                ? $"Checking periodically and installing updates automatically. {AvailableExtensionUpdatesCount} update{(AvailableExtensionUpdatesCount == 1 ? string.Empty : "s")} pending."
-                : IsAutoUpdateExtensionsInBackgroundEnabled
-                    ? "Checking periodically and installing new extension updates automatically, without showing progress."
-                    : "Checking periodically and installing new extension updates automatically.";
-
-    public string AutoUpdateAppStatusText
-    {
-        get
-        {
-            if (!IsAutoUpdateAppSupported)
-                return "Kodo does not ship automatic updates on this platform, so download a new version yourself.";
-            if (!IsAutoUpdateAppEnabled)
-                return "Kodo only updates when you download a new installer yourself.";
-            return IsAutoUpdateAppInBackgroundEnabled
-                ? "Checking for new Kodo versions on launch and every few hours, downloading them in the background, and prompting you to restart when it's ready."
-                : "Checking for new Kodo versions on launch and every few hours, and prompting to install them.";
-        }
-    }
+    public string AutoUpdateAppStatusText =>
+        !IsAutoUpdateAppSupported ? "Automatic updates are not available on this platform."
+        : IsAutoUpdateAppEnabled ? "Checked on launch and every few hours."
+        : string.Empty;
 
     public bool IsAutoUpdateAppSupported => OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
-
-    public string StatusBarFilePathVisibilityText => IsStatusBarFilePathVisible
-        ? "The status bar shows the full path for the current file or folder."
-        : "The status bar keeps a shorter label instead of the full file or folder path.";
-
-    public string EditorBehaviorStatusText => IsWordWrapEnabled
-        ? $"Word wrap is on, and indentation guides are spaced every {TabSize} columns."
-        : $"Word wrap is off, and indentation guides are spaced every {TabSize} columns.";
-
-    public string TabRestoreStatusText => IsRestoreOpenTabsOnLaunchEnabled
-        ? "File-backed tabs reopen on launch, and unsaved tabs ask for confirmation before closing."
-        : IsConfirmBeforeClosingUnsavedTabsEnabled
-            ? "Unsaved tabs ask for confirmation before closing."
-            : "Tabs close immediately, and launch starts with a fresh editor session.";
-
-    public string ConfirmBeforeClosingStatusText => IsConfirmBeforeClosingUnsavedTabsEnabled
-        ? "Shows Save, Discard and Cancel when you try to close a tab with unsaved changes."
-        : "Unsaved tabs close immediately without asking - any unsaved changes will be lost.";
 
     public string EditorStatsText
     {
@@ -6451,7 +6403,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         nameof(FilePathText), nameof(StatusBarFileIconText), nameof(StatusBarFilePathTooltip), nameof(IsDocumentDirty),
         nameof(StatusBarCaretText), nameof(StatusBarSelectionText), nameof(StatusBarDocumentText), nameof(HasSelection),
         nameof(StatusBarDiagnosticsText), nameof(StatusBarDiagnosticsTooltip), nameof(HasDiagnostics), nameof(ExplorerHeaderText),
-        nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(DiscordRichPresenceStatusText), nameof(AutoSaveStatusText),
+        nameof(ExplorerHeaderTooltipText), nameof(ExplorerPanelMinWidth), nameof(AutoSaveStatusText),
         nameof(LanguageDisplayText), nameof(EncodingDisplayText), nameof(LineEndingDisplayText), nameof(IsLineEndingVisible),
         nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(ActiveTerminalWorkingDirectory), nameof(ActiveTerminalFooterText),
         nameof(TerminalStatusBarText)
@@ -11805,7 +11757,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         OnPropertyChanged(nameof(TabSize));
         OnPropertyChanged(nameof(TabSizeIndex));
         OnPropertyChanged(nameof(IndentationDisplayText));
-        OnPropertyChanged(nameof(EditorBehaviorStatusText));
         ApplyEditorSettings();
         if (saveSettings)
             SaveSettings();

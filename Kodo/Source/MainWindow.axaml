@@ -7637,7 +7637,7 @@ ToolTip.Tip="{Binding Path}" />
                                         <StackPanel Spacing="6">
                                             <Border Height="28" CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" Background="{Binding ThemeAccentPreviewBrush}" />
                                             <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
-                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="Theme" />
+                                                <TextBlock Foreground="{Binding PrimaryTextBrush}" Text="From theme" />
                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}" Foreground="{Binding AccentBrush}"
                                                            VerticalAlignment="Center" Text="●"
                                                            IsVisible="{Binding IsAccentTheme}" />
@@ -7800,7 +7800,7 @@ ToolTip.Tip="{Binding Path}" />
                                                Text="How many nested scopes stay pinned at once." />
                                 </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
-                                           Text="QUICK ACTIONS" />
+                                           Text="QUICK ACTIONS PANEL" />
                                 <StackPanel Spacing="2">
                                     <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
@@ -7885,9 +7885,6 @@ ToolTip.Tip="Increase font size" />
                                              Foreground="{Binding MutedTextBrush}"
                                              TextWrapping="Wrap"
                                              Text="Size of editor text, in pixels." />
-                                  <TextBlock Foreground="{Binding MutedTextBrush}"
-                                             TextWrapping="Wrap"
-                                             Text="{Binding EditorBehaviorStatusText}" />
                                   <StackPanel Orientation="Horizontal"
                                               Spacing="8">
                                           <TextBlock VerticalAlignment="Center"
@@ -8203,8 +8200,6 @@ ToolTip.Tip="Increase font size" />
                                     </StackPanel>
                                 </Border>
 
-                                <TextBlock Classes="settingsgroupheader"
-                                           Text="LEARNING" />
                                 <CheckBox IsChecked="{Binding IsInsightLearningEnabled, Mode=TwoWay}"
                                           Foreground="{Binding PrimaryTextBrush}"
                                           ToolTip.Tip="Stop recording new interactions and stop Insight from influencing results. Existing learning is kept."
@@ -8217,7 +8212,7 @@ ToolTip.Tip="Increase font size" />
                                            Text="Turning this off stops new learning and removes its effect, but keeps what has already been learned until you reset it below." />
 
                                 <TextBlock Classes="settingsgroupheader"
-                                           Text="QUICK ACTIONS" />
+                                           Text="QUICK ACTIONS LEARNING" />
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
@@ -8374,7 +8369,7 @@ ToolTip.Tip="Increase font size" />
                                         Click="ResetPersonalizedSearchLearningButton_OnClick" />
 
                                 <TextBlock Classes="settingsgroupheader"
-                                           Text="ALL LEARNING" />
+                                           Text="RESET" />
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
@@ -8490,10 +8485,6 @@ ToolTip.Tip="Increase font size" />
                                                    TextWrapping="Wrap"
                                                    Text="Colour symbols by meaning using language server data." />
                                     </StackPanel>
-                                    <TextBlock Margin="24,0,0,0"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="{Binding SyntaxColorsDescriptionText}" />
 
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,6,0,0"
@@ -8561,22 +8552,25 @@ ToolTip.Tip="Increase font size" />
                                                TextWrapping="Wrap"
                                                Text="Installs servers into Kodo's data folder. Servers already on your system stay available when this is off." />
 
-                                    <TextBlock Margin="24,0,0,0"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="Installed a runtime or a server since Kodo started? Use this to re-detect, bring back any install prompts you dismissed, and see what is still missing." />
-                                    <Button Classes="chrome"
-                                            HorizontalAlignment="Left"
-                                            Margin="24,0,0,0"
-                                            Click="RecheckLanguageServersButton_OnClick"
-                                            IsEnabled="{Binding !IsRecheckingLanguageServers}"
-                                            ToolTip.Tip="Re-detect language servers and restore install prompts"
-                                            AutomationProperties.Name="Re-detect language servers and restore install prompts"
-                                            Content="{Binding RecheckLanguageServersLabel}" />
-                                    <TextBlock Margin="24,0,0,0"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               TextWrapping="Wrap"
-                                               Text="{Binding LspRecheckStatusText}" />
+                                    <StackPanel Spacing="4"
+                                                Margin="24,0,0,0">
+                                        <Button Classes="chrome"
+                                                HorizontalAlignment="Left"
+                                                Click="RecheckLanguageServersButton_OnClick"
+                                                IsEnabled="{Binding !IsRecheckingLanguageServers}"
+                                                ToolTip.Tip="Re-detect language servers and restore install prompts"
+                                                AutomationProperties.Name="Re-detect language servers and restore install prompts"
+                                                Content="{Binding RecheckLanguageServersLabel}" />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Use this after installing a runtime or server so Kodo can find it, and to bring back install prompts you dismissed." />
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   IsVisible="{Binding LspRecheckStatusText, Converter={x:Static kodoModels:StringNotEmptyConverter.Instance}}"
+                                                   Text="{Binding LspRecheckStatusText}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -8629,6 +8623,7 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
+                                           IsVisible="{Binding AutoSaveStatusText, Converter={x:Static kodoModels:StringNotEmptyConverter.Instance}}"
                                            Text="{Binding AutoSaveStatusText}" />
 
                                 <TextBlock Classes="settingsgroupheader"
@@ -8644,9 +8639,6 @@ ToolTip.Tip="Increase font size" />
                                                TextWrapping="Wrap"
                                                Text="Reopen the files you had open when Kodo last closed." />
                                 </StackPanel>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding TabRestoreStatusText}" />
 
                                 <StackPanel Spacing="2">
                                     <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
@@ -8658,9 +8650,6 @@ ToolTip.Tip="Increase font size" />
                                                TextWrapping="Wrap"
                                                Text="Ask before closing a tab that has unsaved changes." />
                                 </StackPanel>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding ConfirmBeforeClosingStatusText}" />
 
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
@@ -8675,9 +8664,6 @@ ToolTip.Tip="Increase font size" />
                                                TextWrapping="Wrap"
                                                Text="Show the whole path instead of just the file name." />
                                 </StackPanel>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding StatusBarFilePathVisibilityText}" />
                             </StackPanel>
                         </Border>
 
@@ -8804,9 +8790,6 @@ ToolTip.Tip="Increase font size" />
                                                TextWrapping="Wrap"
                                                Text="Show what you're working on in your Discord profile." />
                                 </StackPanel>
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="{Binding DiscordRichPresenceStatusText}" />
                             </StackPanel>
                         </Border>
 
@@ -8900,6 +8883,7 @@ ToolTip.Tip="Increase font size" />
                                 </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
+                                           IsVisible="{Binding AutoUpdateAppStatusText, Converter={x:Static kodoModels:StringNotEmptyConverter.Instance}}"
                                            Text="{Binding AutoUpdateAppStatusText}" />
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
@@ -8931,6 +8915,7 @@ ToolTip.Tip="Increase font size" />
                                 </Grid>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
+                                           IsVisible="{Binding AutoUpdateExtensionsStatusText, Converter={x:Static kodoModels:StringNotEmptyConverter.Instance}}"
                                            Text="{Binding AutoUpdateExtensionsStatusText}" />
                             </StackPanel>
                         </Border>
@@ -9531,10 +9516,6 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="About" />
                                 </StackPanel>
-                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
-                                           Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="Version information and update status for this installation." />
 
                                 <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
                                     <StackPanel Grid.Column="0"
