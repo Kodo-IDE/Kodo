@@ -7272,8 +7272,8 @@ ToolTip.Tip="{Binding Path}" />
                                 <Button Classes="settingsnav" Tag="editor" Click="SettingsSectionButton_OnClick" Content="Editor" />
                                 <Button Classes="settingsnav" Tag="keyboard" Click="SettingsSectionButton_OnClick" Content="Keyboard Shortcuts" />
                                 <Button Classes="settingsnav" Tag="insight" Click="SettingsSectionButton_OnClick" Content="Insight" />
-                                <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Server" />
-                                <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="General" />
+                                <Button Classes="settingsnav" Tag="lsp" Click="SettingsSectionButton_OnClick" Content="Language Servers" />
+                                <Button Classes="settingsnav" Tag="general" Click="SettingsSectionButton_OnClick" Content="Workspace" />
                                 <Button Classes="settingsnav" Tag="terminal" IsVisible="{Binding IsTerminalSupported}" Click="SettingsSectionButton_OnClick" Content="Terminal" />
                                 <Button Classes="settingsnav" Tag="integrations" Click="SettingsSectionButton_OnClick" Content="Integrations" />
                                 <Button Classes="settingsnav" Tag="updates" Click="SettingsSectionButton_OnClick" Content="Updates" />
@@ -7302,7 +7302,7 @@ ToolTip.Tip="{Binding Path}" />
                                            Text="Configure Kodo" />
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
-                                           Text="Search and adjust how the editor works." />
+                                           Text="Search and change how Kodo works." />
                             </StackPanel>
                             <Border Grid.Column="1" Classes="searchpill" Width="320" VerticalAlignment="Center">
                                 <TextBox x:Name="SettingsSearchTextBox"
@@ -7355,6 +7355,10 @@ ToolTip.Tip="{Binding Path}" />
                                                VerticalAlignment="Center"
                                                Text="Theme" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Choose the colour theme Kodo uses across the whole app." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="BUILT-IN" />
                                 <Grid ColumnDefinitions="Auto,Auto,Auto"
@@ -7618,6 +7622,10 @@ ToolTip.Tip="{Binding Path}" />
                                                VerticalAlignment="Center"
                                                Text="{Binding LabelAccentColour}" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Sets the colour used for buttons, highlights, and selection." />
 
                                 <StackPanel Orientation="Horizontal" Spacing="10">
                                     <Button Classes="chrome"
@@ -7733,64 +7741,111 @@ ToolTip.Tip="{Binding Path}" />
                                                VerticalAlignment="Center"
                                                Text="Editor" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Control how text looks, wraps, and indents in the editor." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="VIEW" />
-                                <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable word wrap" />
-                                <CheckBox IsChecked="{Binding IsMinimapVisible, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Show a code overview beside the editor for quick navigation"
-                                          Content="Show minimap" />
-                                <CheckBox IsChecked="{Binding IsStickyScrollEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Keep enclosing scopes visible at the top of the editor while you scroll"
-                                          Content="Show sticky scroll" />
-                                <StackPanel Orientation="Horizontal" Spacing="12"
-                                            VerticalAlignment="Center"
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsWordWrapEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Word wrap" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Wrap long lines at the window edge instead of scrolling sideways." />
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsMinimapVisible, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Minimap" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Show a scaled overview of the file beside the editor." />
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsStickyScrollEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Sticky scroll" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Keep the class or block you're inside pinned to the top while scrolling." />
+                                </StackPanel>
+                                <StackPanel Spacing="4"
                                             Margin="24,0,0,0"
                                             IsVisible="{Binding IsStickyScrollEnabled}">
-                                    <TextBlock VerticalAlignment="Center"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Sticky scroll lines" />
-                                    <ComboBox Width="120"
-                                              SelectedIndex="{Binding StickyScrollMaxLinesIndex, Mode=TwoWay}"
-                                              ToolTip.Tip="Maximum number of nested scope lines kept at the top of the editor">
-                                        <ComboBoxItem Content="1 line" />
-                                        <ComboBoxItem Content="2 lines" />
-                                        <ComboBoxItem Content="3 lines" />
-                                        <ComboBoxItem Content="4 lines" />
-                                        <ComboBoxItem Content="5 lines" />
-                                    </ComboBox>
+                                    <StackPanel Orientation="Horizontal" Spacing="12"
+                                                VerticalAlignment="Center">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Sticky scroll lines" />
+                                        <ComboBox Width="120"
+                                                  SelectedIndex="{Binding StickyScrollMaxLinesIndex, Mode=TwoWay}">
+                                            <ComboBoxItem Content="1 line" />
+                                            <ComboBoxItem Content="2 lines" />
+                                            <ComboBoxItem Content="3 lines" />
+                                            <ComboBoxItem Content="4 lines" />
+                                            <ComboBoxItem Content="5 lines" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="How many nested scopes stay pinned at once." />
                                 </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="QUICK ACTIONS" />
-                                <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Show context-aware quick actions in the Activity Bar"
-                                          Content="Show Quick Actions" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsQuickActionsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show Quick Actions" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Show the Quick Actions panel in the Activity Bar." />
+                                </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="Personalization and learned preferences are managed in the Insight section of Settings." />
+                                           Text="Quick Actions learning is controlled in the Insight section." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="INDENTATION" />
-                                <StackPanel Orientation="Horizontal" Spacing="12"
-                                            VerticalAlignment="Center">
-                                    <TextBlock VerticalAlignment="Center"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Tab size" />
-                                    <ComboBox Width="120"
-                                              SelectedIndex="{Binding TabSizeIndex, Mode=TwoWay}">
-                                        <ComboBoxItem Content="2 spaces" />
-                                        <ComboBoxItem Content="4 spaces" />
-                                        <ComboBoxItem Content="8 spaces" />
-                                        <ComboBoxItem Content="Tab" />
-                                    </ComboBox>
+                                <StackPanel Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="12"
+                                                VerticalAlignment="Center">
+                                        <TextBlock VerticalAlignment="Center"
+                                                   Foreground="{Binding PrimaryTextBrush}"
+                                                   Text="Tab size" />
+                                        <ComboBox Width="120"
+                                                  SelectedIndex="{Binding TabSizeIndex, Mode=TwoWay}">
+                                            <ComboBoxItem Content="2 spaces" />
+                                            <ComboBoxItem Content="4 spaces" />
+                                            <ComboBoxItem Content="8 spaces" />
+                                            <ComboBoxItem Content="Tab" />
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Spaces inserted for each tab, or a real tab character." />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding AutoDetectIndentationEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Use the indentation style detected from each opened file until you choose an indentation setting manually"
-                                          Content="Automatically detect indentation" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding AutoDetectIndentationEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Detect indentation automatically" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Match each file's existing indentation until you change it here." />
+                                </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="FONT" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
@@ -7825,6 +7880,11 @@ ToolTip.Tip="{Binding Path}" />
                                             AutomationProperties.Name="Increase font size"
 ToolTip.Tip="Increase font size" />
                                   </StackPanel>
+                                  <TextBlock Margin="0,0,0,0"
+                                             FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                             Foreground="{Binding MutedTextBrush}"
+                                             TextWrapping="Wrap"
+                                             Text="Size of editor text, in pixels." />
                                   <TextBlock Foreground="{Binding MutedTextBrush}"
                                              TextWrapping="Wrap"
                                              Text="{Binding EditorBehaviorStatusText}" />
@@ -7841,6 +7901,10 @@ ToolTip.Tip="Increase font size" />
                                                     BorderBrush="{Binding SurfaceBorderBrush}"
                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
                                   </StackPanel>
+                                  <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                             Foreground="{Binding MutedTextBrush}"
+                                             TextWrapping="Wrap"
+                                             Text="Typeface used in the editor." />
                             </StackPanel>
                         </Border>
 
@@ -7962,33 +8026,56 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Insight" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsInsightEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Master switch for Insight's code suggestions and dead code highlighting"
-                                          Content="Enable Insight" />
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Kodo's built-in code analysis, suggestions, and the controls for what it learns." />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsInsightEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Enable Insight" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Turn Insight's analysis, suggestions, and learning on or off." />
+                                </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="ANALYSIS" />
                                 <StackPanel Spacing="10"
                                              Margin="24,0,0,0"
                                              IsVisible="{Binding IsInsightEnabled}">
-                                     <CheckBox IsChecked="{Binding IsInsightCodeSuggestionsEnabled, Mode=TwoWay}"
-                                                Foreground="{Binding PrimaryTextBrush}"
-                                                ToolTip.Tip="Predictive code completion as you type"
-                                                Content="Code Suggestions" />
-                                     <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
-                                                Foreground="{Binding PrimaryTextBrush}"
-                                                ToolTip.Tip="{Binding DeadCodeTooltip}"
-                                                Content="Dead Code (Experimental)" />
                                      <StackPanel Spacing="2">
-                                          <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
+                                          <CheckBox IsChecked="{Binding IsInsightCodeSuggestionsEnabled, Mode=TwoWay}"
                                                     Foreground="{Binding PrimaryTextBrush}"
-                                                    ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
-                                                    Content="Error Detection (Experimental) - LSP still active" />
+                                                    Content="Code suggestions" />
                                           <TextBlock Margin="24,0,0,0"
                                                      FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                      Foreground="{Binding MutedTextBrush}"
                                                      TextWrapping="Wrap"
-                                                     Text="Does not disable language server (LSP) diagnostics - LSP errors will still be shown." />
+                                                     Text="Predict the next pieces of code as you type." />
+                                     </StackPanel>
+                                     <StackPanel Spacing="2">
+                                          <CheckBox IsChecked="{Binding IsInsightDeadCodeEnabled, Mode=TwoWay}"
+                                                    Foreground="{Binding PrimaryTextBrush}"
+                                                    ToolTip.Tip="{Binding DeadCodeTooltip}"
+                                                    Content="Dead code (experimental)" />
+                                          <TextBlock Margin="24,0,0,0"
+                                                     FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                     Foreground="{Binding MutedTextBrush}"
+                                                     TextWrapping="Wrap"
+                                                     Text="Highlight code that nothing reaches or calls." />
+                                     </StackPanel>
+                                     <StackPanel Spacing="2">
+                                          <CheckBox IsChecked="{Binding IsInsightErrorDetectionEnabled, Mode=TwoWay}"
+                                                    Foreground="{Binding PrimaryTextBrush}"
+                                                    ToolTip.Tip="Underline unmatched brackets, unterminated strings, missing ';'/':' , and misspelled keywords. Experimental, please always double-check if it is correct"
+                                                    Content="Error detection (experimental)" />
+                                          <TextBlock Margin="24,0,0,0"
+                                                     FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                     Foreground="{Binding MutedTextBrush}"
+                                                     TextWrapping="Wrap"
+                                                     Text="Flag unmatched brackets, unterminated strings, and missing punctuation. Language server errors still appear." />
                                       </StackPanel>
                                      <Border Background="{Binding CardBrush}"
                                               BorderBrush="{Binding AccentBrush}"
@@ -8005,16 +8092,15 @@ ToolTip.Tip="Increase font size" />
                                                          Foreground="{Binding PrimaryTextBrush}"
                                                          TextWrapping="Wrap"
                                                          VerticalAlignment="Center"
-                                                         Text="Error Detection and Dead Code are experimental. Please always double-check if they are correct." />
+                                                         Text="Error detection and dead code are experimental - always double-check their results." />
                                          </StackPanel>
                                      </Border>
                                  </StackPanel>
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="EXCLUDED FILES" />
-                                <StackPanel Spacing="6">
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
-                                               Foreground="{Binding MutedTextBrush}"
-                                               Text="Blacklist (comma-separated extensions, e.g. .txt,.md):" />
+                                <StackPanel Spacing="4">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Ignored file types" />
                                     <TextBox Text="{Binding InsightBlacklistExtensions, Mode=TwoWay}"
                                              Foreground="{Binding PrimaryTextBrush}"
                                              Background="{Binding ButtonBrush}"
@@ -8024,11 +8110,14 @@ ToolTip.Tip="Increase font size" />
                                              Padding="8,6"
                                              FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                              PlaceholderText=".txt,.md" />
-                                </StackPanel>
-                                <StackPanel Spacing="6">
-                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
-                                               Text="Error &amp; Dead Code Blacklist (comma-separated extensions):" />
+                                               TextWrapping="Wrap"
+                                               Text="Comma-separated extensions Insight skips when suggesting code, e.g. .txt,.md" />
+                                </StackPanel>
+                                <StackPanel Spacing="4">
+                                    <TextBlock Foreground="{Binding PrimaryTextBrush}"
+                                               Text="Ignored by error detection and dead code" />
                                     <TextBox Text="{Binding InsightErrorDeadCodeBlacklistExtensions, Mode=TwoWay}"
                                              Foreground="{Binding PrimaryTextBrush}"
                                              Background="{Binding ButtonBrush}"
@@ -8038,6 +8127,10 @@ ToolTip.Tip="Increase font size" />
                                              Padding="8,6"
                                              FontSize="{x:Static kodo:KodoDesignTokens.BodyFontSize}"
                                              PlaceholderText=".cs,.cpp" />
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Comma-separated extensions these analyses skip, e.g. .cs,.cpp" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -8057,7 +8150,7 @@ ToolTip.Tip="Increase font size" />
                                                        FontWeight="SemiBold"
                                                        Foreground="{Binding PrimaryTextBrush}"
                                                        VerticalAlignment="Center"
-                                                       Text="Personalization" />
+                                                       Text="Learning" />
                                         </StackPanel>
                                         <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                    Foreground="{Binding MutedTextBrush}"
@@ -8121,7 +8214,7 @@ ToolTip.Tip="Increase font size" />
                                            FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="Turning this off stops new learning and removes its effect, but keeps what has already been learned until you reset it." />
+                                           Text="Turning this off stops new learning and removes its effect, but keeps what has already been learned until you reset it below." />
 
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="QUICK ACTIONS" />
@@ -8129,10 +8222,16 @@ ToolTip.Tip="Increase font size" />
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="Quick Actions are ordered using the ones you tend to run in the current context, with recent choices counting most." />
-                                <CheckBox IsChecked="{Binding IsQuickActionsLearningEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Personalize the Quick Actions shown for the current context"
-                                          Content="Personalize Quick Actions" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsQuickActionsLearningEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Personalize Quick Actions" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Order Quick Actions by the ones you use in the current context." />
+                                </StackPanel>
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
                                            Text="{Binding InsightQuickActionSummary}" />
@@ -8169,7 +8268,7 @@ ToolTip.Tip="Increase font size" />
                                 </ItemsControl>
                                 <Button Classes="chrome"
                                         HorizontalAlignment="Left"
-                                        Content="Reset Quick Actions learning"
+                                        Content="Reset Quick Actions Learning"
                                         IsEnabled="{Binding HasQuickActionLearningData}"
                                         Click="ResetQuickActionLearningButton_OnClick" />
 
@@ -8179,10 +8278,16 @@ ToolTip.Tip="Increase font size" />
                                            Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="Commands you pick gain a small boost, although a clearly better text match still ranks above them." />
-                                <CheckBox IsChecked="{Binding IsPaletteLearningEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          ToolTip.Tip="Personalize Command Palette order and remember search terms"
-                                          Content="Personalize Command Palette" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsPaletteLearningEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Personalize Command Palette" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Boost commands you pick, unless another result matches your search far better." />
+                                </StackPanel>
                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            Foreground="{Binding MutedTextBrush}"
                                            Text="{Binding InsightCommandPaletteSummary}" />
@@ -8219,7 +8324,7 @@ ToolTip.Tip="Increase font size" />
                                 </ItemsControl>
                                 <Button Classes="chrome"
                                         HorizontalAlignment="Left"
-                                        Content="Reset Command Palette learning"
+                                        Content="Reset Command Palette Learning"
                                         IsEnabled="{Binding HasPaletteLearningData}"
                                         Click="ResetPaletteLearningButton_OnClick" />
 
@@ -8264,7 +8369,7 @@ ToolTip.Tip="Increase font size" />
                                 </ItemsControl>
                                 <Button Classes="chrome"
                                         HorizontalAlignment="Left"
-                                        Content="Reset Personalized Search learning"
+                                        Content="Reset Personalized Search Learning"
                                         IsEnabled="{Binding HasInsightQueryAssociations}"
                                         Click="ResetPersonalizedSearchLearningButton_OnClick" />
 
@@ -8276,7 +8381,7 @@ ToolTip.Tip="Increase font size" />
                                            Text="{Binding InsightLearningSummary}" />
                                 <Button Classes="chrome red"
                                         HorizontalAlignment="Left"
-                                        Content="Reset all Insight learning"
+                                        Content="Reset All Insight Learning"
                                         IsEnabled="{Binding HasInsightLearningData}"
                                         ToolTip.Tip="Remove every learned preference and search association"
                                         AutomationProperties.Name="Reset all Insight learning"
@@ -8293,7 +8398,7 @@ ToolTip.Tip="Increase font size" />
                                             Click="BackupInsightDataButton_OnClick"
                                             ToolTip.Tip="Copy the current Insight data to quick-actions-learning.json.bak"
                                             AutomationProperties.Name="Copy the current Insight data to quick-actions-learning.json.bak"
-                                            Content="Backup Insight Data" />
+                                            Content="Back Up Insight Data" />
                                     <Button Classes="chrome red"
                                             Click="RestoreInsightBackupButton_OnClick"
                                             ToolTip.Tip="Overwrite your current Insight data with the backup and relaunch Kodo"
@@ -8341,25 +8446,50 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Language Servers" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding LspEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable language server features" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="Language servers provide code completion, diagnostics, navigation, and other language-aware editor features." />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding LspEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Enable language server features" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Use language servers for completion, diagnostics, and navigation." />
+                                </StackPanel>
 
                                 <StackPanel Spacing="10" Margin="24,0,0,0" IsVisible="{Binding LspEnabled}">
                                     <TextBlock Classes="settingsgroupheader"
                                                Text="DIAGNOSTICS &amp; HIGHLIGHTS" />
-                                    <CheckBox IsChecked="{Binding LspDiagnosticsEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Show diagnostics and error highlighting" />
-                                    <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Highlight references to the symbol under the caret" />
-                                    <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Semantic highlighting" />
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspDiagnosticsEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Diagnostics and error highlighting" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Underline errors and warnings reported by the server." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspDocumentHighlightsEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Reference highlighting" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Highlight other uses of the symbol under the caret." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspSemanticHighlightingEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Semantic highlighting" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Colour symbols by meaning using language server data." />
+                                    </StackPanel>
                                     <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
@@ -8368,32 +8498,68 @@ ToolTip.Tip="Increase font size" />
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,6,0,0"
                                                Text="COMPLETION &amp; ASSISTANCE" />
-                                    <CheckBox IsChecked="{Binding LspCompletionEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Show completion suggestions" />
-                                    <CheckBox IsChecked="{Binding LspHoverEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Show hover documentation" />
-                                    <CheckBox IsChecked="{Binding LspSignatureHelpEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Show signature help" />
-                                    <CheckBox IsChecked="{Binding LspInlayHintsEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Show inlay hints" />
-                                    <CheckBox IsChecked="{Binding LspFoldingEnabled, Mode=TwoWay}"
-                                              Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Enable code folding" />
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspCompletionEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Completion suggestions" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Offer completions while you type." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspHoverEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Hover documentation" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Show documentation when you hover over a symbol." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspSignatureHelpEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Signature help" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Show parameter hints while you type a call." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspInlayHintsEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Inlay hints" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Show inline type and parameter hints." />
+                                    </StackPanel>
+                                    <StackPanel Spacing="2">
+                                        <CheckBox IsChecked="{Binding LspFoldingEnabled, Mode=TwoWay}"
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Code folding" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Collapse blocks and regions in the editor." />
+                                    </StackPanel>
 
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,6,0,0"
                                                Text="INSTALLATION" />
                                     <CheckBox IsChecked="{Binding LspAutoInstall, Mode=TwoWay}"
                                               Foreground="{Binding PrimaryTextBrush}"
-                                              Content="Automatically install missing servers" />
+                                              Content="Install missing servers automatically" />
                                     <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
                                                TextWrapping="Wrap"
-                                               Text="When enabled, Kodo installs missing servers in its data folder. Servers already installed on your system remain available when this is off." />
+                                               Text="Installs servers into Kodo's data folder. Servers already on your system stay available when this is off." />
 
                                     <TextBlock Margin="24,0,0,0"
                                                Foreground="{Binding MutedTextBrush}"
@@ -8444,12 +8610,23 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Workspace" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Control autosave, tab restore, and status bar details." />
 
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="AUTOSAVE" />
-                                <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable autosave" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsAutoSaveEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Autosave" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Save your work shortly after you stop typing." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding AutoSaveStatusText}" />
@@ -8457,16 +8634,30 @@ ToolTip.Tip="Increase font size" />
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
                                            Text="TABS" />
-                                <CheckBox IsChecked="{Binding IsRestoreOpenTabsOnLaunchEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Restore open tabs on launch" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsRestoreOpenTabsOnLaunchEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Restore tabs on launch" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Reopen the files you had open when Kodo last closed." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding TabRestoreStatusText}" />
 
-                                <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Confirm before closing unsaved tabs" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsConfirmBeforeClosingUnsavedTabsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Confirm before closing unsaved tabs" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Ask before closing a tab that has unsaved changes." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding ConfirmBeforeClosingStatusText}" />
@@ -8474,9 +8665,16 @@ ToolTip.Tip="Increase font size" />
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
                                            Text="STATUS BAR" />
-                                <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Show full file paths in the status bar" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsStatusBarFilePathVisible, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Full file paths in the status bar" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Show the whole path instead of just the file name." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding StatusBarFilePathVisibilityText}" />
@@ -8513,6 +8711,10 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Terminal" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Choose the shell new terminals start in and how much history to keep." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="SHELL" />
                                 <StackPanel Orientation="Horizontal" Spacing="12"
@@ -8537,14 +8739,6 @@ ToolTip.Tip="Increase font size" />
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding TerminalShellDescriptionText}" />
-                                <CheckBox IsVisible="{Binding IsPSReadLineRelevant}"
-                                          IsChecked="{Binding IsPSReadLinePredictionEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable PSReadLine predictive IntelliSense in PowerShell" />
-                                <TextBlock IsVisible="{Binding IsPSReadLineRelevant}"
-                                           Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="Off by default - it can render as glitchy artifacts in the terminal. Applies to new terminal sessions." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
                                            Text="HISTORY" />
@@ -8600,9 +8794,16 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Discord Rich Presence" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable Discord Rich Presence" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsDiscordRichPresenceEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Discord Rich Presence" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Show what you're working on in your Discord profile." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            TextWrapping="Wrap"
                                            Text="{Binding DiscordRichPresenceStatusText}" />
@@ -8624,12 +8825,16 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Git Source Control" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsGitSourceControlEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Enable Git Source Control" />
-                                <TextBlock Foreground="{Binding MutedTextBrush}"
-                                           TextWrapping="Wrap"
-                                           Text="Adds Git status, staging, diffs, branches, commits, and remote actions to the activity bar. Requires Git on PATH." />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsGitSourceControlEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Git Source Control" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Show Git status, staging, diffs, and commits in the Activity Bar. Requires Git on PATH." />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -8662,11 +8867,22 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Updates" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Keep Kodo and your installed extensions up to date." />
                                 <TextBlock Classes="settingsgroupheader"
                                            Text="APPLICATION" />
-                                <CheckBox IsChecked="{Binding IsAutoUpdateAppEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Automatically check for Kodo updates" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateAppEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Check for Kodo updates automatically" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Look for new versions when Kodo starts." />
+                                </StackPanel>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
                                       IsVisible="{Binding IsAutoUpdateAppEnabled}">
                                     <CheckBox Grid.Column="0"
@@ -8688,9 +8904,16 @@ ToolTip.Tip="Increase font size" />
                                 <TextBlock Classes="settingsgroupheader"
                                            Margin="0,6,0,0"
                                            Text="EXTENSIONS" />
-                                <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Automatically update extensions" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsAutoUpdateExtensionsEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Update extensions automatically" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Keep installed extensions up to date." />
+                                </StackPanel>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
                                       IsVisible="{Binding IsAutoUpdateExtensionsEnabled}">
                                     <CheckBox Grid.Column="0"
@@ -8741,9 +8964,16 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Performance" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsPerformanceModeEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Performance mode" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsPerformanceModeEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Performance mode" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Turn off non-essential features to reduce memory and CPU use." />
+                                </StackPanel>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12" Margin="28,0,0,0"
                                       IsVisible="{Binding IsPerformanceModeEnabled}">
                                     <CheckBox Grid.Column="0"
@@ -8878,9 +9108,16 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Privacy" />
                                 </StackPanel>
-                                <CheckBox IsChecked="{Binding IsDataTrackingEnabled, Mode=TwoWay}"
-                                          Foreground="{Binding PrimaryTextBrush}"
-                                          Content="Help improve Kodo by sharing anonymous usage data" />
+                                <StackPanel Spacing="2">
+                                    <CheckBox IsChecked="{Binding IsDataTrackingEnabled, Mode=TwoWay}"
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Share anonymous usage data" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Sends anonymous usage events such as feature use and crash reports. No file contents, paths, or personal information is included." />
+                                </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
                                            FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                            TextWrapping="Wrap"
@@ -8923,66 +9160,90 @@ ToolTip.Tip="Increase font size" />
                                 </StackPanel>
 
                                 <StackPanel Spacing="8">
-                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <TextBlock Width="120"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Name" />
-                                        <TextBox Width="220"
-                                                 Text="{Binding UserName, Mode=TwoWay}"
-                                                 PlaceholderText="e.g. Alex (optional)"
-                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                                 Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
-                                                 Background="{Binding ButtonBrush}"
-                                                 Foreground="{Binding PrimaryTextBrush}"
-                                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Width="120"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="Name" />
+                                            <TextBox Width="220"
+                                                     Text="{Binding UserName, Mode=TwoWay}"
+                                                     PlaceholderText="e.g. Alex (optional)"
+                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                     Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
+                                                     Background="{Binding ButtonBrush}"
+                                                     Foreground="{Binding PrimaryTextBrush}"
+                                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                        </StackPanel>
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Shown in the welcome message on the Home screen." />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <TextBlock Width="120"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Country" />
-                                        <TextBox Width="220"
-                                                 Text="{Binding UserCountry, Mode=TwoWay}"
-                                                 PlaceholderText="e.g. CA, US, GB (auto-detected)"
-                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                                 Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
-                                                 Background="{Binding ButtonBrush}"
-                                                 Foreground="{Binding PrimaryTextBrush}"
-                                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Width="120"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="Country" />
+                                            <TextBox Width="220"
+                                                     Text="{Binding UserCountry, Mode=TwoWay}"
+                                                     PlaceholderText="e.g. CA, US, GB (auto-detected)"
+                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                     Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
+                                                     Background="{Binding ButtonBrush}"
+                                                     Foreground="{Binding PrimaryTextBrush}"
+                                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                        </StackPanel>
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Sets regional spelling and your hemisphere. Detected from your system if left blank." />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <TextBlock Width="120"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Hemisphere" />
-                                        <ComboBox Width="220"
-                                                  SelectedIndex="{Binding UserHemisphereIndex, Mode=TwoWay}"
-                                                  Background="{Binding ButtonBrush}"
-                                                  Foreground="{Binding PrimaryTextBrush}"
-                                                  BorderBrush="{Binding SurfaceBorderBrush}"
-                                                  CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}">
-                                            <ComboBoxItem Content="Auto-detect from country" />
-                                            <ComboBoxItem Content="Northern hemisphere" />
-                                            <ComboBoxItem Content="Southern hemisphere" />
-                                        </ComboBox>
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Width="120"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="Hemisphere" />
+                                            <ComboBox Width="220"
+                                                      SelectedIndex="{Binding UserHemisphereIndex, Mode=TwoWay}"
+                                                      Background="{Binding ButtonBrush}"
+                                                      Foreground="{Binding PrimaryTextBrush}"
+                                                      BorderBrush="{Binding SurfaceBorderBrush}"
+                                                      CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}">
+                                                <ComboBoxItem Content="Auto-detect from country" />
+                                                <ComboBoxItem Content="Northern hemisphere" />
+                                                <ComboBoxItem Content="Southern hemisphere" />
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Used for seasonal wording on the Home screen." />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                        <TextBlock Width="120"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Time zone offset" />
-                                        <TextBox Width="220"
-                                                 Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
-                                                 PlaceholderText="e.g. -5, +1 (auto-detected)"
-                                                 CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
-                                                 Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
-                                                 Background="{Binding ButtonBrush}"
-                                                 Foreground="{Binding PrimaryTextBrush}"
-                                                 BorderBrush="{Binding SurfaceBorderBrush}"
-                                                 BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                    <StackPanel Spacing="4">
+                                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                            <TextBlock Width="120"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{Binding PrimaryTextBrush}"
+                                                       Text="Time zone offset" />
+                                            <TextBox Width="220"
+                                                     Text="{Binding UserTimezoneOffset, Mode=TwoWay}"
+                                                     PlaceholderText="e.g. -5, +1 (auto-detected)"
+                                                     CornerRadius="{x:Static kodo:KodoDesignTokens.ControlRadius}"
+                                                     Padding="{x:Static kodo:KodoDesignTokens.MediumPadding}"
+                                                     Background="{Binding ButtonBrush}"
+                                                     Foreground="{Binding PrimaryTextBrush}"
+                                                     BorderBrush="{Binding SurfaceBorderBrush}"
+                                                     BorderThickness="{x:Static kodo:KodoDesignTokens.BorderThin}" />
+                                        </StackPanel>
+                                        <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Picks the greeting for the time of day. Detected automatically if left blank." />
                                     </StackPanel>
                                 </StackPanel>
                                 <TextBlock Foreground="{Binding MutedTextBrush}"
@@ -8998,7 +9259,7 @@ ToolTip.Tip="Increase font size" />
                                        LetterSpacing="1"
                                        Foreground="{Binding AccentBrush}"
                                        VerticalAlignment="Center"
-                                       Text="DEVELOPER TOOLS" />
+                                                                                      Text="DEVELOPER OPTIONS" />
                             <Border Grid.Column="1"
                                     Height="1"
                                     VerticalAlignment="Center"
@@ -9020,37 +9281,44 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="Developer Options" />
                                 </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                <StackPanel Spacing="2">
                                     <CheckBox IsChecked="{Binding IsDeveloperOptionsVisible, Mode=TwoWay}"
-                                              VerticalAlignment="Center" />
-                                    <TextBlock VerticalAlignment="Center"
-                                               Foreground="{Binding PrimaryTextBrush}"
-                                               Text="Show developer options" />
+                                              Foreground="{Binding PrimaryTextBrush}"
+                                              Content="Show developer options" />
+                                    <TextBlock Margin="24,0,0,0"
+                                               FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Reveal the logging, folder, and maintenance tools below." />
                                 </StackPanel>
                                 <StackPanel Spacing="8"
                                             IsVisible="{Binding IsDeveloperOptionsVisible}">
                                     <TextBlock Classes="settingsgroupheader"
                                                Text="DIAGNOSTICS &amp; LOGGING" />
-                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <StackPanel Spacing="2">
                                         <CheckBox IsChecked="{Binding IsVerboseLoggingEnabled, Mode=TwoWay}"
-                                                  VerticalAlignment="Center"
-                                                  ToolTip.Tip="When off, kodo.log and crash.log each start fresh on launch. When on, debug traces are included in kodo.log and both files keep accumulating across launches instead of being reset." />
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Debug Logging (adds debug traces and keeps logs across sessions)" />
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Debug logging" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Adds debug traces to kodo.log and keeps logs across launches instead of resetting them." />
                                     </StackPanel>
-                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <StackPanel Spacing="2">
                                         <CheckBox IsChecked="{Binding IsRuntimeMetricsLoggingEnabled, Mode=TwoWay}"
-                                                  VerticalAlignment="Center"
-                                                  ToolTip.Tip="Every 10 seconds, append a GC/heap/thread sample line (METRIC) to kodo.log. Useful for tracking memory pressure over time." />
-                                        <TextBlock VerticalAlignment="Center"
-                                                   Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="Runtime Metrics Logging (10s GC/heap/thread samples)" />
+                                                  Foreground="{Binding PrimaryTextBrush}"
+                                                  Content="Runtime metrics logging" />
+                                        <TextBlock Margin="24,0,0,0"
+                                                   FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                                   Foreground="{Binding MutedTextBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Text="Appends a GC, heap, and thread sample to kodo.log every 10 seconds." />
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                         <TextBlock VerticalAlignment="Center"
                                                    Foreground="{Binding PrimaryTextBrush}"
-                                                   Text="SLOW stage log threshold (ms, 0 = built-in):" />
+                                                   Text="Slow stage threshold (ms)" />
                                         <TextBox Width="120"
                                                  VerticalAlignment="Center"
                                                  Background="{Binding ButtonBrush}"
@@ -9063,9 +9331,12 @@ ToolTip.Tip="Increase font size" />
                                                  HorizontalContentAlignment="Center"
                                                  VerticalContentAlignment="Center"
                                                  Text="{Binding SlowStageThresholdText, Mode=TwoWay}"
-                                                 PlaceholderText="0"
-                                                 ToolTip.Tip="Replace the built-in thresholds for SLOW log entries. Lower to catch sluggishness, raise to silence noise. Defaults are around 250 ms." />
+                                                 PlaceholderText="0" />
                                     </StackPanel>
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Log UI stages slower than this many milliseconds; 0 uses the built-in limits." />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="CopyDiagnosticInfoButton_OnClick"
@@ -9078,6 +9349,10 @@ ToolTip.Tip="Increase font size" />
                                                 AutomationProperties.Name="Delete kodo.log and crash.log from disk"
                                                 Content="Clear Logs" />
                                     </StackPanel>
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Copy version, system, and log details, or delete both log files." />
 
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
@@ -9118,6 +9393,10 @@ ToolTip.Tip="Increase font size" />
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
                                                Text="SETTINGS DATA" />
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Back up or restore your settings, or show the first-launch prompts again." />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="BackupSettingsDataButton_OnClick"
@@ -9146,6 +9425,10 @@ ToolTip.Tip="Increase font size" />
                                     <TextBlock Classes="settingsgroupheader"
                                                Margin="0,8,0,0"
                                                Text="MAINTENANCE" />
+                                    <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                               Foreground="{Binding MutedTextBrush}"
+                                               TextWrapping="Wrap"
+                                               Text="Clear caches, export your data, or reset Kodo to defaults." />
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Button Classes="chrome"
                                                 Click="ClearCacheButton_OnClick"
@@ -9204,6 +9487,10 @@ ToolTip.Tip="Increase font size" />
                                             VerticalAlignment="Center"
                                             Text="Help" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Open the tutorial, join the community, or visit the website." />
 
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Classes="chrome"
@@ -9244,6 +9531,10 @@ ToolTip.Tip="Increase font size" />
                                                VerticalAlignment="Center"
                                                Text="About" />
                                 </StackPanel>
+                                <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
+                                           Foreground="{Binding MutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Version information and update status for this installation." />
 
                                 <Grid ColumnDefinitions="Auto,*" VerticalAlignment="Center">
                                     <StackPanel Grid.Column="0"

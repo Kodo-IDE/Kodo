@@ -572,7 +572,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private TerminalShellOption? _selectedTerminalShell;
     private bool _isTerminalVisible;
     private bool _isTerminalSupported = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
-    private bool _isPSReadLinePredictionEnabled;
     private double _terminalPanelHeight = AppSettings.DefaultTerminalPanelHeight;
     private bool _isResizingTerminalPanel;
     private double _terminalPanelDragStartPointerY;
@@ -1202,7 +1201,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             ? settings.LastOpenedFolderPath
             : null;
         LoadRecentFiles(settings.RecentFiles);
-        _isPSReadLinePredictionEnabled = settings.PSReadLinePredictionEnabled;
         foreach (var pair in settings.CustomRunCommands ?? new Dictionary<string, string>())
             _customRunCommands[pair.Key] = pair.Value;
         foreach (var pair in settings.CustomBuildCommands ?? new Dictionary<string, string>())
@@ -4382,19 +4380,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         QueueInsightRefresh();
     }
 
-    public bool IsPSReadLinePredictionEnabled
-    {
-        get => _isPSReadLinePredictionEnabled;
-        set
-        {
-            if (_isPSReadLinePredictionEnabled == value) return;
-            _isPSReadLinePredictionEnabled = value;
-            OnPropertyChanged();
-            RefreshAvailableTerminalShells(SelectedTerminalShell?.Id);
-            SaveSettings();
-        }
-    }
-
     public int TabSize
     {
         get => _tabSize;
@@ -5365,7 +5350,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     public bool IsTerminalPanelVisible => IsTerminalVisible && IsTerminalSupported;
 
-    public bool IsPSReadLineRelevant => OperatingSystem.IsWindows();
     public bool HasActiveTerminal => ActiveTerminalSession is not null;
     public bool HasTerminalSessions => TerminalSessions.Count > 0;
     public int TerminalSessionCount => TerminalSessions.Count;
@@ -6897,7 +6881,6 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             WhatsNewDisabled = WhatsNewDisabled,
             DebouncedSearchEnabled = IsDebouncedSearchEnabled,
             PreferredTerminalShellId = SelectedTerminalShell?.Id,
-            PSReadLinePredictionEnabled = IsPSReadLinePredictionEnabled,
             TerminalVisible = IsTerminalVisible,
             TerminalPanelHeight = TerminalPanelHeight,
             TerminalSidebarWidth = TerminalSidebarWidth,
@@ -7323,7 +7306,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(3));
-                var shells = await Task.Run(() => TerminalShellSupport.DetectTerminalShells(_isPSReadLinePredictionEnabled).ToList());
+                var shells = await Task.Run(() => TerminalShellSupport.DetectTerminalShells().ToList());
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     var preferred = _deferredPreferredShellId;
@@ -8038,7 +8021,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         AvailableTerminalShells.Clear();
 
-        foreach (var shell in TerminalShellSupport.DetectTerminalShells(_isPSReadLinePredictionEnabled))
+        foreach (var shell in TerminalShellSupport.DetectTerminalShells())
             AvailableTerminalShells.Add(shell);
 
         var platformDefaultId = TerminalShellSupport.GetDefaultShellId();
