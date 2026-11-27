@@ -3,6 +3,7 @@ using Avalonia;
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -28,9 +29,10 @@ class Program
         if (InsightWorker.IsWorkerRequest(args))
             return InsightWorker.Run(args);
 
-        if (!SingleInstance.TryAcquire())
+        var relaunch = args.Any(arg => string.Equals(arg, "--relaunch", StringComparison.OrdinalIgnoreCase));
+        if (!SingleInstance.TryAcquire(relaunch))
         {
-            var handoffPath = args.Length > 0 ? args[0] : null;
+            var handoffPath = args.FirstOrDefault(arg => !arg.StartsWith("--", StringComparison.Ordinal));
             SingleInstance.SendActivationRequest(handoffPath);
             return 0;
         }
@@ -84,14 +86,22 @@ internal static class SingleInstance
         return version.Replace('.', '_');
     }
 
-    public static bool TryAcquire()
+    public static bool TryAcquire(bool waitForPreviousInstance = false)
     {
-        _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
-        if (createdNew) return true;
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (true)
+        {
+            _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
+            if (createdNew) return true;
 
-        _mutex.Dispose();
-        _mutex = null;
-        return false;
+            _mutex.Dispose();
+            _mutex = null;
+
+            if (!waitForPreviousInstance || DateTime.UtcNow >= deadline)
+                return false;
+
+            Thread.Sleep(100);
+        }
     }
 
     public static void Release()
