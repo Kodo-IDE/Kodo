@@ -46,6 +46,10 @@
     <None Remove="KodoUpdater\**\*.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Kodo.Tests" />
+  </ItemGroup>
+
   <Target Name="RemovePdbFilesFromPublish" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
     <ItemGroup>
       <PdbFiles Include="$(PublishDir)**/*.pdb" />
