@@ -2629,10 +2629,15 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         if (this.FindControl<Border>("QuickAccessSearchFrame") is not { } frame)
             return;
         var (width, delta) = GetFrameGeometry();
+        var wasVisible = frame.IsVisible;
         frame.MinWidth = Math.Min(140, width);
         frame.Width = width;
         frame.IsVisible = width >= 140;
         frame.RenderTransform = new TranslateTransform(delta, 0);
+        if (wasVisible != frame.IsVisible &&
+            _commandPaletteOverlay is { IsVisible: true } &&
+            _commandPaletteUsesOverlaySearchBox != (!IsEditorPageVisible || !frame.IsVisible))
+            ReopenCommandPaletteForLayout();
     }
 
     internal void SyncSidebarSplitLayout()
