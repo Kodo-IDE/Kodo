@@ -41,11 +41,25 @@ public static class QuickActionIdentity
         ["NewTerminalSession"] = "cmd.new-terminal",
     };
 
+    private static readonly HashSet<string> ExecutionObservedCommandIds = new(StringComparer.Ordinal)
+    {
+        "cmd.new-terminal",
+        "cmd.open-active-file-folder-in-terminal",
+        "cmd.search-in-current-folder",
+    };
+
     public static IReadOnlySet<string> CoveredCommandIds { get; } =
         new HashSet<string>(CommandAliases.Keys, StringComparer.Ordinal);
 
     public static bool IsAliased(string? commandId) =>
         !string.IsNullOrWhiteSpace(commandId) && CommandAliases.ContainsKey(commandId.Trim());
+
+    public static bool IsObservedByExecution(string? commandId)
+    {
+        if (string.IsNullOrWhiteSpace(commandId)) return false;
+        var trimmed = commandId.Trim();
+        return CommandAliases.ContainsKey(trimmed) || ExecutionObservedCommandIds.Contains(trimmed);
+    }
 
     public static string ForCommand(string? commandId)
     {

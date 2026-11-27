@@ -27,9 +27,8 @@ public partial class MainWindow
     public ObservableCollection<QuickActionItem> QuickActions { get; } = new();
     private readonly Dictionary<string, DiscoveredQuickAction> _discoveredQuickActions = new(StringComparer.Ordinal);
     private List<PaletteCommand>? _quickActionCommandSource;
-    private readonly Dictionary<string, QuickActionItem> _observedQuickActions = new(StringComparer.Ordinal);
+    private readonly QuickActionObservationPool _observedQuickActions = new();
     private readonly QuickActionObservationLog _quickActionObservations = new();
-    private string? _observedQuickActionSignature;
     public bool IsQuickActionsEnabled
     {
         get => _isQuickActionsEnabled;
@@ -324,13 +323,7 @@ public partial class MainWindow
             actions.Add(discovered.Item);
         }
 
-        var observationSignature = $"{_currentFilePath}|{IsFolderOpen}|{IsTerminalSupported}";
-        if (!string.Equals(observationSignature, _observedQuickActionSignature, StringComparison.Ordinal))
-        {
-            _observedQuickActionSignature = observationSignature;
-            _observedQuickActions.Clear();
-        }
-        foreach (var action in actions) _observedQuickActions[action.Id] = action;
+        _observedQuickActions.Update($"{_currentFilePath}|{IsFolderOpen}|{IsTerminalSupported}", actions);
 
         var rankedActions = UserInsight.RankQuickActions(actions, DateTime.UtcNow, maximum: 3);
 
@@ -379,36 +372,48 @@ public partial class MainWindow
         ShowStatusBarMessage($"{discovered.Command.Title} failed. See the log for details.");
     }
 
-    private void RecordObservedAction(string actionId)
+    private void RecordObservedAction(string actionId) => RecordObservedAction(actionId, Guid.NewGuid());
+
+    private void RecordObservedAction(string actionId, Guid executionId)
     {
         if (string.IsNullOrWhiteSpace(actionId) || !IsQuickActionsLearningEnabled) return;
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => RecordObservedAction(actionId));
+            Dispatcher.UIThread.Post(() => RecordObservedAction(actionId, executionId));
             return;
         }
 
         var resolvedId = QuickActionIdentity.ForCommand(actionId);
         if (resolvedId.Length == 0) return;
 
-        if (ResolveObservedQuickAction(resolvedId) is not { } action) return;
-        if (!_quickActionObservations.TryRecord(action.Id, DateTime.UtcNow)) return;
+        var action = ResolveObservedQuickAction(resolvedId);
+        if (action is null)
+        {
+            RefreshQuickActions();
+            action = ResolveObservedQuickAction(resolvedId);
+        }
+        if (action is null) return;
+
+        if (!_quickActionObservations.TryRecord(action.Id, executionId)) return;
         RecordQuickActionSelection(action.Id, action);
     }
 
     private QuickActionItem? ResolveObservedQuickAction(string actionId)
     {
-        if (_observedQuickActions.TryGetValue(actionId, out var observed)) return observed;
+        if (_observedQuickActions.Resolve(actionId) is { } observed) return observed;
         if (_discoveredQuickActions.TryGetValue(actionId, out var discovered)) return discovered.Item;
         return QuickActions.FirstOrDefault(action => action.Id == actionId);
     }
 
-    private Action WrapObservedAction(string actionId, Action? onSuccess) =>
-        () =>
+    private Action WrapObservedAction(string actionId, Action? onSuccess)
+    {
+        var executionId = Guid.NewGuid();
+        return () =>
         {
             onSuccess?.Invoke();
-            RecordObservedAction(actionId);
+            RecordObservedAction(actionId, executionId);
         };
+    }
 
     private IEnumerable<QuickActionCommandRegistration> BuildQuickActionCommandRegistrations()
     {
@@ -477,59 +482,52 @@ public partial class MainWindow
 
     private async Task ExecuteQuickAction(string id)
     {
-        void Record() => RecordObservedAction(id);
         switch (id)
         {
-            case "QuickFix": await RunCodeActionsWithFallbackAsync(CodeActionScope.QuickFix, Record); break;
-            case "NextProblem": if (NavigateEditorDiagnostic(1)) Record(); break;
-            case "PreviousProblem": if (NavigateEditorDiagnostic(-1)) Record(); break;
-            case "Definition": GoToDefinitionAtCaret(Record); break;
-            case "References": _ = FindReferencesAtCaretAsync(Record); break;
-            case "TypeDefinition": _ = NavigateToTypeDefinitionAsync(Record); break;
-            case "Implementation": _ = NavigateToImplementationAsync(Record); break;
-            case "DocumentSymbols": EditorDocumentSymbolsMenuItem_OnClick(null, new RoutedEventArgs()); Record(); break;
-            case "SignatureHelp": _ = ShowSignatureHelpAsync(Record); break;
-            case "Rename": _ = RenameSymbolAsync(Record); break;
-            case "Format": _ = FormatDocumentAsync(Record); break;
-            case "FindInFile": if (EditorTextBox?.Document is not null) { OpenSearchPanel(SearchMode.FindInFile); Record(); } break;
+            case "QuickFix": await RunCodeActionsWithFallbackAsync(CodeActionScope.QuickFix); break;
+            case "NextProblem": NavigateEditorDiagnostic(1); break;
+            case "PreviousProblem": NavigateEditorDiagnostic(-1); break;
+            case "Definition": GoToDefinitionAtCaret(); break;
+            case "References": _ = FindReferencesAtCaretAsync(); break;
+            case "TypeDefinition": _ = NavigateToTypeDefinitionAsync(); break;
+            case "Implementation": _ = NavigateToImplementationAsync(); break;
+            case "DocumentSymbols": EditorDocumentSymbolsMenuItem_OnClick(null, new RoutedEventArgs()); break;
+            case "SignatureHelp": _ = ShowSignatureHelpAsync(); break;
+            case "Rename": _ = RenameSymbolAsync(); break;
+            case "Format": _ = FormatDocumentAsync(); break;
+            case "FindInFile": if (EditorTextBox?.Document is not null) OpenSearchPanel(SearchMode.FindInFile); break;
             case "ToggleComment":
                 if (EditorTextBox?.Document is { } commentDocument && EditorTextBox.TextArea is { } commentArea)
-                {
                     ToggleLineComment(commentDocument, commentArea, commentArea.Selection, commentArea.Caret);
-                    Record();
-                }
                 break;
             case "SelectLine":
                 if (EditorTextBox?.Document is { } selectDocument && EditorTextBox.TextArea is { } selectArea)
-                {
                     EditorSelectCurrentLine(selectDocument, selectArea);
-                    Record();
-                }
                 break;
-            case "MoveLineUp": RunEditorLineAction(-1, duplicate: false, delete: false, insertBelow: null, Record); break;
-            case "MoveLineDown": RunEditorLineAction(1, duplicate: false, delete: false, insertBelow: null, Record); break;
-            case "DuplicateLineUp": RunEditorLineAction(-1, duplicate: true, delete: false, insertBelow: null, Record); break;
-            case "DuplicateLineDown": RunEditorLineAction(1, duplicate: true, delete: false, insertBelow: null, Record); break;
-            case "DeleteLine": RunEditorLineAction(0, duplicate: false, delete: true, insertBelow: null, Record); break;
-            case "InsertLineAbove": RunEditorLineAction(0, duplicate: false, delete: false, insertBelow: false, Record); break;
-            case "InsertLineBelow": RunEditorLineAction(0, duplicate: false, delete: false, insertBelow: true, Record); break;
-            case "ToggleBookmark": if (EditorTextBox?.Document is not null && ActiveRelativePath() is not null) { ToggleBookmarkAtCaret(); Record(); } break;
-            case "ChangeOccurrences": if (EditorTextBox?.TextArea?.Selection is { IsEmpty: false }) { EditorChangeAllOccurrencesMenuItem_OnClick(null, new RoutedEventArgs()); Record(); } break;
+            case "MoveLineUp": RunEditorLineAction(-1, duplicate: false, delete: false, insertBelow: null); break;
+            case "MoveLineDown": RunEditorLineAction(1, duplicate: false, delete: false, insertBelow: null); break;
+            case "DuplicateLineUp": RunEditorLineAction(-1, duplicate: true, delete: false, insertBelow: null); break;
+            case "DuplicateLineDown": RunEditorLineAction(1, duplicate: true, delete: false, insertBelow: null); break;
+            case "DeleteLine": RunEditorLineAction(0, duplicate: false, delete: true, insertBelow: null); break;
+            case "InsertLineAbove": RunEditorLineAction(0, duplicate: false, delete: false, insertBelow: false); break;
+            case "InsertLineBelow": RunEditorLineAction(0, duplicate: false, delete: false, insertBelow: true); break;
+            case "ToggleBookmark": if (ActiveRelativePath() is not null) ToggleBookmarkAtCaret(); break;
+            case "ChangeOccurrences": if (EditorTextBox?.TextArea?.Selection is { IsEmpty: false }) EditorChangeAllOccurrencesMenuItem_OnClick(null, new RoutedEventArgs()); break;
             case "ProjectTerminal":
                 var terminalResult = await QuickActionRunner.RunAsync(
-                    () => Task.FromResult(TryOpenWorkspaceInIntegratedTerminal()), Record);
+                    () => Task.FromResult(TryOpenWorkspaceInIntegratedTerminal()));
                 if (terminalResult.Error is not null)
                 {
                     KodoDiagnostics.LogWarning("Quick Action 'ProjectTerminal' failed.", terminalResult.Error);
                     ShowStatusBarMessage("The workspace terminal could not be opened.");
                 }
                 break;
-            case "ProjectSearch": if (IsFolderOpen) { OpenSearchPanel(SearchMode.ProjectSearch); Record(); } break;
+            case "ProjectSearch": if (IsFolderOpen) OpenSearchPanel(SearchMode.ProjectSearch); break;
             case "CopyProjectPath":
                 if (!string.IsNullOrWhiteSpace(_currentFolderPath) && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
                 {
                     await clipboard.SetTextAsync(_currentFolderPath);
-                    Record();
+                    RecordObservedAction(id);
                 }
                 break;
             default:
@@ -538,13 +536,12 @@ public partial class MainWindow
         }
     }
 
-    private void RunEditorLineAction(int direction, bool duplicate, bool delete, bool? insertBelow, Action onSuccess)
+    private void RunEditorLineAction(int direction, bool duplicate, bool delete, bool? insertBelow)
     {
         if (EditorTextBox?.Document is not { } document || EditorTextBox.TextArea is not { } area) return;
         if (insertBelow is { } below) EditorInsertLine(document, area, below);
         else if (delete) EditorDeleteLines(document, area);
         else if (duplicate) EditorDuplicateLines(document, area, direction);
         else EditorMoveLines(document, area, direction);
-        onSuccess();
     }
 }
