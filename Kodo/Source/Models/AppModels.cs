@@ -58,7 +58,6 @@ internal sealed class AppSettings
     public bool AutoUpdateAppEnabled { get; set; } = true;
     public bool AutoUpdateAppInBackgroundEnabled { get; set; }
     public string? PreferredTerminalShellId { get; set; }
-    public bool PSReadLinePredictionEnabled { get; set; }
     public bool TerminalVisible { get; set; }
     public double TerminalPanelHeight { get; set; } = DefaultTerminalPanelHeight;
     public double TerminalSidebarWidth { get; set; } = DefaultTerminalSidebarWidth;

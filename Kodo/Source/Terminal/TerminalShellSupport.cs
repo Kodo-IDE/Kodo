@@ -83,7 +83,7 @@ public static class TerminalShellSupport
     private const string LinuxBashCwdHookArguments =
         @"-i -c ""export PROMPT_COMMAND='printf \""\033]1337;CurrentDir=%s\007\"" \""\$(pwd)\""'; exec bash -i""";
 
-    public static IEnumerable<TerminalShellOption> DetectTerminalShells(bool enablePSReadLinePrediction = false)
+    public static IEnumerable<TerminalShellOption> DetectTerminalShells()
     {
         var shells = new List<TerminalShellOption>();
 
@@ -119,10 +119,6 @@ public static class TerminalShellSupport
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            var predictionCommand = enablePSReadLinePrediction
-                ? "try { Set-PSReadLineOption -PredictionSource HistoryAndPlugin } catch { try { Set-PSReadLineOption -PredictionSource History } catch {} }; "
-                : "try { Set-PSReadLineOption -PredictionSource None } catch {}; ";
-
             const string reportCwdCommand =
                 "if (-not $global:__KodoOrigPrompt) { $global:__KodoOrigPrompt = $function:prompt }; " +
                 "function global:prompt { " +
@@ -133,14 +129,14 @@ public static class TerminalShellSupport
                 "powershell",
                 "PowerShell",
                 ResolveExecutable("pwsh.exe"),
-                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
+                $"-NoLogo -NoExit -Command \"{reportCwdCommand}\"");
             AddShell(
                 "windows-powershell",
                 "Windows PowerShell",
                 ResolveExecutable("powershell.exe", Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.System),
                         @"WindowsPowerShell\v1.0\powershell.exe")),
-                $"-NoLogo -NoExit -Command \"{predictionCommand}{reportCwdCommand}\"");
+                $"-NoLogo -NoExit -Command \"{reportCwdCommand}\"");
             AddShell(
                 "cmd",
                 "Command Prompt",
