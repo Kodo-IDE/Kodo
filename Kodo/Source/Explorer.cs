@@ -420,6 +420,7 @@ public partial class MainWindow
         }
         finally
         {
+            RecoverBlankActiveTabContent(tab, activationVersion, activationPane);
             KodoDiagnostics.ReportSlowStage(
                 "tab content activation total",
                 (long)System.Diagnostics.Stopwatch.GetElapsedTime(activationStartedAt).TotalMilliseconds,
@@ -428,17 +429,30 @@ public partial class MainWindow
         }
     }
 
+    private void RecoverBlankActiveTabContent(EditorTab tab, int activationVersion, EditorPaneState activationPane)
+    {
+        if (tab.IsUntitled || tab.IsDirty || _corruptedTabs.Contains(tab) || IsImagePreviewFile(tab.Path)) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (!IsTabActivationCurrent(tab, activationVersion, activationPane)) return;
+            if (GetEditorForPane(activationPane).Document is not { TextLength: 0 }) return;
+            if (TryGetFileLength(tab.Path) <= 0) return;
+            KodoDiagnostics.LogDebug($"Recovering blank active editor for '{tab.Path}'");
+            _ = EnsurePaneDocumentHasContentAsync(activationPane, tab);
+        }, DispatcherPriority.Background);
+    }
+
     private async Task SetEditorTabContentAsync(EditorTab tab, int activationVersion, EditorPaneState activationPane)
     {
         if (!IsTabActivationCurrent(tab, activationVersion, activationPane)) return;
         await ClearLspFoldingsAsync();
         if (!IsTabActivationCurrent(tab, activationVersion, activationPane)) return;
 
-        var tabDocument = IsImagePreviewFile(_currentFilePath) ? null : tab.Document;
+        var tabDocument = IsImagePreviewFile(tab.Path) ? null : tab.Document;
         if (tabDocument is not null)
             SetEditorContent(tabDocument, preserveUndoHistory: true);
         else
-            await SetEditorContentAsync(IsImagePreviewFile(_currentFilePath) ? string.Empty : tab.Content, activationVersion, activationPane, tab);
+            await SetEditorContentAsync(IsImagePreviewFile(tab.Path) ? string.Empty : tab.Content, activationVersion, activationPane, tab);
         if (!IsTabActivationCurrent(tab, activationVersion, activationPane)) return;
         if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
             await EnsurePaneDocumentHasContentAsync(activationPane, tab);
@@ -460,7 +474,7 @@ public partial class MainWindow
                 !ReferenceEquals(EditorTextBox.Document, activeDocument) || !ReferenceEquals(activeDocument.Version, documentVersion)) return;
             tab.IndentationDetectionVersion = documentVersion;
         }
-        if (!tab.IsUntitled && !IsImagePreviewFile(_currentFilePath))
+        if (!tab.IsUntitled && !IsImagePreviewFile(tab.Path))
             ApplyIndentationForContent(tab.DetectedIndentation);
         var viewState = tab.GetViewState(_activeEditorPane.Id);
         EditorTextBox.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, EditorTextBox.Document.TextLength);
