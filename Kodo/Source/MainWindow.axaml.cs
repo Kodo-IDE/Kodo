@@ -2048,20 +2048,28 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         {
             const int sampleSize = 8192;
             Span<byte> buffer = stackalloc byte[sampleSize];
-            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             var read = fs.Read(buffer);
-            for (var i = 0; i < read; i++)
+            ReadOnlySpan<byte> sample = buffer[..read];
+            if (StartsWithTextByteOrderMark(sample))
+                return false;
+            foreach (var value in sample)
             {
-                if (buffer[i] == 0x00)
+                if (value == 0x00)
                     return true;
             }
             return false;
         }
         catch
         {
-            return true;
+            return false;
         }
     }
+
+    private static bool StartsWithTextByteOrderMark(ReadOnlySpan<byte> sample) =>
+        sample.Length >= 3 && sample[0] == 0xEF && sample[1] == 0xBB && sample[2] == 0xBF ||
+        sample.Length >= 2 && (sample[0] == 0xFF && sample[1] == 0xFE || sample[0] == 0xFE && sample[1] == 0xFF) ||
+        sample.Length >= 4 && sample[0] == 0x00 && sample[1] == 0x00 && sample[2] == 0xFE && sample[3] == 0xFF;
 
     private static Bitmap? TryLoadImagePreview(string? filePath)
     {
