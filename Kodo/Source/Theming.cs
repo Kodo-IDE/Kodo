@@ -66,8 +66,8 @@ public partial class MainWindow
             _ => null,
         };
         if (targetName is null ||
-            this.FindControl<Control>(targetName) is not { } target ||
-            this.FindControl<ScrollViewer>("SettingsScrollViewer") is not { } scrollViewer)
+            FindSettingsControl<Control>(targetName) is not { } target ||
+            FindSettingsControl<ScrollViewer>("SettingsScrollViewer") is not { } scrollViewer)
             return;
 
         if (!target.IsVisible && !string.IsNullOrWhiteSpace(SettingsSearchText))
@@ -122,7 +122,7 @@ public partial class MainWindow
             ("helpabout", "SectionHeaderHelpAbout")
         };
         var activeSection = settingsSections
-            .Select(section => (section.Key, Header: this.FindControl<Control>(section.Header)))
+            .Select(section => (section.Key, Header: FindSettingsControl<Control>(section.Header)))
             .Where(section => section.Header is { IsVisible: true })
             .Select(section => (section.Key, Position: section.Header!.TranslatePoint(new Point(0, 0), scrollViewer)?.Y ?? double.MaxValue))
             .Where(section => section.Position <= 160)
@@ -131,7 +131,7 @@ public partial class MainWindow
         if (scrollableHeight > 0 && scrollViewer.Offset.Y >= scrollableHeight - 4)
         {
             var lastVisible = settingsSections
-                .LastOrDefault(section => this.FindControl<Control>(section.Header) is { IsVisible: true });
+                .LastOrDefault(section => FindSettingsControl<Control>(section.Header) is { IsVisible: true });
             if (!string.IsNullOrEmpty(lastVisible.Key))
                 activeSection = (lastVisible.Key, 0.0);
         }
@@ -149,13 +149,13 @@ public partial class MainWindow
         if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is Button button &&
             button.Classes.Contains("settingsnav"))
         {
-            SettingsPageGrid.Focus();
+            _settingsPageRoot?.Focus();
         }
     }
 
     private void SetActiveSettingsNavigation(string section)
     {
-        foreach (var button in SettingsPageGrid.GetVisualDescendants().OfType<Button>()
+        foreach (var button in (_settingsPageRoot?.GetVisualDescendants() ?? Enumerable.Empty<Visual>()).OfType<Button>()
                      .Where(button => button.Classes.Contains("settingsnav")))
         {
             if (string.Equals(button.Tag as string, section, StringComparison.OrdinalIgnoreCase))
@@ -726,13 +726,7 @@ public partial class MainWindow
 
         var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var footerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var inner = new StackPanel
         {

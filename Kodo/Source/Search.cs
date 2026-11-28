@@ -113,12 +113,14 @@ public partial class MainWindow
 
     private void NotifySettingsSearchChanged()
     {
-        var cards = SettingsCardsPanel.Children
+        if (FindSettingsControl<StackPanel>("SettingsCardsPanel") is not { } settingsCards)
+            return;
+        var cards = settingsCards.Children
             .OfType<Control>()
             .Where(c => c.Name != "SettingsSearchEmptyPlaceholder" &&
                         (c.Name is null || !c.Name.StartsWith("SectionHeader", StringComparison.Ordinal)))
             .ToList();
-        var headers = SettingsCardsPanel.Children
+        var headers = settingsCards.Children
             .OfType<Control>()
             .Where(c => c.Name?.StartsWith("SectionHeader", StringComparison.Ordinal) == true)
             .ToList();

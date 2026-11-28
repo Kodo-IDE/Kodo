@@ -1334,7 +1334,7 @@ public partial class MainWindow
             new("Search Settings…", "Preferences", "", () =>
             {
                 NavigateTo(AppPage.Settings);
-                Dispatcher.UIThread.Post(() => this.FindControl<TextBox>("SettingsSearchTextBox")?.Focus(), DispatcherPriority.Input);
+                Dispatcher.UIThread.Post(() => FindSettingsControl<TextBox>("SettingsSearchTextBox")?.Focus(), DispatcherPriority.Input);
                 return Task.CompletedTask;
             }, Keywords: "preferences find setting configuration", Id: "cmd.search-settings"),
             new("Open Marketplace", "Extensions", "OpenExtensions", () => { NavigateTo(AppPage.Extensions); RefreshMarketplaceConnectivityState(); _ = RefreshExtensionsDataAsync(); return Task.CompletedTask; }, Keywords: "plugins extensions themes", Id: "cmd.open-marketplace"),
