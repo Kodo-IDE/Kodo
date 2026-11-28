@@ -5859,6 +5859,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         var accentColor = (AccentBrush as ISolidColorBrush)?.Color ?? KodoDesignTokens.AccentColor;
         var accentHex = DialogHeader.Hex(accentColor);
         Resources["AccentDepthBrush"] = new SolidColorBrush(DialogHeader.DepthColor(AccentBrush));
+        Resources["ButtonDepthBrush"] = new SolidColorBrush(DialogHeader.DepthColor(ButtonBrush));
         Resources["AccentUnderlineShadows"] = BoxShadows.Parse($"inset 0 -2 0 0 {accentHex}");
         Resources["AccentInputShadows"] = BoxShadows.Parse($"inset 0 1 0 0 #22000000, inset 0 -2 0 0 {accentHex}, 0 1 3 0 #66000000");
         Resources["AccentBadgeShadows"] = BoxShadows.Parse($"0 3 0 0 {DialogHeader.Hex(DialogHeader.DepthColor(AccentBrush))}, 0 6 12 0 #70000000");
