@@ -1,10 +1,12 @@
 // Licensed under the GNU GPL-v3.0
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -4574,14 +4576,13 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void SettingsPage_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        var box = this.FindControl<TextBox>("SettingsSearchTextBox");
+        var box = FindSettingsControl<TextBox>("SettingsSearchTextBox");
         if (box is null) return;
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
         if (!ReferenceEquals(focused, box)) return;
         if (e.Source is Visual v && (v == box || v.GetVisualAncestors().Contains(box)))
             return;
-        var grid = this.FindControl<Grid>("SettingsPageGrid");
-        if (grid is not null)
+        if (FindSettingsControl<Control>("SettingsPageGrid") is { } grid)
         {
             grid.Focusable = true;
             grid.Focus();
@@ -7003,6 +7004,49 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     internal static TextDocument? CreateStartupRestoredDocument(string content, bool isCorrupted, bool isImagePreview) =>
         isCorrupted || isImagePreview ? null : CreateOffThreadDocument(content);
 
+    private bool _settingsPageBuilt;
+    private bool _extensionsPageBuilt;
+    private bool _tutorialPageBuilt;
+    private bool _atlasPageBuilt;
+    private Control? _settingsPageRoot;
+    private Control? _extensionsPageRoot;
+    private Control? _tutorialPageRoot;
+    private Control? _atlasPageRoot;
+
+    private readonly Dictionary<string, Control> _lazyPageControls = new(StringComparer.Ordinal);
+
+    private T? FindSettingsControl<T>(string name) where T : Control =>
+        this.FindControl<T>(name) ??
+        (_lazyPageControls.TryGetValue(name, out var control) ? control as T : null);
+
+    private void IndexLazyPage(Control page)
+    {
+        if (!string.IsNullOrEmpty(page.Name))
+            _lazyPageControls[page.Name] = page;
+        foreach (var descendant in page.GetLogicalDescendants().OfType<Control>())
+        {
+            if (!string.IsNullOrEmpty(descendant.Name))
+                _lazyPageControls[descendant.Name] = descendant;
+        }
+    }
+
+    private Control? BuildLazyPage(string hostName, string templateKey, ref bool built, ref Control? root)
+    {
+        if (root is not null) return root;
+        if (built) return null;
+        built = true;
+        if (this.FindControl<Panel>(hostName) is not { } host) return null;
+        if (!this.TryFindResource(templateKey, out var resource) || resource is not IDataTemplate template) return null;
+        if (template.Build(this) is not Control page) return null;
+        page.DataContext = this;
+        host.Children.Add(page);
+        root = page;
+        IndexLazyPage(page);
+        if (StartupTrace.IsEnabled)
+            StartupTrace.Mark($"lazy page built {templateKey}", $"controls={page.GetLogicalDescendants().Count()} named={_lazyPageControls.Count}");
+        return page;
+    }
+
     private async void MainWindow_OnOpened(object? sender, EventArgs e)
     {
         Opened -= MainWindow_OnOpened;
@@ -8249,6 +8293,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         }, DispatcherPriority.Background);
     }
 
+
     private void NavigateTo(AppPage page)
     {
         var newHome = page == AppPage.Home;
@@ -8268,7 +8313,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
 
         if (newSettings)
+        {
+            BuildLazyPage("SettingsPageHost", "SettingsPageTemplate", ref _settingsPageBuilt, ref _settingsPageRoot);
             InitializeKeyboardShortcuts();
+        }
+        if (newExtensions)
+            BuildLazyPage("ExtensionsPageHost", "ExtensionsPageTemplate", ref _extensionsPageBuilt, ref _extensionsPageRoot);
+        if (newTutorial)
+            BuildLazyPage("TutorialPageHost", "TutorialPageTemplate", ref _tutorialPageBuilt, ref _tutorialPageRoot);
+        if (newAtlas)
+            BuildLazyPage("AtlasPageHost", "AtlasPageTemplate", ref _atlasPageBuilt, ref _atlasPageRoot);
 
         _isHomePageVisible = newHome;
         _isSettingsPageVisible = newSettings;
@@ -8290,7 +8344,7 @@ public partial class MainWindow : Window, INotifyPropertyChanged
         HideDiagnosticPopup();
         IsSearchPanelVisible = false;
 
-        var shownPage = newSettings ? "SettingsPageGrid" : newExtensions ? "ExtensionsPageGrid" : newAtlas ? "AtlasPageGrid" : newTutorial ? "TutorialPageGrid" : null;
+        var shownPage = newSettings ? "SettingsPageHost" : newExtensions ? "ExtensionsPageHost" : newAtlas ? "AtlasPageHost" : newTutorial ? "TutorialPageHost" : null;
         if (shownPage is not null && this.FindControl<Control>(shownPage) is { } pagePreset)
             AnimationKit.PresetFade(pagePreset, 10);
 
@@ -8889,11 +8943,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     private void InitializeKeyboardShortcuts()
     {
         if (_keyboardShortcutsUiBuilt) return;
-        if (this.FindControl<StackPanel>("KeyboardShortcutsEditableHost") is not { } editableHost ||
-            this.FindControl<StackPanel>("KeyboardShortcutsOtherHost") is not { } otherHost ||
-            this.FindControl<TextBlock>("KeyboardShortcutsStatusText") is not { } statusText ||
-            this.FindControl<Border>("KeyboardShortcutsStatusBorder") is not { } statusBorder ||
-            this.FindControl<Border>("KeyboardShortcutsSettingsCard") is not { } card)
+        if (FindSettingsControl<StackPanel>("KeyboardShortcutsEditableHost") is not { } editableHost ||
+            FindSettingsControl<StackPanel>("KeyboardShortcutsOtherHost") is not { } otherHost ||
+            FindSettingsControl<TextBlock>("KeyboardShortcutsStatusText") is not { } statusText ||
+            FindSettingsControl<Border>("KeyboardShortcutsStatusBorder") is not { } statusBorder ||
+            FindSettingsControl<Border>("KeyboardShortcutsSettingsCard") is not { } card)
             return;
 
         _keyboardShortcutsUiBuilt = true;
@@ -11765,16 +11819,12 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private Border CreateDialogSurface(Control content, Thickness? padding = null, Thickness? margin = null)
     {
-        var surface = new Border
-        {
-            Background = CardBrush,
-            BorderBrush = SurfaceBorderBrush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = KodoDesignTokens.CardRadius,
-            Padding = padding ?? new Thickness(20),
-            Margin = margin ?? new Thickness(16),
-            Child = content,
-        };
+        var surface = DialogHeader.CreateSurface(
+            content,
+            CardBrush,
+            SurfaceBorderBrush,
+            padding ?? KodoDesignTokens.DialogPadding,
+            margin ?? new Thickness(16));
         AnimationKit.PresetFade(surface, 14);
         surface.AttachedToVisualTree += (_, _) => AnimationKit.FadeIn(surface, 170, 14);
         return surface;
