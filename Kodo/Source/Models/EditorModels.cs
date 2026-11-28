@@ -478,14 +478,38 @@ public class FileTreeItem : INotifyPropertyChanged
     private bool _isExpanded;
     private bool _isRenaming;
     private string _renameText = string.Empty;
+    private string _name = string.Empty;
+    private string? _iconText;
     private int _errorCount;
 
-    public string Name { get; set; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
     public bool IsDirectory { get; init; }
     public int Depth { get; init; }
-    public string? IconText { get; set; }
     internal int ExpansionRequestVersion { get; set; }
+
+    public string Name
+    {
+        get => _name;
+        set
+        {
+            if (_name == value) return;
+            _name = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Icon));
+        }
+    }
+
+    public string? IconText
+    {
+        get => _iconText;
+        set
+        {
+            if (_iconText == value) return;
+            _iconText = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(Icon));
+        }
+    }
 
     public bool IsRenaming
     {
@@ -504,7 +528,6 @@ public class FileTreeItem : INotifyPropertyChanged
         Name = name;
         RenameText = name;
         IconText = null;
-        OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Icon));
     }
 

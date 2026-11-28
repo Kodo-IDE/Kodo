@@ -1183,18 +1183,7 @@ public partial class MainWindow
         _suppressExplorerWidthRefresh = true;
         try
         {
-            FileTreeItems.CollectionChanged -= FileTreeItems_CollectionChanged;
-            try
-            {
-                FileTreeItems.Clear();
-                foreach (var item in items)
-                    FileTreeItems.Add(item);
-            }
-            finally
-            {
-                FileTreeItems.CollectionChanged += FileTreeItems_CollectionChanged;
-            }
-            FileTreeItems_CollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
+            MergeFileTreeItems(items);
             OnPropertyChanged(nameof(FileTreeItems));
         }
         finally
@@ -1203,6 +1192,68 @@ public partial class MainWindow
             OnPropertyChanged(nameof(ExplorerPanelWidth));
         }
         UpdateFileTreeErrorCountsForOpenTabs();
+    }
+
+    private void MergeFileTreeItems(IReadOnlyList<FileTreeItem> items)
+    {
+        var existing = new Dictionary<string, FileTreeItem>(FileSystemPaths.Comparer);
+        foreach (var item in FileTreeItems)
+            existing[item.FullPath] = item;
+
+        var desired = new FileTreeItem[items.Count];
+        var retained = new HashSet<FileTreeItem>();
+        var reused = 0;
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            var incoming = items[i];
+            if (existing.TryGetValue(incoming.FullPath, out var current) &&
+                current.IsDirectory == incoming.IsDirectory &&
+                current.Depth == incoming.Depth)
+            {
+                current.Name = incoming.Name;
+                current.IconText = incoming.IconText;
+                if (current.IsExpanded != incoming.IsExpanded)
+                    current.IsExpanded = incoming.IsExpanded;
+                desired[i] = current;
+                reused++;
+            }
+            else
+            {
+                desired[i] = incoming;
+            }
+
+            retained.Add(desired[i]);
+        }
+
+        if (reused == 0)
+        {
+            FileTreeItems.Clear();
+            foreach (var item in desired)
+                FileTreeItems.Add(item);
+            return;
+        }
+
+        for (var i = FileTreeItems.Count - 1; i >= 0; i--)
+        {
+            if (!retained.Contains(FileTreeItems[i]))
+                FileTreeItems.RemoveAt(i);
+        }
+
+        for (var i = 0; i < desired.Length; i++)
+        {
+            if (i < FileTreeItems.Count && ReferenceEquals(FileTreeItems[i], desired[i]))
+                continue;
+
+            var index = FileTreeItems.IndexOf(desired[i]);
+            if (index >= 0)
+                FileTreeItems.Move(index, i);
+            else
+                FileTreeItems.Insert(i, desired[i]);
+        }
+
+        while (FileTreeItems.Count > desired.Length)
+            FileTreeItems.RemoveAt(FileTreeItems.Count - 1);
     }
 
     private void UpdateFileTreeErrorCount(string? filePath, int errors)
