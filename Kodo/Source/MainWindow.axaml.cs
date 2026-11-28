@@ -7884,12 +7884,16 @@ public partial class MainWindow : Window, INotifyPropertyChanged
 
     private void RestartAutoSaveTimerIfNeeded()
     {
-        if (IsAutoSaveEnabled && HasFileOpen && _isDirty)
-        {
-            _autoSaveTimer.Stop();
-            _autoSaveTimer.Start();
-        }
+        if (!IsAutoSaveEnabled || !HasAutoSaveWork())
+            return;
+
+        _autoSaveTimer.Stop();
+        _autoSaveTimer.Start();
     }
+
+    private bool HasAutoSaveWork() =>
+        (_isDirty && HasFileOpen) ||
+        OpenTabs.Any(tab => tab.IsDirty && !tab.IsUntitled && !tab.IsModifiedExternally && !_corruptedTabs.Contains(tab));
 
     private void ClearAutoSaveStatus()
     {

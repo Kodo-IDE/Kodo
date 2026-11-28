@@ -1241,6 +1241,7 @@ public partial class MainWindow
         }
         else if (changedTab is not null)
         {
+            RestartAutoSaveTimerIfNeeded();
             _ = RefreshInactiveTabInsightDiagnosticsAsync(changedTab);
         }
         if (isActiveDocument && IsFindInFileSearchMode && IsSearchPanelVisible)
@@ -2622,17 +2623,103 @@ public partial class MainWindow
     private async void AutoSaveTimer_OnTick(object? sender, EventArgs e)
     {
         _autoSaveTimer.Stop();
-        if (!IsAutoSaveEnabled || !HasFileOpen || !_isDirty) return;
+        if (!IsAutoSaveEnabled) return;
+        await AutoSaveDirtyTabsAsync();
+    }
+
+    private async Task AutoSaveDirtyTabsAsync()
+    {
+        if (_isSaving) return;
+
+        SaveCurrentEditorStateIntoTab();
+
+        var activeTab = ActiveEditorTab;
+        if (activeTab is { IsDirty: true, IsUntitled: false } &&
+            HasFileOpen &&
+            ReferenceEquals(_activeEditorPane.ActiveTab, activeTab) &&
+            !activeTab.IsModifiedExternally &&
+            !_corruptedTabs.Contains(activeTab) &&
+            !HasImagePreview)
+        {
+            try
+            {
+                await SaveAsync(allowPromptForPath: false);
+            }
+            catch (Exception ex)
+            {
+                _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
+                OnPropertyChanged(nameof(FileSummaryText));
+                OnPropertyChanged(nameof(AutoSaveStatusText));
+                KodoDiagnostics.LogDebug($"Auto-save failed for '{activeTab.Path}'", ex);
+            }
+        }
+
+        foreach (var tab in OpenTabs.ToList())
+        {
+            if (!tab.IsDirty || tab.IsUntitled || ReferenceEquals(tab, activeTab)) continue;
+            if (tab.IsModifiedExternally || _corruptedTabs.Contains(tab)) continue;
+            if (tab.Document is null && string.IsNullOrEmpty(tab.Content)) continue;
+            await AutoSaveTabInBackgroundAsync(tab);
+        }
+    }
+
+    private async Task AutoSaveTabInBackgroundAsync(EditorTab tab)
+    {
+        if (IsTabDiskStateChanged(tab))
+        {
+            tab.IsModifiedExternally = true;
+            KodoDiagnostics.LogDebug($"Auto-save skipped '{tab.Path}' - changed on disk");
+            return;
+        }
+
+        var path = tab.Path;
+        var document = tab.Document;
+        var version = document?.Version;
+        var content = tab.Content ?? string.Empty;
+        var lineEnding = tab.LineEnding;
+        var encoding = tab.Encoding ?? _currentFileEncoding;
+        var expectedWriteTimeUtc = tab.LastKnownLength >= 0 ? tab.LastKnownWriteTimeUtc : (DateTime?)null;
+        var expectedLength = tab.LastKnownLength >= 0 ? tab.LastKnownLength : (long?)null;
+
         try
         {
-            await SaveAsync(allowPromptForPath: false);
+            if (document is { } tabDocument)
+            {
+                var snapshot = EditorTextSnapshotStore.GetSnapshot(tabDocument);
+                await Task.Run(() => WriteTextFileAtomicallyAsync(
+                    path, snapshot, lineEnding, encoding, expectedWriteTimeUtc, expectedLength,
+                    async () => await Dispatcher.UIThread.InvokeAsync(() => FileSystemPaths.Equals(tab.Path, path))));
+            }
+            else
+            {
+                var textToSave = await Task.Run(() => ConvertToLineEnding(content, lineEnding));
+                await WriteTextFileAtomicallyAsync(
+                    path, textToSave, encoding, expectedWriteTimeUtc, expectedLength,
+                    async () => await Dispatcher.UIThread.InvokeAsync(() => FileSystemPaths.Equals(tab.Path, path)));
+            }
+
+            var unchanged = await Dispatcher.UIThread.InvokeAsync(() => document is not null
+                ? FileSystemPaths.Equals(tab.Path, path) && ReferenceEquals(tab.Document, document) && ReferenceEquals(document.Version, version)
+                : FileSystemPaths.Equals(tab.Path, path) && tab.Document is null && string.Equals(tab.Content ?? string.Empty, content, StringComparison.Ordinal));
+            if (unchanged)
+            {
+                tab.Content = string.Empty;
+                tab.IsDirty = false;
+            }
+            else
+            {
+                KodoDiagnostics.LogDebug($"Auto-save raced with edits for '{path}' - leaving tab dirty");
+            }
+
+            if (FileSystemPaths.Equals(tab.Path, path))
+            {
+                CaptureTabDiskState(tab);
+                tab.IsModifiedExternally = false;
+            }
         }
         catch (Exception ex)
         {
-            _autoSaveStatusMessage = BuildAutoSaveFailureMessage(ex);
-            OnPropertyChanged(nameof(FileSummaryText));
-            OnPropertyChanged(nameof(AutoSaveStatusText));
-            await ShowWarningDialogAsync("Auto-save", ex);
+            KodoDiagnostics.LogDebug($"Auto-save failed for '{path}'", ex);
         }
     }
 
