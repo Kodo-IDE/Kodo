@@ -6743,6 +6743,9 @@
                                                                 <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                                            FontWeight="SemiBold"
                                                                            Foreground="{Binding #RootWindow.AccentBrush}"
+                                                                           VerticalAlignment="Center"
+                                                                           HorizontalAlignment="Center"
+                                                                           TextAlignment="Center"
                                                                            Text="{Binding LineNumberText}" />
                                                             </Button>
                                                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
