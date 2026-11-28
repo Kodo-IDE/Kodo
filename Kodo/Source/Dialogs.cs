@@ -145,13 +145,7 @@ public partial class MainWindow
             "Save changes before closing?");
         var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
-        var divider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var divider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
         var buttonRow = new StackPanel
         {
@@ -277,13 +271,7 @@ public partial class MainWindow
             Grid.SetColumn(dismissDepth, 1);
             buttonRow.Children.Add(dismissDepth);
 
-            var divider = new Border
-            {
-                Height = 1,
-                Background = SurfaceBorderBrush,
-                Opacity = 0.9,
-                Margin = new Thickness(0, 4)
-            };
+            var divider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var content = new StackPanel
             {
@@ -405,13 +393,7 @@ public partial class MainWindow
             Grid.SetColumn(buttonRow.Children[1], 1);
             Grid.SetColumn(confirmDepth, 2);
 
-            var divider = new Border
-            {
-                Height = 1,
-                Background = SurfaceBorderBrush,
-                Opacity = 0.9,
-                Margin = new Thickness(0, 4)
-            };
+            var divider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var content = new StackPanel
             {
@@ -517,13 +499,7 @@ public partial class MainWindow
             });
         }
 
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = SurfaceBorderBrush,
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var footerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
         var closeButtonBrush = failures.Count > 0 ? DangerBrush : AccentBrush;
         var closeButtonForeground = failures.Count > 0 ? DangerForegroundBrush : AccentForegroundBrush;
         var closeButton = new Button
@@ -640,13 +616,7 @@ public partial class MainWindow
                 Margin = new Thickness(0, 2, 0, 0),
             };
 
-            var headerDivider = new Border
-            {
-                Height = 1,
-                Background = SurfaceBorderBrush,
-                Opacity = 0.9,
-                Margin = new Thickness(0, 4)
-            };
+            var headerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var criticalBanner = new Border
             {
@@ -787,13 +757,7 @@ public partial class MainWindow
             Grid.SetColumn(dismissDepth, 1);
             buttonRow.Children.Add(dismissDepth);
 
-            var footerDivider = new Border
-            {
-                Height = 1,
-                Background = SurfaceBorderBrush,
-                Opacity = 0.9,
-                Margin = new Thickness(0, 4)
-            };
+            var footerDivider = DialogHeader.CreateDivider(SurfaceBorderBrush);
 
             var body = new StackPanel
             {

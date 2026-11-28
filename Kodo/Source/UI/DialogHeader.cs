@@ -62,9 +62,9 @@ internal static class DialogHeader
         var depth = new Border
         {
             CornerRadius = button.CornerRadius,
-            Padding = new Thickness(0, 0, 0, 3),
-            Margin = new Thickness(inset.Left, inset.Top, inset.Right, inset.Bottom - 3),
-            BoxShadow = BoxShadows.Parse("0 4 12 0 #70000000"),
+            Padding = KodoDesignTokens.DepthPadding,
+            Margin = new Thickness(inset.Left, inset.Top, inset.Right, inset.Bottom - KodoDesignTokens.DepthLift),
+            BoxShadow = KodoDesignTokens.DepthShadow,
             Child = button,
         };
         depth.Bind(Border.BackgroundProperty, new Binding(nameof(Button.Background))
@@ -86,13 +86,26 @@ internal static class DialogHeader
 
     internal static string Hex(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
 
-    public static Border CreateDivider(IBrush borderBrush) =>
+    public static Border CreateDivider(IBrush borderBrush, Thickness? margin = null) =>
         new Border
         {
             Height = 1,
             Background = borderBrush,
             Opacity = 0.9,
-            Margin = new Thickness(0, 4),
+            Margin = margin ?? new Thickness(0, 4),
+        };
+
+    public static Border CreateSurface(Control content, IBrush card, IBrush border, Thickness padding, Thickness margin, bool clip = false) =>
+        new Border
+        {
+            Background = card,
+            BorderBrush = border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = KodoDesignTokens.CardRadius,
+            Padding = padding,
+            Margin = margin,
+            ClipToBounds = clip,
+            Child = content,
         };
 
     private static Avalonia.Svg.Skia.SvgSource LoadTinted(string svg, Color color)

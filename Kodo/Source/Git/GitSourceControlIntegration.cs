@@ -32,6 +32,7 @@ namespace GitSourceControl;
 
 internal sealed class GitSourceControlIntegration
 {
+    private static readonly Cursor HandCursor = new(StandardCursorType.Hand);
     private MainWindow? _window;
     private Border? _sourcePanel;
     private readonly List<Button> _remoteActionButtons = new();
@@ -90,6 +91,10 @@ internal sealed class GitSourceControlIntegration
     private Button? _discardAllButton;
 
     private StackPanel? _groupsPanel;
+    private string? _pushContentKey;
+    private bool? _amendContentKey;
+    private bool? _commitContentKey;
+    private int? _popStashContentKey;
     private TextBlock? _repositoryLabel;
     private TextBlock? _syncLabel;
     private TextBlock? _statusLabel;
@@ -364,6 +369,10 @@ internal sealed class GitSourceControlIntegration
         _commitMessage = null;
         _commitButton = null;
         _branchButton = null;
+        _pushContentKey = null;
+        _amendContentKey = null;
+        _commitContentKey = null;
+        _popStashContentKey = null;
         _pullButton = null;
         _pushButton = null;
         _amendButton = null;
@@ -489,7 +498,7 @@ internal sealed class GitSourceControlIntegration
             HorizontalContentAlignment = HorizontalAlignment.Left,
             Padding = new Thickness(9, 7),
             CornerRadius = KodoDesignTokens.ControlRadius,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = HandCursor
         };
         branch.Click += BranchButton_OnClick;
         TrackButton(branch, _fixedThemeSyncs);
@@ -616,7 +625,7 @@ internal sealed class GitSourceControlIntegration
             Padding = new Thickness(6, 3),
             FontSize = 11,
             CornerRadius = KodoDesignTokens.CompactRadius,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = HandCursor
         };
         _amendButton.Click += async (_, _) => await ToggleAmendAsync();
         ToolTip.SetTip(_amendButton, "Replace the previous commit instead of creating a new one");
@@ -631,7 +640,7 @@ internal sealed class GitSourceControlIntegration
             CornerRadius = KodoDesignTokens.ControlRadius,
             FontSize = 12,
             FontWeight = FontWeight.SemiBold,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = HandCursor
         };
         _commitButton.Click += CommitButton_OnClick;
         TrackButton(_commitButton, _fixedThemeSyncs, "AccentBrush", "AccentForegroundBrush");
@@ -756,18 +765,31 @@ internal sealed class GitSourceControlIntegration
         }
         if (_pushButton is not null)
         {
-            _pushButton.Content = BuildGlyphText(KodoIcons.CloudArrowUp, canPublish ? "Publish" : "Push");
+            var pushLabel = canPublish ? "Publish" : "Push";
+            if (!string.Equals(_pushContentKey, pushLabel, StringComparison.Ordinal))
+            {
+                _pushButton.Content = BuildGlyphText(KodoIcons.CloudArrowUp, pushLabel);
+                _pushContentKey = pushLabel;
+            }
             ToolTip.SetTip(_pushButton, canPublish ? "Publish this branch to the remote and set its upstream" : "Push to remote");
         }
         if (_commitMessage is not null) _commitMessage.IsEnabled = _repositoryRoot is not null && !(_operationRunning && !_operationIsNetwork);
         if (_amendButton is not null)
         {
-            _amendButton.Content = BuildGlyphText(_amend ? KodoIcons.CheckSquare : KodoIcons.Square, "Amend last commit", 11);
+            if (_amendContentKey != _amend)
+            {
+                _amendButton.Content = BuildGlyphText(_amend ? KodoIcons.CheckSquare : KodoIcons.Square, "Amend last commit", 11);
+                _amendContentKey = _amend;
+            }
             _amendButton.IsEnabled = repositoryAvailable && _hasHead;
         }
         if (_commitButton is not null)
         {
-            _commitButton.Content = BuildGlyphText(KodoIcons.Check, _amend ? "Amend Commit" : "Commit Changes");
+            if (_commitContentKey != _amend)
+            {
+                _commitButton.Content = BuildGlyphText(KodoIcons.Check, _amend ? "Amend Commit" : "Commit Changes");
+                _commitContentKey = _amend;
+            }
             _commitButton.IsEnabled = repositoryAvailable && !hasConflicts && (hasStaged || (_amend && _hasHead));
             ToolTip.SetTip(_commitButton, hasConflicts ? "Resolve merge conflicts and stage the resolved files before committing" : null);
         }
@@ -776,7 +798,11 @@ internal sealed class GitSourceControlIntegration
         if (_popStashButton is not null)
         {
             _popStashButton.IsEnabled = repositoryAvailable && _stashCount > 0;
-            _popStashButton.Content = BuildGlyphText(KodoIcons.ArrowUpTray, _stashCount > 0 ? $"Pop Stash ({_stashCount})" : "Pop Stash");
+            if (_popStashContentKey != _stashCount)
+            {
+                _popStashButton.Content = BuildGlyphText(KodoIcons.ArrowUpTray, _stashCount > 0 ? $"Pop Stash ({_stashCount})" : "Pop Stash");
+                _popStashContentKey = _stashCount;
+            }
         }
         if (_undoCommitButton is not null) _undoCommitButton.IsEnabled = repositoryAvailable && _hasHead;
         if (_discardAllButton is not null) _discardAllButton.IsEnabled = repositoryAvailable && _changes.Any(c => c.IsUnstaged);
@@ -904,7 +930,7 @@ internal sealed class GitSourceControlIntegration
             HorizontalAlignment = HorizontalAlignment.Left,
             HorizontalContentAlignment = HorizontalAlignment.Left,
             CornerRadius = KodoDesignTokens.CompactRadius,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = HandCursor
         };
         ToolTip.SetTip(toggle, collapsed ? "Expand" : "Collapse");
         toggle.Click += (_, _) => ToggleGroup(key);
@@ -977,7 +1003,7 @@ internal sealed class GitSourceControlIntegration
                 Padding = new Thickness(8, 5),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 CornerRadius = KodoDesignTokens.CompactRadius,
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = HandCursor
             };
             more.Click += (_, _) =>
             {
@@ -1007,7 +1033,7 @@ internal sealed class GitSourceControlIntegration
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
             Padding = new Thickness(8, 5),
             CornerRadius = KodoDesignTokens.CompactRadius,
-            Cursor = new Cursor(StandardCursorType.Hand)
+            Cursor = HandCursor
         };
         var rename = change.IsRenameOrCopy && !string.IsNullOrEmpty(change.OriginalPath) ? $"\n{change.OriginalPath}  →  {change.Path}" : string.Empty;
         ToolTip.SetTip(open, kind == ChangeGroupKind.Conflicts
@@ -1143,7 +1169,7 @@ internal sealed class GitSourceControlIntegration
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
                 Padding = new Thickness(8, 5),
                 CornerRadius = KodoDesignTokens.CompactRadius,
-                Cursor = new Cursor(StandardCursorType.Hand)
+                Cursor = HandCursor
             };
             ToolTip.SetTip(button, $"{commit.Subject}\n{commit.Author} · {commit.RelativeDate}\n{commit.Hash}\nClick to view this commit");
             button.Click += async (_, _) => await ShowCommitAsync(captured);
@@ -1582,13 +1608,7 @@ internal sealed class GitSourceControlIntegration
         };
         TrackTheme(messageLabel, TextBlock.ForegroundProperty, "PrimaryTextBrush", syncs);
 
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = GetWindowBrush("SurfaceBorderBrush"),
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var footerDivider = DialogHeader.CreateDivider(GetWindowBrush("SurfaceBorderBrush") ?? Brushes.Transparent);
         TrackTheme(footerDivider, Border.BackgroundProperty, "SurfaceBorderBrush", syncs);
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Right };
         var cancel = CreateTextButton(null, "Cancel", "Close without changing anything", async () => { dialog.Close(false); await Task.CompletedTask; }, syncs);
@@ -1902,7 +1922,7 @@ internal sealed class GitSourceControlIntegration
             Width = 24,
             Height = 24,
             Padding = new Thickness(0),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = HandCursor,
             CornerRadius = KodoDesignTokens.CompactRadius,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center,
@@ -1924,7 +1944,7 @@ internal sealed class GitSourceControlIntegration
             Width = 28,
             Height = 28,
             Padding = new Thickness(0),
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = HandCursor,
             CornerRadius = KodoDesignTokens.CompactRadius,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -1950,7 +1970,7 @@ internal sealed class GitSourceControlIntegration
                 : BuildGlyphText(glyph, text),
             Padding = new Thickness(10, 6),
             FontSize = 12,
-            Cursor = new Cursor(StandardCursorType.Hand),
+            Cursor = HandCursor,
             CornerRadius = KodoDesignTokens.CompactRadius,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -1990,8 +2010,8 @@ internal sealed class GitSourceControlIntegration
 
     private void TrackTheme(AvaloniaObject? target, AvaloniaProperty property, string brushName, List<IDisposable> collection)
     {
-        if (target is not null && _window is not null)
-            collection.Add(ThemeBrushSync.Track(target, property, _window, brushName));
+        if (target is null || _window is not { } window) return;
+        collection.Add(ThemeBrushSync.Track(target, property, window, brushName, () => WindowBrush(window, brushName)));
     }
 
     private static void DisposeThemeSyncs(List<IDisposable> collection)
@@ -2003,11 +2023,28 @@ internal sealed class GitSourceControlIntegration
         collection.Clear();
     }
 
-    private IBrush? GetWindowBrush(string name)
+    private IBrush? GetWindowBrush(string name) => _window is null ? null : WindowBrush(_window, name);
+
+    private static IBrush? WindowBrush(MainWindow window, string name) => name switch
     {
-        try { return _window?.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetValue(_window) as IBrush; }
-        catch { return null; }
-    }
+        "SidebarBrush" => window.SidebarBrush,
+        "TopBarBrush" => window.TopBarBrush,
+        "SurfaceBorderBrush" => window.SurfaceBorderBrush,
+        "CardBrush" => window.CardBrush,
+        "PrimaryTextBrush" => window.PrimaryTextBrush,
+        "MutedTextBrush" => window.MutedTextBrush,
+        "AccentBrush" => window.AccentBrush,
+        "AccentForegroundBrush" => window.AccentForegroundBrush,
+        "ButtonBrush" => window.ButtonBrush,
+        "ButtonHoverBrush" => window.ButtonHoverBrush,
+        "EditorBackgroundBrush" => window.EditorBackgroundBrush,
+        "DangerBrush" => window.DangerBrush,
+        "DangerForegroundBrush" => window.DangerForegroundBrush,
+        "WarningBrush" => window.WarningBrush,
+        "WarningSurfaceBrush" => window.WarningSurfaceBrush,
+        "WarningBorderBrush" => window.WarningBorderBrush,
+        _ => ThemeBrushSync.ReadBrush(window, name),
+    };
 
     private static string GetStatusBrushName(char status) => status switch
     {
@@ -2073,17 +2110,14 @@ internal sealed class GitSourceControlIntegration
 
     private Border CreateDialogSurface(Control content, List<IDisposable> themeSyncs)
     {
-        var surface = new Border
-        {
-            Margin = new Thickness(12),
-            CornerRadius = KodoDesignTokens.CardRadius,
-            Background = GetWindowBrush("CardBrush"),
-            BorderBrush = GetWindowBrush("SurfaceBorderBrush"),
-            BorderThickness = new Thickness(1),
-            ClipToBounds = true,
-            Opacity = AnimationKit.ReduceMotion ? 1d : 0d,
-            Child = content
-        };
+        var surface = DialogHeader.CreateSurface(
+            content,
+            GetWindowBrush("CardBrush") ?? Brushes.Transparent,
+            GetWindowBrush("SurfaceBorderBrush") ?? Brushes.Transparent,
+            default,
+            new Thickness(12),
+            clip: true);
+        surface.Opacity = AnimationKit.ReduceMotion ? 1d : 0d;
         surface.AttachedToVisualTree += (_, _) => AnimationKit.FadeIn(surface, 170, 14);
         TrackTheme(surface, Border.BackgroundProperty, "CardBrush", themeSyncs);
         TrackTheme(surface, Border.BorderBrushProperty, "SurfaceBorderBrush", themeSyncs);

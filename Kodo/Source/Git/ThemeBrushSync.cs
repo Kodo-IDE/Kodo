@@ -10,13 +10,15 @@ namespace GitSourceControl;
 internal static class ThemeBrushSync
 {
     public static IDisposable Track(AvaloniaObject target, AvaloniaProperty property, MainWindow window, string brushPropertyName)
+        => Track(target, property, window, brushPropertyName, () => ReadBrush(window, brushPropertyName));
+
+    public static IDisposable Track(AvaloniaObject target, AvaloniaProperty property, MainWindow window, string brushPropertyName, Func<IBrush?> resolve)
     {
         void Apply()
         {
             try
             {
-                var brush = window.GetType().GetProperty(brushPropertyName)?.GetValue(window) as IBrush;
-                if (brush is not null) target.SetValue(property, brush);
+                if (resolve() is { } brush) target.SetValue(property, brush);
             }
             catch { }
         }
@@ -28,6 +30,12 @@ internal static class ThemeBrushSync
         };
         ((INotifyPropertyChanged)window).PropertyChanged += handler;
         return new Subscription(() => ((INotifyPropertyChanged)window).PropertyChanged -= handler);
+    }
+
+    internal static IBrush? ReadBrush(MainWindow window, string brushPropertyName)
+    {
+        try { return window.GetType().GetProperty(brushPropertyName)?.GetValue(window) as IBrush; }
+        catch { return null; }
     }
 
     private sealed class Subscription(Action dispose) : IDisposable

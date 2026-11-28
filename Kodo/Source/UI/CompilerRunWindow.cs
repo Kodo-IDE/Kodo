@@ -156,12 +156,7 @@ internal sealed class CompilerRunWindow : Window
             Child = headerGrid,
         };
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = new SolidColorBrush(_palette.Border),
-            Opacity = 0.9,
-        };
+        var headerDivider = DialogHeader.CreateDivider(new SolidColorBrush(_palette.Border), new Thickness(0));
 
         _statusDot = new Border
         {

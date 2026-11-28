@@ -541,13 +541,7 @@ public partial class App : Application
             Margin = new Thickness(0, 4, 0, 0),
         };
 
-        var headerDivider = new Border
-        {
-            Height = 1,
-            Background = new SolidColorBrush(palette.Border),
-            Opacity = 0.9,
-            Margin = new Thickness(0, 6)
-        };
+        var headerDivider = DialogHeader.CreateDivider(new SolidColorBrush(palette.Border), new Thickness(0, 6));
 
         var terminatingBanner = new Border
         {
@@ -676,13 +670,7 @@ public partial class App : Application
         Grid.SetColumn(dismissDepth, 1);
         buttonRow.Children.Add(dismissDepth);
 
-        var footerDivider = new Border
-        {
-            Height = 1,
-            Background = new SolidColorBrush(palette.Border),
-            Opacity = 0.9,
-            Margin = new Thickness(0, 4)
-        };
+        var footerDivider = DialogHeader.CreateDivider(new SolidColorBrush(palette.Border));
 
         var content = new StackPanel
         {
