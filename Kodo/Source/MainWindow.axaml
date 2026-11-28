@@ -8214,6 +8214,8 @@
                     <Border x:Name="TabDropIndicator"
                             Grid.Column="0"
                             Grid.ColumnSpan="3"
+                            VerticalAlignment="Top"
+                            Height="2"
                             IsHitTestVisible="False"
                             IsVisible="False"
                             Background="{Binding AccentBrush}"

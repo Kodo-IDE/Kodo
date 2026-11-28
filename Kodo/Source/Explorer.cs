@@ -277,6 +277,11 @@ public partial class MainWindow
             SavePaneViewState(_activeEditorPane, EditorTextBox);
             return;
         }
+        if (!ReferenceEquals(tab.Document, document))
+        {
+            SavePaneViewState(_activeEditorPane, EditorTextBox);
+            return;
+        }
         var viewState = tab.GetViewState(_activeEditorPane.Id);
         tab.Document = document;
         tab.Content = string.Empty;
@@ -308,6 +313,8 @@ public partial class MainWindow
         CancelInactiveTabDiagnosticScan(tab);
         if (IsSplitScreenVisible && !CanDisplayInEditorPane(tab))
             CloseSplitEditor();
+        if (preserveCurrentState)
+            SaveCurrentEditorStateIntoTab();
         MoveTabToActivePane(tab, preserveOtherPaneMembership);
         AddTabToPane(_activeEditorPane, tab);
         var activateWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -321,6 +328,7 @@ public partial class MainWindow
 
         if (ReferenceEquals(ActiveEditorTab, tab))
         {
+            EnsurePaneEditorShowsActiveTab(_activeEditorPane, EditorTextBox);
             if (scheduleContentLoad && !IsImagePreviewFile(tab.Path) &&
                 (tab.Document is null || !ReferenceEquals(EditorTextBox.Document, tab.Document) ||
                  tab.Document.TextLength == 0))
@@ -343,8 +351,6 @@ public partial class MainWindow
 
         CloseCompletionWindow();
         ClosePendingAutoCloseUndoGroup();
-        if (preserveCurrentState)
-            SaveCurrentEditorStateIntoTab();
         ActiveEditorTab = tab;
         ImageZoomLevel = tab.GetViewState(_activeEditorPane.Id).ImageZoomLevel;
         _activeTabVersion++;
@@ -634,47 +640,49 @@ public partial class MainWindow
 
         if (pane.ActiveTab is { } currentActive && ReferenceEquals(editor.Document, currentActive.Document))
             SavePaneViewState(pane, editor);
-        var otherPane = ReferenceEquals(pane, _editorPane) ? _secondaryEditorPane : _editorPane;
-        if (pane.ActiveTab is { } previous && !ReferenceEquals(previous, otherPane.ActiveTab))
-            previous.IsSelected = false;
-        pane.ActiveTab = tab;
-        if (tab is not null)
+        if (tab is not null && !pane.Tabs.Contains(tab))
             AddTabToPane(pane, tab);
+        pane.ActiveTab = tab;
         RefreshPanePreviewState(pane);
         RestorePaneImageScrollOffset(pane, tab);
         RefreshPaneTabSelection();
-        if (tab is not null)
+
+        if (tab is null)
         {
-            if (IsSplitScreenVisible || !ReferenceEquals(pane, _secondaryEditorPane))
-                tab.IsSelected = true;
-            if ((IsSplitScreenVisible || !ReferenceEquals(pane, _secondaryEditorPane)) && tab.Document is null)
-            {
-                tab.Document = new AvaloniaEdit.Document.TextDocument(tab.Content);
-                tab.Content = string.Empty;
-            }
+            AssignPaneDocumentWithoutDirtyTracking(editor, new AvaloniaEdit.Document.TextDocument(string.Empty));
+            ApplyPaneSyntaxHighlighting(pane, editor, null);
+            OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
+            OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
+            OnPropertyChanged(nameof(SecondaryPaneSelectedTab));
+            QueueLspPresentationRefresh();
+            return;
         }
 
-        AssignPaneDocumentWithoutDirtyTracking(editor, IsSplitScreenVisible || !ReferenceEquals(pane, _secondaryEditorPane)
-            ? tab?.Document ?? new AvaloniaEdit.Document.TextDocument(string.Empty)
-            : new AvaloniaEdit.Document.TextDocument(string.Empty));
-        if (IsSplitScreenVisible && !ReferenceEquals(pane, _activeEditorPane) && tab is { IsUntitled: false } &&
+        EnsurePaneTabDocument(tab);
+        AssignPaneDocumentWithoutDirtyTracking(editor, tab.Document ?? new AvaloniaEdit.Document.TextDocument(string.Empty));
+        if (IsSplitScreenVisible && !ReferenceEquals(pane, _activeEditorPane) && !tab.IsUntitled &&
             !IsImagePreviewFile(tab.Path) && (tab.Document is null || tab.Document.TextLength == 0) &&
             TryGetFileLength(tab.Path) > 0)
             _ = RestoreInactivePaneDocumentAsync(pane, editor, tab);
         ApplyPaneSyntaxHighlighting(pane, editor, tab);
-        if (tab is not null)
-        {
-            var viewState = tab.GetViewState(pane.Id);
-            editor.TextArea.Caret.Offset = Math.Clamp(viewState.CaretOffset, 0, editor.Document.TextLength);
-            editor.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, editor.Document.LineCount));
-            RestorePaneScrollOffset(pane, tab, editor);
-        }
+        SyncPaneCaretAndScroll(pane, editor, tab);
+        RestorePaneScrollOffset(pane, tab, editor);
+        if (!tab.IsUntitled && !tab.IsDirty && !_corruptedTabs.Contains(tab) && !IsImagePreviewFile(tab.Path) &&
+            IsEffectivelyEmptyRestoredDocument(editor.Document))
+            _ = EnsurePaneDocumentHasContentAsync(pane, tab);
         OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(SecondaryPaneSelectedTab));
         QueueLspPresentationRefresh();
-        if (tab is { IsUntitled: false } && !string.IsNullOrWhiteSpace(tab.Path) && !ReferenceEquals(tab, ActiveEditorTab))
+        if (!tab.IsUntitled && !string.IsNullOrWhiteSpace(tab.Path) && !ReferenceEquals(tab, ActiveEditorTab))
             UpdateInactiveTabDiagnosticsForFile(tab.Path);
+    }
+
+    private static EditorTab? NearestPaneTab(EditorPaneState pane, int index)
+    {
+        if (pane.Tabs.Count == 0)
+            return null;
+        return pane.Tabs[Math.Clamp(index, 0, pane.Tabs.Count - 1)];
     }
 
     private async Task RestoreInactivePaneDocumentAsync(EditorPaneState pane, AvaloniaEdit.TextEditor editor, EditorTab tab)

@@ -372,15 +372,6 @@ public partial class MainWindow
         InvalidateLspPanePresentation(pane);
 
         ScheduleEditorMinimapRefresh();
-        if (ReferenceEquals(_activeEditorPane, pane) || ReferenceEquals(EditorSession.Document, document))
-            return;
-
-        var filePath = EditorSession.FilePath;
-        EditorSession.Dispose();
-        _editorSession = new EditorDocumentSession(document);
-        EditorSession.SetFilePath(filePath);
-        _foldingMargin = null;
-        ResetLspFoldingState();
     }
 
     private void SetEditorPaneDocument(EditorPaneState pane, TextEditor editor, TextDocument document)
@@ -429,7 +420,12 @@ public partial class MainWindow
 
     private void ActivateEditorPane(EditorPaneState pane, bool focusEditor = true)
     {
-        if (ReferenceEquals(_activeEditorPane, pane))
+        var entryPaneEditor = GetEditorForPane(pane);
+        if (ReferenceEquals(_activeEditorPane, pane) &&
+            (pane.ActiveTab is null ||
+             (ReferenceEquals(entryPaneEditor.Document, pane.ActiveTab.Document) &&
+              ReferenceEquals(EditorSession.Document, entryPaneEditor.Document) &&
+              string.Equals(_currentFilePath, pane.ActiveTab.IsUntitled ? null : pane.ActiveTab.Path, StringComparison.Ordinal))))
         {
             if (focusEditor) EditorTextBox.Focus();
             return;
@@ -445,6 +441,7 @@ public partial class MainWindow
         ClosePendingAutoCloseUndoGroup();
         SaveCurrentEditorStateIntoTab();
         _activeEditorPane = pane;
+        EnsurePaneEditorShowsActiveTab(pane, GetEditorForPane(pane));
         _deadCodeAppliedSignature = -1;
         _errorHighlightAppliedSignature = -1;
         _editorHorizontalScrollViewerResolved = false;
@@ -521,6 +518,7 @@ public partial class MainWindow
         ResetLspFoldingState();
         UpdateCurrentDocumentPresentation();
         RestartAutoSaveTimerIfNeeded();
+        RefreshPaneTabSelection();
         RaiseMany(nameof(FileSummaryText), nameof(FilePathText), nameof(LanguageDisplayText), nameof(IsLineEndingVisible), nameof(LineEndingDisplayText), nameof(IndentationDisplayText), nameof(IsIndentationVisible), nameof(CanShowSaveActions));
         RefreshState(fullRefresh: true);
         QueueLspPresentationRefresh();
@@ -584,11 +582,58 @@ public partial class MainWindow
 
     private void RefreshPaneTabSelection()
     {
+        var selectedTab = _activeEditorPane.ActiveTab;
         foreach (var tab in OpenTabs)
         {
             tab.IsPrimaryPaneSelected = ReferenceEquals(tab, _editorPane.ActiveTab);
             tab.IsSecondaryPaneSelected = ReferenceEquals(tab, _secondaryEditorPane.ActiveTab);
+            tab.IsSelected = ReferenceEquals(tab, selectedTab);
         }
+    }
+
+    private void EnsurePaneTabDocument(EditorTab tab)
+    {
+        if (tab.Document is not null || IsImagePreviewFile(tab.Path))
+            return;
+        tab.Document = new TextDocument(tab.Content ?? string.Empty);
+        tab.Content = string.Empty;
+    }
+
+    private static void RedrawPaneEditor(TextEditor editor)
+    {
+        editor.TextArea?.TextView?.InvalidateLayer(KnownLayer.Text);
+        editor.TextArea?.TextView?.Redraw();
+    }
+
+    private static void SyncPaneCaretAndScroll(EditorPaneState pane, TextEditor editor, EditorTab tab)
+    {
+        if (editor.Document is not { } document || editor.TextArea?.Caret is not { } caret)
+            return;
+        var viewState = tab.GetViewState(pane.Id);
+        caret.Offset = Math.Clamp(viewState.CaretOffset, 0, document.TextLength);
+        editor.ScrollToLine(Math.Clamp(viewState.TopLineNumber, 1, document.LineCount));
+    }
+
+    private void EnsurePaneEditorShowsActiveTab(EditorPaneState pane, TextEditor editor)
+    {
+        if (pane.ActiveTab is not { } tab)
+        {
+            if (editor.Document is { TextLength: > 0 })
+                AssignPaneDocumentWithoutDirtyTracking(editor, new TextDocument(string.Empty));
+            return;
+        }
+
+        EnsurePaneTabDocument(tab);
+        if (tab.Document is not null && !ReferenceEquals(editor.Document, tab.Document))
+        {
+            AssignPaneDocumentWithoutDirtyTracking(editor, tab.Document);
+            ApplyPaneSyntaxHighlighting(pane, editor, tab);
+            SyncPaneCaretAndScroll(pane, editor, tab);
+        }
+
+        if (!tab.IsUntitled && !tab.IsDirty && !_corruptedTabs.Contains(tab) && !IsImagePreviewFile(tab.Path) &&
+            IsEffectivelyEmptyRestoredDocument(editor.Document))
+            _ = EnsurePaneDocumentHasContentAsync(pane, tab);
     }
 
     private void AddTabToPane(EditorPaneState pane, EditorTab tab)
@@ -607,6 +652,7 @@ public partial class MainWindow
         if (preserveOtherPaneMembership)
         {
             AddTabToPane(pane, tab);
+            RefreshPaneTabSelection();
             return;
         }
 
@@ -629,6 +675,7 @@ public partial class MainWindow
             SetOtherPaneTab(otherPane, replacementTab);
         }
 
+        RefreshPaneTabSelection();
         SaveSettings();
         CollapseEmptyEditorPanes();
     }
@@ -644,8 +691,16 @@ public partial class MainWindow
 
     private void RemoveTabFromPanes(EditorTab tab)
     {
+        var primaryIndex = _editorPane.Tabs.IndexOf(tab);
+        var secondaryIndex = _secondaryEditorPane.Tabs.IndexOf(tab);
+        var primaryWasActive = ReferenceEquals(_editorPane.ActiveTab, tab);
+        var secondaryWasActive = ReferenceEquals(_secondaryEditorPane.ActiveTab, tab);
         var removed = _editorPane.Tabs.Remove(tab);
         removed |= _secondaryEditorPane.Tabs.Remove(tab);
+        if (primaryWasActive && !ReferenceEquals(_editorPane, _activeEditorPane))
+            SetOtherPaneTab(_editorPane, NearestPaneTab(_editorPane, primaryIndex));
+        if (secondaryWasActive && !ReferenceEquals(_secondaryEditorPane, _activeEditorPane))
+            SetOtherPaneTab(_secondaryEditorPane, NearestPaneTab(_secondaryEditorPane, secondaryIndex));
         if (removed && IsSplitScreenVisible)
             SaveSettings();
     }
@@ -881,7 +936,7 @@ public partial class MainWindow
 
     private void ShowSplitEditor(EditorTab? secondaryTabOverride = null, bool useSecondaryTabOverride = false)
     {
-        if (IsSplitScreenVisible || EditorTextBox.Document is null)
+        if (IsSplitScreenVisible)
             return;
 
         if (ActiveEditorTab is not null)
@@ -896,57 +951,41 @@ public partial class MainWindow
             OpenTabs.Contains(previousSideTab) && CanDisplayInEditorPane(previousSideTab)
             ? previousSideTab
             : primaryTab;
-        if (secondaryTab is not null)
-            CopyMissingPaneViewState(secondaryTab, _editorPane, _secondaryEditorPane);
-        _secondaryEditorPane.ActiveTab = secondaryTab;
-        if (secondaryTab is not null)
-            AddTabToPane(_secondaryEditorPane, secondaryTab);
-        RefreshPanePreviewState(_secondaryEditorPane);
-        if (secondaryTab is not null)
-            secondaryTab.IsSelected = true;
-        RefreshPaneTabSelection();
+
+        IsSplitScreenVisible = true;
+        OnPropertyChanged(nameof(IsSplitScreenVisible));
+
         if (secondaryTab is null)
         {
-            AssignPaneDocumentWithoutDirtyTracking(SecondaryEditorTextBox, new TextDocument(string.Empty));
-            ApplyPaneSyntaxHighlighting(_secondaryEditorPane, SecondaryEditorTextBox, null);
+            EnsurePaneEditorShowsActiveTab(_editorPane, PrimaryEditorTextBox);
+            SetOtherPaneTab(_secondaryEditorPane, null);
         }
-        else if (secondaryTab.Document is null)
+        else
         {
-            secondaryTab.Document = new TextDocument(secondaryTab.Content);
-            secondaryTab.Content = string.Empty;
+            CopyMissingPaneViewState(secondaryTab, _editorPane, _secondaryEditorPane);
+            if (_editorPane.Tabs.Contains(secondaryTab))
+                _editorPane.Tabs.Remove(secondaryTab);
+            if (ReferenceEquals(_editorPane.ActiveTab, secondaryTab))
+                SetOtherPaneTab(_editorPane, _editorPane.Tabs.FirstOrDefault());
+            SetOtherPaneTab(_secondaryEditorPane, secondaryTab);
+            ActivateEditorPane(_secondaryEditorPane);
         }
-        if (secondaryTab is not null)
-        {
-            var secondaryPaneDocument = secondaryTab.Document ?? new TextDocument(secondaryTab.Content ?? string.Empty);
-            AssignPaneDocumentWithoutDirtyTracking(SecondaryEditorTextBox, secondaryPaneDocument);
-            ApplyPaneSyntaxHighlighting(_secondaryEditorPane, SecondaryEditorTextBox, secondaryTab);
-        }
-        if (secondaryTab is not null && ReferenceEquals(PrimaryEditorTextBox.Document, SecondaryEditorTextBox.Document))
-            CopyDiagnosticHighlights(PrimaryEditorTextBox, SecondaryEditorTextBox);
-        IsSplitScreenVisible = true;
+
         SaveSettings();
-        RestorePaneImageScrollOffset(_secondaryEditorPane, secondaryTab);
         if (IsMinimapVisible)
             SecondaryEditorMinimapView?.SetDocument(SecondaryEditorTextBox.Document);
         ScheduleEditorMinimapRefresh();
-        if (secondaryTab is not null)
-        {
-            var state = secondaryTab.GetViewState(_secondaryEditorPane.Id);
-            var secondaryDocument = SecondaryEditorTextBox.Document;
-            if (secondaryDocument is not null && SecondaryEditorTextBox.TextArea?.Caret is { } caret)
-            {
-                caret.Offset = Math.Clamp(state.CaretOffset, 0, secondaryDocument.TextLength);
-                SecondaryEditorTextBox.ScrollToLine(Math.Clamp(state.TopLineNumber, 1, secondaryDocument.LineCount));
-                RestorePaneScrollOffset(_secondaryEditorPane, secondaryTab, SecondaryEditorTextBox);
-            }
-        }
         UpdateEditorMinimapViewport(SecondaryEditorTextBox, SecondaryEditorMinimapView);
+        RefreshPaneTabSelection();
         OnPropertyChanged(nameof(SecondaryPaneSelectedTab));
         OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
         OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
-        OnPropertyChanged(nameof(IsSplitScreenVisible));
-        RefreshPaneTabSelection();
         QueueLspPresentationRefresh();
+        Dispatcher.UIThread.Post(() =>
+        {
+            RedrawPaneEditor(PrimaryEditorTextBox);
+            RedrawPaneEditor(SecondaryEditorTextBox);
+        }, DispatcherPriority.Background);
         if (secondaryTab is { IsUntitled: false } && !string.IsNullOrWhiteSpace(secondaryTab.Path) &&
             !ReferenceEquals(secondaryTab, ActiveEditorTab))
             UpdateInactiveTabDiagnosticsForFile(secondaryTab.Path);
@@ -1182,43 +1221,41 @@ public partial class MainWindow
         _lspHoverTooltip = null;
         SavePaneViewState(_secondaryEditorPane, SecondaryEditorTextBox);
         SaveCurrentEditorStateIntoTab();
-        var wasSecondaryActive = ReferenceEquals(_activeEditorPane, _secondaryEditorPane);
-        var primaryWasEmpty = _editorPane.ActiveTab is null;
-        var secondaryActiveTab = _secondaryEditorPane.ActiveTab;
-        if (wasSecondaryActive && secondaryActiveTab is not null)
-        {
-            CopyPaneViewState(secondaryActiveTab, _secondaryEditorPane, _editorPane);
-            if (ReferenceEquals(_editorPane.ActiveTab, secondaryActiveTab))
-                _editorPane.ActiveTab = null;
-            SetOtherPaneTab(_editorPane, secondaryActiveTab);
-        }
-        else if (_editorPane.ActiveTab is null && secondaryActiveTab is not null)
-        {
-            CopyPaneViewState(secondaryActiveTab, _secondaryEditorPane, _editorPane);
-            SetOtherPaneTab(_editorPane, secondaryActiveTab);
-        }
 
-        foreach (var tab in _secondaryEditorPane.Tabs)
+        var primaryTab = _editorPane.ActiveTab;
+        if (primaryTab is not null && !_editorPane.Tabs.Contains(primaryTab))
+            primaryTab = _editorPane.Tabs.FirstOrDefault();
+
+        foreach (var tab in _secondaryEditorPane.Tabs.ToList())
+        {
             CopyMissingPaneViewState(tab, _secondaryEditorPane, _editorPane);
-        foreach (var tab in _secondaryEditorPane.Tabs)
             _editorPane.AddTab(tab);
+        }
 
-        if (wasSecondaryActive)
-            ActivateEditorPane(_editorPane);
-        else if (primaryWasEmpty && secondaryActiveTab is not null)
-            ActivateTab(secondaryActiveTab, focusEditor: false);
+        primaryTab ??= _editorPane.Tabs.FirstOrDefault();
 
         _secondaryEditorPane.ActiveTab = null;
         _secondaryEditorPane.Tabs.Clear();
-        RefreshPaneTabSelection();
-        IsSplitScreenVisible = false;
-        SaveSettings();
         AssignPaneDocumentWithoutDirtyTracking(SecondaryEditorTextBox, new TextDocument(string.Empty));
         ApplyPaneSyntaxHighlighting(_secondaryEditorPane, SecondaryEditorTextBox, null);
         ReleasePanePreviewState(_secondaryEditorPane);
         SecondaryEditorMinimapView?.SetDocument(null);
+
+        IsSplitScreenVisible = false;
+        if (!ReferenceEquals(_editorPane.ActiveTab, primaryTab))
+            _editorPane.ActiveTab = primaryTab;
+        OnPropertyChanged(nameof(IsSplitScreenVisible));
+        ActivateEditorPane(_editorPane);
+        RedrawPaneEditor(PrimaryEditorTextBox);
+        RefreshPaneTabSelection();
+        SaveSettings();
         ScheduleEditorMinimapRefresh();
+        UpdateEditorMinimapViewport(PrimaryEditorTextBox, EditorMinimapView);
         OnPropertyChanged(nameof(SecondaryPaneSelectedTab));
+        OnPropertyChanged(nameof(PrimaryPaneBreadcrumbText));
+        OnPropertyChanged(nameof(SecondaryPaneBreadcrumbText));
+        QueueLspPresentationRefresh();
+        QueueInsightRefresh();
     }
 
     private void SavePaneViewState(EditorPaneState pane, TextEditor editor)
@@ -1254,21 +1291,6 @@ public partial class MainWindow
             target.ImageScrollOffsetY = source.ImageScrollOffsetY;
             target.HasImageViewState = true;
         }
-    }
-
-    private static void CopyPaneViewState(EditorTab tab, EditorPaneState sourcePane, EditorPaneState targetPane)
-    {
-        var source = tab.GetViewState(sourcePane.Id);
-        var target = tab.GetViewState(targetPane.Id);
-        target.CaretOffset = source.CaretOffset;
-        target.TopLineNumber = source.TopLineNumber;
-        target.ScrollOffsetX = source.ScrollOffsetX;
-        target.ScrollOffsetY = source.ScrollOffsetY;
-        target.HasTextViewState = source.HasTextViewState;
-        target.ImageZoomLevel = source.ImageZoomLevel;
-        target.ImageScrollOffsetX = source.ImageScrollOffsetX;
-        target.ImageScrollOffsetY = source.ImageScrollOffsetY;
-        target.HasImageViewState = source.HasImageViewState;
     }
 
     private EditorTab? FindPersistedPaneTab(string? id, EditorPaneState pane)
@@ -1307,10 +1329,7 @@ public partial class MainWindow
             : _secondaryEditorPane;
 
         if (!splitWasVisible)
-        {
-            targetPane.Tabs.Clear();
             AddTabToPane(targetPane, tab);
-        }
 
         var sourceWasActive = ReferenceEquals(sourcePane.ActiveTab, tab);
         if (moveFromSourcePane && splitWasVisible && sourceWasActive && sourcePane.Tabs.Count == 1 && sourcePane.Tabs.Contains(tab))
@@ -1370,19 +1389,10 @@ public partial class MainWindow
 
     private void CollapseEmptyEditorPanes()
     {
-        if (IsSplitScreenVisible && (_editorPane.Tabs.Count == 0 || _secondaryEditorPane.Tabs.Count == 0))
-        {
-            var replacement = _editorPane.Tabs.Count > 0
-                ? _editorPane.ActiveTab ?? _editorPane.Tabs[0]
-                : _secondaryEditorPane.ActiveTab ?? _secondaryEditorPane.Tabs.FirstOrDefault();
-            CloseSplitEditor();
-            if (replacement is not null && OpenTabs.Contains(replacement) && !ReferenceEquals(ActiveEditorTab, replacement))
-            {
-                if (!ReferenceEquals(_activeEditorPane, _editorPane))
-                    ActivateEditorPane(_editorPane, focusEditor: false);
-                ActivateTab(replacement, focusEditor: false, preserveCurrentState: false);
-            }
-        }
+        if (!IsSplitScreenVisible || _secondaryEditorPane.Tabs.Count > 0)
+            return;
+
+        CloseSplitEditor();
     }
 
     private void FocusEditorPane(EditorPaneState pane)
@@ -1614,22 +1624,29 @@ public partial class MainWindow
     private int GetTabInsertIndex(EditorPaneState pane, PointerEventArgs e)
     {
         Control root = ReferenceEquals(pane, _secondaryEditorPane) ? SecondaryEditorPane : PrimaryEditorPane;
-        var wraps = root.GetVisualDescendants().OfType<Border>()
-            .Where(border => border.Classes.Contains("tabwrap") && border.DataContext is EditorTab)
-            .ToList();
-        if (wraps.Count == 0 || wraps[0].TranslatePoint(new Point(0, 0), this) is not { } firstOrigin)
+        var wraps = new List<(Border Border, Point Origin)>();
+        foreach (var border in root.GetVisualDescendants().OfType<Border>())
+        {
+            if (!border.Classes.Contains("tabwrap") || border.DataContext is not EditorTab)
+                continue;
+            if (border.TranslatePoint(new Point(0, 0), this) is not { } origin)
+                continue;
+            wraps.Add((border, origin));
+        }
+        if (wraps.Count == 0)
             return pane.Tabs.Count;
+        wraps.Sort((left, right) => left.Origin.X.CompareTo(right.Origin.X));
 
         var position = e.GetPosition(this);
-        if (position.Y > firstOrigin.Y + wraps[0].Bounds.Height)
+        if (position.Y > wraps[0].Origin.Y + wraps[0].Border.Bounds.Height)
             return pane.Tabs.Count;
 
         var index = 0;
-        foreach (var wrap in wraps)
+        foreach (var (border, origin) in wraps)
         {
-            if (wrap.TranslatePoint(new Point(0, 0), this) is not { } origin || wrap.DataContext is not EditorTab wrapTab)
+            if (border.DataContext is not EditorTab wrapTab)
                 continue;
-            if (position.X > origin.X + wrap.Bounds.Width / 2)
+            if (position.X > origin.X + border.Bounds.Width / 2)
                 index = pane.Tabs.IndexOf(wrapTab) + 1;
         }
         return index;
@@ -1686,6 +1703,7 @@ public partial class MainWindow
             }
             SetOtherPaneTab(sourcePane, replacement);
         }
+        RefreshPaneTabSelection();
         SaveSettings();
         CollapseEmptyEditorPanes();
     }

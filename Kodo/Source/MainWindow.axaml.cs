@@ -900,20 +900,10 @@ public partial class MainWindow : Window, INotifyPropertyChanged
                 return;
 
             ClearLspSignatureHelpTooltip();
-            var previousTab = _activeEditorPane.ActiveTab;
-            var otherPane = ReferenceEquals(_activeEditorPane, _editorPane)
-                ? _secondaryEditorPane
-                : _editorPane;
-            if (previousTab is not null && !ReferenceEquals(previousTab, otherPane.ActiveTab))
-                previousTab.IsSelected = false;
-
             _activeEditorPane.ActiveTab = value;
             RefreshPanePreviewState(_activeEditorPane);
             RestorePaneImageScrollOffset(_activeEditorPane, value);
             ImageZoomLevel = value?.GetViewState(_activeEditorPane.Id).ImageZoomLevel ?? 1.0;
-
-            if (_activeEditorPane.ActiveTab is not null)
-                _activeEditorPane.ActiveTab.IsSelected = true;
 
             RefreshPaneTabSelection();
             ClearDeadCodeHighlighting();
@@ -5945,7 +5935,11 @@ public partial class MainWindow : Window, INotifyPropertyChanged
     {
         RefreshPaneTabSelection();
         RaiseMany(nameof(HasOpenEditors), nameof(HasMultipleOpenEditors), nameof(IsEditorTabsVisible), nameof(IsSharedEditorTabsVisible), nameof(IsEmptyStateVisible), nameof(IsDocumentViewVisible), nameof(IsHomeOrEditorPageVisible), nameof(HasDocumentOpen), nameof(IsTextEditorVisible), nameof(CanToggleSplitEditor));
-        Dispatcher.UIThread.Post(() => SaveSettings(), DispatcherPriority.Background);
+        Dispatcher.UIThread.Post(() =>
+        {
+            SaveSettings();
+            CollapseEmptyEditorPanes();
+        }, DispatcherPriority.Background);
     }
 
     private void TerminalSessions_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
