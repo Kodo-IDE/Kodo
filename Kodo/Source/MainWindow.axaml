@@ -4301,6 +4301,7 @@
                                     </StackPanel>
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
+                                               IsVisible="{Binding HasInsightQuickActionRows}"
                                                Text="{Binding InsightQuickActionSummary}" />
                                     <ItemsControl ItemsSource="{Binding InsightQuickActionRows}"
                                                   Foreground="{Binding PrimaryTextBrush}"
@@ -4357,6 +4358,7 @@
                                     </StackPanel>
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
+                                               IsVisible="{Binding HasInsightCommandPaletteRows}"
                                                Text="{Binding InsightCommandPaletteSummary}" />
                                     <ItemsControl ItemsSource="{Binding InsightCommandPaletteRows}"
                                                   Foreground="{Binding PrimaryTextBrush}"
@@ -4403,6 +4405,7 @@
                                                Text="When a search term leads you to a command, Insight remembers that pairing and ranks the command higher the next time you search for it." />
                                     <TextBlock FontSize="{x:Static kodo:KodoDesignTokens.SmallFontSize}"
                                                Foreground="{Binding MutedTextBrush}"
+                                               IsVisible="{Binding HasInsightQueryRows}"
                                                Text="{Binding InsightQuerySummary}" />
                                     <ItemsControl ItemsSource="{Binding InsightQueryRows}"
                                                   Foreground="{Binding PrimaryTextBrush}"
