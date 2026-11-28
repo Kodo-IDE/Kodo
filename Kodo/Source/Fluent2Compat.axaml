@@ -53,9 +53,10 @@
     </Style>
 
     <Style Selector="Border.savegroup">
-        <Setter Property="Background" Value="#0B0A0F" />
+        <Setter Property="Background" Value="{DynamicResource ButtonDepthBrush}" />
         <Setter Property="Padding" Value="0,0,0,3" />
         <Setter Property="Margin" Value="0,0,0,-3" />
+        <Setter Property="CornerRadius" Value="0,0,8,8" />
         <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 
@@ -63,7 +64,8 @@
         <Setter Property="Background" Value="{DynamicResource AccentDepthBrush}" />
         <Setter Property="Padding" Value="0,0,0,3" />
         <Setter Property="Margin" Value="0,0,0,-3" />
-        <Setter Property="BoxShadow" Value="0 4 14 0 #80000000" />
+        <Setter Property="CornerRadius" Value="0,0,8,8" />
+        <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 
     <Style Selector="Button.saveprimary:pressed, Button.savearrow:pressed, Button.runbuildprimary:pressed, Button.runbuildarrow:pressed">
@@ -75,9 +77,10 @@
     </Style>
 
     <Style Selector="Border.depth">
-        <Setter Property="Background" Value="#0B0A0F" />
+        <Setter Property="Background" Value="{DynamicResource ButtonDepthBrush}" />
         <Setter Property="Padding" Value="0,0,0,3" />
         <Setter Property="Margin" Value="0,0,0,-3" />
+        <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
         <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 

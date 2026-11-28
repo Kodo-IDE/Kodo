@@ -57,11 +57,13 @@ internal static class DialogHeader
         if (!SettingsStore.Current.Fluent2ThemeEnabled)
             return button;
         button.Classes.Add("depth");
+        var inset = button.Margin;
+        button.Margin = default;
         var depth = new Border
         {
             CornerRadius = button.CornerRadius,
             Padding = new Thickness(0, 0, 0, 3),
-            Margin = new Thickness(0, 0, 0, -3),
+            Margin = new Thickness(inset.Left, inset.Top, inset.Right, inset.Bottom - 3),
             BoxShadow = BoxShadows.Parse("0 4 12 0 #70000000"),
             Child = button,
         };

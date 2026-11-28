@@ -5269,7 +5269,7 @@ ToolTip.Tip="{Binding Path}" />
                             <Button Classes="chrome"
                                     Click="SkipTutorialButton_OnClick"
                                     Content="Skip Tutorial" />
-                            <Border Classes="depth">
+                            <Border Classes="depth" Background="{DynamicResource AccentDepthBrush}">
                                 <Button Classes="marketaction"
                                         Click="NextTutorialStepButton_OnClick"
                                         Content="Get started" />
@@ -5817,7 +5817,7 @@ ToolTip.Tip="{Binding Path}" />
                                                 </ScrollViewer>
                                             </Border>
                                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                                <Border Classes="depth">
+                                                <Border Classes="depth" Background="{DynamicResource AccentDepthBrush}">
                                                     <Button Classes="marketaction"
                                                             IsEnabled="{Binding IsPrivacyPolicyScrolledToBottom}"
                                                             Click="AcceptPrivacyPolicyButton_OnClick"
@@ -5851,7 +5851,7 @@ ToolTip.Tip="{Binding Path}" />
                                                 <Button Classes="chrome"
                                                         Click="DeclineDataTrackingButton_OnClick"
                                                         Content="Not now" />
-                                                <Border Classes="depth">
+                                                <Border Classes="depth" Background="{DynamicResource AccentDepthBrush}">
                                                     <Button Classes="marketaction"
                                                             Click="AcceptDataTrackingButton_OnClick"
                                                             Content="Accept" />
@@ -5926,7 +5926,7 @@ ToolTip.Tip="{Binding Path}" />
                                     IsVisible="{Binding IsNotTutorialSetupStep}"
                                     IsEnabled="{Binding CanSkipTutorial}"
                                     Content="Skip tutorial" />
-                            <Border Classes="depth">
+                            <Border Classes="depth" Background="{DynamicResource AccentDepthBrush}">
                                 <Button Classes="marketaction"
                                         Click="NextTutorialStepButton_OnClick"
                                         MinWidth="148"
