@@ -667,11 +667,6 @@ public partial class MainWindow
             var replacementTab = otherPane.Tabs.Count > 0
                 ? otherPane.Tabs[Math.Min(Math.Max(0, otherIndex), otherPane.Tabs.Count - 1)]
                 : null;
-            if (replacementTab is null && ActiveEditorTab is { } fallback && !ReferenceEquals(fallback, tab))
-            {
-                otherPane.AddTab(fallback);
-                replacementTab = fallback;
-            }
             SetOtherPaneTab(otherPane, replacementTab);
         }
 
@@ -717,22 +712,35 @@ public partial class MainWindow
         var tabIndex = pane.Tabs.IndexOf(tab);
         pane.Tabs.Remove(tab);
         SaveSettings();
-        if (!ReferenceEquals(pane.ActiveTab, tab))
+        if (!ReferenceEquals(pane.ActiveTab, tab) && pane.ActiveTab is not null)
+        {
+            RefreshPaneTabSelection();
             return true;
+        }
 
         var replacementIndex = Math.Min(Math.Max(0, tabIndex), pane.Tabs.Count - 1);
         var replacementTab = pane.Tabs.Count > 0 ? pane.Tabs[replacementIndex] : null;
         if (ReferenceEquals(pane, _activeEditorPane))
         {
             if (replacementTab is not null)
+            {
                 ActivateTab(replacementTab, focusEditor: false);
+            }
             else
-                ClearActivePaneAfterLastTabClosed();
+            {
+                SetOtherPaneTab(pane, null);
+                var fallbackPane = ReferenceEquals(pane, _editorPane) ? _secondaryEditorPane : _editorPane;
+                if (IsSplitScreenVisible && fallbackPane.ActiveTab is not null)
+                    ActivateEditorPane(fallbackPane, focusEditor: false);
+                else
+                    ClearActivePaneAfterLastTabClosed();
+            }
         }
         else
         {
             SetOtherPaneTab(pane, replacementTab);
         }
+        RefreshPaneTabSelection();
         CollapseEmptyEditorPanes();
         return true;
     }
@@ -758,6 +766,11 @@ public partial class MainWindow
             : _secondaryEditorPane.Tabs.Contains(tab) && !_editorPane.Tabs.Contains(tab)
                 ? _secondaryEditorPane
                 : _activeEditorPane;
+        if (!pane.Tabs.Contains(tab))
+        {
+            await RequestCloseTabAsync(tab);
+            return;
+        }
         await RequestClosePaneTabAsync(pane, tab);
     }
 
@@ -941,8 +954,10 @@ public partial class MainWindow
 
         if (ActiveEditorTab is not null)
             SaveCurrentEditorStateIntoTab();
-        var primaryTab = ActiveEditorTab;
         AssignUnownedOpenTabsToPane(_editorPane);
+        var primaryTab = ActiveEditorTab ?? _editorPane.Tabs.FirstOrDefault();
+        if (primaryTab is null && _secondaryEditorPane.ActiveTab is null)
+            return;
         if (primaryTab is not null)
             AddTabToPane(_editorPane, primaryTab);
         var secondaryTab = useSecondaryTabOverride
@@ -1592,7 +1607,11 @@ public partial class MainWindow
         if (!new Rect(size).Contains(position))
             return (null, false);
         if (IsSplitScreenVisible)
-            return (position.X <= PrimaryEditorPane.Bounds.Right + 2.5 ? _editorPane : _secondaryEditorPane, false);
+        {
+            var primaryRight = PrimaryEditorPane.TranslatePoint(
+                new Point(PrimaryEditorPane.Bounds.Width, 0), EditorWorkspaceGrid)?.X ?? size.Width / 2;
+            return (position.X <= primaryRight + 2.5 ? _editorPane : _secondaryEditorPane, false);
+        }
         return position.X >= size.Width / 2 ? (null, true) : (_editorPane, false);
     }
 
@@ -1696,11 +1715,6 @@ public partial class MainWindow
             var replacement = sourcePane.Tabs.Count > 0
                 ? sourcePane.Tabs[Math.Min(Math.Max(0, sourceIndex), sourcePane.Tabs.Count - 1)]
                 : null;
-            if (replacement is null && ActiveEditorTab is { } fallback && !ReferenceEquals(fallback, tab))
-            {
-                sourcePane.AddTab(fallback);
-                replacement = fallback;
-            }
             SetOtherPaneTab(sourcePane, replacement);
         }
         RefreshPaneTabSelection();

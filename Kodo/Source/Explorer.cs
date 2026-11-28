@@ -551,12 +551,6 @@ public partial class MainWindow
 
         if (!closingActiveTab)
         {
-            if (tabIsInHiddenSecondaryPane)
-            {
-                var nextIndex = Math.Min(Math.Max(0, otherPaneTabIndex), _secondaryEditorPane.Tabs.Count - 1);
-                var replacementTab = _secondaryEditorPane.Tabs.Count > 0 ? _secondaryEditorPane.Tabs[nextIndex] : null;
-                SetOtherPaneTab(_secondaryEditorPane, replacementTab);
-            }
             RefreshState(fullRefresh: true);
             return;
         }
@@ -817,15 +811,24 @@ public partial class MainWindow
             AddRecentFile(path);
             NavigateTo(AppPage.Editor);
             destinationPane = ResolveEditorPaneForOpen(destinationPane);
+            if (!_editorPane.Tabs.Contains(existingTab) && !_secondaryEditorPane.Tabs.Contains(existingTab))
+                AddTabToPane(destinationPane, existingTab);
             if (!ReferenceEquals(_activeEditorPane, destinationPane))
                 ActivateEditorPane(destinationPane, focusEditor: false);
             if (!ReferenceEquals(destinationPane.ActiveTab, existingTab))
                 ActivateTab(existingTab, scheduleContentLoad: false, preserveOtherPaneMembership: preserveExistingPaneMembership);
+            else
+                EnsurePaneEditorShowsActiveTab(destinationPane, GetEditorForPane(destinationPane));
             var activationVersion = _activeTabVersion;
             var targetEditor = GetEditorForPane(destinationPane);
-            if (!IsImagePreviewFile(path) &&
-                (existingTab.Document is null || !ReferenceEquals(targetEditor.Document, existingTab.Document)))
+            var needsContentReload = !IsImagePreviewFile(path) &&
+                (existingTab.Document is null ||
+                 !ReferenceEquals(targetEditor.Document, existingTab.Document) ||
+                 (existingTab.Document.TextLength == 0 && TryGetFileLength(path) > 0));
+            if (needsContentReload)
                 await SetEditorTabContentSafelyAsync(existingTab, activationVersion, destinationPane);
+            else
+                RedrawPaneEditor(targetEditor);
             return;
         }
 
@@ -880,6 +883,8 @@ public partial class MainWindow
             AddRecentFile(path);
             NavigateTo(AppPage.Editor);
             destinationPane = ResolveEditorPaneForOpen(destinationPane);
+            if (!_editorPane.Tabs.Contains(loadedExistingTab) && !_secondaryEditorPane.Tabs.Contains(loadedExistingTab))
+                AddTabToPane(destinationPane, loadedExistingTab);
             if (!ReferenceEquals(_activeEditorPane, destinationPane))
                 ActivateEditorPane(destinationPane, focusEditor: false);
             ActivateTab(loadedExistingTab, preserveOtherPaneMembership: preserveExistingPaneMembership);

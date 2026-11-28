@@ -6977,6 +6977,18 @@ public partial class MainWindow : Window, INotifyPropertyChanged
             return;
         }
 
+        var existingDocument = IsImagePreviewFile(_currentFilePath) ? null : EditorTextBox?.Document;
+        var ownerTab = existingDocument is null
+            ? null
+            : OpenTabs.FirstOrDefault(tab => ReferenceEquals(tab.Document, existingDocument));
+        if (ownerTab is not null)
+        {
+            var ownerPane = ResolveEditorPaneForOpen(_activeEditorPane);
+            AddTabToPane(ownerPane, ownerTab);
+            ActivateTab(ownerTab, focusEditor: false);
+            return;
+        }
+
         var displayName = _currentFilePath is not null
             ? Path.GetFileName(_currentFilePath)
             : $"untitled-{_nextUntitledTabNumber++}.txt";
