@@ -35,6 +35,10 @@ public static class KodoDesignTokens
     public static Thickness TightPadding { get; } = new(8, 4);
     public static Thickness StrongPadding { get; } = new(16, 8);
     public static Thickness DialogPadding { get; } = new(20);
+    public static Thickness DepthPadding { get; } = new(0, 0, 0, 3);
+    public static Thickness DepthInset { get; } = new(0, 0, 0, -3);
+    public const double DepthLift = 3.0;
+    public static BoxShadows DepthShadow { get; } = BoxShadows.Parse("0 4 12 0 #70000000");
     public static Thickness CardPadding { get; } = new(8);
     public static Thickness RichPadding { get; } = new(10);
 

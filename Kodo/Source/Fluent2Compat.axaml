@@ -52,20 +52,20 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
+    <Style Selector="Border.depth, Border.savegroup, Border.runbuildgroup">
+        <Setter Property="Padding" Value="{x:Static kodo:KodoDesignTokens.DepthPadding}" />
+        <Setter Property="Margin" Value="{x:Static kodo:KodoDesignTokens.DepthInset}" />
+        <Setter Property="BoxShadow" Value="{x:Static kodo:KodoDesignTokens.DepthShadow}" />
+    </Style>
+
     <Style Selector="Border.savegroup">
         <Setter Property="Background" Value="{DynamicResource ButtonDepthBrush}" />
-        <Setter Property="Padding" Value="0,0,0,3" />
-        <Setter Property="Margin" Value="0,0,0,-3" />
         <Setter Property="CornerRadius" Value="0,0,8,8" />
-        <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 
     <Style Selector="Border.runbuildgroup">
         <Setter Property="Background" Value="{DynamicResource AccentDepthBrush}" />
-        <Setter Property="Padding" Value="0,0,0,3" />
-        <Setter Property="Margin" Value="0,0,0,-3" />
         <Setter Property="CornerRadius" Value="0,0,8,8" />
-        <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 
     <Style Selector="Button.saveprimary:pressed, Button.savearrow:pressed, Button.runbuildprimary:pressed, Button.runbuildarrow:pressed">
@@ -78,10 +78,7 @@
 
     <Style Selector="Border.depth">
         <Setter Property="Background" Value="{DynamicResource ButtonDepthBrush}" />
-        <Setter Property="Padding" Value="0,0,0,3" />
-        <Setter Property="Margin" Value="0,0,0,-3" />
         <Setter Property="CornerRadius" Value="{x:Static kodo:KodoDesignTokens.ControlRadius}" />
-        <Setter Property="BoxShadow" Value="0 4 12 0 #70000000" />
     </Style>
 
 </Styles>

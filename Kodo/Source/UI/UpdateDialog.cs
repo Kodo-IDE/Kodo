@@ -98,8 +98,8 @@ internal sealed class UpdateDialog : Window
         Grid.SetColumn(primaryDepth, 1);
         buttonRow.Children.Add(primaryDepth);
 
-        var headerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
-        var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var headerDivider = DialogHeader.CreateDivider(new SolidColorBrush(_palette.Border));
+        var footerDivider = DialogHeader.CreateDivider(new SolidColorBrush(_palette.Border));
 
         var content = new StackPanel { Spacing = 12, Children = { headerRow, headerDivider, _statusText, notesLink, _progressBar, footerDivider, buttonRow } };
         Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.CardRadius, Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
@@ -195,8 +195,8 @@ internal sealed class UpdateDialog : Window
         Grid.SetColumn(primaryDepth, 1);
         buttonRow.Children.Add(primaryDepth);
 
-        var headerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
-        var footerDivider = new Border { Height = 1, Background = new SolidColorBrush(_palette.Border), Opacity = 0.9, Margin = new Thickness(0, 4) };
+        var headerDivider = DialogHeader.CreateDivider(new SolidColorBrush(_palette.Border));
+        var footerDivider = DialogHeader.CreateDivider(new SolidColorBrush(_palette.Border));
 
         var content = new StackPanel { Spacing = 12, Children = { headerRow, headerDivider, _statusText, notesLink, _progressBar, footerDivider, buttonRow } };
         Content = new Border { Background = new SolidColorBrush(_palette.SurfaceDeep), BorderBrush = new SolidColorBrush(_palette.Border), BorderThickness = new Thickness(1), CornerRadius = KodoDesignTokens.CardRadius, Padding = new Thickness(20), Margin = new Thickness(16), Child = content };
